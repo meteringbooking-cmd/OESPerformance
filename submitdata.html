@@ -52,6 +52,15 @@
             padding: 20px;
             background: #f8f9fa;
             border-radius: 10px;
+            display: flex;
+            gap: 20px;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+
+        .date-group {
+            flex: 1;
+            min-width: 200px;
         }
 
         .date-section label {
@@ -61,11 +70,42 @@
             font-weight: 600;
         }
 
-        .date-section input {
+        .date-section input[type="date"] {
+            width: 100%;
             padding: 10px 15px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 1em;
+        }
+
+        .upload-btn {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .upload-btn:hover {
+            background: #218838;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .upload-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 5px;
+            font-size: 0.9em;
+            color: #0c5460;
         }
 
         .engineers-table {
@@ -221,8 +261,21 @@
         <div id="message" class="message"></div>
 
         <div class="date-section">
-            <label for="dataDate">Select Date</label>
-            <input type="date" id="dataDate" required>
+            <div class="date-group">
+                <label for="dataDate">Select Date</label>
+                <input type="date" id="dataDate" required>
+            </div>
+            <div>
+                <label style="opacity: 0;">Upload</label>
+                <input type="file" id="fileInput" accept=".xlsx, .xls" onchange="handleFileUpload(event)">
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    📁 Upload Excel File
+                </button>
+            </div>
+        </div>
+
+        <div class="upload-info">
+            <strong>Excel Format:</strong> Columns should be: Engineer, Jobs, Completed, Aborted, Meters
         </div>
 
         <div id="loadingDiv" class="loading">Loading engineers...</div>
@@ -251,6 +304,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs';
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -397,6 +451,63 @@
             setTimeout(() => {
                 messageDiv.className = 'message';
             }, 5000);
+        }
+
+        // Handle Excel file upload
+        window.handleFileUpload = async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            try {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data);
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                if (jsonData.length === 0) {
+                    showMessage('Excel file is empty', 'error');
+                    return;
+                }
+
+                // Map Excel data to form fields
+                let matchedCount = 0;
+                jsonData.forEach(row => {
+                    // Try different possible column names
+                    const engineerName = row['Engineer'] || row['engineer'] || row['Engineer Name'] || row['Name'];
+                    const jobs = row['Jobs'] || row['jobs'] || 0;
+                    const completed = row['Completed'] || row['completed'] || 0;
+                    const aborted = row['Aborted'] || row['aborted'] || 0;
+                    const meters = row['Meters'] || row['meters'] || row['Meter'] || 0;
+
+                    if (!engineerName) return;
+
+                    // Find matching engineer in the form
+                    const engineerIndex = engineers.findIndex(e => 
+                        e.engineerName.toLowerCase().trim() === engineerName.toLowerCase().trim()
+                    );
+
+                    if (engineerIndex !== -1) {
+                        document.getElementById(`jobs_${engineerIndex}`).value = jobs;
+                        document.getElementById(`completed_${engineerIndex}`).value = completed;
+                        document.getElementById(`aborted_${engineerIndex}`).value = aborted;
+                        document.getElementById(`meters_${engineerIndex}`).value = meters;
+                        matchedCount++;
+                    }
+                });
+
+                if (matchedCount > 0) {
+                    showMessage(`Successfully loaded data for ${matchedCount} engineer(s)`, 'success');
+                } else {
+                    showMessage('No matching engineers found. Check that engineer names match exactly.', 'error');
+                }
+
+                // Clear file input
+                event.target.value = '';
+
+            } catch (error) {
+                console.error("Error reading Excel file:", error);
+                showMessage('Error reading Excel file. Make sure it\'s a valid .xlsx or .xls file.', 'error');
+            }
         }
 
         // Load engineers when page loads
