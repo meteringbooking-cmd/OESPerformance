@@ -814,12 +814,12 @@
         // Make it globally accessible
         window.updateEngineerDropdown = updateEngineerDropdown;
 
-        window.updateChart = function() {
+        window.updateChart = async function() {
             const metric = currentView;
             const engineerFilter = document.getElementById('chartFilter').value;
             const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
 
-            // Filter data
+            // Filter data for selected period
             let filteredData = allData;
             if (teamLeaderFilter !== 'all') {
                 filteredData = filteredData.filter(d => d.teamLeader === teamLeaderFilter);
@@ -839,6 +839,46 @@
 
             const dates = Object.keys(dateMap).sort();
             const values = dates.map(date => dateMap[date]);
+
+            // Calculate previous 4 weeks average
+            const startDate = document.getElementById('startDate').value;
+            const startDateObj = new Date(startDate);
+            const fourWeeksAgo = new Date(startDateObj);
+            fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+            const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0];
+
+            // Fetch data from 4 weeks before the selected start date
+            let previous4WeeksAvg = 0;
+            try {
+                const prevQuery = query(
+                    collection(db, "performance"),
+                    where("date", ">=", fourWeeksAgoStr),
+                    where("date", "<", startDate),
+                    orderBy("date", "desc")
+                );
+
+                const prevSnapshot = await getDocs(prevQuery);
+                let prevData = [];
+                prevSnapshot.forEach((doc) => {
+                    prevData.push(doc.data());
+                });
+
+                // Filter previous data by same team leader/engineer if selected
+                if (teamLeaderFilter !== 'all') {
+                    prevData = prevData.filter(d => d.teamLeader === teamLeaderFilter);
+                }
+                if (engineerFilter !== 'all') {
+                    prevData = prevData.filter(d => d.engineerName === engineerFilter);
+                }
+
+                // Calculate average
+                if (prevData.length > 0) {
+                    const prevSum = prevData.reduce((sum, record) => sum + (record[metric] || 0), 0);
+                    previous4WeeksAvg = prevSum / prevData.length;
+                }
+            } catch (error) {
+                console.log("Could not fetch previous 4 weeks data:", error);
+            }
 
             // Destroy existing chart
             if (currentChart) {
@@ -870,31 +910,51 @@
             
             const trendValues = values.map((_, x) => slope * x + intercept);
 
+            // Create average line (same value for all dates)
+            const avgValues = new Array(dates.length).fill(previous4WeeksAvg);
+
+            const datasets = [{
+                label: metricLabels[metric],
+                data: values,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderWidth: 3,
+                tension: 0.4,
+                fill: true,
+                order: 3
+            },
+            {
+                label: 'Trend',
+                data: trendValues,
+                borderColor: '#ff6b6b',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false,
+                order: 2
+            }];
+
+            // Only add previous 4 weeks average if we have data
+            if (previous4WeeksAvg > 0) {
+                datasets.push({
+                    label: 'Previous 4 Weeks Avg',
+                    data: avgValues,
+                    borderColor: '#28a745',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    borderDash: [10, 5],
+                    pointRadius: 0,
+                    fill: false,
+                    order: 1
+                });
+            }
+
             currentChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: dates,
-                    datasets: [{
-                        label: metricLabels[metric],
-                        data: values,
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 3,
-                        tension: 0.4,
-                        fill: true,
-                        order: 2
-                    },
-                    {
-                        label: 'Trend',
-                        data: trendValues,
-                        borderColor: '#ff6b6b',
-                        backgroundColor: 'transparent',
-                        borderWidth: 2,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        fill: false,
-                        order: 1
-                    }]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
