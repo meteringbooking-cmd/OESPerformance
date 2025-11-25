@@ -295,6 +295,61 @@
             border-radius: 10px;
         }
 
+        .absence-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .absence-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .absence-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .absence-item {
+            padding: 12px;
+            background: white;
+            border-left: 4px solid #dc3545;
+            border-radius: 5px;
+        }
+
+        .absence-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .absence-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .absence-status {
+            display: inline-block;
+            padding: 3px 8px;
+            background: #dc3545;
+            color: white;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+
+        .no-absences {
+            text-align: center;
+            color: #28a745;
+            font-weight: 600;
+            padding: 20px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -354,6 +409,11 @@
                 </select>
             </div>
             <canvas id="chartCanvas"></canvas>
+            
+            <div id="absenceSection" class="absence-section" style="display: none;">
+                <div class="absence-title">🚫 Absences During Selected Period</div>
+                <div id="absenceList" class="absence-list"></div>
+            </div>
         </div>
 
         <div id="loadingDiv" class="loading" style="display: none;">Loading data...</div>
@@ -403,6 +463,7 @@
         const db = getFirestore(app);
 
         let allData = [];
+        let allAttendance = [];
         let currentView = 'table';
         let currentChart = null;
         let sortColumn = 'date';
@@ -449,6 +510,25 @@
                 allData = [];
                 querySnapshot.forEach((doc) => {
                     allData.push(doc.data());
+                });
+
+                // Load attendance data for the same date range
+                const attendanceQuery = query(
+                    collection(db, "attendance"),
+                    where("date", ">=", startDate),
+                    where("date", "<=", endDate),
+                    orderBy("date", "desc"),
+                    orderBy("engineerName")
+                );
+
+                const attendanceSnapshot = await getDocs(attendanceQuery);
+                allAttendance = [];
+                attendanceSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    // Only include non-"X" (not in) attendance
+                    if (data.attendance && data.attendance !== 'X') {
+                        allAttendance.push(data);
+                    }
                 });
 
                 if (currentView === 'table') {
@@ -784,6 +864,62 @@
                     }
                 }
             });
+
+            // Display absences
+            displayAbsences(engineerFilter, teamLeaderFilter);
+        }
+
+        function displayAbsences(engineerFilter, teamLeaderFilter) {
+            const absenceSection = document.getElementById('absenceSection');
+            const absenceList = document.getElementById('absenceList');
+
+            // Filter absences based on selected filters
+            let filteredAbsences = allAttendance;
+            if (teamLeaderFilter !== 'all') {
+                filteredAbsences = filteredAbsences.filter(a => a.teamLeader === teamLeaderFilter);
+            }
+            if (engineerFilter !== 'all') {
+                filteredAbsences = filteredAbsences.filter(a => a.engineerName === engineerFilter);
+            }
+
+            if (filteredAbsences.length === 0) {
+                absenceList.innerHTML = '<div class="no-absences">✅ No absences recorded for this period</div>';
+                absenceSection.style.display = 'block';
+                return;
+            }
+
+            // Sort by date and engineer name
+            filteredAbsences.sort((a, b) => {
+                if (a.date !== b.date) return b.date.localeCompare(a.date);
+                return a.engineerName.localeCompare(b.engineerName);
+            });
+
+            absenceList.innerHTML = '';
+            filteredAbsences.forEach(absence => {
+                const item = document.createElement('div');
+                item.className = 'absence-item';
+                
+                const statusLabels = {
+                    'H': 'Holiday',
+                    'H/H': 'Half Day Holiday',
+                    'Sick': 'Sick',
+                    'AAUP': 'Authorised Absence Unpaid',
+                    'TOFD': 'Time Off For Dependants',
+                    'AAP': 'Authorised Absence Paid'
+                };
+
+                const statusLabel = statusLabels[absence.attendance] || absence.attendance;
+
+                item.innerHTML = `
+                    <div class="absence-name">${absence.engineerName}</div>
+                    <div class="absence-details">Team Leader: ${absence.teamLeader}</div>
+                    <div class="absence-details">Date: ${absence.date}</div>
+                    <span class="absence-status">${statusLabel}</span>
+                `;
+                absenceList.appendChild(item);
+            });
+
+            absenceSection.style.display = 'block';
         }
 
         // Auto-load data on page load
