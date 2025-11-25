@@ -52,10 +52,45 @@
             padding: 25px;
             background: #f8f9fa;
             border-radius: 10px;
+        }
+
+        .date-filters {
             display: flex;
             gap: 20px;
             align-items: end;
             flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .view-tabs {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
         }
 
         .filter-group {
@@ -120,6 +155,18 @@
             padding: 15px;
             text-align: left;
             font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        .results-table th:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .sort-indicator {
+            margin-left: 5px;
+            font-size: 0.8em;
         }
 
         .results-table tbody {
@@ -204,6 +251,33 @@
             color: #666;
         }
 
+        .chart-section {
+            display: none;
+            margin-bottom: 30px;
+        }
+
+        .chart-filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .chart-filters select {
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            min-width: 200px;
+        }
+
+        #chartCanvas {
+            max-height: 400px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -227,20 +301,42 @@
         </div>
 
         <div class="filter-section">
-            <div class="filter-group">
-                <label for="startDate">Start Date</label>
-                <input type="date" id="startDate" required>
+            <div class="date-filters">
+                <div class="filter-group">
+                    <label for="startDate">Start Date</label>
+                    <input type="date" id="startDate" required>
+                </div>
+                <div class="filter-group">
+                    <label for="endDate">End Date</label>
+                    <input type="date" id="endDate" required>
+                </div>
+                <div>
+                    <button class="btn" onclick="loadData()">Load Data</button>
+                </div>
             </div>
-            <div class="filter-group">
-                <label for="endDate">End Date</label>
-                <input type="date" id="endDate" required>
-            </div>
-            <div>
-                <button class="btn" onclick="loadData()">Load Data</button>
+            
+            <div class="view-tabs">
+                <button class="tab-btn active" onclick="switchView('table')">📊 View Table</button>
+                <button class="tab-btn" onclick="switchView('jobs')">📈 View Jobs Chart</button>
+                <button class="tab-btn" onclick="switchView('completed')">✅ View Completed Chart</button>
+                <button class="tab-btn" onclick="switchView('aborted')">❌ View Aborted Chart</button>
+                <button class="tab-btn" onclick="switchView('meters')">📏 View Meters Chart</button>
             </div>
         </div>
 
         <div id="summarySection" class="summary-section" style="display: none;"></div>
+
+        <div id="chartSection" class="chart-section">
+            <div class="chart-filters">
+                <select id="chartFilter" onchange="updateChart()">
+                    <option value="all">All Engineers</option>
+                </select>
+                <select id="teamLeaderFilter" onchange="updateChart()">
+                    <option value="all">All Team Leaders</option>
+                </select>
+            </div>
+            <canvas id="chartCanvas"></canvas>
+        </div>
 
         <div id="loadingDiv" class="loading" style="display: none;">Loading data...</div>
         <div id="noDataDiv" class="no-data" style="display: none;">No data found for the selected date range.</div>
@@ -250,13 +346,13 @@
                 <table class="results-table">
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Engineer</th>
-                            <th>Team Leader</th>
-                            <th>Jobs</th>
-                            <th>Completed</th>
-                            <th>Aborted</th>
-                            <th>Meters</th>
+                            <th onclick="sortTable('date')">Date <span class="sort-indicator" id="sort-date"></span></th>
+                            <th onclick="sortTable('engineer')">Engineer <span class="sort-indicator" id="sort-engineer"></span></th>
+                            <th onclick="sortTable('teamLeader')">Team Leader <span class="sort-indicator" id="sort-teamLeader"></span></th>
+                            <th onclick="sortTable('jobs')">Jobs <span class="sort-indicator" id="sort-jobs"></span></th>
+                            <th onclick="sortTable('completed')">Completed <span class="sort-indicator" id="sort-completed"></span></th>
+                            <th onclick="sortTable('aborted')">Aborted <span class="sort-indicator" id="sort-aborted"></span></th>
+                            <th onclick="sortTable('meters')">Meters <span class="sort-indicator" id="sort-meters"></span></th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
@@ -271,6 +367,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/+esm';
+
+        Chart.register(...registerables);
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -284,6 +383,12 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
+        let allData = [];
+        let currentView = 'table';
+        let currentChart = null;
+        let sortColumn = 'date';
+        let sortDirection = 'desc';
 
         // Set default dates (last 7 days)
         const today = new Date();
@@ -323,12 +428,16 @@
 
                 const querySnapshot = await getDocs(q);
                 
-                const data = [];
+                allData = [];
                 querySnapshot.forEach((doc) => {
-                    data.push(doc.data());
+                    allData.push(doc.data());
                 });
 
-                displayData(data);
+                if (currentView === 'table') {
+                    displayData(allData);
+                } else {
+                    displayChart(currentView);
+                }
 
             } catch (error) {
                 console.error("Error loading data:", error);
@@ -360,10 +469,63 @@
 
         function displayData(data) {
             document.getElementById('loadingDiv').style.display = 'none';
+            document.getElementById('chartSection').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'none';
 
             if (data.length === 0) {
                 document.getElementById('noDataDiv').style.display = 'block';
+                document.getElementById('summarySection').style.display = 'none';
                 return;
+            }
+
+            // Sort data
+            const sortedData = [...data].sort((a, b) => {
+                let aVal, bVal;
+                
+                switch(sortColumn) {
+                    case 'date':
+                        aVal = a.date;
+                        bVal = b.date;
+                        break;
+                    case 'engineer':
+                        aVal = a.engineerName.toLowerCase();
+                        bVal = b.engineerName.toLowerCase();
+                        break;
+                    case 'teamLeader':
+                        aVal = a.teamLeader.toLowerCase();
+                        bVal = b.teamLeader.toLowerCase();
+                        break;
+                    case 'jobs':
+                        aVal = a.jobs;
+                        bVal = b.jobs;
+                        break;
+                    case 'completed':
+                        aVal = a.completed;
+                        bVal = b.completed;
+                        break;
+                    case 'aborted':
+                        aVal = a.aborted;
+                        bVal = b.aborted;
+                        break;
+                    case 'meters':
+                        aVal = a.meters;
+                        bVal = b.meters;
+                        break;
+                    default:
+                        aVal = a.date;
+                        bVal = b.date;
+                }
+
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            // Update sort indicators
+            document.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '');
+            const indicator = document.getElementById(`sort-${sortColumn}`);
+            if (indicator) {
+                indicator.textContent = sortDirection === 'asc' ? '▲' : '▼';
             }
 
             // Calculate summaries
@@ -405,7 +567,7 @@
             const tbody = document.getElementById('resultsBody');
             tbody.innerHTML = '';
 
-            data.forEach(record => {
+            sortedData.forEach(record => {
                 const row = tbody.insertRow();
                 row.innerHTML = `
                     <td class="date-cell">${record.date}</td>
@@ -419,6 +581,154 @@
             });
 
             document.getElementById('tableContainer').style.display = 'block';
+        }
+
+        window.sortTable = function(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'asc';
+            }
+            displayData(allData);
+        }
+
+        window.switchView = function(view) {
+            currentView = view;
+            
+            // Update active tab
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (allData.length === 0) {
+                return;
+            }
+
+            if (view === 'table') {
+                displayData(allData);
+            } else {
+                displayChart(view);
+            }
+        }
+
+        function displayChart(metric) {
+            document.getElementById('tableContainer').style.display = 'none';
+            document.getElementById('summarySection').style.display = 'none';
+            document.getElementById('chartSection').style.display = 'block';
+
+            // Populate filter dropdowns
+            const engineers = [...new Set(allData.map(d => d.engineerName))].sort();
+            const teamLeaders = [...new Set(allData.map(d => d.teamLeader))].sort();
+
+            const chartFilter = document.getElementById('chartFilter');
+            const teamLeaderFilter = document.getElementById('teamLeaderFilter');
+
+            // Keep current selections
+            const currentEngineer = chartFilter.value;
+            const currentTeamLeader = teamLeaderFilter.value;
+
+            chartFilter.innerHTML = '<option value="all">All Engineers</option>';
+            engineers.forEach(eng => {
+                chartFilter.innerHTML += `<option value="${eng}">${eng}</option>`;
+            });
+
+            teamLeaderFilter.innerHTML = '<option value="all">All Team Leaders</option>';
+            teamLeaders.forEach(tl => {
+                teamLeaderFilter.innerHTML += `<option value="${tl}">${tl}</option>`;
+            });
+
+            // Restore selections if they still exist
+            if (currentEngineer && engineers.includes(currentEngineer)) {
+                chartFilter.value = currentEngineer;
+            }
+            if (currentTeamLeader && teamLeaders.includes(currentTeamLeader)) {
+                teamLeaderFilter.value = currentTeamLeader;
+            }
+
+            updateChart();
+        }
+
+        window.updateChart = function() {
+            const metric = currentView;
+            const engineerFilter = document.getElementById('chartFilter').value;
+            const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
+
+            // Filter data
+            let filteredData = allData;
+            if (engineerFilter !== 'all') {
+                filteredData = filteredData.filter(d => d.engineerName === engineerFilter);
+            }
+            if (teamLeaderFilter !== 'all') {
+                filteredData = filteredData.filter(d => d.teamLeader === teamLeaderFilter);
+            }
+
+            // Group by date
+            const dateMap = {};
+            filteredData.forEach(record => {
+                if (!dateMap[record.date]) {
+                    dateMap[record.date] = 0;
+                }
+                dateMap[record.date] += record[metric] || 0;
+            });
+
+            const dates = Object.keys(dateMap).sort();
+            const values = dates.map(date => dateMap[date]);
+
+            // Destroy existing chart
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            // Create new chart
+            const ctx = document.getElementById('chartCanvas').getContext('2d');
+            const metricLabels = {
+                jobs: 'Jobs',
+                completed: 'Completed',
+                aborted: 'Aborted',
+                meters: 'Meters'
+            };
+
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: metricLabels[metric],
+                        data: values,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: `${metricLabels[metric]} Over Time`,
+                            font: {
+                                size: 18,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: metric === 'meters' ? 1 : 0
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         // Auto-load data on page load
