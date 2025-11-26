@@ -385,59 +385,64 @@
         }
 
         function calculateBonus(jobs) {
-            // Filter only completed jobs
-            const completedJobs = jobs.filter(j => j.bookingStatus && j.bookingStatus.toLowerCase() === 'completed');
-            
-            // Sort by time (earliest to latest)
-            completedJobs.sort((a, b) => {
-                const timeA = a.time || 0;
-                const timeB = b.time || 0;
-                // Handle both numeric and string time values
-                if (typeof timeA === 'number' && typeof timeB === 'number') {
-                    return timeA - timeB;
-                }
-                return String(timeA).localeCompare(String(timeB));
-            });
-
-            let totalMeters = 0;
-            let bonus = 0;
-
-            completedJobs.forEach((job, index) => {
-                const meters = parseFloat(job.meters) || 0;
-                const meterType = (job.meterType || '').toLowerCase();
-                
-                const previousTotal = totalMeters;
-                totalMeters += meters;
-
-                // Only award bonus if going above 6 meters
-                if (previousTotal < 6 && totalMeters > 6) {
-                    // We've crossed the threshold
-                    const metersAbove6 = totalMeters - 6;
-                    
-                    // Special case: if we're at exactly 7 meters and it's a dual, worth £50
-                    if (totalMeters === 7 && meterType.includes('dual')) {
-                        bonus += 50;
-                    } else if (meterType.includes('dual')) {
-                        bonus += 80 * metersAbove6;
-                    } else if (meterType.includes('single')) {
-                        bonus += 50 * metersAbove6;
-                    } else if (meterType.includes('comm')) {
-                        bonus += 25 * metersAbove6;
-                    }
-                } else if (previousTotal >= 6) {
-                    // Already above 6, add bonus for additional meters
-                    if (meterType.includes('dual')) {
-                        bonus += 80 * meters;
-                    } else if (meterType.includes('single')) {
-                        bonus += 50 * meters;
-                    } else if (meterType.includes('comm')) {
-                        bonus += 25 * meters;
-                    }
-                }
-            });
-
-            return { totalMeters, bonus };
+    // Filter only completed jobs
+    const completedJobs = jobs.filter(j => j.bookingStatus && j.bookingStatus.toLowerCase() === 'completed');
+    
+    // Sort by time (earliest to latest)
+    completedJobs.sort((a, b) => {
+        const timeA = a.time || 0;
+        const timeB = b.time || 0;
+        // Handle both numeric and string time values
+        if (typeof timeA === 'number' && typeof timeB === 'number') {
+            return timeA - timeB;
         }
+        return String(timeA).localeCompare(String(timeB));
+    });
+
+    let totalMeters = 0;
+    let bonus = 0;
+
+    completedJobs.forEach((job, index) => {
+        const meters = parseFloat(job.meters) || 0;
+        const meterType = (job.meterType || '').toLowerCase();
+        
+        const previousTotal = totalMeters;
+        totalMeters += meters;
+
+        // Determine rate per meter
+        let ratePerMeter = 0;
+        if (meterType.includes('dual')) {
+            ratePerMeter = 80;
+        } else if (meterType.includes('single')) {
+            ratePerMeter = 50;
+        } else if (meterType.includes('comm')) {
+            ratePerMeter = 25;
+        }
+
+        // Calculate bonus for this job
+        if (previousTotal >= 6) {
+            // Already above 6 meters, all meters from this job count
+            bonus += ratePerMeter * meters;
+        } else if (totalMeters > 6) {
+            // This job crosses the 6-meter threshold
+            const metersAbove6 = totalMeters - 6;
+            bonus += ratePerMeter * metersAbove6;
+        }
+        // If totalMeters <= 6, no bonus awarded
+    });
+
+    // Special case: if ended at exactly 7 meters and last job was a dual, reduce by £30
+    if (totalMeters === 7 && completedJobs.length > 0) {
+        const lastJob = completedJobs[completedJobs.length - 1];
+        const lastMeterType = (lastJob.meterType || '').toLowerCase();
+        if (lastMeterType.includes('dual')) {
+            // The last dual should be £50 instead of £80, so reduce by £30
+            bonus -= 30;
+        }
+    }
+
+    return { totalMeters, bonus };
+}
 
         window.handleFileUpload = async function(event) {
             const file = event.target.files[0];
