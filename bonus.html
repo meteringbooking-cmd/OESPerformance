@@ -456,6 +456,9 @@
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
+                console.log('Excel data loaded:', jsonData.length, 'rows');
+                console.log('Sample row:', jsonData[0]);
+
                 // Generate 5 week dates starting from selected date
                 const start = new Date(startDate);
                 weekDates = [];
@@ -465,32 +468,58 @@
                     weekDates.push(date.toISOString().split('T')[0]);
                 }
 
+                console.log('Week dates:', weekDates);
+
                 // Group jobs by engineer and date
                 const jobsByEngineerAndDate = {};
 
                 jsonData.forEach(row => {
-                    const engineer = row['Engineer'] || row['engineer'];
-                    const date = row['Date'] || row['date'];
-                    const time = row['Time'] || row['time'];
-                    const bookingStatus = row['Booking Status'] || row['booking status'];
-                    const meterType = row['Meter Type'] || row['meter type'];
-                    const meters = row['Meters'] || row['meters'];
+                    // Try multiple column name variations
+                    const engineer = row['Engineer'] || row['engineer'] || row['ENGINEER'];
+                    const date = row['Date'] || row['date'] || row['DATE'];
+                    const time = row['Time'] || row['time'] || row['TIME'];
+                    const bookingRef = row['Booking Reference'] || row['booking reference'] || row['BOOKING REFERENCE'];
+                    const jobType = row['Job Type'] || row['job type'] || row['JOB TYPE'];
+                    const bookingStatus = row['Booking Status'] || row['booking status'] || row['BOOKING STATUS'];
+                    const meterType = row['Meter Type'] || row['meter type'] || row['METER TYPE'];
+                    const meters = row['Meters'] || row['meters'] || row['METERS'];
 
-                    if (!engineer || !date) return;
+                    if (!engineer || !date) {
+                        console.log('Skipping row - missing engineer or date:', row);
+                        return;
+                    }
 
                     // Normalize date format
                     let normalizedDate;
-                    if (typeof date === 'number') {
-                        // Excel date serial number
-                        const excelEpoch = new Date(1900, 0, 1);
-                        const daysSinceEpoch = date - 2;
-                        const jsDate = new Date(excelEpoch.getTime() + daysSinceEpoch * 86400000);
-                        normalizedDate = jsDate.toISOString().split('T')[0];
-                    } else {
-                        normalizedDate = new Date(date).toISOString().split('T')[0];
+                    try {
+                        if (typeof date === 'number') {
+                            // Excel date serial number
+                            const excelEpoch = new Date(1899, 11, 30); // Excel epoch
+                            const jsDate = new Date(excelEpoch.getTime() + date * 86400000);
+                            normalizedDate = jsDate.toISOString().split('T')[0];
+                        } else if (typeof date === 'string') {
+                            // Try to parse string date
+                            const parsedDate = new Date(date);
+                            if (!isNaN(parsedDate.getTime())) {
+                                normalizedDate = parsedDate.toISOString().split('T')[0];
+                            } else {
+                                // Try UK format DD/MM/YYYY
+                                const parts = date.split('/');
+                                if (parts.length === 3) {
+                                    const ukDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                                    normalizedDate = ukDate.toISOString().split('T')[0];
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.log('Error parsing date:', date, e);
+                        return;
                     }
 
-                    if (!weekDates.includes(normalizedDate)) return;
+                    if (!normalizedDate || !weekDates.includes(normalizedDate)) {
+                        console.log('Date not in week range:', normalizedDate, 'Expected:', weekDates);
+                        return;
+                    }
 
                     if (!jobsByEngineerAndDate[engineer]) {
                         jobsByEngineerAndDate[engineer] = {};
@@ -500,12 +529,16 @@
                     }
 
                     jobsByEngineerAndDate[engineer][normalizedDate].push({
-                        time,
-                        bookingStatus,
-                        meterType,
-                        meters
+                        time: time || '00:00',
+                        bookingRef,
+                        jobType,
+                        bookingStatus: bookingStatus || '',
+                        meterType: meterType || '',
+                        meters: parseFloat(meters) || 0
                     });
                 });
+
+                console.log('Grouped jobs:', jobsByEngineerAndDate);
 
                 // Calculate bonuses
                 bonusData = {};
@@ -518,6 +551,13 @@
                     });
                 });
 
+                console.log('Bonus data:', bonusData);
+
+                if (Object.keys(bonusData).length === 0) {
+                    showMessage('No data found for the selected week. Check that dates match your selection.', 'error');
+                    return;
+                }
+
                 displayBonusTable();
                 showMessage('Bonus calculations complete!', 'success');
 
@@ -525,7 +565,7 @@
 
             } catch (error) {
                 console.error("Error processing file:", error);
-                showMessage('Error processing Excel file. Please check the format.', 'error');
+                showMessage('Error processing Excel file: ' + error.message, 'error');
             } finally {
                 document.getElementById('loadingDiv').style.display = 'none';
             }
