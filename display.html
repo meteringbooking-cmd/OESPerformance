@@ -295,6 +295,57 @@
             border-radius: 10px;
         }
 
+        .absence-summary {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .absence-summary-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .absence-counts {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .absence-count {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .absence-count.holiday {
+            background: rgba(0, 123, 255, 0.1);
+            color: #007bff;
+        }
+
+        .absence-count.sick {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .absence-count.aaup {
+            background: rgba(253, 126, 20, 0.1);
+            color: #fd7e14;
+        }
+
+        .absence-count.other {
+            background: rgba(108, 117, 125, 0.1);
+            color: #6c757d;
+        }
+
         .absence-section {
             margin-top: 30px;
             padding: 20px;
@@ -440,6 +491,11 @@
                 </select>
             </div>
             <canvas id="chartCanvas"></canvas>
+            
+            <div id="absenceSummary" class="absence-summary" style="display: none;">
+                <div class="absence-summary-title">Quick Absence Summary</div>
+                <div id="absenceCounts" class="absence-counts"></div>
+            </div>
             
             <div id="absenceSection" class="absence-section" style="display: none;">
                 <div class="absence-title">🚫 Absences During Selected Period</div>
@@ -1001,6 +1057,8 @@
         function displayAbsences(engineerFilter, teamLeaderFilter) {
             const absenceSection = document.getElementById('absenceSection');
             const absenceList = document.getElementById('absenceList');
+            const absenceSummary = document.getElementById('absenceSummary');
+            const absenceCounts = document.getElementById('absenceCounts');
 
             // Filter absences based on selected filters
             let filteredAbsences = allAttendance;
@@ -1014,8 +1072,57 @@
             if (filteredAbsences.length === 0) {
                 absenceList.innerHTML = '<div class="no-absences">✅ No absences recorded for this period</div>';
                 absenceSection.style.display = 'block';
+                absenceSummary.style.display = 'none';
                 return;
             }
+
+            // Count absences by type
+            const absenceTypeCounts = {
+                'H': 0,
+                'H/H': 0,
+                'Sick': 0,
+                'AAUP': 0,
+                'TOFD': 0,
+                'AAP': 0
+            };
+
+            filteredAbsences.forEach(absence => {
+                if (absenceTypeCounts.hasOwnProperty(absence.attendance)) {
+                    absenceTypeCounts[absence.attendance]++;
+                } else {
+                    absenceTypeCounts[absence.attendance] = 1;
+                }
+            });
+
+            // Display summary counts
+            absenceCounts.innerHTML = '';
+            
+            const displayOrder = [
+                { key: 'H', label: 'Holiday', class: 'holiday', combine: ['H', 'H/H'] },
+                { key: 'Sick', label: 'Sick', class: 'sick' },
+                { key: 'AAUP', label: 'AAUP', class: 'aaup' },
+                { key: 'TOFD', label: 'TOFD', class: 'other' },
+                { key: 'AAP', label: 'AAP', class: 'other' }
+            ];
+
+            displayOrder.forEach(item => {
+                let count = 0;
+                if (item.combine) {
+                    // Combine H and H/H into one holiday count
+                    count = item.combine.reduce((sum, key) => sum + (absenceTypeCounts[key] || 0), 0);
+                } else {
+                    count = absenceTypeCounts[item.key] || 0;
+                }
+
+                if (count > 0) {
+                    const countDiv = document.createElement('div');
+                    countDiv.className = `absence-count ${item.class}`;
+                    countDiv.textContent = `${count} × ${item.label}`;
+                    absenceCounts.appendChild(countDiv);
+                }
+            });
+
+            absenceSummary.style.display = 'block';
 
             // Sort by date and engineer name
             filteredAbsences.sort((a, b) => {
