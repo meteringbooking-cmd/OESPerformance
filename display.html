@@ -298,52 +298,79 @@
         .absence-summary {
             margin-top: 15px;
             padding: 15px;
-            background: #f8f9fa;
+            background: white;
             border-radius: 8px;
-            text-align: center;
+            border: 1px solid #e0e0e0;
         }
 
         .absence-summary-title {
             font-weight: 600;
             color: #333;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
+            text-align: center;
         }
 
-        .absence-counts {
+        .absence-by-date {
             display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 10px 0;
+        }
+
+        .date-absence-column {
+            min-width: 120px;
+            flex-shrink: 0;
+            text-align: center;
+        }
+
+        .date-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #667eea;
+            font-size: 0.85em;
+        }
+
+        .date-absences {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
         }
 
         .absence-count {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 5px 12px;
-            border-radius: 5px;
-            font-size: 0.9em;
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
             font-weight: 600;
+            white-space: nowrap;
         }
 
         .absence-count.holiday {
-            background: rgba(0, 123, 255, 0.1);
+            background: rgba(0, 123, 255, 0.15);
             color: #007bff;
         }
 
         .absence-count.sick {
-            background: rgba(220, 53, 69, 0.1);
+            background: rgba(220, 53, 69, 0.15);
             color: #dc3545;
         }
 
         .absence-count.aaup {
-            background: rgba(253, 126, 20, 0.1);
+            background: rgba(253, 126, 20, 0.15);
             color: #fd7e14;
         }
 
         .absence-count.other {
-            background: rgba(108, 117, 125, 0.1);
+            background: rgba(108, 117, 125, 0.15);
             color: #6c757d;
+        }
+
+        .no-absences-date {
+            color: #28a745;
+            font-size: 0.8em;
+            font-weight: 600;
         }
 
         .absence-section {
@@ -493,8 +520,8 @@
             <canvas id="chartCanvas"></canvas>
             
             <div id="absenceSummary" class="absence-summary" style="display: none;">
-                <div class="absence-summary-title">Quick Absence Summary</div>
-                <div id="absenceCounts" class="absence-counts"></div>
+                <div class="absence-summary-title">Absences by Date</div>
+                <div id="absenceByDate" class="absence-by-date"></div>
             </div>
             
             <div id="absenceSection" class="absence-section" style="display: none;">
@@ -1058,7 +1085,7 @@
             const absenceSection = document.getElementById('absenceSection');
             const absenceList = document.getElementById('absenceList');
             const absenceSummary = document.getElementById('absenceSummary');
-            const absenceCounts = document.getElementById('absenceCounts');
+            const absenceByDate = document.getElementById('absenceByDate');
 
             // Filter absences based on selected filters
             let filteredAbsences = allAttendance;
@@ -1076,55 +1103,93 @@
                 return;
             }
 
-            // Count absences by type
-            const absenceTypeCounts = {
-                'H': 0,
-                'H/H': 0,
-                'Sick': 0,
-                'AAUP': 0,
-                'TOFD': 0,
-                'AAP': 0
-            };
+            // Get all dates from the chart
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const allDates = [];
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                allDates.push(d.toISOString().split('T')[0]);
+            }
+
+            // Group absences by date
+            const absencesByDate = {};
+            allDates.forEach(date => {
+                absencesByDate[date] = [];
+            });
 
             filteredAbsences.forEach(absence => {
-                if (absenceTypeCounts.hasOwnProperty(absence.attendance)) {
-                    absenceTypeCounts[absence.attendance]++;
-                } else {
-                    absenceTypeCounts[absence.attendance] = 1;
+                if (absencesByDate[absence.date]) {
+                    absencesByDate[absence.date].push(absence.attendance);
                 }
             });
 
-            // Display summary counts
-            absenceCounts.innerHTML = '';
+            // Display absences by date
+            absenceByDate.innerHTML = '';
             
-            const displayOrder = [
-                { key: 'H', label: 'Holiday', class: 'holiday', combine: ['H', 'H/H'] },
-                { key: 'Sick', label: 'Sick', class: 'sick' },
-                { key: 'AAUP', label: 'AAUP', class: 'aaup' },
-                { key: 'TOFD', label: 'TOFD', class: 'other' },
-                { key: 'AAP', label: 'AAP', class: 'other' }
-            ];
+            allDates.forEach(date => {
+                const columnDiv = document.createElement('div');
+                columnDiv.className = 'date-absence-column';
 
-            displayOrder.forEach(item => {
-                let count = 0;
-                if (item.combine) {
-                    // Combine H and H/H into one holiday count
-                    count = item.combine.reduce((sum, key) => sum + (absenceTypeCounts[key] || 0), 0);
+                // Format date for display
+                const dateObj = new Date(date + 'T00:00:00');
+                const displayDate = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                const dateLabelDiv = document.createElement('div');
+                dateLabelDiv.className = 'date-label';
+                dateLabelDiv.textContent = displayDate;
+                columnDiv.appendChild(dateLabelDiv);
+
+                const absencesDiv = document.createElement('div');
+                absencesDiv.className = 'date-absences';
+
+                const dateAbsences = absencesByDate[date];
+                
+                if (dateAbsences.length === 0) {
+                    const noAbsenceDiv = document.createElement('div');
+                    noAbsenceDiv.className = 'no-absences-date';
+                    noAbsenceDiv.textContent = '✓';
+                    absencesDiv.appendChild(noAbsenceDiv);
                 } else {
-                    count = absenceTypeCounts[item.key] || 0;
+                    // Count absences by type for this date
+                    const counts = {};
+                    dateAbsences.forEach(type => {
+                        counts[type] = (counts[type] || 0) + 1;
+                    });
+
+                    // Display in order
+                    const displayOrder = [
+                        { keys: ['H', 'H/H'], label: 'Hol', class: 'holiday' },
+                        { keys: ['Sick'], label: 'Sick', class: 'sick' },
+                        { keys: ['AAUP'], label: 'AAUP', class: 'aaup' },
+                        { keys: ['TOFD'], label: 'TOFD', class: 'other' },
+                        { keys: ['AAP'], label: 'AAP', class: 'other' }
+                    ];
+
+                    displayOrder.forEach(item => {
+                        let count = 0;
+                        item.keys.forEach(key => {
+                            count += counts[key] || 0;
+                        });
+
+                        if (count > 0) {
+                            const countDiv = document.createElement('div');
+                            countDiv.className = `absence-count ${item.class}`;
+                            countDiv.textContent = `${count} × ${item.label}`;
+                            absencesDiv.appendChild(countDiv);
+                        }
+                    });
                 }
 
-                if (count > 0) {
-                    const countDiv = document.createElement('div');
-                    countDiv.className = `absence-count ${item.class}`;
-                    countDiv.textContent = `${count} × ${item.label}`;
-                    absenceCounts.appendChild(countDiv);
-                }
+                columnDiv.appendChild(absencesDiv);
+                absenceByDate.appendChild(columnDiv);
             });
 
             absenceSummary.style.display = 'block';
 
-            // Sort by date and engineer name
+            // Sort by date and engineer name for detailed view
             filteredAbsences.sort((a, b) => {
                 if (a.date !== b.date) return b.date.localeCompare(a.date);
                 return a.engineerName.localeCompare(b.engineerName);
