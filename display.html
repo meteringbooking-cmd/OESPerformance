@@ -153,6 +153,19 @@
             transform: none;
         }
 
+        .btn-secondary {
+            background: #28a745;
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 10px 25px rgba(40, 167, 69, 0.4);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
         .results-table {
             width: 100%;
             border-collapse: collapse;
@@ -494,8 +507,9 @@
                     <label for="endDate">End Date</label>
                     <input type="date" id="endDate" required>
                 </div>
-                <div>
+                <div class="button-group">
                     <button class="btn" onclick="loadData()">Load Data</button>
+                    <button class="btn btn-secondary" onclick="generatePDF()" id="pdfBtn" style="display: none;">📄 Create PDF</button>
                 </div>
             </div>
             
@@ -562,6 +576,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/+esm';
+        import html2canvas from 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm';
+        import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
 
         Chart.register(...registerables);
 
@@ -652,6 +668,9 @@
                 } else {
                     displayChart(currentView);
                 }
+
+                // Show PDF button only when viewing charts
+                document.getElementById('pdfBtn').style.display = currentView === 'table' ? 'none' : 'inline-block';
 
             } catch (error) {
                 console.error("Error loading data:", error);
@@ -820,8 +839,119 @@
 
             if (view === 'table') {
                 displayData(allData);
+                document.getElementById('pdfBtn').style.display = 'none';
             } else {
                 displayChart(view);
+                document.getElementById('pdfBtn').style.display = 'inline-block';
+            }
+        }
+
+        window.generatePDF = async function() {
+            const pdfBtn = document.getElementById('pdfBtn');
+            pdfBtn.disabled = true;
+            pdfBtn.textContent = '⏳ Generating...';
+
+            try {
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                let yPosition = 20;
+
+                // Get filter values for filename
+                const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
+                const engineerFilter = document.getElementById('chartFilter').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+
+                // Create filename
+                let filename = '';
+                if (teamLeaderFilter !== 'all') {
+                    filename += teamLeaderFilter.replace(/\s+/g, '_');
+                }
+                if (engineerFilter !== 'all') {
+                    filename += (filename ? '_' : '') + engineerFilter.replace(/\s+/g, '_');
+                }
+                if (!filename) {
+                    filename = 'All_Engineers';
+                }
+                filename += `_${startDate}_to_${endDate}.pdf`;
+
+                // Add title
+                pdf.setFontSize(16);
+                pdf.setFont(undefined, 'bold');
+                const title = `Performance Report: ${teamLeaderFilter === 'all' ? 'All Team Leaders' : teamLeaderFilter}${engineerFilter !== 'all' ? ' - ' + engineerFilter : ''}`;
+                pdf.text(title, pageWidth / 2, yPosition, { align: 'center' });
+                yPosition += 10;
+
+                // Add date range
+                pdf.setFontSize(10);
+                pdf.setFont(undefined, 'normal');
+                pdf.text(`Period: ${startDate} to ${endDate}`, pageWidth / 2, yPosition, { align: 'center' });
+                yPosition += 15;
+
+                // Capture chart
+                const chartCanvas = document.getElementById('chartCanvas');
+                const chartImage = await html2canvas(chartCanvas, { 
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                const chartImgData = chartImage.toDataURL('image/png');
+                const chartWidth = pageWidth - 20;
+                const chartHeight = (chartImage.height * chartWidth) / chartImage.width;
+                
+                pdf.addImage(chartImgData, 'PNG', 10, yPosition, chartWidth, chartHeight);
+                yPosition += chartHeight + 10;
+
+                // Capture absence summary if visible
+                const absenceSummary = document.getElementById('absenceSummary');
+                if (absenceSummary.style.display !== 'none') {
+                    const summaryCanvas = await html2canvas(absenceSummary, {
+                        backgroundColor: '#ffffff',
+                        scale: 2
+                    });
+                    const summaryImgData = summaryCanvas.toDataURL('image/png');
+                    const summaryWidth = pageWidth - 20;
+                    const summaryHeight = (summaryCanvas.height * summaryWidth) / summaryCanvas.width;
+
+                    // Check if we need a new page
+                    if (yPosition + summaryHeight > pageHeight - 10) {
+                        pdf.addPage();
+                        yPosition = 20;
+                    }
+
+                    pdf.addImage(summaryImgData, 'PNG', 10, yPosition, summaryWidth, summaryHeight);
+                    yPosition += summaryHeight + 10;
+                }
+
+                // Capture detailed absence section
+                const absenceSection = document.getElementById('absenceSection');
+                if (absenceSection.style.display !== 'none') {
+                    const absenceCanvas = await html2canvas(absenceSection, {
+                        backgroundColor: '#ffffff',
+                        scale: 2
+                    });
+                    const absenceImgData = absenceCanvas.toDataURL('image/png');
+                    const absenceWidth = pageWidth - 20;
+                    const absenceHeight = (absenceCanvas.height * absenceWidth) / absenceCanvas.width;
+
+                    // Check if we need a new page
+                    if (yPosition + absenceHeight > pageHeight - 10) {
+                        pdf.addPage();
+                        yPosition = 20;
+                    }
+
+                    pdf.addImage(absenceImgData, 'PNG', 10, yPosition, absenceWidth, absenceHeight);
+                }
+
+                // Save PDF
+                pdf.save(filename);
+
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+                alert('Error generating PDF. Please try again.');
+            } finally {
+                pdfBtn.disabled = false;
+                pdfBtn.textContent = '📄 Create PDF';
             }
         }
 
