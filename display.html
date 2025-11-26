@@ -301,6 +301,7 @@
             background: white;
             border-radius: 8px;
             border: 1px solid #e0e0e0;
+            overflow-x: auto;
         }
 
         .absence-summary-title {
@@ -312,15 +313,15 @@
 
         .absence-by-date {
             display: flex;
-            gap: 10px;
-            overflow-x: auto;
-            padding: 10px 0;
+            gap: 0;
+            justify-content: space-evenly;
+            min-width: 100%;
         }
 
         .date-absence-column {
-            min-width: 120px;
-            flex-shrink: 0;
+            flex: 1;
             text-align: center;
+            padding: 0 5px;
         }
 
         .date-label {
@@ -336,6 +337,7 @@
             display: flex;
             flex-direction: column;
             gap: 5px;
+            align-items: center;
         }
 
         .absence-count {
@@ -1103,7 +1105,7 @@
                 return;
             }
 
-            // Get all dates from the chart
+            // Get all weekday dates from the chart
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const start = new Date(startDate);
@@ -1111,83 +1113,92 @@
             const allDates = [];
             
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                allDates.push(d.toISOString().split('T')[0]);
+                const dayOfWeek = d.getDay();
+                // Skip weekends (0 = Sunday, 6 = Saturday)
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    allDates.push(d.toISOString().split('T')[0]);
+                }
             }
 
-            // Group absences by date
-            const absencesByDate = {};
-            allDates.forEach(date => {
-                absencesByDate[date] = [];
-            });
+            // Check if range is more than 2 weeks (10 working days)
+            if (allDates.length > 10) {
+                absenceSummary.style.display = 'none';
+            } else {
+                // Group absences by date
+                const absencesByDate = {};
+                allDates.forEach(date => {
+                    absencesByDate[date] = [];
+                });
 
-            filteredAbsences.forEach(absence => {
-                if (absencesByDate[absence.date]) {
-                    absencesByDate[absence.date].push(absence.attendance);
-                }
-            });
+                filteredAbsences.forEach(absence => {
+                    if (absencesByDate[absence.date] !== undefined) {
+                        absencesByDate[absence.date].push(absence.attendance);
+                    }
+                });
 
-            // Display absences by date
-            absenceByDate.innerHTML = '';
-            
-            allDates.forEach(date => {
-                const columnDiv = document.createElement('div');
-                columnDiv.className = 'date-absence-column';
-
-                // Format date for display
-                const dateObj = new Date(date + 'T00:00:00');
-                const displayDate = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-                const dateLabelDiv = document.createElement('div');
-                dateLabelDiv.className = 'date-label';
-                dateLabelDiv.textContent = displayDate;
-                columnDiv.appendChild(dateLabelDiv);
-
-                const absencesDiv = document.createElement('div');
-                absencesDiv.className = 'date-absences';
-
-                const dateAbsences = absencesByDate[date];
+                // Display absences by date
+                absenceByDate.innerHTML = '';
                 
-                if (dateAbsences.length === 0) {
-                    const noAbsenceDiv = document.createElement('div');
-                    noAbsenceDiv.className = 'no-absences-date';
-                    noAbsenceDiv.textContent = '✓';
-                    absencesDiv.appendChild(noAbsenceDiv);
-                } else {
-                    // Count absences by type for this date
-                    const counts = {};
-                    dateAbsences.forEach(type => {
-                        counts[type] = (counts[type] || 0) + 1;
-                    });
+                allDates.forEach(date => {
+                    const columnDiv = document.createElement('div');
+                    columnDiv.className = 'date-absence-column';
 
-                    // Display in order
-                    const displayOrder = [
-                        { keys: ['H', 'H/H'], label: 'Hol', class: 'holiday' },
-                        { keys: ['Sick'], label: 'Sick', class: 'sick' },
-                        { keys: ['AAUP'], label: 'AAUP', class: 'aaup' },
-                        { keys: ['TOFD'], label: 'TOFD', class: 'other' },
-                        { keys: ['AAP'], label: 'AAP', class: 'other' }
-                    ];
+                    // Format date for display (just day/month)
+                    const dateObj = new Date(date + 'T00:00:00');
+                    const displayDate = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
 
-                    displayOrder.forEach(item => {
-                        let count = 0;
-                        item.keys.forEach(key => {
-                            count += counts[key] || 0;
+                    const dateLabelDiv = document.createElement('div');
+                    dateLabelDiv.className = 'date-label';
+                    dateLabelDiv.textContent = displayDate;
+                    columnDiv.appendChild(dateLabelDiv);
+
+                    const absencesDiv = document.createElement('div');
+                    absencesDiv.className = 'date-absences';
+
+                    const dateAbsences = absencesByDate[date];
+                    
+                    if (dateAbsences.length === 0) {
+                        const noAbsenceDiv = document.createElement('div');
+                        noAbsenceDiv.className = 'no-absences-date';
+                        noAbsenceDiv.textContent = '✓';
+                        absencesDiv.appendChild(noAbsenceDiv);
+                    } else {
+                        // Count absences by type for this date
+                        const counts = {};
+                        dateAbsences.forEach(type => {
+                            counts[type] = (counts[type] || 0) + 1;
                         });
 
-                        if (count > 0) {
-                            const countDiv = document.createElement('div');
-                            countDiv.className = `absence-count ${item.class}`;
-                            countDiv.textContent = `${count} × ${item.label}`;
-                            absencesDiv.appendChild(countDiv);
-                        }
-                    });
-                }
+                        // Display in order
+                        const displayOrder = [
+                            { keys: ['H', 'H/H'], label: 'Hol', class: 'holiday' },
+                            { keys: ['Sick'], label: 'Sick', class: 'sick' },
+                            { keys: ['AAUP'], label: 'AAUP', class: 'aaup' },
+                            { keys: ['TOFD'], label: 'TOFD', class: 'other' },
+                            { keys: ['AAP'], label: 'AAP', class: 'other' }
+                        ];
 
-                columnDiv.appendChild(absencesDiv);
-                absenceByDate.appendChild(columnDiv);
-            });
+                        displayOrder.forEach(item => {
+                            let count = 0;
+                            item.keys.forEach(key => {
+                                count += counts[key] || 0;
+                            });
 
-            absenceSummary.style.display = 'block';
+                            if (count > 0) {
+                                const countDiv = document.createElement('div');
+                                countDiv.className = `absence-count ${item.class}`;
+                                countDiv.textContent = `${count} × ${item.label}`;
+                                absencesDiv.appendChild(countDiv);
+                            }
+                        });
+                    }
+
+                    columnDiv.appendChild(absencesDiv);
+                    absenceByDate.appendChild(columnDiv);
+                });
+
+                absenceSummary.style.display = 'block';
+            }
 
             // Sort by date and engineer name for detailed view
             filteredAbsences.sort((a, b) => {
