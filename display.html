@@ -913,16 +913,34 @@
                 filteredData = filteredData.filter(d => d.engineerName === engineerFilter);
             }
 
-            // Group by date
-            const dateMap = {};
-            filteredData.forEach(record => {
-                if (!dateMap[record.date]) {
-                    dateMap[record.date] = 0;
+            // Get all weekday dates in the selected range
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const allWeekdayDates = [];
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dayOfWeek = d.getDay();
+                // Skip weekends (0 = Sunday, 6 = Saturday)
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    allWeekdayDates.push(d.toISOString().split('T')[0]);
                 }
-                dateMap[record.date] += record[metric] || 0;
+            }
+
+            // Group by date (including zeros for missing dates)
+            const dateMap = {};
+            allWeekdayDates.forEach(date => {
+                dateMap[date] = 0;
+            });
+            
+            filteredData.forEach(record => {
+                if (dateMap.hasOwnProperty(record.date)) {
+                    dateMap[record.date] += record[metric] || 0;
+                }
             });
 
-            const dates = Object.keys(dateMap).sort();
+            const dates = allWeekdayDates;
             const values = dates.map(date => dateMap[date]);
 
             // Calculate previous 4 weeks average
