@@ -944,7 +944,7 @@
             }
         }
 
-        window.generatePDF = async function() {
+                window.generatePDF = async function() {
             const pdfBtn = document.getElementById('pdfBtn');
             pdfBtn.disabled = true;
             pdfBtn.textContent = '⏳ Generating...';
@@ -952,6 +952,89 @@
             try {
                 // Wait a moment for all sections to fully render
                 await new Promise(resolve => setTimeout(resolve, 500));
+
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                let yPosition = 20;
+
+                // Get filter values for filename
+                const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
+                const engineerFilter = document.getElementById('chartFilter').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+
+                // Create filename
+                let filename = '';
+                if (teamLeaderFilter !== 'all') {
+                    filename += teamLeaderFilter.replace(/\s+/g, '_');
+                }
+                if (engineerFilter !== 'all') {
+                    filename += (filename ? '_' : '') + engineerFilter.replace(/\s+/g, '_');
+                }
+                if (!filename) {
+                    filename = 'All_Engineers';
+                }
+                filename += `_${startDate}_to_${endDate}.pdf`;
+
+                // Add title
+                pdf.setFontSize(16);
+                pdf.setFont(undefined, 'bold');
+                const title = `Performance Report: ${teamLeaderFilter === 'all' ? 'All Team Leaders' : teamLeaderFilter}${engineerFilter !== 'all' ? ' - ' + engineerFilter : ''}`;
+                pdf.text(title, pageWidth / 2, yPosition, { align: 'center' });
+                yPosition += 10;
+
+                // Add date range
+                pdf.setFontSize(10);
+                pdf.setFont(undefined, 'normal');
+                pdf.text(`Period: ${startDate} to ${endDate}`, pageWidth / 2, yPosition, { align: 'center' });
+                yPosition += 15;
+
+                // Store current view to restore later
+                const originalView = currentView;
+
+                // Function to capture a chart for a specific metric
+                async function captureChartForMetric(metric) {
+                    // Temporarily switch to the metric view to render it
+                    currentView = metric;
+                    await updateChart();
+                    // Wait for chart to render
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                    
+                    const chartCanvas = document.getElementById('chartCanvas');
+                    const chartImage = await html2canvas(chartCanvas, { 
+                        backgroundColor: '#ffffff',
+                        scale: 1.5
+                    });
+                    return chartImage;
+                }
+
+                // Capture all three charts: completed, aborted, and meters
+                const chartsToCapture = ['completed', 'aborted', 'meters'];
+                
+                for (let i = 0; i < chartsToCapture.length; i++) {
+                    const metric = chartsToCapture[i];
+                    
+                    // Capture the chart
+                    const chartImage = await captureChartForMetric(metric);
+                    const chartImgData = chartImage.toDataURL('image/jpeg', 0.85);
+                    const chartWidth = pageWidth - 20;
+                    const chartHeight = (chartImage.height * chartWidth) / chartImage.width;
+                    
+                    // Check if we need a new page
+                    if (yPosition + chartHeight > pageHeight - 10) {
+                        pdf.addPage();
+                        yPosition = 20;
+                    }
+                    
+                    pdf.addImage(chartImgData, 'JPEG', 10, yPosition, chartWidth, chartHeight);
+                    yPosition += chartHeight + 10;
+                }
+
+                // Restore original view
+                currentView = originalView;
+                await updateChart();
+                await new Promise(resolve => setTimeout(resolve, 300));
 
                 const pdf = new jsPDF('p', 'mm', 'a4');
                 const pageWidth = pdf.internal.pageSize.getWidth();
