@@ -950,6 +950,9 @@
             pdfBtn.textContent = '⏳ Generating...';
 
             try {
+                // Wait a moment for all sections to fully render
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 const pdf = new jsPDF('p', 'mm', 'a4');
                 const pageWidth = pdf.internal.pageSize.getWidth();
                 const pageHeight = pdf.internal.pageSize.getHeight();
@@ -1002,7 +1005,7 @@
 
                 // Capture absence summary if visible
                 const absenceSummary = document.getElementById('absenceSummary');
-                if (absenceSummary.style.display !== 'none') {
+                if (absenceSummary && absenceSummary.style.display !== 'none') {
                     const summaryCanvas = await html2canvas(absenceSummary, {
                         backgroundColor: '#ffffff',
                         scale: 1.5
@@ -1023,7 +1026,7 @@
 
                 // Capture detailed absence section
                 const absenceSection = document.getElementById('absenceSection');
-                if (absenceSection.style.display !== 'none') {
+                if (absenceSection && absenceSection.style.display !== 'none') {
                     const absenceCanvas = await html2canvas(absenceSection, {
                         backgroundColor: '#ffffff',
                         scale: 1.5
@@ -1039,6 +1042,34 @@
                     }
 
                     pdf.addImage(absenceImgData, 'JPEG', 10, yPosition, absenceWidth, absenceHeight);
+                    yPosition += absenceHeight + 10;
+                }
+
+                // Capture bonus section if visible
+                const bonusSection = document.getElementById('bonusSection');
+                console.log('Bonus section:', bonusSection);
+                console.log('Bonus section display:', bonusSection ? bonusSection.style.display : 'not found');
+                
+                if (bonusSection && bonusSection.style.display !== 'none') {
+                    console.log('Capturing bonus section...');
+                    const bonusCanvas = await html2canvas(bonusSection, {
+                        backgroundColor: '#ffffff',
+                        scale: 1.5
+                    });
+                    const bonusImgData = bonusCanvas.toDataURL('image/jpeg', 0.85);
+                    const bonusWidth = pageWidth - 20;
+                    const bonusHeight = (bonusCanvas.height * bonusWidth) / bonusCanvas.width;
+
+                    // Check if we need a new page
+                    if (yPosition + bonusHeight > pageHeight - 10) {
+                        pdf.addPage();
+                        yPosition = 20;
+                    }
+
+                    pdf.addImage(bonusImgData, 'JPEG', 10, yPosition, bonusWidth, bonusHeight);
+                    console.log('Bonus section added to PDF');
+                } else {
+                    console.log('Bonus section not visible, skipping');
                 }
 
                 // Save PDF
