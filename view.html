@@ -161,6 +161,8 @@
 
         .engineers-table tbody tr {
             border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.2s;
         }
 
         .engineers-table tbody tr:hover {
@@ -183,6 +185,35 @@
             color: white;
             border-radius: 12px;
             font-size: 0.85em;
+        }
+
+        .contract-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #28a745;
+            color: white;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-left: 5px;
+        }
+
+        .contract-badge.sp {
+            background: #007bff;
+        }
+
+        .contract-badge.edf {
+            background: #fd7e14;
+        }
+
+        .email-text {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .no-email {
+            color: #999;
+            font-style: italic;
+            font-size: 0.9em;
         }
 
         .date-added {
@@ -216,6 +247,126 @@
             text-decoration: underline;
         }
 
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            margin-bottom: 25px;
+        }
+
+        .modal-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .modal-subtitle {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #000;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -227,6 +378,11 @@
 
             .filter-section {
                 flex-direction: column;
+            }
+
+            .modal-content {
+                margin: 10% auto;
+                width: 95%;
             }
         }
     </style>
@@ -269,6 +425,8 @@
                 <tr>
                     <th onclick="sortTable('name')">Engineer Name <span class="sort-indicator" id="sort-name"></span></th>
                     <th onclick="sortTable('teamLeader')">Team Leader <span class="sort-indicator" id="sort-teamLeader"></span></th>
+                    <th onclick="sortTable('email')">Email <span class="sort-indicator" id="sort-email"></span></th>
+                    <th onclick="sortTable('contract')">Contract <span class="sort-indicator" id="sort-contract"></span></th>
                     <th onclick="sortTable('date')">Date Added <span class="sort-indicator" id="sort-date"></span></th>
                 </tr>
             </thead>
@@ -279,9 +437,42 @@
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div class="modal-header">
+                <div class="modal-title" id="modalEngineerName">Engineer Name</div>
+                <div class="modal-subtitle">Update email and contract details</div>
+            </div>
+            
+            <form id="editForm" onsubmit="saveEngineerDetails(event)">
+                <div class="form-group">
+                    <label for="emailInput">Email Address</label>
+                    <input type="email" id="emailInput" placeholder="engineer@example.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="contractSelect">Contract</label>
+                    <select id="contractSelect">
+                        <option value="">Not specified</option>
+                        <option value="OES">OES</option>
+                        <option value="SP">SP</option>
+                        <option value="EDF">EDF</option>
+                    </select>
+                </div>
+
+                <div class="modal-buttons">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -300,6 +491,7 @@
         let filteredEngineers = [];
         let sortColumn = 'name';
         let sortDirection = 'asc';
+        let currentEngineerId = null;
 
         // Load engineers
         async function loadEngineers() {
@@ -368,6 +560,14 @@
                         aVal = a.teamLeader.toLowerCase();
                         bVal = b.teamLeader.toLowerCase();
                         break;
+                    case 'email':
+                        aVal = (a.email || '').toLowerCase();
+                        bVal = (b.email || '').toLowerCase();
+                        break;
+                    case 'contract':
+                        aVal = (a.contract || '').toLowerCase();
+                        bVal = (b.contract || '').toLowerCase();
+                        break;
                     case 'date':
                         aVal = a.createdAt ? a.createdAt.seconds : 0;
                         bVal = b.createdAt ? b.createdAt.seconds : 0;
@@ -392,17 +592,79 @@
             // Display rows
             sortedEngineers.forEach(engineer => {
                 const row = tbody.insertRow();
+                row.onclick = () => openEditModal(engineer);
                 
                 const dateAdded = engineer.createdAt 
                     ? new Date(engineer.createdAt.seconds * 1000).toLocaleDateString('en-GB')
                     : 'Unknown';
 
+                const emailDisplay = engineer.email 
+                    ? `<span class="email-text">${engineer.email}</span>`
+                    : '<span class="no-email">No email</span>';
+
+                const contractDisplay = engineer.contract 
+                    ? `<span class="contract-badge ${engineer.contract.toLowerCase()}">${engineer.contract}</span>`
+                    : '<span class="no-email">Not set</span>';
+
                 row.innerHTML = `
                     <td class="engineer-name">${engineer.engineerName}</td>
                     <td><span class="team-leader-badge">${engineer.teamLeader}</span></td>
+                    <td>${emailDisplay}</td>
+                    <td>${contractDisplay}</td>
                     <td class="date-added">${dateAdded}</td>
                 `;
             });
+        }
+
+        window.openEditModal = function(engineer) {
+            currentEngineerId = engineer.id;
+            document.getElementById('modalEngineerName').textContent = engineer.engineerName;
+            document.getElementById('emailInput').value = engineer.email || '';
+            document.getElementById('contractSelect').value = engineer.contract || '';
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        window.closeModal = function() {
+            document.getElementById('editModal').style.display = 'none';
+            currentEngineerId = null;
+        }
+
+        window.saveEngineerDetails = async function(event) {
+            event.preventDefault();
+            
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                const email = document.getElementById('emailInput').value.trim();
+                const contract = document.getElementById('contractSelect').value;
+
+                const engineerRef = doc(db, "engineers", currentEngineerId);
+                await updateDoc(engineerRef, {
+                    email: email || null,
+                    contract: contract || null
+                });
+
+                // Update local data
+                const engineerIndex = allEngineers.findIndex(e => e.id === currentEngineerId);
+                if (engineerIndex !== -1) {
+                    allEngineers[engineerIndex].email = email || null;
+                    allEngineers[engineerIndex].contract = contract || null;
+                }
+
+                closeModal();
+                filterEngineers(); // Refresh display
+
+                alert('Engineer details updated successfully!');
+
+            } catch (error) {
+                console.error("Error updating engineer:", error);
+                alert('Error updating engineer details. Please try again.');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Changes';
+            }
         }
 
         window.sortTable = function(column) {
@@ -420,12 +682,21 @@
             const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
 
             filteredEngineers = allEngineers.filter(engineer => {
-                const matchesSearch = engineer.engineerName.toLowerCase().includes(searchTerm);
+                const matchesSearch = engineer.engineerName.toLowerCase().includes(searchTerm) ||
+                                    (engineer.email && engineer.email.toLowerCase().includes(searchTerm));
                 const matchesTeamLeader = teamLeaderFilter === 'all' || engineer.teamLeader === teamLeaderFilter;
                 return matchesSearch && matchesTeamLeader;
             });
 
             displayEngineers();
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target === modal) {
+                closeModal();
+            }
         }
 
         // Load engineers on page load
