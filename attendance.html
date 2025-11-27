@@ -168,10 +168,16 @@
 
         .engineers-table tbody tr {
             border-bottom: 1px solid #e0e0e0;
+            transition: background-color 0.2s;
         }
 
         .engineers-table tbody tr:hover {
             background-color: #f8f9fa;
+        }
+
+        .engineers-table tbody tr.highlight-missing {
+            background-color: #fff3cd !important;
+            border-left: 4px solid #ffc107;
         }
 
         .engineers-table td {
@@ -258,6 +264,12 @@
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+
+        .message.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
         }
 
         .message.show {
@@ -426,6 +438,7 @@
 
             engineers.forEach((engineer, index) => {
                 const row = tbody.insertRow();
+                row.setAttribute('data-index', index);
                 
                 const optionsHtml = attendanceOptions.map(opt => 
                     `<option value="${opt.value}">${opt.label}</option>`
@@ -437,15 +450,50 @@
                         <span class="team-leader">${engineer.teamLeader}</span>
                     </td>
                     <td>
-                        <select class="attendance-select" id="attendance_${index}">
+                        <select class="attendance-select" id="attendance_${index}" data-row-index="${index}">
                             ${optionsHtml}
                         </select>
                     </td>
                 `;
             });
 
+            // Add change listener to all select elements
+            document.querySelectorAll('.attendance-select').forEach(select => {
+                select.addEventListener('change', function() {
+                    updateRowHighlight(this);
+                });
+            });
+
             document.getElementById('loadingDiv').style.display = 'none';
             document.getElementById('tableContainer').style.display = 'block';
+        }
+
+        function updateRowHighlight(selectElement) {
+            const rowIndex = selectElement.getAttribute('data-row-index');
+            const row = document.querySelector(`tr[data-index="${rowIndex}"]`);
+            
+            if (row) {
+                if (selectElement.value === '') {
+                    row.classList.add('highlight-missing');
+                } else {
+                    row.classList.remove('highlight-missing');
+                }
+            }
+        }
+
+        function highlightMissingAttendance() {
+            engineers.forEach((engineer, index) => {
+                const select = document.getElementById(`attendance_${index}`);
+                const row = document.querySelector(`tr[data-index="${index}"]`);
+                
+                if (select && row) {
+                    if (select.value === '') {
+                        row.classList.add('highlight-missing');
+                    } else {
+                        row.classList.remove('highlight-missing');
+                    }
+                }
+            });
         }
 
         window.saveData = async function() {
@@ -498,6 +546,11 @@
                 for (let i = 0; i < engineers.length; i++) {
                     document.getElementById(`attendance_${i}`).value = '';
                 }
+
+                // Remove all highlights
+                document.querySelectorAll('tr[data-index]').forEach(row => {
+                    row.classList.remove('highlight-missing');
+                });
 
             } catch (error) {
                 console.error("Error saving attendance:", error);
@@ -565,8 +618,21 @@
                     }
                 });
 
+                // Highlight all rows that still don't have attendance selected
+                highlightMissingAttendance();
+
+                // Count how many are still missing
+                const missingCount = engineers.filter((eng, idx) => {
+                    const select = document.getElementById(`attendance_${idx}`);
+                    return select && select.value === '';
+                }).length;
+
                 if (matchedCount > 0) {
-                    showMessage(`Successfully loaded attendance for ${matchedCount} engineer(s)`, 'success');
+                    if (missingCount > 0) {
+                        showMessage(`Successfully loaded ${matchedCount} attendance record(s). ${missingCount} engineer(s) still need attendance selected (highlighted in yellow).`, 'warning');
+                    } else {
+                        showMessage(`Successfully loaded attendance for all ${matchedCount} engineer(s)!`, 'success');
+                    }
                 } else {
                     showMessage('No matching engineers found. Check that engineer names match exactly.', 'error');
                 }
