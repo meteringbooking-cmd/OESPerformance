@@ -474,6 +474,61 @@
             padding: 20px;
         }
 
+        .bonus-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .bonus-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .bonus-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .bonus-item {
+            padding: 12px;
+            background: white;
+            border-left: 4px solid #28a745;
+            border-radius: 5px;
+        }
+
+        .bonus-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .bonus-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .bonus-amount {
+            display: inline-block;
+            padding: 3px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 3px;
+            font-size: 0.85em;
+            margin-top: 5px;
+            font-weight: 600;
+        }
+
+        .no-bonus {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -543,6 +598,11 @@
             <div id="absenceSection" class="absence-section" style="display: none;">
                 <div class="absence-title">🚫 Absences During Selected Period</div>
                 <div id="absenceList" class="absence-list"></div>
+            </div>
+
+            <div id="bonusSection" class="bonus-section" style="display: none;">
+                <div class="bonus-title">💰 Bonuses Earned During Selected Period</div>
+                <div id="bonusList" class="bonus-list"></div>
             </div>
         </div>
 
@@ -1229,6 +1289,94 @@
 
             // Display absences
             displayAbsences(engineerFilter, teamLeaderFilter);
+
+            // Display bonuses
+            displayBonuses(engineerFilter, teamLeaderFilter);
+        }
+
+        async function displayBonuses(engineerFilter, teamLeaderFilter) {
+            const bonusSection = document.getElementById('bonusSection');
+            const bonusList = document.getElementById('bonusList');
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            try {
+                // Query bonuses where weekStartDate falls within the selected range
+                const bonusQuery = query(
+                    collection(db, "bonuses"),
+                    where("weekStartDate", ">=", startDate),
+                    where("weekStartDate", "<=", endDate),
+                    orderBy("weekStartDate", "desc"),
+                    orderBy("engineerName")
+                );
+
+                const bonusSnapshot = await getDocs(bonusQuery);
+                let allBonuses = [];
+                bonusSnapshot.forEach((doc) => {
+                    allBonuses.push(doc.data());
+                });
+
+                // Filter bonuses based on selected filters
+                if (teamLeaderFilter !== 'all') {
+                    allBonuses = allBonuses.filter(b => b.teamLeader === teamLeaderFilter);
+                }
+                if (engineerFilter !== 'all') {
+                    allBonuses = allBonuses.filter(b => b.engineerName === engineerFilter);
+                }
+
+                if (allBonuses.length === 0) {
+                    bonusList.innerHTML = '<div class="no-bonus">No bonuses recorded for this period</div>';
+                    bonusSection.style.display = 'block';
+                    return;
+                }
+
+                // Sort by week total (highest first)
+                allBonuses.sort((a, b) => (b.weekTotal || 0) - (a.weekTotal || 0));
+
+                bonusList.innerHTML = '';
+                allBonuses.forEach(bonus => {
+                    const item = document.createElement('div');
+                    item.className = 'bonus-item';
+
+                    item.innerHTML = `
+                        <div class="bonus-name">${bonus.engineerName}</div>
+                        <div class="bonus-details">Team Leader: ${bonus.teamLeader}</div>
+                        <div class="bonus-details">Week Starting: ${bonus.weekStartDate}</div>
+                        <span class="bonus-amount">£${bonus.weekTotal}</span>
+                    `;
+                    bonusList.appendChild(item);
+                });
+
+                bonusSection.style.display = 'block';
+
+            } catch (error) {
+                console.error("Error loading bonuses:", error);
+                
+                // Check if it's an index error
+                if (error.message && error.message.includes('index')) {
+                    const match = error.message.match(/https:\/\/[^\s]+/);
+                    if (match) {
+                        const indexUrl = match[0];
+                        bonusList.innerHTML = `
+                            <div class="no-bonus">
+                                <strong>Index Required for Bonuses</strong><br><br>
+                                Firestore needs to create an index for bonus queries.<br><br>
+                                <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
+                                    Click here to create the index
+                                </a><br><br>
+                                After creating it, wait 1-2 minutes and refresh this page.
+                            </div>
+                        `;
+                    } else {
+                        bonusList.innerHTML = '<div class="no-bonus">Index error for bonuses. Check console for details.</div>';
+                    }
+                } else {
+                    bonusList.innerHTML = `<div class="no-bonus">Error loading bonus data: ${error.message}</div>`;
+                }
+                
+                bonusSection.style.display = 'block';
+            }
         }
 
         function displayAbsences(engineerFilter, teamLeaderFilter) {
