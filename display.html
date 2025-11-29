@@ -1266,21 +1266,37 @@
                 meters: 'Meters'
             };
 
-            // Calculate trend line using linear regression
-            const n = values.length;
-            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-            
+            // Calculate trend line using linear regression (only on non-zero values)
+            const nonZeroPoints = [];
             values.forEach((y, x) => {
-                sumX += x;
-                sumY += y;
-                sumXY += x * y;
-                sumX2 += x * x;
+                if (y > 0) {
+                    nonZeroPoints.push({ x, y });
+                }
             });
 
-            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-            const intercept = (sumY - slope * sumX) / n;
-            
-            const trendValues = values.map((_, x) => slope * x + intercept);
+            let trendValues = [];
+            if (nonZeroPoints.length >= 2) {
+                const n = nonZeroPoints.length;
+                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+                
+                nonZeroPoints.forEach(point => {
+                    sumX += point.x;
+                    sumY += point.y;
+                    sumXY += point.x * point.y;
+                    sumX2 += point.x * point.x;
+                });
+
+                const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                const intercept = (sumY - slope * sumX) / n;
+                
+                trendValues = values.map((_, x) => {
+                    const trendValue = slope * x + intercept;
+                    return trendValue > 0 ? trendValue : null;
+                });
+            } else {
+                // Not enough data points for trend line
+                trendValues = new Array(values.length).fill(null);
+            }
 
             // Create average line (same value for all dates)
             const avgValues = new Array(dates.length).fill(previous4WeeksAvg);
