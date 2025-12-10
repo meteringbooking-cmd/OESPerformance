@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Calendar | NGU</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 2rem;
+        }
+
+        .month-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .month-selector select {
+            padding: 8px 12px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .back-btn, .export-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-btn:hover, .export-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .export-btn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .legend-color {
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+
+        .calendar-container {
+            overflow-x: auto;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: 200px 120px repeat(31, 60px);
+            gap: 2px;
+            background: #e0e0e0;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .calendar-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .calendar-header.name {
+            text-align: left;
+            padding-left: 15px;
+        }
+
+        .calendar-header.deduction {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .day-header {
+            background: #f8f9fa;
+            padding: 10px 5px;
+            text-align: center;
+            font-weight: 600;
+            color: #667eea;
+            font-size: 0.85rem;
+        }
+
+        .weekend {
+            background: #e9ecef;
+            opacity: 0.5;
+        }
+
+        .employee-name {
+            background: #f8f9fa;
+            padding: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+
+        .deduction-cell {
+            background: #fff5f5;
+            padding: 15px;
+            text-align: right;
+            font-weight: 700;
+            color: #e74c3c;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .day-cell {
+            background: white;
+            padding: 15px 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            min-height: 50px;
+        }
+
+        .day-cell:hover:not(.weekend) {
+            background: #e3e7ff;
+            transform: scale(1.05);
+        }
+
+        .status-present {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-holiday {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-sick {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-aaup {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .status-npt {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-awol {
+            background: #f5c6cb;
+            color: #721c24;
+        }
+
+        .status-baby {
+            background: #e2d9f3;
+            color: #4a148c;
+        }
+
+        .status-tofd {
+            background: #ffe5cc;
+            color: #8b4513;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #666;
+            font-size: 1.2rem;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
+        .modal-overlay.active {
+            display: block;
+        }
+
+        .status-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            min-width: 400px;
+        }
+
+        .status-modal.active {
+            display: block;
+        }
+
+        .modal-title {
+            font-size: 1.3rem;
+            color: #667eea;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .status-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .status-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+        }
+
+        .status-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .status-btn.present { background: #d4edda; color: #155724; }
+        .status-btn.holiday { background: #fff3cd; color: #856404; }
+        .status-btn.sick { background: #f8d7da; color: #721c24; }
+        .status-btn.aaup { background: #e2e3e5; color: #383d41; }
+        .status-btn.npt { background: #d1ecf1; color: #0c5460; }
+        .status-btn.awol { background: #f5c6cb; color: #721c24; }
+        .status-btn.baby { background: #e2d9f3; color: #4a148c; }
+        .status-btn.tofd { background: #ffe5cc; color: #8b4513; }
+        .status-btn.clear { background: #f8f9fa; color: #333; }
+
+        @media (max-width: 1200px) {
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .calendar-grid {
+                grid-template-columns: 150px 100px repeat(31, 50px);
+            }
+
+            .day-cell {
+                font-size: 0.8rem;
+                padding: 10px 3px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <script type="module" src="employees-firebase.js"></script>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1 id="pageTitle">Attendance Calendar</h1>
+                <div class="month-selector">
+                    <label for="monthSelect">Month:</label>
+                    <select id="monthSelect" onchange="changeMonth()"></select>
+                    <label for="yearSelect">Year:</label>
+                    <select id="yearSelect" onchange="changeMonth()"></select>
+                </div>
+            </div>
+            <div>
+                <button class="export-btn" onclick="exportToCSV()">Export CSV</button>
+                <a href="index.html" class="back-btn">Back</a>
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color status-present">X</div>
+                <span>Present</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color status-holiday">H</div>
+                <span>Holiday</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color status-sick">S</div>
+                <span>Sick</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color status-aaup">AA</div>
+                <span>AAUP</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color status-awol">AW</div>
+                <span>AWOL</span>
+            </div>
+        </div>
+
+        <div class="calendar-container">
+            <div id="loadingMessage" class="loading">Loading attendance data...</div>
+            <div id="calendarGrid" style="display: none;" class="calendar-grid"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay" onclick="closeStatusModal()"></div>
+    <div class="status-modal" id="statusModal">
+        <h3 class="modal-title" id="modalTitle">Set Attendance Status</h3>
+        <div class="status-buttons">
+            <button class="status-btn present" onclick="setStatus('X')">Present (X)</button>
+            <button class="status-btn holiday" onclick="setStatus('H')">Holiday (H)</button>
+            <button class="status-btn sick" onclick="setStatus('Sick')">Sick</button>
+            <button class="status-btn aaup" onclick="setStatus('AAUP')">AAUP</button>
+            <button class="status-btn npt" onclick="setStatus('NPT')">NPT</button>
+            <button class="status-btn awol" onclick="setStatus('AWOL')">AWOL</button>
+            <button class="status-btn baby" onclick="setStatus('baby')">Maternity/Paternity</button>
+            <button class="status-btn tofd" onclick="setStatus('TOFD')">TOFD</button>
+            <button class="status-btn clear" onclick="setStatus('')">Clear</button>
+        </div>
+    </div>
+
+    <script>
+        let currentMonth = new Date().getMonth();
+        let currentYear = new Date().getFullYear();
+        let attendanceData = {};
+        let currentCell = null;
+        const HOURLY_RATE = 19.23;
+        const WORKING_HOURS_PER_DAY = 7.5;
+
+        function initializeSelectors() {
+            const monthSelect = document.getElementById('monthSelect');
+            const yearSelect = document.getElementById('yearSelect');
+            const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+            months.forEach((m, i) => {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = m;
+                if (i === currentMonth) option.selected = true;
+                monthSelect.appendChild(option);
+            });
+
+            for (let year = 2024; year <= 2030; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                if (year === currentYear) option.selected = true;
+                yearSelect.appendChild(option);
+            }
+        }
+
+        function changeMonth() {
+            currentMonth = parseInt(document.getElementById('monthSelect').value);
+            currentYear = parseInt(document.getElementById('yearSelect').value);
+            loadAttendanceData();
+        }
+
+        function getDaysInMonth(month, year) {
+            return new Date(year, month + 1, 0).getDate();
+        }
+
+        function getDayName(date) {
+            return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+        }
+
+        function isWeekend(date) {
+            return date.getDay() === 0 || date.getDay() === 6;
+        }
+
+        function isWorkingDay(date) {
+            return !isWeekend(date);
+        }
+
+        function isPastOrToday(date) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const check = new Date(date);
+            check.setHours(0, 0, 0, 0);
+            return check <= today;
+        }
+
+        function isDateInRange(check, start, end) {
+            const c = new Date(check);
+            const s = new Date(start);
+            const e = new Date(end);
+            [c, s, e].forEach(x => x.setHours(0, 0, 0, 0));
+            return c >= s && c <= e;
+        }
+
+        function calculateWageDeduction(empId) {
+            let deductionDays = 0;
+            const days = getDaysInMonth(currentMonth, currentYear);
+            const emp = window.EMPLOYEES.data.find(e => e.id === empId);
+
+            for (let d = 1; d <= days; d++) {
+                const date = new Date(currentYear, currentMonth, d);
+                if (isWeekend(date)) continue;
+
+                const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const key = `${empId}_${dateStr}`;
+                let status = attendanceData[key] || '';
+
+                // Check for approved holidays
+                if (!status && emp.holidays) {
+                    const holiday = emp.holidays.find(h => 
+                        h.status === 'approved' && isDateInRange(date, h.dateFrom, h.dateTo)
+                    );
+                    if (holiday) status = 'H';
+                }
+
+                // Check for absences
+                if (!status && emp.absences) {
+                    const absence = emp.absences.find(a => isDateInRange(date, a.dateFrom, a.dateTo));
+                    if (absence) {
+                        if (absence.type === 'sickness') status = 'Sick';
+                        else if (absence.type === 'aaup') status = 'AAUP';
+                        else if (absence.type === 'tofd') status = 'TOFD';
+                    }
+                }
+
+                // Default to present for past working days
+                if (!status && isWorkingDay(date) && isPastOrToday(date)) {
+                    status = 'X';
+                }
+
+                // Count deduction days (Sick, AAUP, AWOL, TOFD)
+                if (['Sick', 'AAUP', 'AWOL', 'TOFD'].includes(status)) {
+                    deductionDays++;
+                }
+            }
+
+            return deductionDays * WORKING_HOURS_PER_DAY * HOURLY_RATE;
+        }
+
+        function loadAttendanceData() {
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('calendarGrid').style.display = 'none';
+
+            if (!window.EMPLOYEES || !window.EMPLOYEES.data || window.EMPLOYEES.data.length === 0) {
+                setTimeout(loadAttendanceData, 500);
+                return;
+            }
+
+            const activeEmployees = window.EMPLOYEES.data
+                .filter(e => !e.dateLeft)
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            const days = getDaysInMonth(currentMonth, currentYear);
+            const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
+            document.getElementById('pageTitle').textContent = `Attendance Calendar - ${monthName} ${currentYear}`;
+
+            const grid = document.getElementById('calendarGrid');
+            grid.style.gridTemplateColumns = `200px 120px repeat(${days}, 60px)`;
+            
+            let html = '';
+
+            // Headers
+            html += '<div class="calendar-header name">Engineer Name</div>';
+            html += '<div class="calendar-header deduction">Wage Deduction</div>';
+            
+            for (let d = 1; d <= days; d++) {
+                const date = new Date(currentYear, currentMonth, d);
+                const dayName = getDayName(date);
+                const isWknd = isWeekend(date);
+                html += `<div class="calendar-header ${isWknd ? 'weekend' : ''}">${d}</div>`;
+            }
+
+            // Day names row
+            html += '<div class="day-header"></div>';
+            html += '<div class="day-header"></div>';
+            for (let d = 1; d <= days; d++) {
+                const date = new Date(currentYear, currentMonth, d);
+                const dayName = getDayName(date);
+                const isWknd = isWeekend(date);
+                html += `<div class="day-header ${isWknd ? 'weekend' : ''}">${dayName}</div>`;
+            }
+
+            // Employee rows
+            activeEmployees.forEach(emp => {
+                html += `<div class="employee-name">${emp.name}</div>`;
+                
+                const deduction = calculateWageDeduction(emp.id);
+                html += `<div class="deduction-cell">£${deduction.toFixed(2)}</div>`;
+
+                for (let d = 1; d <= days; d++) {
+                    const date = new Date(currentYear, currentMonth, d);
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const key = `${emp.id}_${dateStr}`;
+                    
+                    let status = '';
+                    let statusClass = '';
+                    let displayText = '';
+
+                    if (isWeekend(date)) {
+                        html += '<div class="day-cell weekend"></div>';
+                        continue;
+                    }
+
+                    // Check for approved holidays
+                    if (emp.holidays) {
+                        const holiday = emp.holidays.find(h => 
+                            h.status === 'approved' && isDateInRange(date, h.dateFrom, h.dateTo)
+                        );
+                        if (holiday) {
+                            status = 'H';
+                            statusClass = 'status-holiday';
+                            displayText = 'H';
+                        }
+                    }
+
+                    // Check for absences
+                    if (!status && emp.absences) {
+                        const absence = emp.absences.find(a => isDateInRange(date, a.dateFrom, a.dateTo));
+                        if (absence) {
+                            if (absence.type === 'sickness') {
+                                status = 'Sick';
+                                statusClass = 'status-sick';
+                                displayText = 'S';
+                            } else if (absence.type === 'aaup') {
+                                status = 'AAUP';
+                                statusClass = 'status-aaup';
+                                displayText = 'AA';
+                            } else if (absence.type === 'tofd') {
+                                status = 'TOFD';
+                                statusClass = 'status-tofd';
+                                displayText = 'TD';
+                            }
+                        }
+                    }
+
+                    // Check manual attendance data
+                    if (attendanceData[key]) {
+                        status = attendanceData[key];
+                        if (status === 'X') { statusClass = 'status-present'; displayText = 'X'; }
+                        else if (status === 'H') { statusClass = 'status-holiday'; displayText = 'H'; }
+                        else if (status === 'Sick') { statusClass = 'status-sick'; displayText = 'S'; }
+                        else if (status === 'AAUP') { statusClass = 'status-aaup'; displayText = 'AA'; }
+                        else if (status === 'NPT') { statusClass = 'status-npt'; displayText = 'NP'; }
+                        else if (status === 'AWOL') { statusClass = 'status-awol'; displayText = 'AW'; }
+                        else if (status === 'baby') { statusClass = 'status-baby'; displayText = 'B'; }
+                        else if (status === 'TOFD') { statusClass = 'status-tofd'; displayText = 'TD'; }
+                    }
+
+                    // Default to present for past working days
+                    if (!status && isWorkingDay(date) && isPastOrToday(date)) {
+                        status = 'X';
+                        statusClass = 'status-present';
+                        displayText = 'X';
+                    }
+
+                    html += `<div class="day-cell ${statusClass}" onclick="openStatusModal('${emp.id}', '${dateStr}', this)">${displayText}</div>`;
+                }
+            });
+
+            grid.innerHTML = html;
+            document.getElementById('loadingMessage').style.display = 'none';
+            document.getElementById('calendarGrid').style.display = 'grid';
+        }
+
+        function openStatusModal(empId, date, cell) {
+            currentCell = { empId, date, cell };
+            const emp = window.EMPLOYEES.data.find(e => e.id === empId);
+            const d = new Date(date);
+            const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            document.getElementById('modalTitle').textContent = `${emp.name} - ${dateStr}`;
+            document.getElementById('statusModal').classList.add('active');
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+
+        function closeStatusModal() {
+            document.getElementById('statusModal').classList.remove('active');
+            document.getElementById('modalOverlay').classList.remove('active');
+            currentCell = null;
+        }
+
+        function setStatus(status) {
+            if (!currentCell) return;
+            
+            const { empId, date, cell } = currentCell;
+            const key = `${empId}_${date}`;
+
+            if (status === '') {
+                delete attendanceData[key];
+            } else {
+                attendanceData[key] = status;
+            }
+
+            localStorage.setItem('attendanceData', JSON.stringify(attendanceData));
+            closeStatusModal();
+            loadAttendanceData();
+        }
+
+        function exportToCSV() {
+            const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
+            const days = getDaysInMonth(currentMonth, currentYear);
+            
+            let csv = 'Engineer Name,Wage Deduction,';
+            for (let d = 1; d <= days; d++) {
+                csv += `${d}-${monthName.substring(0, 3)},`;
+            }
+            csv += '\n';
+
+            const activeEmployees = window.EMPLOYEES.data
+                .filter(e => !e.dateLeft)
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            activeEmployees.forEach(emp => {
+                csv += `"${emp.name}",`;
+                const deduction = calculateWageDeduction(emp.id);
+                csv += `£${deduction.toFixed(2)},`;
+
+                for (let d = 1; d <= days; d++) {
+                    const date = new Date(currentYear, currentMonth, d);
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const key = `${emp.id}_${dateStr}`;
+                    
+                    if (isWeekend(date)) {
+                        csv += '-,';
+                        continue;
+                    }
+
+                    let status = attendanceData[key] || '';
+                    if (!status && isWorkingDay(date) && isPastOrToday(date)) {
+                        status = 'X';
+                    }
+
+                    csv += `"${status}",`;
+                }
+                csv += '\n';
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `attendance_${monthName}_${currentYear}.csv`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        window.onload = () => {
+            initializeSelectors();
+            const saved = localStorage.getItem('attendanceData');
+            if (saved) {
+                try {
+                    attendanceData = JSON.parse(saved);
+                } catch (e) {
+                    attendanceData = {};
+                }
+            }
+
+            if (window.EMPLOYEES) {
+                window.EMPLOYEES.onUpdate(loadAttendanceData);
+            }
+            setTimeout(loadAttendanceData, 1000);
+        };
+    </script>
+</body>
+</html>
