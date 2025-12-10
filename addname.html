@@ -166,12 +166,25 @@
 
         <button class="btn" onclick="addEngineer()">Add Engineer</button>
 
+        <div style="margin-top: 40px; padding-top: 40px; border-top: 2px solid #e0e0e0;">
+            <div class="subtitle" style="margin-bottom: 25px; color: #333;">Remove Engineer</div>
+            
+            <div class="form-group">
+                <label for="engineerList">Select Engineer to Remove</label>
+                <select id="engineerList" required>
+                    <option value="">-- Choose an Engineer --</option>
+                </select>
+            </div>
+
+            <button class="btn" onclick="removeEngineer()" style="background: linear-gradient(135deg, #f56565 0%, #c53030 100%);">Remove Engineer</button>
+        </div>
+
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -185,6 +198,30 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
+        // Load engineers when page loads
+        window.addEventListener('DOMContentLoaded', loadEngineers);
+
+        async function loadEngineers() {
+            try {
+                const engineerSelect = document.getElementById('engineerList');
+                engineerSelect.innerHTML = '<option value="">-- Choose an Engineer --</option>';
+
+                const q = query(collection(db, "engineers"), orderBy("engineerName"));
+                const querySnapshot = await getDocs(q);
+                
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    const option = document.createElement('option');
+                    option.value = docSnap.id;
+                    option.textContent = `${data.engineerName} (${data.teamLeader})`;
+                    engineerSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading engineers:", error);
+                showMessage('Error loading engineers list', 'error');
+            }
+        }
 
         window.addEngineer = async function() {
             const teamLeader = document.getElementById('teamLeader').value;
@@ -213,9 +250,40 @@
                 // Clear the form
                 document.getElementById('teamLeader').value = '';
                 document.getElementById('engineerName').value = '';
+
+                // Reload the engineers list
+                await loadEngineers();
             } catch (error) {
                 console.error("Error adding engineer:", error);
                 showMessage('Error adding engineer. Please try again.', 'error');
+            }
+        }
+
+        window.removeEngineer = async function() {
+            const engineerId = document.getElementById('engineerList').value;
+            const engineerSelect = document.getElementById('engineerList');
+            const selectedOption = engineerSelect.options[engineerSelect.selectedIndex];
+
+            if (!engineerId) {
+                showMessage('Please select an engineer to remove', 'error');
+                return;
+            }
+
+            const engineerName = selectedOption.textContent;
+
+            if (!confirm(`Are you sure you want to remove ${engineerName}?`)) {
+                return;
+            }
+
+            try {
+                await deleteDoc(doc(db, "engineers", engineerId));
+                showMessage(`${engineerName} removed successfully!`, 'success');
+                
+                // Reload the engineers list
+                await loadEngineers();
+            } catch (error) {
+                console.error("Error removing engineer:", error);
+                showMessage('Error removing engineer. Please try again.', 'error');
             }
         }
 
