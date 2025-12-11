@@ -566,6 +566,159 @@
             color: #666;
             padding: 20px;
         }
+        
+        .bonus-item {
+    padding: 12px;
+    background: white;
+    border-left: 4px solid #28a745;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.bonus-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.bonus-details-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.bonus-details-content {
+    background: white;
+    margin: 50px auto;
+    padding: 30px;
+    border-radius: 15px;
+    max-width: 1200px;
+    position: relative;
+}
+
+.bonus-details-close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 30px;
+    font-weight: bold;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.bonus-details-close:hover {
+    color: #333;
+}
+
+.bonus-details-header {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #667eea;
+}
+
+.bonus-details-title {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.bonus-details-info {
+    color: #666;
+    font-size: 0.95em;
+}
+
+.bonus-day-section {
+    margin-bottom: 25px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.bonus-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #28a745;
+}
+
+.bonus-day-date-header {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #333;
+}
+
+.bonus-day-total {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #28a745;
+}
+
+.job-details-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.job-details-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.job-details-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.job-details-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 0.9em;
+}
+
+.job-details-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.job-number-cell {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.job-time-cell {
+    color: #666;
+}
+
+.job-type-cell {
+    color: #333;
+    font-weight: 500;
+}
+
+.job-meters-cell {
+    text-align: center;
+    font-weight: 600;
+    color: #28a745;
+}
+
+.no-jobs-day {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+}
 
         @media (max-width: 768px) {
             .container {
@@ -662,6 +815,19 @@
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
+                        <!-- Bonus Details Modal -->
+    <div id="bonusDetailsModal" class="bonus-details-modal" onclick="closeBonusDetails(event)">
+        <div class="bonus-details-content" onclick="event.stopPropagation()">
+            <span class="bonus-details-close" onclick="closeBonusDetails()">&times;</span>
+            <div class="bonus-details-header">
+                <div class="bonus-details-title" id="bonusDetailsEngineerName"></div>
+                <div class="bonus-details-info" id="bonusDetailsInfo"></div>
+            </div>
+            <div id="bonusDetailsDays"></div>
+        </div>
+    </div>
+
+    <script type="module">
                     </tbody>
                 </table>
             </div>
@@ -1416,6 +1582,8 @@
                 allBonuses.forEach(bonus => {
                     const item = document.createElement('div');
                     item.className = 'bonus-item';
+item.style.cursor = 'pointer';
+item.onclick = () => showBonusDetails(bonus);
 
                     // Get the 5 dates for the week
                     const weekStart = new Date(bonus.weekStartDate);
@@ -1651,6 +1819,142 @@
 
             absenceSection.style.display = 'block';
         }
+
+        async function showBonusDetails(bonus) {
+    const modal = document.getElementById('bonusDetailsModal');
+    const engineerNameEl = document.getElementById('bonusDetailsEngineerName');
+    const infoEl = document.getElementById('bonusDetailsInfo');
+    const daysEl = document.getElementById('bonusDetailsDays');
+
+    engineerNameEl.textContent = bonus.engineerName;
+    infoEl.innerHTML = `Team Leader: ${bonus.teamLeader} | Week Starting: ${bonus.weekStartDate} | Total Bonus: £${bonus.weekTotal}`;
+
+    daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Loading job details...</div>';
+    modal.style.display = 'block';
+
+    // Get the 5 dates for the week
+    const weekStart = new Date(bonus.weekStartDate);
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) {
+        const date = new Date(weekStart);
+        date.setDate(date.getDate() + i);
+        weekDates.push(date.toISOString().split('T')[0]);
+    }
+
+    try {
+        // Fetch job details for each day
+        const dayDetailsPromises = weekDates.map(async (date) => {
+            const jobsQuery = query(
+                collection(db, "jobs"),
+                where("engineerName", "==", bonus.engineerName),
+                where("date", "==", date),
+                where("completed", "==", true),
+                orderBy("startTime")
+            );
+
+            const jobsSnapshot = await getDocs(jobsQuery);
+            const jobs = [];
+            jobsSnapshot.forEach((doc) => {
+                jobs.push(doc.data());
+            });
+
+            return { date, jobs };
+        });
+
+        const dayDetails = await Promise.all(dayDetailsPromises);
+
+        // Build the details HTML
+        daysEl.innerHTML = '';
+        dayDetails.forEach(({ date, jobs }) => {
+            const dateObj = new Date(date + 'T00:00:00');
+            const displayDate = dateObj.toLocaleDateString('en-GB', { 
+                weekday: 'long', 
+                day: '2-digit', 
+                month: 'long',
+                year: 'numeric'
+            });
+
+            const dayBonus = bonus.dailyBonuses && bonus.dailyBonuses[date] ? bonus.dailyBonuses[date] : 0;
+
+            const daySection = document.createElement('div');
+            daySection.className = 'bonus-day-section';
+
+            let jobsHTML = '';
+            if (jobs.length === 0) {
+                jobsHTML = '<div class="no-jobs-day">No completed jobs recorded for this day</div>';
+            } else {
+                jobsHTML = `
+                    <table class="job-details-table">
+                        <thead>
+                            <tr>
+                                <th>Job Number</th>
+                                <th>Start Time</th>
+                                <th>Job Type</th>
+                                <th>Meters</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                jobs.forEach(job => {
+                    jobsHTML += `
+                        <tr>
+                            <td class="job-number-cell">${job.jobNumber || 'N/A'}</td>
+                            <td class="job-time-cell">${job.startTime || 'N/A'}</td>
+                            <td class="job-type-cell">${job.jobType || 'N/A'}</td>
+                            <td class="job-meters-cell">${job.meters ? Math.round(job.meters) : 'N/A'}</td>
+                        </tr>
+                    `;
+                });
+
+                jobsHTML += `
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            daySection.innerHTML = `
+                <div class="bonus-day-header">
+                    <div class="bonus-day-date-header">${displayDate}</div>
+                    <div class="bonus-day-total">£${dayBonus}</div>
+                </div>
+                ${jobsHTML}
+            `;
+
+            daysEl.appendChild(daySection);
+        });
+
+    } catch (error) {
+        console.error("Error loading job details:", error);
+        
+        if (error.message && error.message.includes('index')) {
+            const match = error.message.match(/https:\/\/[^\s]+/);
+            if (match) {
+                const indexUrl = match[0];
+                daysEl.innerHTML = `
+                    <div style="text-align: center; padding: 20px;">
+                        <strong>Index Required</strong><br><br>
+                        Firestore needs to create an index for job queries.<br><br>
+                        <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
+                            Click here to create the index
+                        </a><br><br>
+                        After creating it, wait 1-2 minutes and try again.
+                    </div>
+                `;
+            } else {
+                daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Index error. Check console for details.</div>';
+            }
+        } else {
+            daysEl.innerHTML = `<div style="text-align: center; padding: 20px;">Error loading job details: ${error.message}</div>`;
+        }
+    }
+}
+
+window.closeBonusDetails = function(event) {
+    if (!event || event.target === document.getElementById('bonusDetailsModal')) {
+        document.getElementById('bonusDetailsModal').style.display = 'none';
+    }
+}
 
         // Auto-load data on page load
         window.addEventListener('load', () => {
