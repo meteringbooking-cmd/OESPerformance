@@ -424,127 +424,358 @@
             }
         }
 
-       window.loadDailyBreakdown = async function() {
-    const engineerSelect = document.getElementById('engineerSelect');
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
-    const selectedEngineer = engineerSelect.value;
+        window.loadDailyBreakdown = async function() {
+            const engineerSelect = document.getElementById('engineerSelect');
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const selectedEngineer = engineerSelect.value;
 
-    if (!selectedEngineer) {
-        alert('Please select an engineer');
-        return;
-    }
-
-    if (!startDate || !endDate) {
-        alert('Please select both start and end dates');
-        return;
-    }
-
-    if (startDate > endDate) {
-        alert('Start date must be before end date');
-        return;
-    }
-
-    document.getElementById('loadingDiv').style.display = 'block';
-    document.getElementById('noDataDiv').style.display = 'none';
-    document.getElementById('dailyBreakdownSection').style.display = 'none';
-
-    try {
-        // Get all dates in range (weekdays only)
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const allDates = [];
-        
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dayOfWeek = d.getDay();
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                allDates.push(d.toISOString().split('T')[0]);
+            if (!selectedEngineer) {
+                alert('Please select an engineer');
+                return;
             }
-        }
 
-        // Load performance data - without orderBy to avoid index issues
-        const perfQuery = query(
-            collection(db, "performance"),
-            where("engineerName", "==", selectedEngineer),
-            where("date", ">=", startDate),
-            where("date", "<=", endDate)
-        );
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates');
+                return;
+            }
 
-        const perfSnapshot = await getDocs(perfQuery);
-        const performanceData = {};
-        perfSnapshot.forEach((doc) => {
-            const data = doc.data();
-            performanceData[data.date] = data;
-        });
+            if (startDate > endDate) {
+                alert('Start date must be before end date');
+                return;
+            }
 
-        // Load attendance data - without orderBy
-        const attendanceQuery = query(
-            collection(db, "attendance"),
-            where("engineerName", "==", selectedEngineer),
-            where("date", ">=", startDate),
-            where("date", "<=", endDate)
-        );
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('noDataDiv').style.display = 'none';
+            document.getElementById('dailyBreakdownSection').style.display = 'none';
 
-        const attendanceSnapshot = await getDocs(attendanceQuery);
-        const attendanceData = {};
-        attendanceSnapshot.forEach((doc) => {
-            const data = doc.data();
-            attendanceData[data.date] = data;
-        });
-
-        // Load bonus data - without orderBy
-        let bonusData = {};
-        try {
-            const bonusQuery = query(
-                collection(db, "bonuses"),
-                where("engineerName", "==", selectedEngineer),
-                where("weekStartDate", ">=", startDate),
-                where("weekStartDate", "<=", endDate)
-            );
-
-            const bonusSnapshot = await getDocs(bonusQuery);
-            bonusSnapshot.forEach((doc) => {
-                const data = doc.data();
-                if (data.dailyBonuses) {
-                    Object.keys(data.dailyBonuses).forEach(date => {
-                        bonusData[date] = data.dailyBonuses[date];
-                    });
+            try {
+                // Get all dates in range (weekdays only)
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const allDates = [];
+                
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        allDates.push(d.toISOString().split('T')[0]);
+                    }
                 }
-            });
-        } catch (bonusError) {
-            console.log("Bonus data not available:", bonusError);
-            // Continue without bonus data
-        }
 
-        // Display daily breakdown
-        displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, selectedEngineer);
+                // Load performance data - without orderBy to avoid index issues
+                const perfQuery = query(
+                    collection(db, "performance"),
+                    where("engineerName", "==", selectedEngineer),
+                    where("date", ">=", startDate),
+                    where("date", "<=", endDate)
+                );
 
-        document.getElementById('loadingDiv').style.display = 'none';
+                const perfSnapshot = await getDocs(perfQuery);
+                const performanceData = {};
+                perfSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    performanceData[data.date] = data;
+                });
 
-    } catch (error) {
-        console.error("Error loading data:", error);
-        document.getElementById('loadingDiv').style.display = 'none';
-        
-        if (error.message && error.message.includes('index')) {
-            const match = error.message.match(/https:\/\/[^\s]+/);
-            if (match) {
-                const indexUrl = match[0];
-                document.getElementById('noDataDiv').innerHTML = `
-                    <strong>Index Required</strong><br><br>
-                    Firestore needs to create an index for this query.<br><br>
-                    <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
-                        Click here to create the index
-                    </a><br><br>
-                    After creating it, wait 1-2 minutes and refresh this page.
-                `;
-                document.getElementById('noDataDiv').style.display = 'block';
+                // Load attendance data - without orderBy
+                const attendanceQuery = query(
+                    collection(db, "attendance"),
+                    where("engineerName", "==", selectedEngineer),
+                    where("date", ">=", startDate),
+                    where("date", "<=", endDate)
+                );
+
+                const attendanceSnapshot = await getDocs(attendanceQuery);
+                const attendanceData = {};
+                attendanceSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    attendanceData[data.date] = data;
+                });
+
+                // Load bonus data - without orderBy
+                let bonusData = {};
+                try {
+                    const bonusQuery = query(
+                        collection(db, "bonuses"),
+                        where("engineerName", "==", selectedEngineer),
+                        where("weekStartDate", ">=", startDate),
+                        where("weekStartDate", "<=", endDate)
+                    );
+
+                    const bonusSnapshot = await getDocs(bonusQuery);
+                    bonusSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        if (data.dailyBonuses) {
+                            Object.keys(data.dailyBonuses).forEach(date => {
+                                bonusData[date] = data.dailyBonuses[date];
+                            });
+                        }
+                    });
+                } catch (bonusError) {
+                    console.log("Bonus data not available:", bonusError);
+                    // Continue without bonus data
+                }
+
+                // Display daily breakdown
+                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, selectedEngineer);
+
+                document.getElementById('loadingDiv').style.display = 'none';
+
+            } catch (error) {
+                console.error("Error loading data:", error);
+                document.getElementById('loadingDiv').style.display = 'none';
+                
+                if (error.message && error.message.includes('index')) {
+                    const match = error.message.match(/https:\/\/[^\s]+/);
+                    if (match) {
+                        const indexUrl = match[0];
+                        document.getElementById('noDataDiv').innerHTML = `
+                            <strong>Index Required</strong><br><br>
+                            Firestore needs to create an index for this query.<br><br>
+                            <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
+                                Click here to create the index
+                            </a><br><br>
+                            After creating it, wait 1-2 minutes and refresh this page.
+                        `;
+                        document.getElementById('noDataDiv').style.display = 'block';
+                    }
+                } else {
+                    document.getElementById('noDataDiv').textContent = 'Error loading data: ' + error.message;
+                    document.getElementById('noDataDiv').style.display = 'block';
+                }
             }
-        } else {
-            document.getElementById('noDataDiv').textContent = 'Error loading data: ' + error.message;
-            document.getElementById('noDataDiv').style.display = 'block';
         }
-    }
-}
+
+        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, engineerName) {
+            const container = document.getElementById('dailyBreakdownContent');
+            container.innerHTML = '';
+
+            if (dates.length === 0) {
+                document.getElementById('noDataDiv').textContent = 'No weekdays in selected date range.';
+                document.getElementById('noDataDiv').style.display = 'block';
+                return;
+            }
+
+            dates.forEach(date => {
+                const perf = performanceData[date] || {};
+                const attendance = attendanceData[date] || {};
+                const bonus = bonusData[date] || 0;
+
+                const dateObj = new Date(date + 'T00:00:00');
+                const displayDate = dateObj.toLocaleDateString('en-GB', { 
+                    day: '2-digit', 
+                    month: 'long',
+                    year: 'numeric'
+                });
+                const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+
+                const card = document.createElement('div');
+                card.className = 'daily-card';
+
+                // Absence info
+                let absenceHTML = '';
+                const attendanceStatus = attendance.attendance;
+                
+                if (attendanceStatus && attendanceStatus !== 'X') {
+                    const absenceLabels = {
+                        'H': 'Holiday',
+                        'H/H': 'Half Day Holiday',
+                        'Sick': 'Sick Leave',
+                        'AAUP': 'Authorised Absence Unpaid',
+                        'TOFD': 'Time Off For Dependants',
+                        'AAP': 'Authorised Absence Paid'
+                    };
+                    
+                    let absenceClass = 'other';
+                    if (attendanceStatus === 'H' || attendanceStatus === 'H/H') {
+                        absenceClass = 'holiday';
+                    } else if (attendanceStatus === 'Sick') {
+                        absenceClass = 'sick';
+                    }
+                    
+                    absenceHTML = `
+                        <div class="absence-section">
+                            <div class="absence-title">
+                                🚫 Absence:
+                                <span class="absence-type ${absenceClass}">${absenceLabels[attendanceStatus] || attendanceStatus}</span>
+                            </div>
+                        </div>
+                    `;
+                } else if (attendanceStatus === 'X' || !attendanceStatus) {
+                    absenceHTML = `
+                        <div class="absence-section present">
+                            <div class="absence-title">
+                                ✅ <span class="present-badge">Present</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Bonus info
+                let bonusHTML = '';
+                if (bonus > 0) {
+                    bonusHTML = `
+                        <div class="bonus-section">
+                            <div class="bonus-title">
+                                💰 Bonus Earned:
+                                <span class="bonus-amount">£${bonus}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <div class="daily-card-header">
+                        <div>
+                            <div class="daily-date">${displayDate}</div>
+                            <div class="daily-weekday">${weekday}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="daily-stats-grid">
+                        <div class="daily-stat-item jobs">
+                            <div class="daily-stat-label">Total Jobs</div>
+                            <div class="daily-stat-value">${perf.jobs || 0}</div>
+                        </div>
+                        <div class="daily-stat-item completed">
+                            <div class="daily-stat-label">Completed</div>
+                            <div class="daily-stat-value">${perf.completed || 0}</div>
+                        </div>
+                        <div class="daily-stat-item aborted">
+                            <div class="daily-stat-label">Aborted</div>
+                            <div class="daily-stat-value">${perf.aborted || 0}</div>
+                        </div>
+                        <div class="daily-stat-item meters">
+                            <div class="daily-stat-label">Meters</div>
+                            <div class="daily-stat-value">${Math.round(perf.meters || 0)}</div>
+                        </div>
+                    </div>
+
+                    ${absenceHTML}
+                    ${bonusHTML}
+                `;
+
+                container.appendChild(card);
+            });
+
+            document.getElementById('dailyBreakdownSection').style.display = 'block';
+        }
+
+        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, engineerName) {
+            const container = document.getElementById('dailyBreakdownContent');
+            container.innerHTML = '';
+
+            if (dates.length === 0) {
+                document.getElementById('noDataDiv').textContent = 'No weekdays in selected date range.';
+                document.getElementById('noDataDiv').style.display = 'block';
+                return;
+            }
+
+            dates.forEach(date => {
+                const perf = performanceData[date] || {};
+                const attendance = attendanceData[date] || {};
+                const bonus = bonusData[date] || 0;
+
+                const dateObj = new Date(date + 'T00:00:00');
+                const displayDate = dateObj.toLocaleDateString('en-GB', { 
+                    day: '2-digit', 
+                    month: 'long',
+                    year: 'numeric'
+                });
+                const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+
+                const card = document.createElement('div');
+                card.className = 'daily-card';
+
+                // Absence info
+                let absenceHTML = '';
+                const attendanceStatus = attendance.attendance;
+                
+                if (attendanceStatus && attendanceStatus !== 'X') {
+                    const absenceLabels = {
+                        'H': 'Holiday',
+                        'H/H': 'Half Day Holiday',
+                        'Sick': 'Sick Leave',
+                        'AAUP': 'Authorised Absence Unpaid',
+                        'TOFD': 'Time Off For Dependants',
+                        'AAP': 'Authorised Absence Paid'
+                    };
+                    
+                    let absenceClass = 'other';
+                    if (attendanceStatus === 'H' || attendanceStatus === 'H/H') {
+                        absenceClass = 'holiday';
+                    } else if (attendanceStatus === 'Sick') {
+                        absenceClass = 'sick';
+                    }
+                    
+                    absenceHTML = `
+                        <div class="absence-section">
+                            <div class="absence-title">
+                                🚫 Absence:
+                                <span class="absence-type ${absenceClass}">${absenceLabels[attendanceStatus] || attendanceStatus}</span>
+                            </div>
+                        </div>
+                    `;
+                } else if (attendanceStatus === 'X' || !attendanceStatus) {
+                    absenceHTML = `
+                        <div class="absence-section present">
+                            <div class="absence-title">
+                                ✅ <span class="present-badge">Present</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Bonus info
+                let bonusHTML = '';
+                if (bonus > 0) {
+                    bonusHTML = `
+                        <div class="bonus-section">
+                            <div class="bonus-title">
+                                💰 Bonus Earned:
+                                <span class="bonus-amount">£${bonus}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <div class="daily-card-header">
+                        <div>
+                            <div class="daily-date">${displayDate}</div>
+                            <div class="daily-weekday">${weekday}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="daily-stats-grid">
+                        <div class="daily-stat-item jobs">
+                            <div class="daily-stat-label">Total Jobs</div>
+                            <div class="daily-stat-value">${perf.jobs || 0}</div>
+                        </div>
+                        <div class="daily-stat-item completed">
+                            <div class="daily-stat-label">Completed</div>
+                            <div class="daily-stat-value">${perf.completed || 0}</div>
+                        </div>
+                        <div class="daily-stat-item aborted">
+                            <div class="daily-stat-label">Aborted</div>
+                            <div class="daily-stat-value">${perf.aborted || 0}</div>
+                        </div>
+                        <div class="daily-stat-item meters">
+                            <div class="daily-stat-label">Meters</div>
+                            <div class="daily-stat-value">${Math.round(perf.meters || 0)}</div>
+                        </div>
+                    </div>
+
+                    ${absenceHTML}
+                    ${bonusHTML}
+                `;
+
+                container.appendChild(card);
+            });
+
+            document.getElementById('dailyBreakdownSection').style.display = 'block';
+        }
+
         // Initialize
         window.addEventListener('load', () => {
             loadEngineers();
