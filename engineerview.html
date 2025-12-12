@@ -64,6 +64,143 @@
             font-size: 1.1em;
         }
 
+        /* Engineer Selection Modal */
+        .engineer-selection-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .engineer-selection-content {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .engineer-selection-title {
+            font-size: 1.8em;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .engineer-selection-subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .engineer-selection-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+
+        .engineer-selection-group label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 600;
+            font-size: 1.05em;
+        }
+
+        .engineer-selection-group select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1.1em;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        .engineer-selection-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .engineer-selection-btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .engineer-selection-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .engineer-selection-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .current-engineer-display {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .current-engineer-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .current-engineer-label {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .current-engineer-name {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .change-engineer-btn {
+            padding: 8px 20px;
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .change-engineer-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
         .filter-section {
             margin-bottom: 30px;
             padding: 25px;
@@ -726,11 +863,39 @@
     </style>
 </head>
 <body>
+    <!-- Engineer Selection Modal -->
+    <div id="engineerSelectionModal" class="engineer-selection-modal">
+        <div class="engineer-selection-content">
+            <div class="engineer-selection-title">Engineer View</div>
+            <div class="engineer-selection-subtitle">Select an engineer to view their performance</div>
+            
+            <div class="engineer-selection-group">
+                <label for="engineerSelect">Choose Engineer:</label>
+                <select id="engineerSelect">
+                    <option value="">Loading engineers...</option>
+                </select>
+            </div>
+            
+            <button class="engineer-selection-btn" onclick="selectEngineer()" id="selectEngineerBtn" disabled>
+                View Performance
+            </button>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <a href="index.html" class="back-link-top">← Back to Home</a>
             <div class="logo">Engineer View</div>
             <div class="subtitle">View Performance Data</div>
+        </div>
+
+        <!-- Current Engineer Display -->
+        <div id="currentEngineerDisplay" class="current-engineer-display">
+            <div class="current-engineer-info">
+                <span class="current-engineer-label">Viewing:</span>
+                <span class="current-engineer-name" id="currentEngineerName"></span>
+            </div>
+            <button class="change-engineer-btn" onclick="changeEngineer()">Change Engineer</button>
         </div>
 
         <div class="filter-section">
@@ -761,14 +926,6 @@
         <div id="summarySection" class="summary-section" style="display: none;"></div>
 
         <div id="chartSection" class="chart-section">
-            <div class="chart-filters">
-                <select id="teamLeaderFilter" onchange="updateEngineerDropdown(); updateChart();">
-                    <option value="all">All Team Leaders</option>
-                </select>
-                <select id="chartFilter" onchange="updateChart()">
-                    <option value="all">All Engineers</option>
-                </select>
-            </div>
             <canvas id="chartCanvas"></canvas>
             
             <div id="absenceSummary" class="absence-summary" style="display: none;">
@@ -852,6 +1009,8 @@
         let currentChart = null;
         let sortColumn = 'date';
         let sortDirection = 'desc';
+        let selectedEngineer = null;
+        let allEngineers = [];
 
         // Set default dates (last 7 days)
         const today = new Date();
@@ -861,7 +1020,75 @@
         document.getElementById('endDate').valueAsDate = today;
         document.getElementById('startDate').valueAsDate = lastWeek;
 
+        // Load engineers on page load
+        async function loadEngineers() {
+            try {
+                const q = query(collection(db, "performance"), orderBy("engineerName"));
+                const querySnapshot = await getDocs(q);
+                
+                const engineerSet = new Set();
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.engineerName) {
+                        engineerSet.add(data.engineerName);
+                    }
+                });
+
+                allEngineers = Array.from(engineerSet).sort();
+                
+                const selectElement = document.getElementById('engineerSelect');
+                selectElement.innerHTML = '<option value="">-- Select an Engineer --</option>';
+                
+                allEngineers.forEach(engineer => {
+                    const option = document.createElement('option');
+                    option.value = engineer;
+                    option.textContent = engineer;
+                    selectElement.appendChild(option);
+                });
+
+                selectElement.disabled = false;
+                document.getElementById('selectEngineerBtn').disabled = false;
+
+                // Enable the select button when an engineer is chosen
+                selectElement.addEventListener('change', function() {
+                    document.getElementById('selectEngineerBtn').disabled = !this.value;
+                });
+
+            } catch (error) {
+                console.error("Error loading engineers:", error);
+                const selectElement = document.getElementById('engineerSelect');
+                selectElement.innerHTML = '<option value="">Error loading engineers</option>';
+            }
+        }
+
+        window.selectEngineer = function() {
+            const selectElement = document.getElementById('engineerSelect');
+            selectedEngineer = selectElement.value;
+            
+            if (!selectedEngineer) {
+                alert('Please select an engineer');
+                return;
+            }
+
+            // Hide modal and show main content
+            document.getElementById('engineerSelectionModal').style.display = 'none';
+            document.getElementById('currentEngineerDisplay').style.display = 'flex';
+            document.getElementById('currentEngineerName').textContent = selectedEngineer;
+
+            // Auto-load data
+            loadData();
+        }
+
+        window.changeEngineer = function() {
+            document.getElementById('engineerSelectionModal').style.display = 'flex';
+        }
+
         window.loadData = async function() {
+            if (!selectedEngineer) {
+                alert('Please select an engineer first');
+                return;
+            }
+
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
 
@@ -883,10 +1110,10 @@
             try {
                 const q = query(
                     collection(db, "performance"),
+                    where("engineerName", "==", selectedEngineer),
                     where("date", ">=", startDate),
                     where("date", "<=", endDate),
-                    orderBy("date", "desc"),
-                    orderBy("engineerName")
+                    orderBy("date", "desc")
                 );
 
                 const querySnapshot = await getDocs(q);
@@ -896,13 +1123,13 @@
                     allData.push(doc.data());
                 });
 
-                // Load attendance data for the same date range
+                // Load attendance data for the selected engineer
                 const attendanceQuery = query(
                     collection(db, "attendance"),
+                    where("engineerName", "==", selectedEngineer),
                     where("date", ">=", startDate),
                     where("date", "<=", endDate),
-                    orderBy("date", "desc"),
-                    orderBy("engineerName")
+                    orderBy("date", "desc")
                 );
 
                 const attendanceSnapshot = await getDocs(attendanceQuery);
@@ -1102,26 +1329,14 @@
                 const pageHeight = pdf.internal.pageSize.getHeight();
                 let yPosition = 20;
 
-                const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
-                const engineerFilter = document.getElementById('chartFilter').value;
                 const startDate = document.getElementById('startDate').value;
                 const endDate = document.getElementById('endDate').value;
 
-                let filename = '';
-                if (teamLeaderFilter !== 'all') {
-                    filename += teamLeaderFilter.replace(/\s+/g, '_');
-                }
-                if (engineerFilter !== 'all') {
-                    filename += (filename ? '_' : '') + engineerFilter.replace(/\s+/g, '_');
-                }
-                if (!filename) {
-                    filename = 'All_Engineers';
-                }
-                filename += `_${startDate}_to_${endDate}.pdf`;
+                const filename = `${selectedEngineer.replace(/\s+/g, '_')}_${startDate}_to_${endDate}.pdf`;
 
                 pdf.setFontSize(16);
                 pdf.setFont(undefined, 'bold');
-                const title = `Performance Report: ${teamLeaderFilter === 'all' ? 'All Team Leaders' : teamLeaderFilter}${engineerFilter !== 'all' ? ' - ' + engineerFilter : ''}`;
+                const title = `Performance Report: ${selectedEngineer}`;
                 pdf.text(title, pageWidth / 2, yPosition, { align: 'center' });
                 yPosition += 10;
 
@@ -1214,69 +1429,12 @@
             document.getElementById('summarySection').style.display = 'none';
             document.getElementById('chartSection').style.display = 'block';
 
-            const engineers = [...new Set(allData.map(d => d.engineerName))].sort();
-            const teamLeaders = [...new Set(allData.map(d => d.teamLeader))].sort();
-
-            const chartFilter = document.getElementById('chartFilter');
-            const teamLeaderFilter = document.getElementById('teamLeaderFilter');
-
-            const currentEngineer = chartFilter.value;
-            const currentTeamLeader = teamLeaderFilter.value;
-
-            teamLeaderFilter.innerHTML = '<option value="all">All Team Leaders</option>';
-            teamLeaders.forEach(tl => {
-                teamLeaderFilter.innerHTML += `<option value="${tl}">${tl}</option>`;
-            });
-
-            if (currentTeamLeader && teamLeaders.includes(currentTeamLeader)) {
-                teamLeaderFilter.value = currentTeamLeader;
-            }
-
-            updateEngineerDropdown();
             updateChart();
         }
 
-        function updateEngineerDropdown() {
-            const teamLeaderFilter = document.getElementById('teamLeaderFilter');
-            const chartFilter = document.getElementById('chartFilter');
-            const selectedTeamLeader = teamLeaderFilter.value;
-
-            let filteredEngineers;
-            if (selectedTeamLeader === 'all') {
-                filteredEngineers = [...new Set(allData.map(d => d.engineerName))].sort();
-            } else {
-                const filtered = allData.filter(d => d.teamLeader === selectedTeamLeader);
-                filteredEngineers = [...new Set(filtered.map(d => d.engineerName))].sort();
-            }
-
-            const currentEngineer = chartFilter.value;
-
-            chartFilter.innerHTML = '<option value="all">All Engineers</option>';
-            filteredEngineers.forEach(eng => {
-                chartFilter.innerHTML += `<option value="${eng}">${eng}</option>`;
-            });
-
-            if (currentEngineer && currentEngineer !== 'all' && filteredEngineers.includes(currentEngineer)) {
-                chartFilter.value = currentEngineer;
-            } else {
-                chartFilter.value = 'all';
-            }
-        }
-
-        window.updateEngineerDropdown = updateEngineerDropdown;
-
         window.updateChart = async function() {
             const metric = currentView;
-            const engineerFilter = document.getElementById('chartFilter').value;
-            const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
-
-            let filteredData = allData;
-            if (teamLeaderFilter !== 'all') {
-                filteredData = filteredData.filter(d => d.teamLeader === teamLeaderFilter);
-            }
-            if (engineerFilter !== 'all') {
-                filteredData = filteredData.filter(d => d.engineerName === engineerFilter);
-            }
+            const filteredData = allData;
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -1309,12 +1467,13 @@
             const startDateObj = new Date(startDateStr);
             const fourWeeksAgo = new Date(startDateObj);
             fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-            const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0];
+            const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0]);
 
             let previous4WeeksAvg = 0;
             try {
                 const prevQuery = query(
                     collection(db, "performance"),
+                    where("engineerName", "==", selectedEngineer),
                     where("date", ">=", fourWeeksAgoStr),
                     where("date", "<", startDateStr),
                     orderBy("date", "desc")
@@ -1325,13 +1484,6 @@
                 prevSnapshot.forEach((doc) => {
                     prevData.push(doc.data());
                 });
-
-                if (teamLeaderFilter !== 'all') {
-                    prevData = prevData.filter(d => d.teamLeader === teamLeaderFilter);
-                }
-                if (engineerFilter !== 'all') {
-                    prevData = prevData.filter(d => d.engineerName === engineerFilter);
-                }
 
                 const prevDateMap = {};
                 prevData.forEach(record => {
@@ -1361,36 +1513,6 @@
                 aborted: 'Aborted',
                 meters: 'Meters'
             };
-
-            const nonZeroPoints = [];
-            values.forEach((y, x) => {
-                if (y > 0) {
-                    nonZeroPoints.push({ x, y });
-                }
-            });
-
-            let trendValues = [];
-            if (nonZeroPoints.length >= 2) {
-                const n = nonZeroPoints.length;
-                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-                
-                nonZeroPoints.forEach(point => {
-                    sumX += point.x;
-                    sumY += point.y;
-                    sumXY += point.x * point.y;
-                    sumX2 += point.x * point.x;
-                });
-
-                const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-                const intercept = (sumY - slope * sumX) / n;
-                
-                trendValues = values.map((_, x) => {
-                    const trendValue = slope * x + intercept;
-                    return trendValue > 0 ? trendValue : null;
-                });
-            } else {
-                trendValues = new Array(values.length).fill(null);
-            }
 
             const avgValues = new Array(dates.length).fill(previous4WeeksAvg);
 
@@ -1435,7 +1557,7 @@
                         },
                         title: {
                             display: true,
-                            text: `${metricLabels[metric]} Over Time`,
+                            text: `${metricLabels[metric]} Over Time - ${selectedEngineer}`,
                             font: {
                                 size: 18,
                                 weight: 'bold'
@@ -1453,11 +1575,11 @@
                 }
             });
 
-            displayAbsences(engineerFilter, teamLeaderFilter);
-            displayBonuses(engineerFilter, teamLeaderFilter);
+            displayAbsences();
+            displayBonuses();
         }
 
-        async function displayBonuses(engineerFilter, teamLeaderFilter) {
+        async function displayBonuses() {
             const bonusSection = document.getElementById('bonusSection');
             const bonusList = document.getElementById('bonusList');
 
@@ -1467,10 +1589,10 @@
             try {
                 const bonusQuery = query(
                     collection(db, "bonuses"),
+                    where("engineerName", "==", selectedEngineer),
                     where("weekStartDate", ">=", startDate),
                     where("weekStartDate", "<=", endDate),
-                    orderBy("weekStartDate", "desc"),
-                    orderBy("engineerName")
+                    orderBy("weekStartDate", "desc")
                 );
 
                 const bonusSnapshot = await getDocs(bonusQuery);
@@ -1478,15 +1600,6 @@
                 bonusSnapshot.forEach((doc) => {
                     allBonuses.push(doc.data());
                 });
-
-                allBonuses = allBonuses.filter(b => b.teamLeader.toLowerCase() !== 'subbies');
-
-                if (teamLeaderFilter !== 'all') {
-                    allBonuses = allBonuses.filter(b => b.teamLeader === teamLeaderFilter);
-                }
-                if (engineerFilter !== 'all') {
-                    allBonuses = allBonuses.filter(b => b.engineerName === engineerFilter);
-                }
 
                 if (allBonuses.length === 0) {
                     bonusList.innerHTML = '<div class="no-bonus">No bonuses recorded for this period</div>';
@@ -1573,19 +1686,13 @@
             }
         }
 
-        function displayAbsences(engineerFilter, teamLeaderFilter) {
+        function displayAbsences() {
             const absenceSection = document.getElementById('absenceSection');
             const absenceList = document.getElementById('absenceList');
             const absenceSummary = document.getElementById('absenceSummary');
             const absenceByDate = document.getElementById('absenceByDate');
 
-            let filteredAbsences = allAttendance;
-            if (teamLeaderFilter !== 'all') {
-                filteredAbsences = filteredAbsences.filter(a => a.teamLeader === teamLeaderFilter);
-            }
-            if (engineerFilter !== 'all') {
-                filteredAbsences = filteredAbsences.filter(a => a.engineerName === engineerFilter);
-            }
+            const filteredAbsences = allAttendance;
 
             if (filteredAbsences.length === 0) {
                 absenceList.innerHTML = '<div class="no-absences">✅ No absences recorded for this period</div>';
@@ -1725,141 +1832,142 @@
         }
 
         async function showBonusDetails(bonus) {
-    const modal = document.getElementById('bonusDetailsModal');
-    const engineerNameEl = document.getElementById('bonusDetailsEngineerName');
-    const infoEl = document.getElementById('bonusDetailsInfo');
-    const daysEl = document.getElementById('bonusDetailsDays');
+            const modal = document.getElementById('bonusDetailsModal');
+            const engineerNameEl = document.getElementById('bonusDetailsEngineerName');
+            const infoEl = document.getElementById('bonusDetailsInfo');
+            const daysEl = document.getElementById('bonusDetailsDays');
 
-    engineerNameEl.textContent = bonus.engineerName;
-    infoEl.innerHTML = `Team Leader: ${bonus.teamLeader} | Week Starting: ${bonus.weekStartDate} | Total Bonus: £${bonus.weekTotal}`;
+            engineerNameEl.textContent = bonus.engineerName;
+            infoEl.innerHTML = `Team Leader: ${bonus.teamLeader} | Week Starting: ${bonus.weekStartDate} | Total Bonus: £${bonus.weekTotal}`;
 
-    daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Loading job details...</div>';
-    modal.style.display = 'block';
+            daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Loading job details...</div>';
+            modal.style.display = 'block';
 
-    const weekStart = new Date(bonus.weekStartDate);
-    const weekDates = [];
-    for (let i = 0; i < 5; i++) {
-        const date = new Date(weekStart);
-        date.setDate(date.getDate() + i);
-        weekDates.push(date.toISOString().split('T')[0]);
-    }
+            const weekStart = new Date(bonus.weekStartDate);
+            const weekDates = [];
+            for (let i = 0; i < 5; i++) {
+                const date = new Date(weekStart);
+                date.setDate(date.getDate() + i);
+                weekDates.push(date.toISOString().split('T')[0]);
+            }
 
-    try {
-        const dayDetailsPromises = weekDates.map(async (date) => {
-            const jobsQuery = query(
-                collection(db, "jobs"),
-                where("engineerName", "==", bonus.engineerName),
-                where("date", "==", date),
-                where("completed", "==", true),
-                orderBy("startTime")
-            );
+            try {
+                const dayDetailsPromises = weekDates.map(async (date) => {
+                    const jobsQuery = query(
+                        collection(db, "jobs"),
+                        where("engineerName", "==", bonus.engineerName),
+                        where("date", "==", date),
+                        where("completed", "==", true),
+                        orderBy("startTime")
+                    );
 
-            const jobsSnapshot = await getDocs(jobsQuery);
-            const jobs = [];
-            jobsSnapshot.forEach((doc) => {
-                jobs.push(doc.data());
-            });
+                    const jobsSnapshot = await getDocs(jobsQuery);
+                    const jobs = [];
+                    jobsSnapshot.forEach((doc) => {
+                        jobs.push(doc.data());
+                    });
 
-            return { date, jobs };
-        });
-
-        const dayDetails = await Promise.all(dayDetailsPromises);
-
-        daysEl.innerHTML = '';
-        dayDetails.forEach(({ date, jobs }) => {
-            const dateObj = new Date(date + 'T00:00:00');
-            const displayDate = dateObj.toLocaleDateString('en-GB', { 
-                weekday: 'long', 
-                day: '2-digit', 
-                month: 'long',
-                year: 'numeric'
-            });
-
-            const dayBonus = bonus.dailyBonuses && bonus.dailyBonuses[date] ? bonus.dailyBonuses[date] : 0;
-
-            const daySection = document.createElement('div');
-            daySection.className = 'bonus-day-section';
-
-            let jobsHTML = '';
-            if (jobs.length === 0) {
-                jobsHTML = '<div class="no-jobs-day">No completed jobs recorded for this day</div>';
-            } else {
-                jobsHTML = `
-                    <table class="job-details-table">
-                        <thead>
-                            <tr>
-                                <th>Job Number</th>
-                                <th>Start Time</th>
-                                <th>Job Type</th>
-                                <th>Meters</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                jobs.forEach(job => {
-                    jobsHTML += `
-                        <tr>
-                            <td class="job-number-cell">${job.jobNumber || 'N/A'}</td>
-                            <td class="job-time-cell">${job.startTime || 'N/A'}</td>
-                            <td class="job-type-cell">${job.jobType || 'N/A'}</td>
-                            <td class="job-meters-cell">${job.meters ? Math.round(job.meters) : 'N/A'}</td>
-                        </tr>
-                    `;
+                    return { date, jobs };
                 });
 
-                jobsHTML += `
-                        </tbody>
-                    </table>
-                `;
+                const dayDetails = await Promise.all(dayDetailsPromises);
+
+                daysEl.innerHTML = '';
+                dayDetails.forEach(({ date, jobs }) => {
+                    const dateObj = new Date(date + 'T00:00:00');
+                    const displayDate = dateObj.toLocaleDateString('en-GB', { 
+                        weekday: 'long', 
+                        day: '2-digit', 
+                        month: 'long',
+                        year: 'numeric'
+                    });
+
+                    const dayBonus = bonus.dailyBonuses && bonus.dailyBonuses[date] ? bonus.dailyBonuses[date] : 0;
+
+                    const daySection = document.createElement('div');
+                    daySection.className = 'bonus-day-section';
+
+                    let jobsHTML = '';
+                    if (jobs.length === 0) {
+                        jobsHTML = '<div class="no-jobs-day">No completed jobs recorded for this day</div>';
+                    } else {
+                        jobsHTML = `
+                            <table class="job-details-table">
+                                <thead>
+                                    <tr>
+                                        <th>Job Number</th>
+                                        <th>Start Time</th>
+                                        <th>Job Type</th>
+                                        <th>Meters</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                        `;
+
+                        jobs.forEach(job => {
+                            jobsHTML += `
+                                <tr>
+                                    <td class="job-number-cell">${job.jobNumber || 'N/A'}</td>
+                                    <td class="job-time-cell">${job.startTime || 'N/A'}</td>
+                                    <td class="job-type-cell">${job.jobType || 'N/A'}</td>
+                                    <td class="job-meters-cell">${job.meters ? Math.round(job.meters) : 'N/A'}</td>
+                                </tr>
+                            `;
+                        });
+
+                        jobsHTML += `
+                                </tbody>
+                            </table>
+                        `;
+                    }
+
+                    daySection.innerHTML = `
+                        <div class="bonus-day-header">
+                            <div class="bonus-day-date-header">${displayDate}</div>
+                            <div class="bonus-day-total">£${dayBonus}</div>
+                        </div>
+                        ${jobsHTML}
+                    `;
+
+                    daysEl.appendChild(daySection);
+                });
+
+            } catch (error) {
+                console.error("Error loading job details:", error);
+                
+                if (error.message && error.message.includes('index')) {
+                    const match = error.message.match(/https:\/\/[^\s]+/);
+                    if (match) {
+                        const indexUrl = match[0];
+                        daysEl.innerHTML = `
+                            <div style="text-align: center; padding: 20px;">
+                                <strong>Index Required</strong><br><br>
+                                Firestore needs to create an index for job queries.<br><br>
+                                <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
+                                    Click here to create the index
+                                </a><br><br>
+                                After creating it, wait 1-2 minutes and try again.
+                            </div>
+                        `;
+                    } else {
+                        daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Index error. Check console for details.</div>';
+                    }
+                } else {
+                    daysEl.innerHTML = `<div style="text-align: center; padding: 20px;">Error loading job details: ${error.message}</div>`;
+                }
             }
-
-            daySection.innerHTML = `
-                <div class="bonus-day-header">
-                    <div class="bonus-day-date-header">${displayDate}</div>
-                    <div class="bonus-day-total">£${dayBonus}</div>
-                </div>
-                ${jobsHTML}
-            `;
-
-            daysEl.appendChild(daySection);
-        });
-
-    } catch (error) {
-        console.error("Error loading job details:", error);
-        
-        if (error.message && error.message.includes('index')) {
-            const match = error.message.match(/https:\/\/[^\s]+/);
-            if (match) {
-                const indexUrl = match[0];
-                daysEl.innerHTML = `
-                    <div style="text-align: center; padding: 20px;">
-                        <strong>Index Required</strong><br><br>
-                        Firestore needs to create an index for job queries.<br><br>
-                        <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
-                            Click here to create the index
-                        </a><br><br>
-                        After creating it, wait 1-2 minutes and try again.
-                    </div>
-                `;
-            } else {
-                daysEl.innerHTML = '<div style="text-align: center; padding: 20px;">Index error. Check console for details.</div>';
-            }
-        } else {
-            daysEl.innerHTML = `<div style="text-align: center; padding: 20px;">Error loading job details: ${error.message}</div>`;
         }
-    }
-}
 
-window.closeBonusDetails = function(event) {
-    if (!event || event.target === document.getElementById('bonusDetailsModal')) {
-        document.getElementById('bonusDetailsModal').style.display = 'none';
-    }
-}
+        window.closeBonusDetails = function(event) {
+            if (!event || event.target === document.getElementById('bonusDetailsModal')) {
+                document.getElementById('bonusDetailsModal').style.display = 'none';
+            }
+        }
 
-        // Auto-load data on page load
+        // Load engineers and show selection modal on page load
         window.addEventListener('load', () => {
-            loadData();
+            document.getElementById('engineerSelectionModal').style.display = 'flex';
+            loadEngineers();
         });
     </script>
 </body>
