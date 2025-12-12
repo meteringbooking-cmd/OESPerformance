@@ -296,6 +296,89 @@
             font-style: italic;
         }
 
+        .jobs-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .jobs-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .jobs-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 5px;
+            overflow: hidden;
+            font-size: 0.9em;
+        }
+
+        .jobs-table th {
+            background: #2196F3;
+            color: white;
+            padding: 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85em;
+        }
+
+        .jobs-table td {
+            padding: 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .jobs-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .jobs-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .job-number {
+            color: #2196F3;
+            font-weight: 600;
+        }
+
+        .job-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .job-status.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .job-status.aborted {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .job-status.other {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .no-jobs {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            padding: 15px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -520,6 +603,7 @@
 
                 // Load bonus data
                 let bonusData = {};
+                let jobsData = {};
                 try {
                     console.log("Loading bonus data...");
                     const bonusQuery = query(
@@ -545,8 +629,43 @@
                     // Continue without bonus data
                 }
 
+                // Load jobs data
+                try {
+                    console.log("Loading jobs data...");
+                    const jobsQuery = query(
+                        collection(db, "jobs"),
+                        where("engineerName", "==", selectedEngineer)
+                    );
+
+                    const jobsSnapshot = await getDocs(jobsQuery);
+                    jobsSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        // Filter by date in JavaScript
+                        if (data.date >= startDate && data.date <= endDate) {
+                            if (!jobsData[data.date]) {
+                                jobsData[data.date] = [];
+                            }
+                            jobsData[data.date].push(data);
+                        }
+                    });
+                    
+                    // Sort jobs by time for each date
+                    Object.keys(jobsData).forEach(date => {
+                        jobsData[date].sort((a, b) => {
+                            const timeA = a.startTime || '00:00';
+                            const timeB = b.startTime || '00:00';
+                            return timeA.localeCompare(timeB);
+                        });
+                    });
+                    
+                    console.log("Jobs data loaded:", Object.keys(jobsData).length, "dates with jobs");
+                } catch (jobsError) {
+                    console.log("Jobs data not available:", jobsError);
+                    // Continue without jobs data
+                }
+
                 // Display daily breakdown
-                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, selectedEngineer);
+                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, jobsData, selectedEngineer);
 
                 document.getElementById('loadingDiv').style.display = 'none';
 
@@ -575,7 +694,7 @@
             }
         }
 
-        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, engineerName) {
+        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, jobsData, engineerName) {
             const container = document.getElementById('dailyBreakdownContent');
             container.innerHTML = '';
 
@@ -589,6 +708,7 @@
                 const perf = performanceData[date] || {};
                 const attendance = attendanceData[date] || {};
                 const bonus = bonusData[date] || 0;
+                const jobs = jobsData[date] || [];
 
                 const dateObj = new Date(date + 'T00:00:00');
                 const displayDate = dateObj.toLocaleDateString('en-GB', { 
@@ -653,6 +773,58 @@
                     `;
                 }
 
+                // Jobs info
+                let jobsHTML = '';
+                if (jobs.length > 0) {
+                    let jobsTableRows = '';
+                    jobs.forEach(job => {
+                        const statusClass = job.completed ? 'completed' : 
+                                          job.aborted ? 'aborted' : 'other';
+                        const statusText = job.completed ? 'Completed' : 
+                                         job.aborted ? 'Aborted' : 
+                                         (job.bookingStatus || 'Unknown');
+                        
+                        jobsTableRows += `
+                            <tr>
+                                <td class="job-number">${job.jobNumber || 'N/A'}</td>
+                                <td>${job.startTime || 'N/A'}</td>
+                                <td>${job.jobType || 'N/A'}</td>
+                                <td><span class="job-status ${statusClass}">${statusText}</span></td>
+                            </tr>
+                        `;
+                    });
+
+                    jobsHTML = `
+                        <div class="jobs-section">
+                            <div class="jobs-title">
+                                📋 Jobs Completed (${jobs.length})
+                            </div>
+                            <table class="jobs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Job Number</th>
+                                        <th>Start Time</th>
+                                        <th>Job Type</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${jobsTableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                } else if ((perf.jobs || 0) > 0) {
+                    jobsHTML = `
+                        <div class="jobs-section">
+                            <div class="jobs-title">
+                                📋 Jobs (${perf.jobs || 0})
+                            </div>
+                            <div class="no-jobs">Detailed job information not available</div>
+                        </div>
+                    `;
+                }
+
                 card.innerHTML = `
                     <div class="daily-card-header">
                         <div>
@@ -682,6 +854,7 @@
 
                     ${absenceHTML}
                     ${bonusHTML}
+                    ${jobsHTML}
                 `;
 
                 container.appendChild(card);
