@@ -967,8 +967,13 @@
             if (currentModalPayment.overtime === 'yes') {
                 const item = document.createElement('div');
                 item.className = 'amendment-item';
+                
+                // Get current start and end times
+                const startTime = currentModalPayment.overtimeStartTime || 'Not specified';
+                const endTime = currentModalPayment.overtimeEndTime || 'Not specified';
+                
                 item.innerHTML = `
-                    <label class="amendment-label">Overtime (Currently: ${currentModalPayment.overtimeHours.toFixed(2)} hours):</label>
+                    <label class="amendment-label">Overtime (Currently: ${currentModalPayment.overtimeHours.toFixed(2)} hours - ${startTime} to ${endTime}):</label>
                     <div class="amendment-options">
                         <div class="amendment-option">
                             <input type="radio" name="overtime_amendment" value="keep" id="overtime_keep" checked>
@@ -976,24 +981,71 @@
                         </div>
                         <div class="amendment-option">
                             <input type="radio" name="overtime_amendment" value="modify" id="overtime_modify">
-                            <label for="overtime_modify">Modify hours</label>
+                            <label for="overtime_modify">Modify times</label>
                         </div>
                         <div class="amendment-option">
                             <input type="radio" name="overtime_amendment" value="remove" id="overtime_remove">
                             <label for="overtime_remove">Remove this claim</label>
                         </div>
                     </div>
-                    <input type="number" id="overtime_hours_amendment" class="amendment-input" step="0.25" min="0" 
-                           placeholder="New hours (if modifying)" style="display:none;">
+                    <div id="overtime_times_container" style="display:none; margin-top: 15px; padding: 15px; background: white; border-radius: 6px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; color: #666;">Start Time:</label>
+                                <input type="time" id="overtime_start_time" class="amendment-input" style="margin-top: 0;" value="${startTime !== 'Not specified' ? startTime : ''}">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; color: #666;">End Time:</label>
+                                <input type="time" id="overtime_end_time" class="amendment-input" style="margin-top: 0;" value="${endTime !== 'Not specified' ? endTime : ''}">
+                            </div>
+                        </div>
+                        <div id="calculated_hours" style="margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 4px; text-align: center; font-weight: 600; color: #667eea;">
+                            Calculated Hours: <span id="hours_display">0.00</span> hours
+                        </div>
+                    </div>
                 `;
                 formSection.appendChild(item);
 
-                // Show/hide hours input based on selection
+                // Show/hide time inputs based on selection and calculate hours
                 setTimeout(() => {
+                    const startTimeInput = document.getElementById('overtime_start_time');
+                    const endTimeInput = document.getElementById('overtime_end_time');
+                    const hoursDisplay = document.getElementById('hours_display');
+                    
+                    function calculateHours() {
+                        const start = startTimeInput.value;
+                        const end = endTimeInput.value;
+                        
+                        if (start && end) {
+                            const startParts = start.split(':');
+                            const endParts = end.split(':');
+                            
+                            let startMinutes = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+                            let endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+                            
+                            // Handle overnight shifts
+                            if (endMinutes < startMinutes) {
+                                endMinutes += 24 * 60;
+                            }
+                            
+                            const totalMinutes = endMinutes - startMinutes;
+                            const hours = totalMinutes / 60;
+                            hoursDisplay.textContent = hours.toFixed(2);
+                        }
+                    }
+                    
+                    startTimeInput.addEventListener('change', calculateHours);
+                    endTimeInput.addEventListener('change', calculateHours);
+                    
+                    // Initial calculation if times are present
+                    if (startTimeInput.value && endTimeInput.value) {
+                        calculateHours();
+                    }
+                    
                     document.querySelectorAll('input[name="overtime_amendment"]').forEach(radio => {
                         radio.addEventListener('change', function() {
-                            const hoursInput = document.getElementById('overtime_hours_amendment');
-                            hoursInput.style.display = this.value === 'modify' ? 'block' : 'none';
+                            const timesContainer = document.getElementById('overtime_times_container');
+                            timesContainer.style.display = this.value === 'modify' ? 'block' : 'none';
                         });
                     });
                 }, 100);
@@ -1115,13 +1167,38 @@
                 if (overtimeAmendment.value === 'remove') {
                     amendments.overtime = false;
                 } else if (overtimeAmendment.value === 'modify') {
-                    const newHours = parseFloat(document.getElementById('overtime_hours_amendment').value);
-                    if (!newHours || newHours <= 0) {
-                        alert('Please enter valid hours for overtime modification.');
+                    const startTime = document.getElementById('overtime_start_time').value;
+                    const endTime = document.getElementById('overtime_end_time').value;
+                    
+                    if (!startTime || !endTime) {
+                        alert('Please enter both start and end times for overtime modification.');
                         return;
                     }
+                    
+                    // Calculate hours from times
+                    const startParts = startTime.split(':');
+                    const endParts = endTime.split(':');
+                    
+                    let startMinutes = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+                    let endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+                    
+                    // Handle overnight shifts
+                    if (endMinutes < startMinutes) {
+                        endMinutes += 24 * 60;
+                    }
+                    
+                    const totalMinutes = endMinutes - startMinutes;
+                    const newHours = totalMinutes / 60;
+                    
+                    if (newHours <= 0) {
+                        alert('End time must be after start time.');
+                        return;
+                    }
+                    
                     amendments.overtime = true;
                     amendments.overtimeHours = newHours;
+                    amendments.overtimeStartTime = startTime;
+                    amendments.overtimeEndTime = endTime;
                 } else {
                     amendments.overtime = true;
                 }
@@ -1463,7 +1540,11 @@
                 if (payment.amendments.overtime !== undefined) {
                     amendmentsHTML += `<div class="amendment-detail">• Overtime: ${payment.amendments.overtime ? 'Kept' : 'Removed'}`;
                     if (payment.amendments.overtimeHours) {
-                        amendmentsHTML += ` (Modified to ${payment.amendments.overtimeHours} hours)`;
+                        amendmentsHTML += ` (Modified to ${payment.amendments.overtimeHours.toFixed(2)} hours`;
+                        if (payment.amendments.overtimeStartTime && payment.amendments.overtimeEndTime) {
+                            amendmentsHTML += ` - ${payment.amendments.overtimeStartTime} to ${payment.amendments.overtimeEndTime}`;
+                        }
+                        amendmentsHTML += `)`;
                     }
                     amendmentsHTML += `</div>`;
                 }
