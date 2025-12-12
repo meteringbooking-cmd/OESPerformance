@@ -601,7 +601,7 @@
                 });
                 console.log("Attendance data loaded:", Object.keys(attendanceData).length, "records");
 
-                // Load bonus data
+                // Load bonus data and jobs data together
                 let bonusData = {};
                 let jobsData = {};
                 try {
@@ -622,46 +622,21 @@
                                 }
                             });
                         }
+                        // Extract jobs data if it exists
+                        if (data.dailyJobs) {
+                            Object.keys(data.dailyJobs).forEach(date => {
+                                // Filter by date in JavaScript
+                                if (date >= startDate && date <= endDate) {
+                                    jobsData[date] = data.dailyJobs[date];
+                                }
+                            });
+                        }
                     });
                     console.log("Bonus data loaded:", Object.keys(bonusData).length, "records");
+                    console.log("Jobs data loaded:", Object.keys(jobsData).length, "dates with jobs");
                 } catch (bonusError) {
                     console.log("Bonus data not available:", bonusError);
                     // Continue without bonus data
-                }
-
-                // Load jobs data
-                try {
-                    console.log("Loading jobs data...");
-                    const jobsQuery = query(
-                        collection(db, "jobs"),
-                        where("engineerName", "==", selectedEngineer)
-                    );
-
-                    const jobsSnapshot = await getDocs(jobsQuery);
-                    jobsSnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        // Filter by date in JavaScript
-                        if (data.date >= startDate && data.date <= endDate) {
-                            if (!jobsData[data.date]) {
-                                jobsData[data.date] = [];
-                            }
-                            jobsData[data.date].push(data);
-                        }
-                    });
-                    
-                    // Sort jobs by time for each date
-                    Object.keys(jobsData).forEach(date => {
-                        jobsData[date].sort((a, b) => {
-                            const timeA = a.startTime || '00:00';
-                            const timeB = b.startTime || '00:00';
-                            return timeA.localeCompare(timeB);
-                        });
-                    });
-                    
-                    console.log("Jobs data loaded:", Object.keys(jobsData).length, "dates with jobs");
-                } catch (jobsError) {
-                    console.log("Jobs data not available:", jobsError);
-                    // Continue without jobs data
                 }
 
                 // Display daily breakdown
@@ -778,16 +753,14 @@
                 if (jobs.length > 0) {
                     let jobsTableRows = '';
                     jobs.forEach(job => {
-                        const statusClass = job.completed ? 'completed' : 
-                                          job.aborted ? 'aborted' : 'other';
-                        const statusText = job.completed ? 'Completed' : 
-                                         job.aborted ? 'Aborted' : 
-                                         (job.bookingStatus || 'Unknown');
+                        const statusClass = (job.bookingStatus || '').toLowerCase().includes('completed') ? 'completed' : 
+                                          (job.bookingStatus || '').toLowerCase().includes('abort') ? 'aborted' : 'other';
+                        const statusText = job.bookingStatus || 'Unknown';
                         
                         jobsTableRows += `
                             <tr>
-                                <td class="job-number">${job.jobNumber || 'N/A'}</td>
-                                <td>${job.startTime || 'N/A'}</td>
+                                <td class="job-number">${job.bookingRef || 'N/A'}</td>
+                                <td>${job.time || 'N/A'}</td>
                                 <td>${job.jobType || 'N/A'}</td>
                                 <td><span class="job-status ${statusClass}">${statusText}</span></td>
                             </tr>
@@ -802,8 +775,8 @@
                             <table class="jobs-table">
                                 <thead>
                                     <tr>
-                                        <th>Job Number</th>
-                                        <th>Start Time</th>
+                                        <th>Booking Reference</th>
+                                        <th>Time</th>
                                         <th>Job Type</th>
                                         <th>Status</th>
                                     </tr>
@@ -820,7 +793,7 @@
                             <div class="jobs-title">
                                 📋 Jobs (${perf.jobs || 0})
                             </div>
-                            <div class="no-jobs">Detailed job information not available</div>
+                            <div class="no-jobs">Detailed job information not available for this date</div>
                         </div>
                     `;
                 }
