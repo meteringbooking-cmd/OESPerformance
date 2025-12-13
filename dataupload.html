@@ -516,17 +516,35 @@
         function parseTime(timeValue) {
             if (!timeValue) return '';
             
+            // If it's a string containing both date and time (e.g., "01/12/2025 10:39:00")
+            if (typeof timeValue === 'string' && timeValue.includes(' ')) {
+                const timePart = timeValue.split(' ')[1]; // Get the time part after the space
+                if (timePart) {
+                    // Extract just HH:MM from HH:MM:SS
+                    return timePart.substring(0, 5);
+                }
+            }
+            
             // If already in HH:MM format
             if (typeof timeValue === 'string' && /^\d{1,2}:\d{2}/.test(timeValue)) {
                 return timeValue.substring(0, 5); // Take just HH:MM
             }
             
-            // Handle Excel time serial (fraction of day)
-            if (typeof timeValue === 'number' && timeValue < 1) {
-                const totalMinutes = Math.round(timeValue * 24 * 60);
-                const hours = Math.floor(totalMinutes / 60);
-                const minutes = totalMinutes % 60;
-                return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+            // Handle Excel serial date-time (greater than 1 means it includes date)
+            if (typeof timeValue === 'number') {
+                // Excel serial date-time
+                const date = XLSX.SSF.parse_date_code(timeValue);
+                return `${String(date.H).padStart(2, '0')}:${String(date.M).padStart(2, '0')}`;
+            }
+            
+            // Try parsing as a Date object
+            try {
+                const date = new Date(timeValue);
+                if (!isNaN(date.getTime())) {
+                    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                }
+            } catch (e) {
+                // If parsing fails, return as string
             }
             
             return timeValue.toString();
