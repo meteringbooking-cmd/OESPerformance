@@ -311,7 +311,6 @@
 <body>
     <div class="container">
         <div class="header">
-            <a href="index.html" class="back-link-top">← Back to Home</a>
             <div class="logo">📤 Weekly Job Data Upload</div>
             <div class="subtitle">Upload CSV or Excel file with job data</div>
         </div>
@@ -666,24 +665,24 @@
             hideMessages();
 
             try {
-                // Organize data by engineer and date for the bonuses collection
-                const bonusData = {};
+                // Organize data by engineer and date for the jobsData collection
+                const jobsDataByEngineer = {};
 
                 processedData.forEach(row => {
                     const engineer = row.engineer;
                     const date = row.date;
 
-                    if (!bonusData[engineer]) {
-                        bonusData[engineer] = {
+                    if (!jobsDataByEngineer[engineer]) {
+                        jobsDataByEngineer[engineer] = {
                             dailyJobs: {}
                         };
                     }
 
-                    if (!bonusData[engineer].dailyJobs[date]) {
-                        bonusData[engineer].dailyJobs[date] = [];
+                    if (!jobsDataByEngineer[engineer].dailyJobs[date]) {
+                        jobsDataByEngineer[engineer].dailyJobs[date] = [];
                     }
 
-                    bonusData[engineer].dailyJobs[date].push({
+                    jobsDataByEngineer[engineer].dailyJobs[date].push({
                         time: row.time,
                         bookingRef: row.bookingRef,
                         jobType: row.jobType,
@@ -691,42 +690,54 @@
                     });
                 });
 
-                // Upload to Firestore in batches
+                console.log('Uploading jobs data:', jobsDataByEngineer);
+
+                // Upload to Firestore in the jobsData collection
                 let uploadCount = 0;
                 
-                for (const engineer in bonusData) {
+                for (const engineer in jobsDataByEngineer) {
                     // Check if document exists for this engineer
-                    const bonusQuery = query(
-                        collection(db, "bonuses"),
+                    const jobsQuery = query(
+                        collection(db, "jobsData"),
                         where("engineerName", "==", engineer)
                     );
                     
-                    const querySnapshot = await getDocs(bonusQuery);
+                    const querySnapshot = await getDocs(jobsQuery);
                     
                     if (querySnapshot.empty) {
                         // Create new document
-                        await addDoc(collection(db, "bonuses"), {
+                        const newDoc = await addDoc(collection(db, "jobsData"), {
                             engineerName: engineer,
                             weekCommencing: weekCommencingDate,
-                            dailyJobs: bonusData[engineer].dailyJobs,
+                            dailyJobs: jobsDataByEngineer[engineer].dailyJobs,
                             uploadedAt: new Date()
                         });
+                        console.log(`Created new jobsData document for ${engineer}:`, newDoc.id);
                     } else {
                         // Update existing document
                         const docRef = querySnapshot.docs[0].ref;
                         const existingData = querySnapshot.docs[0].data();
                         
+                        console.log(`Updating existing document for ${engineer}`);
+                        console.log('Existing dailyJobs:', existingData.dailyJobs);
+                        console.log('New dailyJobs:', jobsDataByEngineer[engineer].dailyJobs);
+                        
                         // Merge daily jobs
                         const mergedDailyJobs = {
                             ...existingData.dailyJobs,
-                            ...bonusData[engineer].dailyJobs
+                            ...jobsDataByEngineer[engineer].dailyJobs
                         };
                         
-                        await writeBatch(db).update(docRef, {
+                        console.log('Merged dailyJobs:', mergedDailyJobs);
+                        
+                        const batch = writeBatch(db);
+                        batch.update(docRef, {
                             dailyJobs: mergedDailyJobs,
                             lastUpdated: new Date()
                         });
-                        await writeBatch(db).commit();
+                        await batch.commit();
+                        
+                        console.log(`Updated jobsData document for ${engineer}`);
                     }
                     
                     uploadCount++;
