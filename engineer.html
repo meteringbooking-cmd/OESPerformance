@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1223,10 +1224,9 @@
         window.db = db;
         console.log("Firebase initialized successfully");
 
+        let allEngineers = [];
         let currentEngineer = '';
         let additionalPayments = {};
-        let engineersWithPasswords = [];
-        let selectedEngineerForAuth = '';
 
         // Set default dates (last 7 days)
         const today = new Date();
@@ -1246,26 +1246,23 @@
             try {
                 selectElement.innerHTML = '<option value="">Loading engineers...</option>';
                 
-                console.log("Fetching engineers collection...");
-                const querySnapshot = await getDocs(collection(db, "engineers"));
+                console.log("Fetching performance collection...");
+                const querySnapshot = await getDocs(collection(db, "performance"));
                 
                 console.log("Documents fetched:", querySnapshot.size);
                 
-                engineersWithPasswords = [];
+                const engineerSet = new Set();
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
                     if (data.engineerName) {
-                        engineersWithPasswords.push({
-                            name: data.engineerName,
-                            password: data.password || null
-                        });
+                        engineerSet.add(data.engineerName);
                     }
                 });
 
-                engineersWithPasswords.sort((a, b) => a.name.localeCompare(b.name));
-                console.log("Engineers found:", engineersWithPasswords);
+                allEngineers = Array.from(engineerSet).sort();
+                console.log("Engineers found:", allEngineers);
                 
-                if (engineersWithPasswords.length === 0) {
+                if (allEngineers.length === 0) {
                     selectElement.innerHTML = '<option value="">No engineers found</option>';
                     selectElement.disabled = true;
                     return;
@@ -1273,24 +1270,20 @@
                 
                 selectElement.innerHTML = '<option value="">-- Select an Engineer --</option>';
                 
-                engineersWithPasswords.forEach(engineer => {
+                allEngineers.forEach(engineer => {
                     const option = document.createElement('option');
-                    option.value = engineer.name;
-                    option.textContent = engineer.name;
+                    option.value = engineer;
+                    option.textContent = engineer;
                     selectElement.appendChild(option);
                 });
 
                 selectElement.disabled = false;
-                console.log("Dropdown enabled with", engineersWithPasswords.length, "engineers");
+                console.log("Dropdown enabled with", allEngineers.length, "engineers");
 
                 selectElement.addEventListener('change', function() {
-                    if (this.value) {
-                        selectedEngineerForAuth = this.value;
-                        showPasswordModal(this.value);
-                    } else {
-                        loadBtn.disabled = true;
-                        currentEngineer = '';
-                    }
+                    loadBtn.disabled = !this.value;
+                    currentEngineer = this.value;
+                    console.log("Engineer selected:", this.value);
                 });
 
             } catch (error) {
@@ -1301,123 +1294,68 @@
             }
         }
 
-        window.showPasswordModal = function(engineerName) {
-            document.getElementById('selectedEngineerName').textContent = engineerName;
-            document.getElementById('passwordModalInput').value = '';
-            document.getElementById('passwordError').style.display = 'none';
-            document.getElementById('passwordModal').style.display = 'block';
-            document.getElementById('passwordModalInput').focus();
-        }
-
-        window.togglePasswordVisibility = function() {
-            const input = document.getElementById('passwordModalInput');
-            const btn = document.querySelector('.password-toggle-btn');
-            if (input.type === 'password') {
-                input.type = 'text';
-                btn.textContent = '🙈';
-            } else {
-                input.type = 'password';
-                btn.textContent = '👁️';
-            }
-        }
-
-        window.cancelPasswordEntry = function() {
-            document.getElementById('passwordModal').style.display = 'none';
-            document.getElementById('engineerSelect').value = '';
-            selectedEngineerForAuth = '';
-            currentEngineer = '';
-            document.getElementById('loadBtn').disabled = true;
-        }
-
-        window.verifyPassword = function() {
-            const enteredPassword = document.getElementById('passwordModalInput').value;
-            const engineer = engineersWithPasswords.find(e => e.name === selectedEngineerForAuth);
-            
-            if (!engineer) {
-                showPasswordError('Engineer not found');
-                return;
-            }
-            
-            if (!engineer.password) {
-                showPasswordError('No password set for this account. Contact administrator.');
-                return;
-            }
-            
-            if (enteredPassword !== engineer.password) {
-                showPasswordError('Incorrect password. Please try again.');
-                return;
-            }
-            
-            // Password correct - allow access
-            document.getElementById('passwordModal').style.display = 'none';
-            currentEngineer = selectedEngineerForAuth;
-            document.getElementById('loadBtn').disabled = false;
-            console.log("Authentication successful for:", currentEngineer);
-        }
-
-        function showPasswordError(message) {
-            const errorDiv = document.getElementById('passwordError');
-            errorDiv.textContent = '❌ ' + message;
-            errorDiv.style.display = 'block';
-        }
-
-        // Allow Enter key to submit password
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && document.getElementById('passwordModal').style.display === 'block') {
-                verifyPassword();
-            }
-        });
-
         window.loadDailyBreakdown = async function() {
-            if (!currentEngineer) {
-                alert('Please select an engineer and authenticate first');
-                return;
-            }
-
+            const engineerSelect = document.getElementById('engineerSelect');
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const selectedEngineer = currentEngineer;
+            const selectedEngineer = engineerSelect.value;
+
+            if (!selectedEngineer) {
+                alert('Please select an engineer');
+                return;
+            }
 
             if (!startDate || !endDate) {
                 alert('Please select both start and end dates');
                 return;
             }
 
+            if (startDate > endDate) {
+                alert('Start date must be before end date');
+                return;
+            }
+
+            currentEngineer = selectedEngineer;
+
             document.getElementById('loadingDiv').style.display = 'block';
             document.getElementById('noDataDiv').style.display = 'none';
             document.getElementById('dailyBreakdownSection').style.display = 'none';
+            document.getElementById('additionalPaymentBtn').style.display = 'none';
 
             try {
-                console.log("Loading data for:", selectedEngineer, "from", startDate, "to", endDate);
+                // Get all dates in range (weekdays only)
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const allDates = [];
+                
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        allDates.push(d.toISOString().split('T')[0]);
+                    }
+                }
 
-                // Query performance data
-                const performanceQuery = query(
-                    collection(db, "performanceData"),
+                // Load performance data
+                console.log("Loading performance data...");
+                const perfQuery = query(
+                    collection(db, "performance"),
                     where("engineerName", "==", selectedEngineer)
                 );
 
-                const performanceSnapshot = await getDocs(performanceQuery);
+                const perfSnapshot = await getDocs(perfQuery);
                 const performanceData = {};
-                
-                performanceSnapshot.forEach((doc) => {
+                perfSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const docDate = data.date;
-                    
-                    if (docDate >= startDate && docDate <= endDate) {
-                        performanceData[docDate] = {
-                            jobs: data.jobs || 0,
-                            completed: data.completed || 0,
-                            aborted: data.aborted || 0,
-                            meters: data.meters || 0
-                        };
+                    if (data.date >= startDate && data.date <= endDate) {
+                        performanceData[data.date] = data;
                     }
                 });
+                console.log("Performance data loaded:", Object.keys(performanceData).length, "records");
 
-                console.log("Performance data loaded:", Object.keys(performanceData).length, "dates");
-
-                // Query attendance data
+                // Load attendance data
+                console.log("Loading attendance data...");
                 const attendanceQuery = query(
-                    collection(db, "attendanceData"),
+                    collection(db, "attendance"),
                     where("engineerName", "==", selectedEngineer)
                 );
 
@@ -1425,53 +1363,40 @@
                 const attendanceData = {};
                 attendanceSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const docDate = data.date;
-                    
-                    if (docDate >= startDate && docDate <= endDate) {
-                        attendanceData[docDate] = {
-                            attendance: data.attendance
-                        };
+                    if (data.date >= startDate && data.date <= endDate) {
+                        attendanceData[data.date] = data;
                     }
                 });
+                console.log("Attendance data loaded:", Object.keys(attendanceData).length, "records");
 
-                console.log("Attendance data loaded:", Object.keys(attendanceData).length, "dates");
+                // Load bonus data (separate from jobs)
+                let bonusData = {};
+                try {
+                    console.log("Loading bonus data...");
+                    const bonusQuery = query(
+                        collection(db, "bonuses"),
+                        where("engineerName", "==", selectedEngineer)
+                    );
 
-                // Query bonus data
-                const bonusQuery = query(
-                    collection(db, "bonusData"),
-                    where("engineerName", "==", selectedEngineer)
-                );
-
-                const bonusSnapshot = await getDocs(bonusQuery);
-                const bonusData = {};
-                bonusSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const docDate = data.date;
+                    const bonusSnapshot = await getDocs(bonusQuery);
+                    console.log("Bonuses documents found:", bonusSnapshot.size);
                     
-                    if (docDate >= startDate && docDate <= endDate) {
-                        bonusData[docDate] = data.bonus || 0;
-                    }
-                });
-
-                console.log("Bonus data loaded:", Object.keys(bonusData).length, "dates");
-
-                // Generate all weekdays in range
-                const allDates = [];
-                let currentDate = new Date(startDate);
-                const endDateObj = new Date(endDate);
-
-                while (currentDate <= endDateObj) {
-                    const dayOfWeek = currentDate.getDay();
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        const dateStr = currentDate.toISOString().split('T')[0];
-                        allDates.push(dateStr);
-                    }
-                    currentDate.setDate(currentDate.getDate() + 1);
+                    bonusSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        if (data.dailyBonuses) {
+                            Object.keys(data.dailyBonuses).forEach(date => {
+                                if (date >= startDate && date <= endDate) {
+                                    bonusData[date] = data.dailyBonuses[date];
+                                }
+                            });
+                        }
+                    });
+                    console.log("Bonus data loaded:", Object.keys(bonusData).length, "records");
+                } catch (bonusError) {
+                    console.error("Error loading bonus data:", bonusError);
                 }
 
-                console.log("Generated weekdays:", allDates.length);
-
-                // Load jobs data
+                // Load jobs data from jobsData collection
                 let jobsData = {};
                 try {
                     console.log("Loading jobs data...");
@@ -1485,16 +1410,20 @@
                     
                     jobsSnapshot.forEach((doc) => {
                         const data = doc.data();
+                        console.log("JobsData document data:", data);
                         
                         if (data.dailyJobs) {
+                            console.log("Found dailyJobs:", Object.keys(data.dailyJobs));
                             Object.keys(data.dailyJobs).forEach(date => {
                                 if (date >= startDate && date <= endDate) {
                                     jobsData[date] = data.dailyJobs[date];
+                                    console.log(`Jobs for ${date}:`, jobsData[date]);
                                 }
                             });
                         }
                     });
                     console.log("Jobs data loaded:", Object.keys(jobsData).length, "dates with jobs");
+                    console.log("Jobs data object:", jobsData);
                 } catch (jobsError) {
                     console.error("Error loading jobs data:", jobsError);
                 }
@@ -1526,8 +1455,25 @@
             } catch (error) {
                 console.error("Error loading data:", error);
                 document.getElementById('loadingDiv').style.display = 'none';
-                document.getElementById('noDataDiv').textContent = 'Error loading data: ' + error.message;
-                document.getElementById('noDataDiv').style.display = 'block';
+                
+                if (error.message && error.message.includes('index')) {
+                    const match = error.message.match(/https:\/\/[^\s]+/);
+                    if (match) {
+                        const indexUrl = match[0];
+                        document.getElementById('noDataDiv').innerHTML = `
+                            <strong>Index Required</strong><br><br>
+                            Firestore needs to create an index for this query.<br><br>
+                            <a href="${indexUrl}" target="_blank" style="color: #667eea; font-weight: bold; text-decoration: underline;">
+                                Click here to create the index
+                            </a><br><br>
+                            After creating it, wait 1-2 minutes and refresh this page.
+                        `;
+                        document.getElementById('noDataDiv').style.display = 'block';
+                    }
+                } else {
+                    document.getElementById('noDataDiv').textContent = 'Error loading data: ' + error.message;
+                    document.getElementById('noDataDiv').style.display = 'block';
+                }
             }
         }
 
@@ -1547,6 +1493,14 @@
                 const bonus = bonusData[date] || 0;
                 const jobs = jobsData[date] || [];
                 const additionalPayment = additionalPayments[date];
+
+                console.log(`Displaying date ${date}:`, {
+                    hasPerformance: !!perf.jobs,
+                    perfJobCount: perf.jobs,
+                    hasJobsData: jobs.length > 0,
+                    jobsCount: jobs.length,
+                    jobs: jobs
+                });
 
                 const dateObj = new Date(date + 'T00:00:00');
                 const displayDate = dateObj.toLocaleDateString('en-GB', { 
@@ -1611,7 +1565,7 @@
                     `;
                 }
 
-                // Jobs info
+                // Jobs info - prioritize uploaded job data
                 let jobsHTML = '';
                 if (jobs.length > 0) {
                     let jobsTableRows = '';
@@ -1622,6 +1576,7 @@
                                           (job.bookingStatus || '').toLowerCase().includes('abort') ? 'aborted' : 'other';
                         const statusText = job.bookingStatus || 'Unknown';
                         
+                        // Table row for desktop
                         jobsTableRows += `
                             <tr>
                                 <td class="job-number">${job.bookingRef || 'N/A'}</td>
@@ -1631,6 +1586,7 @@
                             </tr>
                         `;
                         
+                        // Card for mobile
                         jobsCards += `
                             <div class="job-card">
                                 <div class="job-card-row">
@@ -1659,6 +1615,7 @@
                                 📋 Jobs Completed (${jobs.length})
                             </div>
                             
+                            <!-- Desktop table view -->
                             <table class="jobs-table">
                                 <thead>
                                     <tr>
@@ -1673,16 +1630,18 @@
                                 </tbody>
                             </table>
                             
+                            <!-- Mobile card view -->
                             ${jobsCards}
                         </div>
                     `;
                 } else if ((perf.jobs || 0) > 0) {
+                    // Show job count from performance data even if no detailed jobs
                     jobsHTML = `
                         <div class="jobs-section">
                             <div class="jobs-title">
                                 📋 Jobs (${perf.jobs || 0})
                             </div>
-                            <div class="no-jobs">Detailed job information not available for this date.</div>
+                            <div class="no-jobs">Detailed job information not available for this date. Upload job data to see details.</div>
                         </div>
                     `;
                 }
@@ -1735,18 +1694,23 @@
         function generateAdditionalPaymentHTML(payment, dateObj) {
             const status = payment.status || 'pending';
             
+            // If approved with changes, show the AMENDED values
             if (status === 'approved-with-changes') {
+                // Apply amendments to create the approved payment object
                 let approvedPayment = { ...payment };
                 
                 if (payment.amendments) {
+                    // Apply standby amendment
                     if (payment.amendments.standby !== undefined) {
                         approvedPayment.standby = payment.amendments.standby ? 'yes' : 'no';
                     }
                     
+                    // Apply working away amendment
                     if (payment.amendments.workingAway !== undefined) {
                         approvedPayment.workingAway = payment.amendments.workingAway ? 'yes' : 'no';
                     }
                     
+                    // Apply overtime amendments
                     if (payment.amendments.overtime !== undefined) {
                         if (!payment.amendments.overtime) {
                             approvedPayment.overtime = 'no';
@@ -1762,6 +1726,7 @@
                         }
                     }
                     
+                    // Apply job removals
                     if (payment.amendments.removeJobs && payment.amendments.removeJobs.length > 0 && approvedPayment.jobs) {
                         approvedPayment.jobs = approvedPayment.jobs.map(job => {
                             if (payment.amendments.removeJobs.includes(job.jobNumber)) {
@@ -1772,6 +1737,7 @@
                     }
                 }
                 
+                // Calculate total for approved payment with amendments
                 let totalAmount = 0;
                 let details = [];
                 
@@ -1786,6 +1752,7 @@
                 const isNewYear = month === 1 && day === 1;
                 const isSpecialHoliday = isChristmas || isBoxingDay || isNewYear;
 
+                // Calculate standby with amendments
                 if (approvedPayment.standby === 'yes') {
                     let standbyAmount = 0;
                     if (isSpecialHoliday) {
@@ -1801,12 +1768,14 @@
                     totalAmount += standbyAmount;
                 }
 
+                // Calculate working away with amendments
                 if (approvedPayment.workingAway === 'yes') {
                     const allowanceAmount = 50;
                     details.push({ label: 'Working Away Allowance', value: `£${allowanceAmount.toFixed(2)}` });
                     totalAmount += allowanceAmount;
                 }
 
+                // Calculate overtime with amendments
                 if (approvedPayment.overtime === 'yes' && approvedPayment.overtimeHours > 0) {
                     let hourlyRate = 24.94;
                     let rateLabel = 'Weekday';
@@ -1826,7 +1795,7 @@
                     }
                     details.push({ 
                         label: overtimeLabel, 
-                        value: `£${overtimeAmount.toFixed(2)}`
+                        value: `£${overtimeAmount.toFixed(2)}` 
                     });
                     details.push({ label: `Reason: ${approvedPayment.overtimeReason}`, value: '' });
                     totalAmount += overtimeAmount;
