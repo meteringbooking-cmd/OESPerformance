@@ -1104,6 +1104,29 @@
         </div>
     </div>
 
+     <!-- Password Modal -->
+    <div id="passwordModal" class="password-modal">
+        <div class="password-modal-content">
+            <div class="password-modal-header">
+                <h3>🔐 Enter Password</h3>
+            </div>
+            <div class="password-modal-body">
+                <div class="password-error" id="passwordError"></div>
+                <p style="margin-bottom: 15px; color: #666;">
+                    Please enter your password to access <strong id="selectedEngineerName"></strong>'s data
+                </p>
+                <div class="password-input-wrapper">
+                    <input type="password" id="passwordModalInput" placeholder="Enter password">
+                    <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility()">👁️</button>
+                </div>
+                <div class="password-buttons">
+                    <button class="btn-password-cancel" onclick="cancelPasswordEntry()">Cancel</button>
+                    <button class="btn-password-submit" onclick="verifyPassword()">Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Additional Payment Modal -->
     <div id="additionalPaymentModal" class="modal">
         <div class="modal-content">
@@ -1227,6 +1250,8 @@
         let allEngineers = [];
         let currentEngineer = '';
         let additionalPayments = {};
+        let engineersWithPasswords = [];
+        let selectedEngineerForAuth = '';
 
         // Set default dates (last 7 days)
         const today = new Date();
@@ -1246,23 +1271,26 @@
             try {
                 selectElement.innerHTML = '<option value="">Loading engineers...</option>';
                 
-                console.log("Fetching performance collection...");
-                const querySnapshot = await getDocs(collection(db, "performance"));
+                console.log("Fetching engineers collection...");
+                const querySnapshot = await getDocs(collection(db, "engineers"));
                 
                 console.log("Documents fetched:", querySnapshot.size);
                 
-                const engineerSet = new Set();
+                engineersWithPasswords = [];
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
                     if (data.engineerName) {
-                        engineerSet.add(data.engineerName);
+                        engineersWithPasswords.push({
+                            name: data.engineerName,
+                            password: data.password || null
+                        });
                     }
                 });
 
-                allEngineers = Array.from(engineerSet).sort();
-                console.log("Engineers found:", allEngineers);
+                engineersWithPasswords.sort((a, b) => a.name.localeCompare(b.name));
+                console.log("Engineers found:", engineersWithPasswords);
                 
-                if (allEngineers.length === 0) {
+                if (engineersWithPasswords.length === 0) {
                     selectElement.innerHTML = '<option value="">No engineers found</option>';
                     selectElement.disabled = true;
                     return;
@@ -1270,20 +1298,24 @@
                 
                 selectElement.innerHTML = '<option value="">-- Select an Engineer --</option>';
                 
-                allEngineers.forEach(engineer => {
+                engineersWithPasswords.forEach(engineer => {
                     const option = document.createElement('option');
-                    option.value = engineer;
-                    option.textContent = engineer;
+                    option.value = engineer.name;
+                    option.textContent = engineer.name;
                     selectElement.appendChild(option);
                 });
 
                 selectElement.disabled = false;
-                console.log("Dropdown enabled with", allEngineers.length, "engineers");
+                console.log("Dropdown enabled with", engineersWithPasswords.length, "engineers");
 
                 selectElement.addEventListener('change', function() {
-                    loadBtn.disabled = !this.value;
-                    currentEngineer = this.value;
-                    console.log("Engineer selected:", this.value);
+                    if (this.value) {
+                        selectedEngineerForAuth = this.value;
+                        showPasswordModal(this.value);
+                    } else {
+                        loadBtn.disabled = true;
+                        currentEngineer = '';
+                    }
                 });
 
             } catch (error) {
@@ -1293,6 +1325,73 @@
                 alert('Error loading engineers. Check console for details.\n\n' + error.message);
             }
         }
+
+        window.showPasswordModal = function(engineerName) {
+            document.getElementById('selectedEngineerName').textContent = engineerName;
+            document.getElementById('passwordModalInput').value = '';
+            document.getElementById('passwordError').style.display = 'none';
+            document.getElementById('passwordModal').style.display = 'block';
+            document.getElementById('passwordModalInput').focus();
+        }
+
+        window.togglePasswordVisibility = function() {
+            const input = document.getElementById('passwordModalInput');
+            const btn = document.querySelector('.password-toggle-btn');
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                btn.textContent = '👁️';
+            }
+        }
+
+        window.cancelPasswordEntry = function() {
+            document.getElementById('passwordModal').style.display = 'none';
+            document.getElementById('engineerSelect').value = '';
+            selectedEngineerForAuth = '';
+            currentEngineer = '';
+            document.getElementById('loadBtn').disabled = true;
+        }
+
+        window.verifyPassword = function() {
+            const enteredPassword = document.getElementById('passwordModalInput').value;
+            const engineer = engineersWithPasswords.find(e => e.name === selectedEngineerForAuth);
+            
+            if (!engineer) {
+                showPasswordError('Engineer not found');
+                return;
+            }
+            
+            if (!engineer.password) {
+                showPasswordError('No password set for this account. Contact administrator.');
+                return;
+            }
+            
+            if (enteredPassword !== engineer.password) {
+                showPasswordError('Incorrect password. Please try again.');
+                return;
+            }
+            
+            // Password correct - allow access
+            document.getElementById('passwordModal').style.display = 'none';
+            currentEngineer = selectedEngineerForAuth;
+            document.getElementById('loadBtn').disabled = false;
+            console.log("Authentication successful for:", currentEngineer);
+        }
+
+        function showPasswordError(message) {
+            const errorDiv = document.getElementById('passwordError');
+            errorDiv.textContent = '❌ ' + message;
+            errorDiv.style.display = 'block';
+        }
+
+        // Allow Enter key to submit password
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && document.getElementById('passwordModal').style.display === 'block') {
+                verifyPassword();
+            }
+        });
 
         window.loadDailyBreakdown = async function() {
             const engineerSelect = document.getElementById('engineerSelect');
