@@ -950,6 +950,128 @@
             .breakdown-title {
                 font-size: 1.4em;
             }
+
+            /* Password Modal Styles */
+.password-modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+}
+
+.password-modal-content {
+    background-color: white;
+    margin: 15% auto;
+    padding: 0;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.3s ease;
+}
+
+.password-modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px 25px;
+    border-radius: 15px 15px 0 0;
+}
+
+.password-modal-header h3 {
+    margin: 0;
+    font-size: 1.3em;
+}
+
+.password-modal-body {
+    padding: 25px;
+}
+
+.password-input-wrapper {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.password-input-wrapper input {
+    width: 100%;
+    padding: 12px 40px 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1em;
+}
+
+.password-input-wrapper input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 5px;
+    color: #666;
+}
+
+.password-toggle-btn:hover {
+    color: #667eea;
+}
+
+.password-error {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    display: none;
+}
+
+.password-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-password-submit,
+.btn-password-cancel {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-password-submit {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-password-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-password-cancel {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.btn-password-cancel:hover {
+    background: #d0d0d0;
+}
         }
     </style>
 </head>
@@ -986,6 +1108,29 @@
             <button class="btn btn-secondary" onclick="openAdditionalPaymentModal()" id="additionalPaymentBtn" style="display: none;">
                 💰 Submit Additional Payments
             </button>
+
+            <!-- Password Modal -->
+<div id="passwordModal" class="password-modal">
+    <div class="password-modal-content">
+        <div class="password-modal-header">
+            <h3>🔐 Enter Password</h3>
+        </div>
+        <div class="password-modal-body">
+            <div class="password-error" id="passwordError"></div>
+            <p style="margin-bottom: 15px; color: #666;">
+                Please enter your password to access <strong id="selectedEngineerName"></strong>'s data
+            </p>
+            <div class="password-input-wrapper">
+                <input type="password" id="passwordModalInput" placeholder="Enter password">
+                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility()">👁️</button>
+            </div>
+            <div class="password-buttons">
+                <button class="btn-password-cancel" onclick="cancelPasswordEntry()">Cancel</button>
+                <button class="btn-password-submit" onclick="verifyPassword()">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
         </div>
 
         <div id="loadingDiv" class="loading" style="display: none;">Loading data...</div>
@@ -1129,166 +1274,145 @@
         document.getElementById('endDate').valueAsDate = today;
         document.getElementById('startDate').valueAsDate = lastWeek;
 
-        // Load engineers on page load
-        async function loadEngineers() {
-            const selectElement = document.getElementById('engineerSelect');
-            const loadBtn = document.getElementById('loadBtn');
-            
-            console.log("Starting to load engineers...");
-            
-            try {
-                selectElement.innerHTML = '<option value="">Loading engineers...</option>';
-                
-                console.log("Fetching performance collection...");
-                const querySnapshot = await getDocs(collection(db, "performance"));
-                
-                console.log("Documents fetched:", querySnapshot.size);
-                
-                const engineerSet = new Set();
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (data.engineerName) {
-                        engineerSet.add(data.engineerName);
-                    }
+        let engineersWithPasswords = [];
+let selectedEngineerForAuth = '';
+
+// Load engineers on page load
+async function loadEngineers() {
+    const selectElement = document.getElementById('engineerSelect');
+    const loadBtn = document.getElementById('loadBtn');
+    
+    console.log("Starting to load engineers...");
+    
+    try {
+        selectElement.innerHTML = '<option value="">Loading engineers...</option>';
+        
+        console.log("Fetching engineers collection...");
+        const querySnapshot = await getDocs(collection(db, "engineers"));
+        
+        console.log("Documents fetched:", querySnapshot.size);
+        
+        engineersWithPasswords = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.engineerName) {
+                engineersWithPasswords.push({
+                    name: data.engineerName,
+                    password: data.password || null
                 });
-
-                allEngineers = Array.from(engineerSet).sort();
-                console.log("Engineers found:", allEngineers);
-                
-                if (allEngineers.length === 0) {
-                    selectElement.innerHTML = '<option value="">No engineers found</option>';
-                    selectElement.disabled = true;
-                    return;
-                }
-                
-                selectElement.innerHTML = '<option value="">-- Select an Engineer --</option>';
-                
-                allEngineers.forEach(engineer => {
-                    const option = document.createElement('option');
-                    option.value = engineer;
-                    option.textContent = engineer;
-                    selectElement.appendChild(option);
-                });
-
-                selectElement.disabled = false;
-                console.log("Dropdown enabled with", allEngineers.length, "engineers");
-
-                selectElement.addEventListener('change', function() {
-                    loadBtn.disabled = !this.value;
-                    currentEngineer = this.value;
-                    console.log("Engineer selected:", this.value);
-                });
-
-            } catch (error) {
-                console.error("Error loading engineers:", error);
-                selectElement.innerHTML = '<option value="">Error: ' + error.message + '</option>';
-                selectElement.disabled = true;
-                alert('Error loading engineers. Check console for details.\n\n' + error.message);
             }
+        });
+
+        engineersWithPasswords.sort((a, b) => a.name.localeCompare(b.name));
+        console.log("Engineers found:", engineersWithPasswords);
+        
+        if (engineersWithPasswords.length === 0) {
+            selectElement.innerHTML = '<option value="">No engineers found</option>';
+            selectElement.disabled = true;
+            return;
         }
+        
+        selectElement.innerHTML = '<option value="">-- Select an Engineer --</option>';
+        
+        engineersWithPasswords.forEach(engineer => {
+            const option = document.createElement('option');
+            option.value = engineer.name;
+            option.textContent = engineer.name;
+            selectElement.appendChild(option);
+        });
 
-        window.loadDailyBreakdown = async function() {
-            const engineerSelect = document.getElementById('engineerSelect');
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const selectedEngineer = engineerSelect.value;
+        selectElement.disabled = false;
+        console.log("Dropdown enabled with", engineersWithPasswords.length, "engineers");
 
-            if (!selectedEngineer) {
-                alert('Please select an engineer');
-                return;
+        selectElement.addEventListener('change', function() {
+            if (this.value) {
+                selectedEngineerForAuth = this.value;
+                showPasswordModal(this.value);
+            } else {
+                loadBtn.disabled = true;
+                currentEngineer = '';
             }
+        });
 
-            if (!startDate || !endDate) {
-                alert('Please select both start and end dates');
-                return;
+    } catch (error) {
+        console.error("Error loading engineers:", error);
+        selectElement.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+        selectElement.disabled = true;
+        alert('Error loading engineers. Check console for details.\n\n' + error.message);
+    }
+}
+
+window.showPasswordModal = function(engineerName) {
+    document.getElementById('selectedEngineerName').textContent = engineerName;
+    document.getElementById('passwordModalInput').value = '';
+    document.getElementById('passwordError').style.display = 'none';
+    document.getElementById('passwordModal').style.display = 'block';
+    document.getElementById('passwordModalInput').focus();
+}
+
+window.togglePasswordVisibility = function() {
+    const input = document.getElementById('passwordModalInput');
+    const btn = document.querySelector('.password-toggle-btn');
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁️';
+    }
+}
+
+window.cancelPasswordEntry = function() {
+    document.getElementById('passwordModal').style.display = 'none';
+    document.getElementById('engineerSelect').value = '';
+    selectedEngineerForAuth = '';
+    currentEngineer = '';
+    document.getElementById('loadBtn').disabled = true;
+}
+
+window.verifyPassword = function() {
+    const enteredPassword = document.getElementById('passwordModalInput').value;
+    const engineer = engineersWithPasswords.find(e => e.name === selectedEngineerForAuth);
+    
+    if (!engineer) {
+        showPasswordError('Engineer not found');
+        return;
+    }
+    
+    if (!engineer.password) {
+        showPasswordError('No password set for this account. Contact administrator.');
+        return;
+    }
+    
+    if (enteredPassword !== engineer.password) {
+        showPasswordError('Incorrect password. Please try again.');
+        return;
+    }
+    
+    // Password correct - allow access
+    document.getElementById('passwordModal').style.display = 'none';
+    currentEngineer = selectedEngineerForAuth;
+    document.getElementById('loadBtn').disabled = false;
+    console.log("Authentication successful for:", currentEngineer);
+}
+
+function showPasswordError(message) {
+    const errorDiv = document.getElementById('passwordError');
+    errorDiv.textContent = '❌ ' + message;
+    errorDiv.style.display = 'block';
+}
+
+// Allow Enter key to submit password
+document.addEventListener('DOMContentLoaded', function() {
+    const passwordInput = document.getElementById('passwordModalInput');
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                verifyPassword();
             }
-
-            if (startDate > endDate) {
-                alert('Start date must be before end date');
-                return;
-            }
-
-            currentEngineer = selectedEngineer;
-
-            document.getElementById('loadingDiv').style.display = 'block';
-            document.getElementById('noDataDiv').style.display = 'none';
-            document.getElementById('dailyBreakdownSection').style.display = 'none';
-            document.getElementById('additionalPaymentBtn').style.display = 'none';
-
-            try {
-                // Get all dates in range (weekdays only)
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                const allDates = [];
-                
-                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                    const dayOfWeek = d.getDay();
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        allDates.push(d.toISOString().split('T')[0]);
-                    }
-                }
-
-                // Load performance data
-                console.log("Loading performance data...");
-                const perfQuery = query(
-                    collection(db, "performance"),
-                    where("engineerName", "==", selectedEngineer)
-                );
-
-                const perfSnapshot = await getDocs(perfQuery);
-                const performanceData = {};
-                perfSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (data.date >= startDate && data.date <= endDate) {
-                        performanceData[data.date] = data;
-                    }
-                });
-                console.log("Performance data loaded:", Object.keys(performanceData).length, "records");
-
-                // Load attendance data
-                console.log("Loading attendance data...");
-                const attendanceQuery = query(
-                    collection(db, "attendance"),
-                    where("engineerName", "==", selectedEngineer)
-                );
-
-                const attendanceSnapshot = await getDocs(attendanceQuery);
-                const attendanceData = {};
-                attendanceSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (data.date >= startDate && data.date <= endDate) {
-                        attendanceData[data.date] = data;
-                    }
-                });
-                console.log("Attendance data loaded:", Object.keys(attendanceData).length, "records");
-
-                // Load bonus data (separate from jobs)
-                let bonusData = {};
-                try {
-                    console.log("Loading bonus data...");
-                    const bonusQuery = query(
-                        collection(db, "bonuses"),
-                        where("engineerName", "==", selectedEngineer)
-                    );
-
-                    const bonusSnapshot = await getDocs(bonusQuery);
-                    console.log("Bonuses documents found:", bonusSnapshot.size);
-                    
-                    bonusSnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        if (data.dailyBonuses) {
-                            Object.keys(data.dailyBonuses).forEach(date => {
-                                if (date >= startDate && date <= endDate) {
-                                    bonusData[date] = data.dailyBonuses[date];
-                                }
-                            });
-                        }
-                    });
-                    console.log("Bonus data loaded:", Object.keys(bonusData).length, "records");
-                } catch (bonusError) {
-                    console.error("Error loading bonus data:", bonusError);
-                }
-
+        });
+    }
+});
                 // Load jobs data from jobsData collection
                 let jobsData = {};
                 try {
