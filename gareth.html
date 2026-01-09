@@ -403,7 +403,7 @@
         <div id="loadingDiv" class="loading">Loading performance data...</div>
 
         <div id="dashboardContent" style="display: none;">
-            <div class="kpi-grid">
+            <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
                 <!-- Meters KPI -->
                 <div class="kpi-card expandable" onclick="toggleExpand(this, 'meters')">
                     <span class="expand-indicator">▼</span>
@@ -444,7 +444,7 @@
                     </div>
                     <div class="kpi-value" id="attendanceTotal">0</div>
                     <div class="kpi-target">Total OES Engineers</div>
-                    <div class="attendance-grid">
+                    <div class="attendance-grid" style="grid-template-columns: repeat(2, 1fr);">
                         <div class="attendance-item">
                             <div class="attendance-item-label">At Work</div>
                             <div class="attendance-item-value" id="atWorkPercent">0%</div>
@@ -461,10 +461,6 @@
                             <div class="attendance-item-label">AAUP</div>
                             <div class="attendance-item-value" id="aaupPercent">0%</div>
                         </div>
-                        <div class="attendance-item">
-                            <div class="attendance-item-label">Other</div>
-                            <div class="attendance-item-value" id="otherPercent">0%</div>
-                        </div>
                     </div>
                     
                     <div class="historical-data">
@@ -477,7 +473,6 @@
                                     <th>Holiday</th>
                                     <th>Sick</th>
                                     <th>AAUP</th>
-                                    <th>Other</th>
                                 </tr>
                             </thead>
                             <tbody id="attendanceHistory">
@@ -583,6 +578,26 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Compliance KPI -->
+                <div class="kpi-card non-expandable">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Compliance</span>
+                        <span class="kpi-icon">📋</span>
+                    </div>
+                    <div class="kpi-value" style="font-size: 2em;">—</div>
+                    <div class="kpi-target" style="opacity: 0;">Placeholder</div>
+                </div>
+
+                <!-- Health & Safety KPI -->
+                <div class="kpi-card non-expandable">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Health & Safety</span>
+                        <span class="kpi-icon">🛡️</span>
+                    </div>
+                    <div class="kpi-value" style="font-size: 2em;">—</div>
+                    <div class="kpi-target" style="opacity: 0;">Placeholder</div>
                 </div>
             </div>
         </div>
@@ -732,7 +747,6 @@
                         <td>${day.holPercent}%</td>
                         <td>${day.sickPercent}%</td>
                         <td>${day.aaupPercent}%</td>
-                        <td>${day.otherPercent}%</td>
                     `;
                 });
             } else if (type === 'completion') {
@@ -861,70 +875,34 @@
                 document.getElementById('revenueProgressText').textContent = revenuePercentage + '%';
                 updateProgressBar('revenueProgress', parseFloat(revenuePercentage));
                 
-                // Load attendance data for current day
-                const attendanceQuery = query(
-                    collection(performanceDb, "attendance"),
+                // Load attendance data from garethstats for current day
+                const garethStatsQuery = query(
+                    collection(performanceDb, "garethstats"),
                     where("date", "==", dateString)
                 );
                 
-                const attendanceSnapshot = await getDocs(attendanceQuery);
+                const garethStatsSnapshot = await getDocs(garethStatsQuery);
                 
-                let atWork = 0;
-                let holiday = 0;
-                let sick = 0;
-                let aaup = 0;
-                let other = 0;
-                let totalOESAttendance = 0;
+                let atWorkPercent = 0;
+                let holPercent = 0;
+                let sickPercent = 0;
+                let aaupPercent = 0;
                 
-                // Create a set of OES engineer names from the employees we already loaded
-                const oesEngineerNames = new Set();
-                employeesSnapshot.forEach((doc) => {
+                // Get the most recent entry for this date (in case there are multiple)
+                garethStatsSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const location = data.Location || data.location;
-                    const name = data.Name || data.name || data.engineerName;
-                    
-                    if (location === 'OES' && name && !data.leaveDate) {
-                        oesEngineerNames.add(name.trim().toLowerCase());
-                    }
+                    atWorkPercent = data.atWorkPercent || 0;
+                    holPercent = data.holidayPercent || 0;
+                    sickPercent = data.sickPercent || 0;
+                    aaupPercent = data.aaupPercent || 0;
                 });
-                
-                attendanceSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const engineerName = (data.engineerName || '').trim().toLowerCase();
-                    
-                    // Only count if engineer is OES
-                    if (oesEngineerNames.has(engineerName)) {
-                        totalOESAttendance++;
-                        const status = data.attendance;
-                        
-                        if (status === 'X') {
-                            atWork++;
-                        } else if (status === 'H' || status === 'H/H') {
-                            holiday++;
-                        } else if (status === 'Sick') {
-                            sick++;
-                        } else if (status === 'AAUP') {
-                            aaup++;
-                        } else {
-                            other++;
-                        }
-                    }
-                });
-                
-                // Calculate percentages (use oesEngineers as denominator)
-                const atWorkPercent = oesEngineers > 0 ? ((atWork / oesEngineers) * 100).toFixed(1) : 0;
-                const holPercent = oesEngineers > 0 ? ((holiday / oesEngineers) * 100).toFixed(1) : 0;
-                const sickPercent = oesEngineers > 0 ? ((sick / oesEngineers) * 100).toFixed(1) : 0;
-                const aaupPercent = oesEngineers > 0 ? ((aaup / oesEngineers) * 100).toFixed(1) : 0;
-                const otherPercent = oesEngineers > 0 ? ((other / oesEngineers) * 100).toFixed(1) : 0;
                 
                 // Update Attendance KPI
                 document.getElementById('attendanceTotal').textContent = oesEngineers;
-                document.getElementById('atWorkPercent').textContent = atWorkPercent + '%';
-                document.getElementById('holPercent').textContent = holPercent + '%';
-                document.getElementById('sickPercent').textContent = sickPercent + '%';
-                document.getElementById('aaupPercent').textContent = aaupPercent + '%';
-                document.getElementById('otherPercent').textContent = otherPercent + '%';
+                document.getElementById('atWorkPercent').textContent = atWorkPercent.toFixed(1) + '%';
+                document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
+                document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
+                document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
                 
                 // Load historical data for previous 2 weeks
                 await loadHistoricalData();
@@ -949,20 +927,6 @@
             try {
                 const dates = getPreviousTwoWeeks();
                 historicalData = [];
-                
-                // Get OES engineer names from the already loaded employees
-                const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
-                const oesEngineerNames = new Set();
-                
-                employeesSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const location = data.Location || data.location;
-                    const name = data.Name || data.name || data.engineerName;
-                    
-                    if (location === 'OES' && name && !data.leaveDate) {
-                        oesEngineerNames.add(name.trim().toLowerCase());
-                    }
-                });
                 
                 for (const date of dates) {
                     const dateString = formatDateForQuery(date);
@@ -989,50 +953,30 @@
                         totalValue += data.value || 0;
                     });
                     
-                    // Load attendance data
-                    const attendanceQuery = query(
-                        collection(performanceDb, "attendance"),
+                    // Load attendance data from garethstats
+                    const garethStatsQuery = query(
+                        collection(performanceDb, "garethstats"),
                         where("date", "==", dateString)
                     );
                     
-                    const attendanceSnapshot = await getDocs(attendanceQuery);
+                    const garethStatsSnapshot = await getDocs(garethStatsQuery);
                     
-                    let atWork = 0;
-                    let holiday = 0;
-                    let sick = 0;
-                    let aaup = 0;
-                    let other = 0;
+                    let atWorkPercent = 0;
+                    let holPercent = 0;
+                    let sickPercent = 0;
+                    let aaupPercent = 0;
                     
-                    attendanceSnapshot.forEach((doc) => {
+                    garethStatsSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        const engineerName = (data.engineerName || '').trim().toLowerCase();
-                        
-                        if (oesEngineerNames.has(engineerName)) {
-                            const status = data.attendance;
-                            
-                            if (status === 'X') {
-                                atWork++;
-                            } else if (status === 'H' || status === 'H/H') {
-                                holiday++;
-                            } else if (status === 'Sick') {
-                                sick++;
-                            } else if (status === 'AAUP') {
-                                aaup++;
-                            } else {
-                                other++;
-                            }
-                        }
+                        atWorkPercent = (data.atWorkPercent || 0).toFixed(1);
+                        holPercent = (data.holidayPercent || 0).toFixed(1);
+                        sickPercent = (data.sickPercent || 0).toFixed(1);
+                        aaupPercent = (data.aaupPercent || 0).toFixed(1);
                     });
                     
                     const metersTarget = oesEngineerCount * 6;
                     const revenueTarget = oesEngineerCount * 400;
                     const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
-                    
-                    const atWorkPercent = oesEngineerCount > 0 ? ((atWork / oesEngineerCount) * 100).toFixed(1) : 0;
-                    const holPercent = oesEngineerCount > 0 ? ((holiday / oesEngineerCount) * 100).toFixed(1) : 0;
-                    const sickPercent = oesEngineerCount > 0 ? ((sick / oesEngineerCount) * 100).toFixed(1) : 0;
-                    const aaupPercent = oesEngineerCount > 0 ? ((aaup / oesEngineerCount) * 100).toFixed(1) : 0;
-                    const otherPercent = oesEngineerCount > 0 ? ((other / oesEngineerCount) * 100).toFixed(1) : 0;
                     
                     historicalData.push({
                         displayDate,
@@ -1046,8 +990,7 @@
                         atWorkPercent,
                         holPercent,
                         sickPercent,
-                        aaupPercent,
-                        otherPercent
+                        aaupPercent
                     });
                 }
                 
