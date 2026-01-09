@@ -55,7 +55,7 @@
 
         .kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -67,6 +67,22 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             animation: slideUp 0.6s ease-out;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .kpi-card.expandable:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .kpi-card.non-expandable {
+            cursor: default;
+        }
+
+        .kpi-card.non-expandable:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
         }
 
         @keyframes slideUp {
@@ -74,9 +90,21 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .kpi-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        .expand-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 1.2em;
+            opacity: 0.5;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+
+        .kpi-card.expanded .expand-indicator {
+            transform: rotate(180deg);
+        }
+
+        .kpi-card.expandable:hover .expand-indicator {
+            opacity: 1;
         }
 
         .kpi-header {
@@ -214,6 +242,84 @@
             color: #555;
         }
 
+        .attendance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .attendance-item {
+            text-align: center;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+
+        .attendance-item-label {
+            font-size: 0.75em;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .attendance-item-value {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .historical-data {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease-out, margin-top 0.4s ease-out;
+            margin-top: 0;
+        }
+
+        .kpi-card.expanded .historical-data {
+            max-height: 1000px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .historical-title {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .historical-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+
+        .historical-table th {
+            text-align: left;
+            padding: 8px;
+            background: #f8f9fa;
+            color: #666;
+            font-weight: 600;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .historical-table td {
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+        }
+
+        .historical-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .historical-table tr:hover {
+            background: #f8f9fa;
+        }
+
         .placeholder-section {
             background: white;
             border-radius: 15px;
@@ -235,31 +341,6 @@
         .placeholder-content {
             color: #666;
             line-height: 1.8;
-        }
-
-        .placeholder-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .placeholder-item {
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            border-left: 4px solid #1e3c72;
-        }
-
-        .placeholder-item-title {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .placeholder-item-value {
-            font-size: 1.1em;
-            color: #666;
         }
 
         .back-link {
@@ -304,6 +385,10 @@
             .sub-stats {
                 grid-template-columns: 1fr;
             }
+
+            .attendance-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
@@ -320,7 +405,8 @@
         <div id="dashboardContent" style="display: none;">
             <div class="kpi-grid">
                 <!-- Meters KPI -->
-                <div class="kpi-card">
+                <div class="kpi-card expandable" onclick="toggleExpand(this, 'meters')">
+                    <span class="expand-indicator">▼</span>
                     <div class="kpi-header">
                         <span class="kpi-title">Meters Installed</span>
                         <span class="kpi-icon">🪛</span>
@@ -331,10 +417,77 @@
                         <div class="progress-bar" id="metersProgress" style="width: 0%"></div>
                     </div>
                     <div class="progress-text" id="metersProgressText">0%</div>
+                    
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 2 Weeks</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Meters</th>
+                                    <th>Target</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metersHistory">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Attendance KPI -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this, 'attendance')">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">Attendance (OES)</span>
+                        <span class="kpi-icon">📊</span>
+                    </div>
+                    <div class="kpi-value" id="attendanceTotal">0</div>
+                    <div class="kpi-target">Total OES Engineers</div>
+                    <div class="attendance-grid">
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">At Work</div>
+                            <div class="attendance-item-value" id="atWorkPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">Holiday</div>
+                            <div class="attendance-item-value" id="holPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">Sick</div>
+                            <div class="attendance-item-value" id="sickPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">AAUP</div>
+                            <div class="attendance-item-value" id="aaupPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">Other</div>
+                            <div class="attendance-item-value" id="otherPercent">0%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 2 Weeks</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>At Work</th>
+                                    <th>Holiday</th>
+                                    <th>Sick</th>
+                                    <th>AAUP</th>
+                                    <th>Other</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceHistory">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Employees KPI -->
-                <div class="kpi-card">
+                <div class="kpi-card non-expandable">
                     <div class="kpi-header">
                         <span class="kpi-title">Workforce</span>
                         <span class="kpi-icon">👥</span>
@@ -368,7 +521,8 @@
                 </div>
 
                 <!-- Completion % KPI -->
-                <div class="kpi-card">
+                <div class="kpi-card expandable" onclick="toggleExpand(this, 'completion')">
+                    <span class="expand-indicator">▼</span>
                     <div class="kpi-header">
                         <span class="kpi-title">Completion Rate</span>
                         <span class="kpi-icon">✅</span>
@@ -382,10 +536,27 @@
                         <div class="progress-bar" id="completionProgress" style="width: 0%"></div>
                     </div>
                     <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
+                    
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 2 Weeks</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Completed</th>
+                                    <th>Total Jobs</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="completionHistory">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <!-- Revenue KPI (formerly Profit) -->
-                <div class="kpi-card">
+                <!-- Revenue KPI -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this, 'revenue')">
+                    <span class="expand-indicator">▼</span>
                     <div class="kpi-header">
                         <span class="kpi-title">Revenue</span>
                         <span class="kpi-icon">💰</span>
@@ -396,48 +567,21 @@
                         <div class="progress-bar" id="revenueProgress" style="width: 0%"></div>
                     </div>
                     <div class="progress-text" id="revenueProgressText">0%</div>
-                </div>
-            </div>
-
-            <!-- Compliance Section -->
-            <div class="placeholder-section">
-                <div class="placeholder-title">
-                    <span>📋</span>
-                    <span>Audits</span>
-                </div>
-                <div class="placeholder-grid">
-                    <div class="placeholder-item">
-                        <div class="placeholder-item-title">Q4 2024 Audit</div>
-                        <div class="placeholder-item-value" style="color: #4CAF50;">✓ Pass</div>
-                    </div>
-                    <div class="placeholder-item">
-                        <div class="placeholder-item-title">Q3 2024 Audit</div>
-                        <div class="placeholder-item-value" style="color: #4CAF50;">✓ Pass</div>
-                    </div>
-                    <div class="placeholder-item">
-                        <div class="placeholder-item-title">Q2 2024 Audit</div>
-                        <div class="placeholder-item-value" style="color: #4CAF50;">✓ Pass</div>
-                    </div>
-                    <div class="placeholder-item">
-                        <div class="placeholder-item-title">Q1 2024 Audit</div>
-                        <div class="placeholder-item-value" style="color: #4CAF50;">✓ Pass</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Health & Safety Section -->
-            <div class="placeholder-section">
-                <div class="placeholder-title">
-                    <span>🛡️</span>
-                    <span>Health & Safety - Recent Incidents</span>
-                </div>
-                <div class="placeholder-content" style="text-align: center; padding: 40px 20px;">
-                    <div style="font-size: 3em; color: #4CAF50; margin-bottom: 15px;">✓</div>
-                    <div style="font-size: 1.3em; font-weight: 600; color: #4CAF50; margin-bottom: 10px;">
-                        No Recent Incidents
-                    </div>
-                    <div style="color: #888;">
-                        156 incident-free days and counting
+                    
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 2 Weeks</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Revenue</th>
+                                    <th>Target</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="revenueHistory">
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -448,7 +592,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Performance tracking Firebase
         const performanceConfig = {
@@ -478,6 +622,9 @@
         const performanceDb = getFirestore(performanceApp);
         const staffDb = getFirestore(staffApp);
 
+        let historicalData = [];
+        let oesEngineerCount = 0;
+
         function getPreviousWorkingDay() {
             const today = new Date();
             let previousDay = new Date(today);
@@ -491,6 +638,23 @@
             }
             
             return previousDay;
+        }
+
+        function getPreviousTwoWeeks() {
+            const dates = [];
+            const today = new Date();
+            
+            for (let i = 1; i <= 14; i++) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - i);
+                
+                // Skip weekends
+                if (date.getDay() !== 0 && date.getDay() !== 6) {
+                    dates.push(date);
+                }
+            }
+            
+            return dates.reverse(); // Oldest first
         }
 
         function formatDate(date) {
@@ -532,6 +696,75 @@
             }
         }
 
+        window.toggleExpand = function(card, type) {
+            card.classList.toggle('expanded');
+            
+            // Load historical data if not already loaded
+            if (card.classList.contains('expanded') && historicalData.length > 0) {
+                populateHistoricalData(type);
+            }
+        }
+
+        function populateHistoricalData(type) {
+            if (type === 'meters') {
+                const tbody = document.getElementById('metersHistory');
+                tbody.innerHTML = '';
+                
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    const percentage = day.metersTarget > 0 ? ((day.totalMeters / day.metersTarget) * 100).toFixed(1) : 0;
+                    row.innerHTML = `
+                        <td>${day.displayDate}</td>
+                        <td>${day.totalMeters.toLocaleString()}</td>
+                        <td>${day.metersTarget.toLocaleString()}</td>
+                        <td>${percentage}%</td>
+                    `;
+                });
+            } else if (type === 'attendance') {
+                const tbody = document.getElementById('attendanceHistory');
+                tbody.innerHTML = '';
+                
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${day.displayDate}</td>
+                        <td>${day.atWorkPercent}%</td>
+                        <td>${day.holPercent}%</td>
+                        <td>${day.sickPercent}%</td>
+                        <td>${day.aaupPercent}%</td>
+                        <td>${day.otherPercent}%</td>
+                    `;
+                });
+            } else if (type === 'completion') {
+                const tbody = document.getElementById('completionHistory');
+                tbody.innerHTML = '';
+                
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${day.displayDate}</td>
+                        <td>${day.totalCompleted.toLocaleString()}</td>
+                        <td>${day.totalJobs.toLocaleString()}</td>
+                        <td>${day.completionRate}%</td>
+                    `;
+                });
+            } else if (type === 'revenue') {
+                const tbody = document.getElementById('revenueHistory');
+                tbody.innerHTML = '';
+                
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    const percentage = day.revenueTarget > 0 ? ((day.totalValue / day.revenueTarget) * 100).toFixed(1) : 0;
+                    row.innerHTML = `
+                        <td>${day.displayDate}</td>
+                        <td>£${Math.round(day.totalValue).toLocaleString()}</td>
+                        <td>£${day.revenueTarget.toLocaleString()}</td>
+                        <td>${percentage}%</td>
+                    `;
+                });
+            }
+        }
+
         async function loadDashboard() {
             try {
                 const previousDay = getPreviousWorkingDay();
@@ -566,6 +799,7 @@
                     }
                 });
                 
+                oesEngineerCount = oesEngineers;
                 const totalEngineers = oesEngineers + scottishPowerEngineers + edfEngineers;
                 const totalEmployees = totalEngineers + backOfficeCount;
                 
@@ -579,12 +813,12 @@
                 
                 // Set targets based on OES engineer count only
                 const metersTarget = oesEngineers * 6;
-                const revenueTarget = totalEngineers * 400;
+                const revenueTarget = oesEngineers * 400; // Changed to use OES count only
                 
                 document.getElementById('metersTarget').textContent = metersTarget;
                 document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLocaleString();
                 
-                // Load performance data for previous working day
+                // Load performance data for current day
                 const performanceQuery = query(
                     collection(performanceDb, "performance"),
                     where("date", "==", dateString)
@@ -622,10 +856,78 @@
                 updateProgressBar('completionProgress', parseFloat(completionRate));
                 updateStatusIndicator('completionStatus', parseFloat(completionRate), 90);
                 
-                // Update Revenue KPI (using the new value field)
+                // Update Revenue KPI
                 document.getElementById('revenueActual').textContent = '£' + Math.round(totalValue).toLocaleString();
                 document.getElementById('revenueProgressText').textContent = revenuePercentage + '%';
                 updateProgressBar('revenueProgress', parseFloat(revenuePercentage));
+                
+                // Load attendance data for current day
+                const attendanceQuery = query(
+                    collection(performanceDb, "attendance"),
+                    where("date", "==", dateString)
+                );
+                
+                const attendanceSnapshot = await getDocs(attendanceQuery);
+                
+                let atWork = 0;
+                let holiday = 0;
+                let sick = 0;
+                let aaup = 0;
+                let other = 0;
+                let totalOESAttendance = 0;
+                
+                // Load engineers to check which are OES
+                const engineersSnapshot = await getDocs(collection(performanceDb, "engineers"));
+                const oesEngineerIds = new Set();
+                
+                engineersSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    // Check if engineer belongs to OES location
+                    if (data.location === 'OES') {
+                        oesEngineerIds.add(doc.id);
+                    }
+                });
+                
+                attendanceSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const engineerId = data.engineerId;
+                    
+                    // Only count if engineer is OES
+                    if (oesEngineerIds.has(engineerId)) {
+                        totalOESAttendance++;
+                        const status = data.attendance;
+                        
+                        if (status === 'X') {
+                            atWork++;
+                        } else if (status === 'H' || status === 'H/H') {
+                            holiday++;
+                        } else if (status === 'Sick') {
+                            sick++;
+                        } else if (status === 'AAUP') {
+                            aaup++;
+                        } else {
+                            other++;
+                        }
+                    }
+                });
+                
+                // Calculate percentages (use oesEngineers as denominator)
+                const atWorkPercent = oesEngineers > 0 ? ((atWork / oesEngineers) * 100).toFixed(1) : 0;
+                const holPercent = oesEngineers > 0 ? ((holiday / oesEngineers) * 100).toFixed(1) : 0;
+                const sickPercent = oesEngineers > 0 ? ((sick / oesEngineers) * 100).toFixed(1) : 0;
+                const aaupPercent = oesEngineers > 0 ? ((aaup / oesEngineers) * 100).toFixed(1) : 0;
+                const otherPercent = oesEngineers > 0 ? ((other / oesEngineers) * 100).toFixed(1) : 0;
+                
+                // Update Attendance KPI
+                document.getElementById('attendanceTotal').textContent = oesEngineers;
+                document.getElementById('atWorkPercent').textContent = atWorkPercent + '%';
+                document.getElementById('holPercent').textContent = holPercent + '%';
+                document.getElementById('sickPercent').textContent = sickPercent + '%';
+                document.getElementById('aaupPercent').textContent = aaupPercent + '%';
+                document.getElementById('otherPercent').textContent = otherPercent + '%';
+                
+                // Load historical data for previous 2 weeks
+                await loadHistoricalData();
                 
                 // Update last updated time
                 const now = new Date();
@@ -640,6 +942,114 @@
                 console.error("Error loading dashboard:", error);
                 document.getElementById('loadingDiv').innerHTML = 
                     '<div style="color: #f44336;">Error loading data. Please check console for details.</div>';
+            }
+        }
+
+        async function loadHistoricalData() {
+            try {
+                const dates = getPreviousTwoWeeks();
+                historicalData = [];
+                
+                // Load engineers once
+                const engineersSnapshot = await getDocs(collection(performanceDb, "engineers"));
+                const oesEngineerIds = new Set();
+                
+                engineersSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.location === 'OES') {
+                        oesEngineerIds.add(doc.id);
+                    }
+                });
+                
+                for (const date of dates) {
+                    const dateString = formatDateForQuery(date);
+                    const displayDate = formatDate(date);
+                    
+                    // Load performance data
+                    const performanceQuery = query(
+                        collection(performanceDb, "performance"),
+                        where("date", "==", dateString)
+                    );
+                    
+                    const performanceSnapshot = await getDocs(performanceQuery);
+                    
+                    let totalMeters = 0;
+                    let totalJobs = 0;
+                    let totalCompleted = 0;
+                    let totalValue = 0;
+                    
+                    performanceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        totalMeters += data.meters || 0;
+                        totalJobs += data.jobs || 0;
+                        totalCompleted += data.completed || 0;
+                        totalValue += data.value || 0;
+                    });
+                    
+                    // Load attendance data
+                    const attendanceQuery = query(
+                        collection(performanceDb, "attendance"),
+                        where("date", "==", dateString)
+                    );
+                    
+                    const attendanceSnapshot = await getDocs(attendanceQuery);
+                    
+                    let atWork = 0;
+                    let holiday = 0;
+                    let sick = 0;
+                    let aaup = 0;
+                    let other = 0;
+                    
+                    attendanceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const engineerId = data.engineerId;
+                        
+                        if (oesEngineerIds.has(engineerId)) {
+                            const status = data.attendance;
+                            
+                            if (status === 'X') {
+                                atWork++;
+                            } else if (status === 'H' || status === 'H/H') {
+                                holiday++;
+                            } else if (status === 'Sick') {
+                                sick++;
+                            } else if (status === 'AAUP') {
+                                aaup++;
+                            } else {
+                                other++;
+                            }
+                        }
+                    });
+                    
+                    const metersTarget = oesEngineerCount * 6;
+                    const revenueTarget = oesEngineerCount * 400;
+                    const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
+                    
+                    const atWorkPercent = oesEngineerCount > 0 ? ((atWork / oesEngineerCount) * 100).toFixed(1) : 0;
+                    const holPercent = oesEngineerCount > 0 ? ((holiday / oesEngineerCount) * 100).toFixed(1) : 0;
+                    const sickPercent = oesEngineerCount > 0 ? ((sick / oesEngineerCount) * 100).toFixed(1) : 0;
+                    const aaupPercent = oesEngineerCount > 0 ? ((aaup / oesEngineerCount) * 100).toFixed(1) : 0;
+                    const otherPercent = oesEngineerCount > 0 ? ((other / oesEngineerCount) * 100).toFixed(1) : 0;
+                    
+                    historicalData.push({
+                        displayDate,
+                        totalMeters,
+                        metersTarget,
+                        totalJobs,
+                        totalCompleted,
+                        completionRate,
+                        totalValue,
+                        revenueTarget,
+                        atWorkPercent,
+                        holPercent,
+                        sickPercent,
+                        aaupPercent,
+                        otherPercent
+                    });
+                }
+                
+            } catch (error) {
+                console.error("Error loading historical data:", error);
             }
         }
 
