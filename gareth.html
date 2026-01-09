@@ -320,6 +320,100 @@
             background: #f8f9fa;
         }
 
+        .view-toggle-btn {
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .view-toggle-btn:hover {
+            background: #5568d3;
+        }
+
+        .team-leader-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .team-leader-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 4px solid #667eea;
+        }
+
+        .team-leader-card:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .team-leader-card.expanded {
+            background: white;
+            border-left-color: #28a745;
+        }
+
+        .team-leader-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .team-leader-name {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .team-leader-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .team-leader-stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .team-leader-stat-label {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .team-leader-stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .team-leader-details {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e0e0e0;
+            display: none;
+        }
+
+        .team-leader-card.expanded .team-leader-details {
+            display: block;
+        }
+
+        .team-leader-detail-title {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
         .placeholder-section {
             background: white;
             border-radius: 15px;
@@ -419,19 +513,27 @@
                     <div class="progress-text" id="metersProgressText">0%</div>
                     
                     <div class="historical-data">
-                        <div class="historical-title">Previous 2 Weeks</div>
-                        <table class="historical-table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Meters</th>
-                                    <th>Target</th>
-                                    <th>%</th>
-                                </tr>
-                            </thead>
-                            <tbody id="metersHistory">
-                            </tbody>
-                        </table>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div class="historical-title" id="metersHistoryTitle">Previous 2 Weeks</div>
+                            <button class="view-toggle-btn" id="metersViewToggle" onclick="event.stopPropagation(); toggleTeamLeaderView('meters')">View by Team Leader</button>
+                        </div>
+                        <div id="metersOverallView">
+                            <table class="historical-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Meters</th>
+                                        <th>Target</th>
+                                        <th>%</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="metersHistory">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="metersTeamLeaderView" style="display: none;">
+                            <div id="metersTeamLeaderList" class="team-leader-list"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -533,19 +635,27 @@
                     <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
                     
                     <div class="historical-data">
-                        <div class="historical-title">Previous 2 Weeks</div>
-                        <table class="historical-table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Completed</th>
-                                    <th>Total Jobs</th>
-                                    <th>%</th>
-                                </tr>
-                            </thead>
-                            <tbody id="completionHistory">
-                            </tbody>
-                        </table>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div class="historical-title" id="completionHistoryTitle">Previous 2 Weeks</div>
+                            <button class="view-toggle-btn" id="completionViewToggle" onclick="event.stopPropagation(); toggleTeamLeaderView('completion')">View by Team Leader</button>
+                        </div>
+                        <div id="completionOverallView">
+                            <table class="historical-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Completed</th>
+                                        <th>Total Jobs</th>
+                                        <th>%</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="completionHistory">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="completionTeamLeaderView" style="display: none;">
+                            <div id="completionTeamLeaderList" class="team-leader-list"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -658,6 +768,7 @@
         const staffDb = getFirestore(staffApp);
 
         let historicalData = [];
+        let historicalDataByTeamLeader = {};
         let oesEngineerCount = 0;
 
         function getPreviousWorkingDay() {
@@ -943,10 +1054,176 @@
             }
         }
 
+        window.toggleTeamLeaderView = function(type) {
+            const overallView = document.getElementById(`${type}OverallView`);
+            const teamLeaderView = document.getElementById(`${type}TeamLeaderView`);
+            const toggleBtn = document.getElementById(`${type}ViewToggle`);
+            const title = document.getElementById(`${type}HistoryTitle`);
+            
+            if (overallView.style.display === 'none') {
+                // Switch to overall view
+                overallView.style.display = 'block';
+                teamLeaderView.style.display = 'none';
+                toggleBtn.textContent = 'View by Team Leader';
+                title.textContent = 'Previous 2 Weeks';
+            } else {
+                // Switch to team leader view
+                overallView.style.display = 'none';
+                teamLeaderView.style.display = 'block';
+                toggleBtn.textContent = 'View Overall';
+                title.textContent = 'By Team Leader';
+                populateTeamLeaderView(type);
+            }
+        }
+
+        function populateTeamLeaderView(type) {
+            const listContainer = document.getElementById(`${type}TeamLeaderList`);
+            listContainer.innerHTML = '';
+            
+            // Get yesterday's data for team leaders
+            const yesterday = getPreviousWorkingDay();
+            const yesterdayString = formatDateForQuery(yesterday);
+            
+            // Group data by team leader for yesterday
+            const teamLeaderData = {};
+            
+            if (historicalDataByTeamLeader[yesterdayString]) {
+                Object.keys(historicalDataByTeamLeader[yesterdayString]).forEach(teamLeader => {
+                    const data = historicalDataByTeamLeader[yesterdayString][teamLeader];
+                    teamLeaderData[teamLeader] = data;
+                });
+            }
+            
+            // Sort team leaders alphabetically
+            const sortedTeamLeaders = Object.keys(teamLeaderData).sort();
+            
+            if (sortedTeamLeaders.length === 0) {
+                listContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No team leader data available</div>';
+                return;
+            }
+            
+            sortedTeamLeaders.forEach(teamLeader => {
+                const data = teamLeaderData[teamLeader];
+                const card = document.createElement('div');
+                card.className = 'team-leader-card';
+                card.onclick = () => toggleTeamLeaderCard(card, teamLeader, type);
+                
+                let statsHTML = '';
+                if (type === 'meters') {
+                    const percentage = data.metersTarget > 0 ? ((data.totalMeters / data.metersTarget) * 100).toFixed(1) : 0;
+                    statsHTML = `
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">Meters</div>
+                            <div class="team-leader-stat-value">${data.totalMeters}</div>
+                        </div>
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">Target</div>
+                            <div class="team-leader-stat-value">${data.metersTarget}</div>
+                        </div>
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">%</div>
+                            <div class="team-leader-stat-value">${percentage}%</div>
+                        </div>
+                    `;
+                } else if (type === 'completion') {
+                    const percentage = data.totalJobs > 0 ? ((data.totalCompleted / data.totalJobs) * 100).toFixed(1) : 0;
+                    statsHTML = `
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">Completed</div>
+                            <div class="team-leader-stat-value">${data.totalCompleted}</div>
+                        </div>
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">Total Jobs</div>
+                            <div class="team-leader-stat-value">${data.totalJobs}</div>
+                        </div>
+                        <div class="team-leader-stat-item">
+                            <div class="team-leader-stat-label">%</div>
+                            <div class="team-leader-stat-value">${percentage}%</div>
+                        </div>
+                    `;
+                }
+                
+                card.innerHTML = `
+                    <div class="team-leader-header">
+                        <div class="team-leader-name">${teamLeader}</div>
+                        <div class="team-leader-stats">
+                            ${statsHTML}
+                        </div>
+                    </div>
+                    <div class="team-leader-details">
+                        <div class="team-leader-detail-title">Previous 2 Weeks</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    ${type === 'meters' ? `
+                                        <th>Date</th>
+                                        <th>Meters</th>
+                                        <th>Target</th>
+                                        <th>%</th>
+                                    ` : `
+                                        <th>Date</th>
+                                        <th>Completed</th>
+                                        <th>Total Jobs</th>
+                                        <th>%</th>
+                                    `}
+                                </tr>
+                            </thead>
+                            <tbody class="team-leader-tbody-${teamLeader.replace(/\s+/g, '-')}">
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                listContainer.appendChild(card);
+            });
+        }
+
+        function toggleTeamLeaderCard(card, teamLeader, type) {
+            const wasExpanded = card.classList.contains('expanded');
+            
+            // Collapse all cards
+            document.querySelectorAll('.team-leader-card').forEach(c => c.classList.remove('expanded'));
+            
+            if (!wasExpanded) {
+                card.classList.add('expanded');
+                
+                // Populate the table with 2 weeks of data
+                const tbody = card.querySelector(`tbody`);
+                tbody.innerHTML = '';
+                
+                historicalData.forEach(day => {
+                    const dateString = day.dateString || formatDateForQuery(new Date(day.displayDate.split('/').reverse().join('-')));
+                    const teamLeaderDayData = historicalDataByTeamLeader[dateString]?.[teamLeader];
+                    
+                    if (teamLeaderDayData) {
+                        const row = tbody.insertRow();
+                        if (type === 'meters') {
+                            const percentage = teamLeaderDayData.metersTarget > 0 ? ((teamLeaderDayData.totalMeters / teamLeaderDayData.metersTarget) * 100).toFixed(1) : 0;
+                            row.innerHTML = `
+                                <td>${day.displayDate}</td>
+                                <td>${teamLeaderDayData.totalMeters}</td>
+                                <td>${teamLeaderDayData.metersTarget}</td>
+                                <td>${percentage}%</td>
+                            `;
+                        } else if (type === 'completion') {
+                            const percentage = teamLeaderDayData.totalJobs > 0 ? ((teamLeaderDayData.totalCompleted / teamLeaderDayData.totalJobs) * 100).toFixed(1) : 0;
+                            row.innerHTML = `
+                                <td>${day.displayDate}</td>
+                                <td>${teamLeaderDayData.totalCompleted}</td>
+                                <td>${teamLeaderDayData.totalJobs}</td>
+                                <td>${percentage}%</td>
+                            `;
+                        }
+                    }
+                });
+            }
+        }
+
         async function loadHistoricalData() {
             try {
                 const dates = getPreviousTwoWeeks();
                 historicalData = [];
+                historicalDataByTeamLeader = {};
                 
                 for (const date of dates) {
                     const dateString = formatDateForQuery(date);
@@ -965,13 +1242,45 @@
                     let totalCompleted = 0;
                     let totalValue = 0;
                     
+                    // Data by team leader for this date
+                    const teamLeaderBreakdown = {};
+                    
                     performanceSnapshot.forEach((doc) => {
                         const data = doc.data();
+                        const teamLeader = data.teamLeader;
+                        
                         totalMeters += data.meters || 0;
                         totalJobs += data.jobs || 0;
                         totalCompleted += data.completed || 0;
                         totalValue += data.value || 0;
+                        
+                        // Accumulate by team leader
+                        if (!teamLeaderBreakdown[teamLeader]) {
+                            teamLeaderBreakdown[teamLeader] = {
+                                totalMeters: 0,
+                                totalJobs: 0,
+                                totalCompleted: 0,
+                                totalValue: 0,
+                                engineerCount: 0
+                            };
+                        }
+                        
+                        teamLeaderBreakdown[teamLeader].totalMeters += data.meters || 0;
+                        teamLeaderBreakdown[teamLeader].totalJobs += data.jobs || 0;
+                        teamLeaderBreakdown[teamLeader].totalCompleted += data.completed || 0;
+                        teamLeaderBreakdown[teamLeader].totalValue += data.value || 0;
+                        teamLeaderBreakdown[teamLeader].engineerCount += 1;
                     });
+                    
+                    // Calculate targets for each team leader
+                    Object.keys(teamLeaderBreakdown).forEach(teamLeader => {
+                        const breakdown = teamLeaderBreakdown[teamLeader];
+                        breakdown.metersTarget = breakdown.engineerCount * 6;
+                        breakdown.revenueTarget = breakdown.engineerCount * 400;
+                    });
+                    
+                    // Store team leader data
+                    historicalDataByTeamLeader[dateString] = teamLeaderBreakdown;
                     
                     // Load attendance data from garethstats
                     const garethStatsQuery = query(
@@ -1000,6 +1309,7 @@
                     
                     historicalData.push({
                         displayDate,
+                        dateString,
                         totalMeters,
                         metersTarget,
                         totalJobs,
