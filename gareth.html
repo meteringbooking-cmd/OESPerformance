@@ -876,24 +876,24 @@
                 let other = 0;
                 let totalOESAttendance = 0;
                 
-                // Load engineers to check which are OES
-                const engineersSnapshot = await getDocs(collection(performanceDb, "engineers"));
-                const oesEngineerIds = new Set();
-                
-                engineersSnapshot.forEach((doc) => {
+                // Create a set of OES engineer names from the employees we already loaded
+                const oesEngineerNames = new Set();
+                employeesSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    // Check if engineer belongs to OES location
-                    if (data.location === 'OES') {
-                        oesEngineerIds.add(doc.id);
+                    const location = data.Location || data.location;
+                    const name = data.Name || data.name || data.engineerName;
+                    
+                    if (location === 'OES' && name && !data.leaveDate) {
+                        oesEngineerNames.add(name.trim().toLowerCase());
                     }
                 });
                 
                 attendanceSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const engineerId = data.engineerId;
+                    const engineerName = (data.engineerName || '').trim().toLowerCase();
                     
                     // Only count if engineer is OES
-                    if (oesEngineerIds.has(engineerId)) {
+                    if (oesEngineerNames.has(engineerName)) {
                         totalOESAttendance++;
                         const status = data.attendance;
                         
@@ -950,14 +950,17 @@
                 const dates = getPreviousTwoWeeks();
                 historicalData = [];
                 
-                // Load engineers once
-                const engineersSnapshot = await getDocs(collection(performanceDb, "engineers"));
-                const oesEngineerIds = new Set();
+                // Get OES engineer names from the already loaded employees
+                const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
+                const oesEngineerNames = new Set();
                 
-                engineersSnapshot.forEach((doc) => {
+                employeesSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    if (data.location === 'OES') {
-                        oesEngineerIds.add(doc.id);
+                    const location = data.Location || data.location;
+                    const name = data.Name || data.name || data.engineerName;
+                    
+                    if (location === 'OES' && name && !data.leaveDate) {
+                        oesEngineerNames.add(name.trim().toLowerCase());
                     }
                 });
                 
@@ -1002,9 +1005,9 @@
                     
                     attendanceSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        const engineerId = data.engineerId;
+                        const engineerName = (data.engineerName || '').trim().toLowerCase();
                         
-                        if (oesEngineerIds.has(engineerId)) {
+                        if (oesEngineerNames.has(engineerName)) {
                             const status = data.attendance;
                             
                             if (status === 'X') {
