@@ -648,13 +648,49 @@
                 </div>
 
                 <!-- Compliance KPI -->
-                <div class="kpi-card">
+                <div class="kpi-card expandable" onclick="toggleExpand(this)">
+                    <span class="expand-indicator">▼</span>
                     <div class="kpi-header">
                         <span class="kpi-title">Compliance</span>
                         <span class="kpi-icon">📋</span>
                     </div>
-                    <div class="kpi-value" style="font-size: 2.5em;">—</div>
-                    <div class="kpi-target">Coming Soon</div>
+                    <div class="kpi-value">
+                        <span id="complianceOverallPass">0</span>%
+                        <span class="status-indicator" id="complianceStatus"></span>
+                    </div>
+                    <div class="kpi-target">Current Month Pass Rate</div>
+                    <div class="secondary-stats" style="margin-top: 20px;">
+                        <div class="secondary-stat">
+                            <div class="secondary-stat-label">WIP</div>
+                            <div class="secondary-stat-value" id="wipPassRate">0%</div>
+                            <div style="font-size: 0.7em; color: #a8dadc; margin-top: 4px;">
+                                <span id="wipPassCount">0</span>/<span id="wipTotalCount">0</span>
+                            </div>
+                        </div>
+                        <div class="secondary-stat">
+                            <div class="secondary-stat-label">Post Completion</div>
+                            <div class="secondary-stat-value" id="postCompPassRate">0%</div>
+                            <div style="font-size: 0.7em; color: #a8dadc; margin-top: 4px;">
+                                <span id="postCompPassCount">0</span>/<span id="postCompTotalCount">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 6 Months</div>
+                        <table class="historical-table" style="table-layout: auto;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 25%;">Month</th>
+                                    <th style="width: 25%;">WIP</th>
+                                    <th style="width: 25%;">Post Comp</th>
+                                    <th style="width: 25%;">Overall</th>
+                                </tr>
+                            </thead>
+                            <tbody id="complianceHistory">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Health & Safety KPI -->
@@ -704,6 +740,7 @@
 
         let historicalData = [];
         let oesEngineerCount = 0;
+        let complianceData = [];
 
         function getPreviousWorkingDay() {
             const today = new Date();
@@ -741,10 +778,27 @@
             return dates; // Most recent first (don't reverse)
         }
 
+        function getPreviousSixMonths() {
+            const months = [];
+            const today = new Date();
+            
+            for (let i = 0; i < 6; i++) {
+                const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                months.push(date);
+            }
+            
+            return months.reverse(); // Oldest first
+        }
+
         function formatDate(date) {
             const day = String(date.getDate()).padStart(2, '0');
             const month = String(date.getMonth() + 1).padStart(2, '0');
             return `${day}/${month}`;
+        }
+
+        function formatMonth(date) {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${months[date.getMonth()]} ${date.getFullYear()}`;
         }
 
         function formatDateForQuery(date) {
@@ -752,6 +806,27 @@
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
+        }
+
+        function parseInstallationDate(dateStr) {
+            // Handle various date formats
+            if (!dateStr) return null;
+            
+            // Try DD/MM/YYYY format
+            let parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            
+            // Try YYYY-MM-DD format
+            parts = dateStr.split('-');
+            if (parts.length === 3) {
+                return new Date(parts[0], parts[1] - 1, parts[2]);
+            }
+            
+            // Try parsing as standard date
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? null : date;
         }
 
         function updateProgressBar(elementId, percentage) {
@@ -781,6 +856,14 @@
 
         window.toggleExpand = function(card) {
             card.classList.toggle('expanded');
+            
+            // If it's compliance card and being expanded, populate the data
+            if (card.classList.contains('expanded')) {
+                const complianceCard = card.querySelector('#complianceHistory');
+                if (complianceCard && complianceData.length > 0) {
+                    populateComplianceHistory();
+                }
+            }
         }
 
         function populateHistoricalTables() {
@@ -824,6 +907,117 @@
                     <td>${day.aaupPercent}%</td>
                 `;
             });
+        }
+
+        function populateComplianceHistory() {
+            const tbody = document.getElementById('complianceHistory');
+            tbody.innerHTML = '';
+            
+            complianceData.forEach(monthData => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${monthData.monthLabel}</td>
+                    <td>${monthData.wipPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.wipPass}/${monthData.wipTotal}</span></td>
+                    <td>${monthData.postCompPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.postCompPass}/${monthData.postCompTotal}</span></td>
+                    <td><span style="font-weight: 700;">${monthData.overallPassRate}%</span></td>
+                `;
+            });
+        }
+
+        async function loadComplianceData() {
+            try {
+                // Load all compliance data
+                const complianceSnapshot = await getDocs(collection(performanceDb, "compliance"));
+                
+                // Get current month and previous 6 months
+                const months = getPreviousSixMonths();
+                const currentMonth = new Date();
+                months.push(currentMonth);
+                
+                complianceData = [];
+                
+                for (const month of months) {
+                    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+                    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                    
+                    // Track unique job references for WIP and Post Completion separately
+                    const wipJobs = new Map();
+                    const postCompJobs = new Map();
+                    
+                    complianceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const installDate = parseInstallationDate(data.installationDate);
+                        
+                        if (installDate && installDate >= monthStart && installDate <= monthEnd) {
+                            const jobRef = data.jobReference;
+                            const outcome = (data.auditOutcome || '').toLowerCase();
+                            const isPassed = outcome.includes('pass') || outcome === 'p';
+                            
+                            if (data.type === 'wip') {
+                                // Only add if this job reference hasn't been seen for WIP
+                                if (!wipJobs.has(jobRef)) {
+                                    wipJobs.set(jobRef, isPassed);
+                                }
+                            } else if (data.type === 'post_completion') {
+                                // Only add if this job reference hasn't been seen for Post Completion
+                                if (!postCompJobs.has(jobRef)) {
+                                    postCompJobs.set(jobRef, isPassed);
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Calculate WIP stats
+                    const wipTotal = wipJobs.size;
+                    const wipPass = Array.from(wipJobs.values()).filter(passed => passed).length;
+                    const wipPassRate = wipTotal > 0 ? ((wipPass / wipTotal) * 100).toFixed(1) : 0;
+                    
+                    // Calculate Post Completion stats
+                    const postCompTotal = postCompJobs.size;
+                    const postCompPass = Array.from(postCompJobs.values()).filter(passed => passed).length;
+                    const postCompPassRate = postCompTotal > 0 ? ((postCompPass / postCompTotal) * 100).toFixed(1) : 0;
+                    
+                    // Calculate overall stats
+                    const overallTotal = wipTotal + postCompTotal;
+                    const overallPass = wipPass + postCompPass;
+                    const overallPassRate = overallTotal > 0 ? ((overallPass / overallTotal) * 100).toFixed(1) : 0;
+                    
+                    complianceData.push({
+                        month: month,
+                        monthLabel: formatMonth(month),
+                        wipTotal: wipTotal,
+                        wipPass: wipPass,
+                        wipPassRate: wipPassRate,
+                        postCompTotal: postCompTotal,
+                        postCompPass: postCompPass,
+                        postCompPassRate: postCompPassRate,
+                        overallTotal: overallTotal,
+                        overallPass: overallPass,
+                        overallPassRate: overallPassRate
+                    });
+                }
+                
+                // Update current month display (last entry in array)
+                if (complianceData.length > 0) {
+                    const currentData = complianceData[complianceData.length - 1];
+                    
+                    document.getElementById('complianceOverallPass').textContent = currentData.overallPassRate;
+                    document.getElementById('wipPassRate').textContent = currentData.wipPassRate + '%';
+                    document.getElementById('wipPassCount').textContent = currentData.wipPass;
+                    document.getElementById('wipTotalCount').textContent = currentData.wipTotal;
+                    document.getElementById('postCompPassRate').textContent = currentData.postCompPassRate + '%';
+                    document.getElementById('postCompPassCount').textContent = currentData.postCompPass;
+                    document.getElementById('postCompTotalCount').textContent = currentData.postCompTotal;
+                    
+                    updateStatusIndicator('complianceStatus', parseFloat(currentData.overallPassRate), 90);
+                }
+                
+                // Remove current month from historical display, keep only previous 6
+                complianceData.pop();
+                
+            } catch (error) {
+                console.error("Error loading compliance data:", error);
+            }
         }
 
         async function loadDashboard() {
@@ -940,6 +1134,9 @@
                 document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
                 document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
                 document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
+                
+                // Load compliance data
+                await loadComplianceData();
                 
                 // Load historical data for previous 10 working days
                 await loadHistoricalData();
