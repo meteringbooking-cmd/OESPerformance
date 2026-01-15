@@ -780,17 +780,39 @@
                 if (weekCommencing) {
                     q = query(
                         collection(db, 'workEntries'),
-                        where('weekCommencing', '==', weekCommencing)
+                        where('weekCommencing', '==', weekCommencing),
+                        where('type', '==', 'manual')
                     );
                 } else {
-                    q = query(collection(db, 'workEntries'));
+                    q = query(
+                        collection(db, 'workEntries'),
+                        where('type', '==', 'manual')
+                    );
                 }
                 
                 const snapshot = await getDocs(q);
-                const entries = [];
+                const manualJobNumbers = new Set();
                 
                 snapshot.forEach(doc => {
-                    entries.push({ id: doc.id, ...doc.data() });
+                    manualJobNumbers.add(doc.data().jobNumber);
+                });
+
+                // Now get CSV data for these job numbers
+                const allCsvQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'csv')
+                );
+                
+                const csvSnapshot = await getDocs(allCsvQuery);
+                const entries = [];
+                
+                csvSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (manualJobNumbers.has(data.jobNumber)) {
+                        if (!weekCommencing || data.weekCommencing === weekCommencing) {
+                            entries.push({ id: doc.id, ...data });
+                        }
+                    }
                 });
 
                 const entriesByDate = {};
@@ -845,53 +867,54 @@
             reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
 
             try {
-                const q = query(
+                // Get manual entries for this week
+                const manualQuery = query(
                     collection(db, 'workEntries'),
-                    where('weekCommencing', '==', weekCommencing)
+                    where('weekCommencing', '==', weekCommencing),
+                    where('type', '==', 'manual')
                 );
                 
-                const snapshot = await getDocs(q);
-                const entries = [];
+                const manualSnapshot = await getDocs(manualQuery);
+                const manualEntries = [];
+                const manualJobNumbers = new Set();
                 
-                snapshot.forEach(doc => {
-                    entries.push({ id: doc.id, ...doc.data() });
+                manualSnapshot.forEach(doc => {
+                    const data = { id: doc.id, ...doc.data() };
+                    manualEntries.push(data);
+                    manualJobNumbers.add(data.jobNumber);
                 });
 
-                if (entries.length === 0) {
-                    reportDiv.innerHTML = '<div class="loading">No entries found for this week</div>';
+                if (manualEntries.length === 0) {
+                    reportDiv.innerHTML = '<div class="loading">No manual entries found for this week</div>';
                     return;
                 }
 
-                // Group entries by job number to combine manual and CSV data
-                const entriesByJobNumber = {};
-                entries.forEach(entry => {
-                    if (!entriesByJobNumber[entry.jobNumber]) {
-                        entriesByJobNumber[entry.jobNumber] = {
-                            manual: null,
-                            csv: null
-                        };
-                    }
-                    if (entry.type === 'manual') {
-                        entriesByJobNumber[entry.jobNumber].manual = entry;
-                    } else if (entry.type === 'csv') {
-                        entriesByJobNumber[entry.jobNumber].csv = entry;
+                // Get CSV data for these job numbers
+                const csvQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'csv')
+                );
+                
+                const csvSnapshot = await getDocs(csvQuery);
+                const csvData = {};
+                
+                csvSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (manualJobNumbers.has(data.jobNumber)) {
+                        csvData[data.jobNumber] = data;
                     }
                 });
 
-                // Create merged entries
-                const mergedEntries = [];
-                Object.keys(entriesByJobNumber).forEach(jobNumber => {
-                    const { manual, csv } = entriesByJobNumber[jobNumber];
-                    mergedEntries.push({
-                        jobNumber: jobNumber,
-                        name: manual?.name || '-',
-                        address: manual?.address || '-',
-                        postcode: manual?.postcode || '-',
-                        workDate: manual?.workDate || csv?.workDate || '-',
-                        jobType: csv?.jobType || '-',
-                        bookingStatus: csv?.bookingStatus || '-'
-                    });
-                });
+                // Merge manual entries with CSV data
+                const mergedEntries = manualEntries.map(manual => ({
+                    jobNumber: manual.jobNumber,
+                    name: manual.name || '-',
+                    address: manual.address || '-',
+                    postcode: manual.postcode || '-',
+                    workDate: manual.workDate,
+                    jobType: csvData[manual.jobNumber]?.jobType || '-',
+                    bookingStatus: csvData[manual.jobNumber]?.bookingStatus || '-'
+                }));
 
                 // Sort by date
                 mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
