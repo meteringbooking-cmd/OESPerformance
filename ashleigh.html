@@ -356,6 +356,16 @@
             padding: 40px;
             color: rgba(255, 255, 255, 0.5);
         }
+
+        .debug-info {
+            background: rgba(255, 255, 128, 0.1);
+            border: 1px solid rgba(255, 255, 128, 0.3);
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-size: 0.85em;
+            color: #fbbf24;
+        }
         
         @media (max-width: 768px) {
             .grid {
@@ -485,6 +495,7 @@
                     <option value="">Choose a week...</option>
                 </select>
             </div>
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
             <div id="weeklyReport"></div>
         </div>
     </div>
@@ -686,16 +697,11 @@
                     try {
                         let count = 0;
                         for (const row of results.data) {
-                            if (row['Booking Reference'] && row['Date']) {
-                                const workDate = parseDate(row['Date']);
-                                const weekCommencing = getMonday(workDate);
-                                
+                            if (row['Booking Reference']) {
                                 const entry = {
                                     jobNumber: row['Booking Reference'],
-                                    workDate: formatDate(workDate),
                                     jobType: row['Job Type'] || '',
                                     bookingStatus: row['Booking Status'] || '',
-                                    weekCommencing: formatDate(weekCommencing),
                                     uploadedAt: new Date().toISOString(),
                                     type: 'csv'
                                 };
@@ -796,7 +802,11 @@
                 
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
-                    csvDataMap[data.jobNumber] = data;
+                    // Store by job number - normalize by trimming whitespace
+                    const jobNum = (data.jobNumber || '').trim();
+                    if (jobNum) {
+                        csvDataMap[jobNum] = data;
+                    }
                 });
 
                 // Get ALL manual entries
@@ -812,10 +822,13 @@
                     const data = doc.data();
                     // Filter by week if selected (using manual entry's work date)
                     if (!weekCommencing || isDateInWeek(data.workDate, weekCommencing)) {
-                        manualJobNumbers.push({
-                            jobNumber: data.jobNumber,
-                            workDate: data.workDate
-                        });
+                        const jobNum = (data.jobNumber || '').trim();
+                        if (jobNum) {
+                            manualJobNumbers.push({
+                                jobNumber: jobNum,
+                                workDate: data.workDate
+                            });
+                        }
                     }
                 });
 
@@ -876,16 +889,19 @@
         window.loadWeeklyReport = async function() {
             const weekCommencing = document.getElementById('weekSelect').value;
             const reportDiv = document.getElementById('weeklyReport');
+            const debugDiv = document.getElementById('debugInfo');
             
             if (!weekCommencing) {
                 reportDiv.innerHTML = '';
+                debugDiv.style.display = 'none';
                 return;
             }
 
             reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
+            debugDiv.style.display = 'block';
 
             try {
-                // Get ALL CSV data first (no date filtering)
+                // Get ALL CSV data first
                 const csvQuery = query(
                     collection(db, 'workEntries'),
                     where('type', '==', 'csv')
@@ -893,10 +909,15 @@
                 
                 const csvSnapshot = await getDocs(csvQuery);
                 const csvData = {};
+                let csvCount = 0;
                 
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
-                    csvData[data.jobNumber] = data;
+                    const jobNum = (data.jobNumber || '').trim();
+                    if (jobNum) {
+                        csvData[jobNum] = data;
+                        csvCount++;
+                    }
                 });
 
                 // Get ALL manual entries
@@ -907,14 +928,26 @@
                 
                 const manualSnapshot = await getDocs(manualQuery);
                 const manualEntries = [];
+                let manualTotal = 0;
+                let manualInWeek = 0;
                 
                 manualSnapshot.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
+                    manualTotal++;
                     // Filter by week date range (using manual entry's work date)
                     if (isDateInWeek(data.workDate, weekCommencing)) {
+                        manualInWeek++;
                         manualEntries.push(data);
                     }
                 });
+
+                debugDiv.innerHTML = `
+                    <strong>Debug Info:</strong><br>
+                    Total CSV entries in database: ${csvCount}<br>
+                    Total manual entries in database: ${manualTotal}<br>
+                    Manual entries in selected week: ${manualInWeek}<br>
+                    Week commencing: ${weekCommencing}
+                `;
 
                 if (manualEntries.length === 0) {
                     reportDiv.innerHTML = '<div class="loading">No manual entries found for this week</div>';
@@ -922,18 +955,27 @@
                 }
 
                 // Merge manual entries with CSV data (match by job number only)
-                const mergedEntries = manualEntries.map(manual => ({
-                    jobNumber: manual.jobNumber,
-                    name: manual.name || '-',
-                    address: manual.address || '-',
-                    postcode: manual.postcode || '-',
-                    workDate: manual.workDate,
-                    jobType: csvData[manual.jobNumber]?.jobType || '-',
-                    bookingStatus: csvData[manual.jobNumber]?.bookingStatus || '-'
-                }));
+                const mergedEntries = manualEntries.map(manual => {
+                    const jobNum = (manual.jobNumber || '').trim();
+                    const csvMatch = csvData[jobNum];
+                    
+                    return {
+                        jobNumber: manual.jobNumber,
+                        name: manual.name || '-',
+                        address: manual.address || '-',
+                        postcode: manual.postcode || '-',
+                        workDate: manual.workDate,
+                        jobType: csvMatch?.jobType || 'NOT FOUND',
+                        bookingStatus: csvMatch?.bookingStatus || 'NOT FOUND',
+                        matched: !!csvMatch
+                    };
+                });
 
                 // Sort by date
                 mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
+
+                const matchedCount = mergedEntries.filter(e => e.matched).length;
+                debugDiv.innerHTML += `<br>Matched entries: ${matchedCount} / ${mergedEntries.length}`;
 
                 let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th></tr></thead><tbody>';
 
