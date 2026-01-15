@@ -816,3 +816,117 @@
             if (!weekCommencing) {
                 reportDiv.innerHTML = '';
                 debugDiv.style.display = 'none';
+                return;
+            }
+
+            reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
+            debugDiv.style.display = 'block';
+
+            try {
+                // Get ALL CSV data first
+                const csvQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'csv')
+                );
+                
+                const csvSnapshot = await getDocs(csvQuery);
+                const csvData = {};
+                let csvCount = 0;
+                
+                csvSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const jobNum = (data.jobNumber || '').trim();
+                    if (jobNum) {
+                        csvData[jobNum] = data;
+                        csvCount++;
+                    }
+                });
+
+                // Get ALL manual entries
+                const manualQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'manual')
+                );
+                
+                const manualSnapshot = await getDocs(manualQuery);
+                const manualEntries = [];
+                let manualTotal = 0;
+                let manualInWeek = 0;
+                
+                manualSnapshot.forEach(doc => {
+                    const data = { id: doc.id, ...doc.data() };
+                    manualTotal++;
+                    // Filter by week date range (using manual entry's work date)
+                    if (isDateInWeek(data.workDate, weekCommencing)) {
+                        manualInWeek++;
+                        manualEntries.push(data);
+                    }
+                });
+
+                debugDiv.innerHTML = `
+                    <strong>Debug Info:</strong><br>
+                    Total CSV entries in database: ${csvCount}<br>
+                    Total manual entries in database: ${manualTotal}<br>
+                    Manual entries in selected week: ${manualInWeek}<br>
+                    Week commencing: ${weekCommencing}
+                `;
+
+                if (manualEntries.length === 0) {
+                    reportDiv.innerHTML = '<div class="loading">No manual entries found for this week</div>';
+                    return;
+                }
+
+                // Merge manual entries with CSV data (match by job number only)
+                const mergedEntries = manualEntries.map(manual => {
+                    const jobNum = (manual.jobNumber || '').trim();
+                    const csvMatch = csvData[jobNum];
+                    
+                    return {
+                        jobNumber: manual.jobNumber,
+                        name: manual.name || '-',
+                        address: manual.address || '-',
+                        postcode: manual.postcode || '-',
+                        workDate: manual.workDate,
+                        jobType: csvMatch?.jobType || 'NOT FOUND',
+                        bookingStatus: csvMatch?.bookingStatus || 'NOT FOUND',
+                        matched: !!csvMatch
+                    };
+                });
+
+                // Sort by date
+                mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
+
+                const matchedCount = mergedEntries.filter(e => e.matched).length;
+                debugDiv.innerHTML += `<br>Matched entries: ${matchedCount} / ${mergedEntries.length}`;
+
+                let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th></tr></thead><tbody>';
+
+                mergedEntries.forEach(entry => {
+                    const value = jobTypeValues[entry.jobType] || 0;
+                    const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
+                    const statusClass = isComplete ? 'status-complete' : 'status-pending';
+                    
+                    html += `<tr>
+                        <td>${entry.workDate}</td>
+                        <td>${entry.name}</td>
+                        <td>${entry.address}</td>
+                        <td>${entry.postcode}</td>
+                        <td>${entry.jobNumber}</td>
+                        <td>${entry.jobType}</td>
+                        <td class="${statusClass}">${entry.bookingStatus}</td>
+                        <td>£${value.toFixed(2)}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                reportDiv.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading report:', error);
+                reportDiv.innerHTML = `<div class="loading" style="color: #f87171;">Error loading report: ${error.message}</div>`;
+            }
+        };
+
+        loadWeekCommencingDates();
+    </script>
+</body>
+</html>
