@@ -396,6 +396,16 @@
                 <div class="value" id="totalCommission">£0.00</div>
             </div>
         </div>
+        
+        <div class="card" style="margin-bottom: 25px;">
+            <h2 style="color: white; margin-bottom: 20px;"><span class="emoji">📊</span> Summary Filter</h2>
+            <div class="form-group">
+                <label for="summaryWeekSelect">Select Week for Summary</label>
+                <select id="summaryWeekSelect" onchange="updateSummary()">
+                    <option value="">All weeks</option>
+                </select>
+            </div>
+        </div>
 
         <div class="grid">
             <div class="card">
@@ -721,24 +731,107 @@
         };
 
         async function loadWeekCommencingDates() {
-            const q = query(collection(db, 'workEntries'), orderBy('weekCommencing', 'desc'));
-            const snapshot = await getDocs(q);
-            
-            const weeks = new Set();
-            snapshot.forEach(doc => {
-                weeks.add(doc.data().weekCommencing);
-            });
-            
-            const select = document.getElementById('weekSelect');
-            select.innerHTML = '<option value="">Choose a week...</option>';
-            
-            Array.from(weeks).sort((a, b) => b.localeCompare(a)).forEach(week => {
-                const option = document.createElement('option');
-                option.value = week;
-                option.textContent = week;
-                select.appendChild(option);
-            });
+            try {
+                const q = query(collection(db, 'workEntries'));
+                const snapshot = await getDocs(q);
+                
+                const weeks = new Set();
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.weekCommencing) {
+                        weeks.add(data.weekCommencing);
+                    }
+                });
+                
+                const weekArray = Array.from(weeks).sort((a, b) => b.localeCompare(a));
+                
+                // Update weekly report dropdown
+                const select = document.getElementById('weekSelect');
+                select.innerHTML = '<option value="">Choose a week...</option>';
+                weekArray.forEach(week => {
+                    const option = document.createElement('option');
+                    option.value = week;
+                    option.textContent = week;
+                    select.appendChild(option);
+                });
+                
+                // Update summary dropdown
+                const summarySelect = document.getElementById('summaryWeekSelect');
+                summarySelect.innerHTML = '<option value="">All weeks</option>';
+                weekArray.forEach(week => {
+                    const option = document.createElement('option');
+                    option.value = week;
+                    option.textContent = week;
+                    summarySelect.appendChild(option);
+                });
+                
+                // Load initial summary (all weeks)
+                await updateSummary();
+            } catch (error) {
+                console.error('Error loading weeks:', error);
+            }
         }
+
+        window.updateSummary = async function() {
+            const weekCommencing = document.getElementById('summaryWeekSelect').value;
+            
+            try {
+                let q;
+                if (weekCommencing) {
+                    q = query(
+                        collection(db, 'workEntries'),
+                        where('weekCommencing', '==', weekCommencing)
+                    );
+                } else {
+                    q = query(collection(db, 'workEntries'));
+                }
+                
+                const snapshot = await getDocs(q);
+                const entries = [];
+                
+                snapshot.forEach(doc => {
+                    entries.push({ id: doc.id, ...doc.data() });
+                });
+
+                const entriesByDate = {};
+                entries.forEach(entry => {
+                    if (!entriesByDate[entry.workDate]) {
+                        entriesByDate[entry.workDate] = [];
+                    }
+                    entriesByDate[entry.workDate].push(entry);
+                });
+
+                let totalCompleted = 0;
+                let totalIncome = 0;
+                let totalCommission = 0;
+
+                Object.keys(entriesByDate).forEach(date => {
+                    const dayEntries = entriesByDate[date];
+                    const completedToday = dayEntries.filter(e => 
+                        e.bookingStatus && e.bookingStatus.toLowerCase().includes('complete')
+                    ).length;
+                    
+                    if (completedToday > 10) {
+                        totalCommission += (completedToday - 10) * 10;
+                    }
+                    
+                    dayEntries.forEach(entry => {
+                        const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
+                        if (isComplete) {
+                            totalCompleted++;
+                            const value = jobTypeValues[entry.jobType] || 0;
+                            totalIncome += value;
+                        }
+                    });
+                });
+
+                document.getElementById('totalCompleted').textContent = totalCompleted;
+                document.getElementById('totalIncome').textContent = `£${totalIncome.toFixed(2)}`;
+                document.getElementById('totalCommission').textContent = `£${totalCommission.toFixed(2)}`;
+            } catch (error) {
+                console.error('Error updating summary:', error);
+            }
+        };
 
         window.loadWeeklyReport = async function() {
             const weekCommencing = document.getElementById('weekSelect').value;
@@ -751,75 +844,83 @@
 
             reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
 
-            const q = query(
-                collection(db, 'workEntries'),
-                where('weekCommencing', '==', weekCommencing),
-                orderBy('workDate', 'asc')
-            );
-            
-            const snapshot = await getDocs(q);
-            const entries = [];
-            
-            snapshot.forEach(doc => {
-                entries.push({ id: doc.id, ...doc.data() });
-            });
-
-            const entriesByDate = {};
-            entries.forEach(entry => {
-                if (!entriesByDate[entry.workDate]) {
-                    entriesByDate[entry.workDate] = [];
-                }
-                entriesByDate[entry.workDate].push(entry);
-            });
-
-            let totalCompleted = 0;
-            let totalIncome = 0;
-            let totalCommission = 0;
-
-            Object.keys(entriesByDate).forEach(date => {
-                const dayEntries = entriesByDate[date];
-                const completedToday = dayEntries.filter(e => 
-                    e.bookingStatus && e.bookingStatus.toLowerCase().includes('complete')
-                ).length;
+            try {
+                const q = query(
+                    collection(db, 'workEntries'),
+                    where('weekCommencing', '==', weekCommencing)
+                );
                 
-                if (completedToday > 10) {
-                    totalCommission += (completedToday - 10) * 10;
+                const snapshot = await getDocs(q);
+                const entries = [];
+                
+                snapshot.forEach(doc => {
+                    entries.push({ id: doc.id, ...doc.data() });
+                });
+
+                if (entries.length === 0) {
+                    reportDiv.innerHTML = '<div class="loading">No entries found for this week</div>';
+                    return;
                 }
-            });
 
-            let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th></tr></thead><tbody>';
+                // Group entries by job number to combine manual and CSV data
+                const entriesByJobNumber = {};
+                entries.forEach(entry => {
+                    if (!entriesByJobNumber[entry.jobNumber]) {
+                        entriesByJobNumber[entry.jobNumber] = {
+                            manual: null,
+                            csv: null
+                        };
+                    }
+                    if (entry.type === 'manual') {
+                        entriesByJobNumber[entry.jobNumber].manual = entry;
+                    } else if (entry.type === 'csv') {
+                        entriesByJobNumber[entry.jobNumber].csv = entry;
+                    }
+                });
 
-            Object.keys(entriesByDate).sort().forEach(date => {
-                entriesByDate[date].forEach(entry => {
+                // Create merged entries
+                const mergedEntries = [];
+                Object.keys(entriesByJobNumber).forEach(jobNumber => {
+                    const { manual, csv } = entriesByJobNumber[jobNumber];
+                    mergedEntries.push({
+                        jobNumber: jobNumber,
+                        name: manual?.name || '-',
+                        address: manual?.address || '-',
+                        postcode: manual?.postcode || '-',
+                        workDate: manual?.workDate || csv?.workDate || '-',
+                        jobType: csv?.jobType || '-',
+                        bookingStatus: csv?.bookingStatus || '-'
+                    });
+                });
+
+                // Sort by date
+                mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
+
+                let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th></tr></thead><tbody>';
+
+                mergedEntries.forEach(entry => {
                     const value = jobTypeValues[entry.jobType] || 0;
                     const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
-                    
-                    if (isComplete) {
-                        totalCompleted++;
-                        totalIncome += value;
-                    }
-
                     const statusClass = isComplete ? 'status-complete' : 'status-pending';
                     
                     html += `<tr>
                         <td>${entry.workDate}</td>
-                        <td>${entry.name || '-'}</td>
-                        <td>${entry.address || '-'}</td>
-                        <td>${entry.postcode || '-'}</td>
+                        <td>${entry.name}</td>
+                        <td>${entry.address}</td>
+                        <td>${entry.postcode}</td>
                         <td>${entry.jobNumber}</td>
-                        <td>${entry.jobType || '-'}</td>
-                        <td class="${statusClass}">${entry.bookingStatus || '-'}</td>
+                        <td>${entry.jobType}</td>
+                        <td class="${statusClass}">${entry.bookingStatus}</td>
                         <td>£${value.toFixed(2)}</td>
                     </tr>`;
                 });
-            });
 
-            html += '</tbody></table>';
-            reportDiv.innerHTML = html;
-
-            document.getElementById('totalCompleted').textContent = totalCompleted;
-            document.getElementById('totalIncome').textContent = `£${totalIncome.toFixed(2)}`;
-            document.getElementById('totalCommission').textContent = `£${totalCommission.toFixed(2)}`;
+                html += '</tbody></table>';
+                reportDiv.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading report:', error);
+                reportDiv.innerHTML = `<div class="loading" style="color: #f87171;">Error loading report: ${error.message}</div>`;
+            }
         };
 
         loadWeekCommencingDates();
