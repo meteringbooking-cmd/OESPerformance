@@ -155,7 +155,7 @@
             letter-spacing: 0.5px;
         }
         
-        input,         select {
+        input, select {
             width: 100%;
             padding: 14px 18px;
             background: rgba(255, 255, 255, 0.08);
@@ -785,27 +785,7 @@
             const weekCommencing = document.getElementById('summaryWeekSelect').value;
             
             try {
-                // Get ALL manual entries
-                const manualQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'manual')
-                );
-                
-                const manualSnapshot = await getDocs(manualQuery);
-                const manualJobNumbers = [];
-                
-                manualSnapshot.forEach(doc => {
-                    const data = doc.data();
-                    // Filter by week if selected
-                    if (!weekCommencing || isDateInWeek(data.workDate, weekCommencing)) {
-                        manualJobNumbers.push({
-                            jobNumber: data.jobNumber,
-                            workDate: data.workDate
-                        });
-                    }
-                });
-
-                // Now get CSV data for these job numbers
+                // Get ALL CSV data first (no date filtering on CSV)
                 const allCsvQuery = query(
                     collection(db, 'workEntries'),
                     where('type', '==', 'csv')
@@ -819,13 +799,36 @@
                     csvDataMap[data.jobNumber] = data;
                 });
 
-                // Match manual jobs with CSV data
+                // Get ALL manual entries
+                const manualQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'manual')
+                );
+                
+                const manualSnapshot = await getDocs(manualQuery);
+                const manualJobNumbers = [];
+                
+                manualSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    // Filter by week if selected (using manual entry's work date)
+                    if (!weekCommencing || isDateInWeek(data.workDate, weekCommencing)) {
+                        manualJobNumbers.push({
+                            jobNumber: data.jobNumber,
+                            workDate: data.workDate
+                        });
+                    }
+                });
+
+                // Match manual jobs with CSV data using job number only
                 const entries = [];
                 manualJobNumbers.forEach(manual => {
                     if (csvDataMap[manual.jobNumber]) {
+                        // Use manual entry's work date, not CSV date
                         entries.push({
-                            ...csvDataMap[manual.jobNumber],
-                            workDate: manual.workDate
+                            jobNumber: manual.jobNumber,
+                            workDate: manual.workDate,
+                            jobType: csvDataMap[manual.jobNumber].jobType,
+                            bookingStatus: csvDataMap[manual.jobNumber].bookingStatus
                         });
                     }
                 });
@@ -882,31 +885,7 @@
             reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
 
             try {
-                // Get ALL manual entries
-                const manualQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'manual')
-                );
-                
-                const manualSnapshot = await getDocs(manualQuery);
-                const manualEntries = [];
-                const manualJobNumbers = new Set();
-                
-                manualSnapshot.forEach(doc => {
-                    const data = { id: doc.id, ...doc.data() };
-                    // Filter by week date range
-                    if (isDateInWeek(data.workDate, weekCommencing)) {
-                        manualEntries.push(data);
-                        manualJobNumbers.add(data.jobNumber);
-                    }
-                });
-
-                if (manualEntries.length === 0) {
-                    reportDiv.innerHTML = '<div class="loading">No manual entries found for this week</div>';
-                    return;
-                }
-
-                // Get CSV data for these job numbers
+                // Get ALL CSV data first (no date filtering)
                 const csvQuery = query(
                     collection(db, 'workEntries'),
                     where('type', '==', 'csv')
@@ -917,12 +896,32 @@
                 
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
-                    if (manualJobNumbers.has(data.jobNumber)) {
-                        csvData[data.jobNumber] = data;
+                    csvData[data.jobNumber] = data;
+                });
+
+                // Get ALL manual entries
+                const manualQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'manual')
+                );
+                
+                const manualSnapshot = await getDocs(manualQuery);
+                const manualEntries = [];
+                
+                manualSnapshot.forEach(doc => {
+                    const data = { id: doc.id, ...doc.data() };
+                    // Filter by week date range (using manual entry's work date)
+                    if (isDateInWeek(data.workDate, weekCommencing)) {
+                        manualEntries.push(data);
                     }
                 });
 
-                // Merge manual entries with CSV data
+                if (manualEntries.length === 0) {
+                    reportDiv.innerHTML = '<div class="loading">No manual entries found for this week</div>';
+                    return;
+                }
+
+                // Merge manual entries with CSV data (match by job number only)
                 const mergedEntries = manualEntries.map(manual => ({
                     jobNumber: manual.jobNumber,
                     name: manual.name || '-',
