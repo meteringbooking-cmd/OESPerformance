@@ -772,33 +772,37 @@
             }
         }
 
+        function isDateInWeek(dateStr, weekCommencingStr) {
+            const date = new Date(dateStr);
+            const weekStart = new Date(weekCommencingStr);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
+            
+            return date >= weekStart && date <= weekEnd;
+        }
+
         window.updateSummary = async function() {
             const weekCommencing = document.getElementById('summaryWeekSelect').value;
             
             try {
-                let manualQuery;
-                if (weekCommencing) {
-                    manualQuery = query(
-                        collection(db, 'workEntries'),
-                        where('weekCommencing', '==', weekCommencing),
-                        where('type', '==', 'manual')
-                    );
-                } else {
-                    manualQuery = query(
-                        collection(db, 'workEntries'),
-                        where('type', '==', 'manual')
-                    );
-                }
+                // Get ALL manual entries
+                const manualQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'manual')
+                );
                 
                 const manualSnapshot = await getDocs(manualQuery);
                 const manualJobNumbers = [];
                 
                 manualSnapshot.forEach(doc => {
                     const data = doc.data();
-                    manualJobNumbers.push({
-                        jobNumber: data.jobNumber,
-                        workDate: data.workDate
-                    });
+                    // Filter by week if selected
+                    if (!weekCommencing || isDateInWeek(data.workDate, weekCommencing)) {
+                        manualJobNumbers.push({
+                            jobNumber: data.jobNumber,
+                            workDate: data.workDate
+                        });
+                    }
                 });
 
                 // Now get CSV data for these job numbers
@@ -878,10 +882,9 @@
             reportDiv.innerHTML = '<div class="loading">⏳ Loading report...</div>';
 
             try {
-                // Get manual entries for this week
+                // Get ALL manual entries
                 const manualQuery = query(
                     collection(db, 'workEntries'),
-                    where('weekCommencing', '==', weekCommencing),
                     where('type', '==', 'manual')
                 );
                 
@@ -891,8 +894,11 @@
                 
                 manualSnapshot.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
-                    manualEntries.push(data);
-                    manualJobNumbers.add(data.jobNumber);
+                    // Filter by week date range
+                    if (isDateInWeek(data.workDate, weekCommencing)) {
+                        manualEntries.push(data);
+                        manualJobNumbers.add(data.jobNumber);
+                    }
                 });
 
                 if (manualEntries.length === 0) {
