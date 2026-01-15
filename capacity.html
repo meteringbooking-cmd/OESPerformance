@@ -681,6 +681,13 @@
                     <label>End Date</label>
                     <input type="date" id="holidayEnd" required>
                 </div>
+                <div class="form-group">
+                    <label>Holiday Type</label>
+                    <select id="holidayType" required>
+                        <option value="full">Full Day</option>
+                        <option value="half">Half Day</option>
+                    </select>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('holidayModal')">Cancel</button>
                     <button type="submit" class="btn">Save Holiday</button>
@@ -915,17 +922,22 @@
 
                 const dateStr = date.toISOString().split('T')[0];
                 
-                // Count engineers on holiday
-                const onHoliday = holidays.filter(h => {
+                // Count engineers on holiday (half days count as 0.5)
+                const onHolidayCount = holidays.reduce((count, h) => {
                     const start = new Date(h.startDate);
                     const end = new Date(h.endDate);
                     const current = new Date(dateStr);
-                    return current >= start && current <= end && 
+                    const isOnHoliday = current >= start && current <= end && 
                            filteredEngineers.some(e => e.id === h.engineerId);
-                }).length;
+                    
+                    if (isOnHoliday) {
+                        return count + (h.type === 'half' ? 0.5 : 1);
+                    }
+                    return count;
+                }, 0);
 
                 const availablePercentage = totalEngineers > 0 
-                    ? Math.round(((totalEngineers - onHoliday) / totalEngineers) * 100)
+                    ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100)
                     : 100;
 
                 const dayCard = document.createElement('div');
@@ -964,15 +976,20 @@
 
             document.getElementById('totalEngineers').textContent = filteredEngineers.length;
 
-            // Count holiday today
+            // Count holiday today (half days count as 0.5)
             const today = new Date().toISOString().split('T')[0];
-            const holidayToday = holidays.filter(h => {
+            const holidayToday = holidays.reduce((count, h) => {
                 const start = new Date(h.startDate);
                 const end = new Date(h.endDate);
                 const current = new Date(today);
-                return current >= start && current <= end && 
+                const isOnHoliday = current >= start && current <= end && 
                        filteredEngineers.some(e => e.id === h.engineerId);
-            }).length;
+                
+                if (isOnHoliday) {
+                    return count + (h.type === 'half' ? 0.5 : 1);
+                }
+                return count;
+            }, 0);
 
             document.getElementById('holidayToday').textContent = holidayToday;
 
@@ -992,16 +1009,22 @@
                 workingDays++;
                 const dateStr = date.toISOString().split('T')[0];
                 
-                const onHoliday = holidays.filter(h => {
+                // Count engineers on holiday (half days count as 0.5)
+                const onHolidayCount = holidays.reduce((count, h) => {
                     const start = new Date(h.startDate);
                     const end = new Date(h.endDate);
                     const current = new Date(dateStr);
-                    return current >= start && current <= end && 
+                    const isOnHoliday = current >= start && current <= end && 
                            filteredEngineers.some(e => e.id === h.engineerId);
-                }).length;
+                    
+                    if (isOnHoliday) {
+                        return count + (h.type === 'half' ? 0.5 : 1);
+                    }
+                    return count;
+                }, 0);
 
                 const capacity = filteredEngineers.length > 0 
-                    ? ((filteredEngineers.length - onHoliday) / filteredEngineers.length) * 100
+                    ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100
                     : 100;
                 
                 totalCapacity += capacity;
@@ -1040,11 +1063,13 @@
                 const engineerId = document.getElementById('holidayEngineer').value;
                 const startDate = document.getElementById('holidayStart').value;
                 const endDate = document.getElementById('holidayEnd').value;
+                const type = document.getElementById('holidayType').value;
 
                 await addDoc(collection(db, 'holidays'), {
                     engineerId,
                     startDate,
-                    endDate
+                    endDate,
+                    type
                 });
 
                 closeModal('holidayModal');
