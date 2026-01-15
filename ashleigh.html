@@ -732,7 +732,7 @@
 
         async function loadWeekCommencingDates() {
             try {
-                const q = query(collection(db, 'workEntries'));
+                const q = query(collection(db, 'workEntries'), where('type', '==', 'manual'));
                 const snapshot = await getDocs(q);
                 
                 const weeks = new Set();
@@ -751,7 +751,7 @@
                 weekArray.forEach(week => {
                     const option = document.createElement('option');
                     option.value = week;
-                    option.textContent = week;
+                    option.textContent = `Week of ${week}`;
                     select.appendChild(option);
                 });
                 
@@ -761,7 +761,7 @@
                 weekArray.forEach(week => {
                     const option = document.createElement('option');
                     option.value = week;
-                    option.textContent = week;
+                    option.textContent = `Week of ${week}`;
                     summarySelect.appendChild(option);
                 });
                 
@@ -776,25 +776,29 @@
             const weekCommencing = document.getElementById('summaryWeekSelect').value;
             
             try {
-                let q;
+                let manualQuery;
                 if (weekCommencing) {
-                    q = query(
+                    manualQuery = query(
                         collection(db, 'workEntries'),
                         where('weekCommencing', '==', weekCommencing),
                         where('type', '==', 'manual')
                     );
                 } else {
-                    q = query(
+                    manualQuery = query(
                         collection(db, 'workEntries'),
                         where('type', '==', 'manual')
                     );
                 }
                 
-                const snapshot = await getDocs(q);
-                const manualJobNumbers = new Set();
+                const manualSnapshot = await getDocs(manualQuery);
+                const manualJobNumbers = [];
                 
-                snapshot.forEach(doc => {
-                    manualJobNumbers.add(doc.data().jobNumber);
+                manualSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    manualJobNumbers.push({
+                        jobNumber: data.jobNumber,
+                        workDate: data.workDate
+                    });
                 });
 
                 // Now get CSV data for these job numbers
@@ -804,14 +808,21 @@
                 );
                 
                 const csvSnapshot = await getDocs(allCsvQuery);
-                const entries = [];
+                const csvDataMap = {};
                 
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
-                    if (manualJobNumbers.has(data.jobNumber)) {
-                        if (!weekCommencing || data.weekCommencing === weekCommencing) {
-                            entries.push({ id: doc.id, ...data });
-                        }
+                    csvDataMap[data.jobNumber] = data;
+                });
+
+                // Match manual jobs with CSV data
+                const entries = [];
+                manualJobNumbers.forEach(manual => {
+                    if (csvDataMap[manual.jobNumber]) {
+                        entries.push({
+                            ...csvDataMap[manual.jobNumber],
+                            workDate: manual.workDate
+                        });
                     }
                 });
 
