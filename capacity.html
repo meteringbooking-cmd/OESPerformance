@@ -808,9 +808,8 @@
         }
 
         async function loadData() {
-            // Load engineers
-            const engineersSnap = await getDocs(collection(db, 'engineers'));
-            engineers = engineersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Initialize engineers as empty - user will add them fresh
+            engineers = [];
 
             // Load holidays
             const holidaysSnap = await getDocs(collection(db, 'holidays'));
@@ -824,7 +823,7 @@
                 headcounts[data.team] = { id: doc.id, count: data.count };
             });
 
-            // Populate engineer dropdown
+            // Populate engineer dropdown (will be empty initially)
             const engineerSelect = document.getElementById('holidayEngineer');
             engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
             engineers.forEach(eng => {
@@ -858,8 +857,20 @@
 
         window.deleteMember = async function(id) {
             if (confirm('Are you sure you want to delete this engineer?')) {
-                await deleteDoc(doc(db, 'engineers', id));
-                await loadData();
+                // Remove from in-memory array
+                engineers = engineers.filter(e => e.id !== id);
+                
+                // Update engineer dropdown
+                const engineerSelect = document.getElementById('holidayEngineer');
+                engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
+                engineers.forEach(eng => {
+                    const option = document.createElement('option');
+                    option.value = eng.id;
+                    option.textContent = `${eng.name} (${eng.team})`;
+                    engineerSelect.appendChild(option);
+                });
+
+                renderTeamList();
                 renderCalendar();
                 updateStats();
             }
@@ -1068,14 +1079,26 @@
                 const team = document.getElementById('memberTeam').value;
                 const contract = document.getElementById('memberContract').value;
 
-                await addDoc(collection(db, 'engineers'), {
+                // Create a simple ID for in-memory storage
+                const newEngineer = {
+                    id: Date.now().toString(),
                     name,
                     team,
                     contract
-                });
+                };
+
+                // Add to in-memory array
+                engineers.push(newEngineer);
+
+                // Update engineer dropdown
+                const engineerSelect = document.getElementById('holidayEngineer');
+                const option = document.createElement('option');
+                option.value = newEngineer.id;
+                option.textContent = `${newEngineer.name} (${newEngineer.team})`;
+                engineerSelect.appendChild(option);
 
                 document.getElementById('memberForm').reset();
-                await loadData();
+                renderTeamList();
                 renderCalendar();
                 updateStats();
             });
