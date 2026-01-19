@@ -109,8 +109,7 @@
 
         .form-group input[type="date"],
         .form-group input[type="number"],
-        .form-group select,
-        .form-group input[type="file"] {
+        .form-group select {
             width: 100%;
             padding: 12px 15px;
             border: 2px solid #e0e0e0;
@@ -119,16 +118,10 @@
             transition: border-color 0.3s ease;
         }
 
-        .form-group input[type="date"]:focus,
-        .form-group input[type="number"]:focus,
+        .form-group input:focus,
         .form-group select:focus {
             outline: none;
             border-color: #667eea;
-        }
-
-        .form-group select {
-            cursor: pointer;
-            background-color: white;
         }
 
         .percentage-grid {
@@ -187,13 +180,8 @@
             transition: all 0.3s ease;
         }
 
-        .file-upload-area:hover {
+        .file-upload-area:hover, .file-upload-area.dragover {
             background: #f0f2ff;
-            border-color: #764ba2;
-        }
-
-        .file-upload-area.dragover {
-            background: #e8ebff;
             border-color: #764ba2;
         }
 
@@ -246,21 +234,9 @@
             display: none;
         }
 
-        .message.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .message.show {
-            display: block;
-        }
+        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .message.show { display: block; }
 
         .back-link {
             display: block;
@@ -269,10 +245,6 @@
             color: #667eea;
             text-decoration: none;
             font-weight: 600;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
         }
 
         .progress-bar {
@@ -285,10 +257,7 @@
             display: none;
         }
 
-        .progress-bar.show {
-            display: block;
-        }
-
+        .progress-bar.show { display: block; }
         .progress-fill {
             height: 100%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -297,13 +266,8 @@
         }
 
         @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-            }
-
-            .percentage-grid {
-                grid-template-columns: 1fr;
-            }
+            .container { padding: 20px; }
+            .percentage-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -316,7 +280,6 @@
 
         <div id="message" class="message"></div>
 
-        <!-- Attendance Statistics Section -->
         <div class="form-section">
             <h2 class="section-title">📊 Attendance Statistics</h2>
             
@@ -365,14 +328,13 @@
 
         <div class="section-divider"></div>
 
-        <!-- CSV Upload Section -->
         <div class="form-section">
             <h2 class="section-title">📁 Compliance CSV Upload</h2>
             
             <div class="info-box">
                 <h3>Upload Compliance Data</h3>
-                <p><strong>Post Completion Audit:</strong> Extracts Installation Date (Column G), Audit Outcome (Column H), Job Reference (Column I), and Audit Type (Column K)</p>
-                <p><strong>WIP Upload:</strong> Extracts Installation Date (Column G), Audit Outcome (Column H), and Job Reference (Column I)</p>
+                <p><strong>Post Completion Audit:</strong> Column G (Inst. Date), H (Outcome), I (Job Ref), K (Audit Type)</p>
+                <p><strong>WIP Upload:</strong> Column E (Inst. Date), F (Outcome), G (Job Ref)</p>
             </div>
 
             <form id="csvForm">
@@ -424,274 +386,136 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Set yesterday's date as default
+        // Date Setup
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         document.getElementById('dataDate').valueAsDate = yesterday;
 
-        // Calculate at work percentage
+        // Calc Logic
         function updateAtWorkPercent() {
-            const holiday = parseFloat(document.getElementById('holidayPercent').value) || 0;
-            const sick = parseFloat(document.getElementById('sickPercent').value) || 0;
-            const aaup = parseFloat(document.getElementById('aaupPercent').value) || 0;
-            
-            const atWork = Math.max(0, 100 - holiday - sick - aaup);
+            const h = parseFloat(document.getElementById('holidayPercent').value) || 0;
+            const s = parseFloat(document.getElementById('sickPercent').value) || 0;
+            const a = parseFloat(document.getElementById('aaupPercent').value) || 0;
+            const atWork = Math.max(0, 100 - h - s - a);
             document.getElementById('atWorkPercent').textContent = atWork.toFixed(1) + '%';
         }
 
-        // Add event listeners for auto-calculation
-        document.getElementById('holidayPercent').addEventListener('input', updateAtWorkPercent);
-        document.getElementById('sickPercent').addEventListener('input', updateAtWorkPercent);
-        document.getElementById('aaupPercent').addEventListener('input', updateAtWorkPercent);
+        ['holidayPercent', 'sickPercent', 'aaupPercent'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateAtWorkPercent);
+        });
 
-        // Handle attendance form submission
+        // Stats Submit
         document.getElementById('statsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-
-            const submitBtn = e.target.querySelector('.btn');
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Saving...';
+            const btn = e.target.querySelector('.btn');
+            btn.disabled = true;
 
             try {
                 const date = document.getElementById('dataDate').value;
-                const holidayPercent = parseFloat(document.getElementById('holidayPercent').value) || 0;
-                const sickPercent = parseFloat(document.getElementById('sickPercent').value) || 0;
-                const aaupPercent = parseFloat(document.getElementById('aaupPercent').value) || 0;
-                const atWorkPercent = Math.max(0, 100 - holidayPercent - sickPercent - aaupPercent);
+                const h = parseFloat(document.getElementById('holidayPercent').value) || 0;
+                const s = parseFloat(document.getElementById('sickPercent').value) || 0;
+                const a = parseFloat(document.getElementById('aaupPercent').value) || 0;
 
-                // Validate total doesn't exceed 100%
-                if (holidayPercent + sickPercent + aaupPercent > 100) {
-                    showMessage('Error: Total percentages cannot exceed 100%', 'error');
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Save Attendance Stats';
+                if (h + s + a > 100) {
+                    showMessage('Error: Total exceeds 100%', 'error');
+                    btn.disabled = false;
                     return;
                 }
 
                 await addDoc(collection(db, "garethstats"), {
-                    date: date,
-                    holidayPercent: holidayPercent,
-                    sickPercent: sickPercent,
-                    aaupPercent: aaupPercent,
-                    atWorkPercent: atWorkPercent,
-                    submittedAt: serverTimestamp()
+                    date, holidayPercent: h, sickPercent: s, aaupPercent: a,
+                    atWorkPercent: (100 - h - s - a), submittedAt: serverTimestamp()
                 });
 
-                showMessage('Attendance statistics saved successfully!', 'success');
-                
-                // Reset form
-                document.getElementById('holidayPercent').value = 0;
-                document.getElementById('sickPercent').value = 0;
-                document.getElementById('aaupPercent').value = 0;
+                showMessage('Stats saved!', 'success');
+                e.target.reset();
                 updateAtWorkPercent();
-
-            } catch (error) {
-                console.error("Error saving stats:", error);
-                showMessage('Error saving statistics. Please try again.', 'error');
+            } catch (err) {
+                showMessage('Error saving data', 'error');
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Save Attendance Stats';
+                btn.disabled = false;
             }
         });
 
-        // File upload handling
-        const fileUploadArea = document.getElementById('fileUploadArea');
-        const csvFileInput = document.getElementById('csvFile');
-        const fileInfo = document.getElementById('fileInfo');
-
-        fileUploadArea.addEventListener('click', () => {
-            csvFileInput.click();
-        });
-
-        fileUploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            fileUploadArea.classList.add('dragover');
-        });
-
-        fileUploadArea.addEventListener('dragleave', () => {
-            fileUploadArea.classList.remove('dragover');
-        });
-
-        fileUploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            fileUploadArea.classList.remove('dragover');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].name.endsWith('.csv')) {
-                csvFileInput.files = files;
-                displayFileInfo(files[0]);
-            }
-        });
-
-        csvFileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                displayFileInfo(e.target.files[0]);
-            }
-        });
+        // File Handling
+        const area = document.getElementById('fileUploadArea');
+        const input = document.getElementById('csvFile');
+        area.addEventListener('click', () => input.click());
+        input.addEventListener('change', (e) => e.target.files[0] && displayFileInfo(e.target.files[0]));
 
         function displayFileInfo(file) {
-            fileInfo.innerHTML = `<strong>Selected:</strong> ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
-            fileInfo.classList.add('show');
+            const info = document.getElementById('fileInfo');
+            info.innerHTML = `<strong>Selected:</strong> ${file.name}`;
+            info.classList.add('show');
         }
 
-        // Handle CSV form submission
+        // CSV Processing
         document.getElementById('csvForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const type = document.getElementById('auditType').value;
+            const file = input.files[0];
+            const btn = document.getElementById('uploadBtn');
+            const fill = document.getElementById('progressFill');
+            
+            if(!file) return;
+            btn.disabled = true;
+            document.getElementById('progressBar').classList.add('show');
 
-            const auditType = document.getElementById('auditType').value;
-            const csvFile = csvFileInput.files[0];
-            const uploadBtn = document.getElementById('uploadBtn');
-            const progressBar = document.getElementById('progressBar');
-            const progressFill = document.getElementById('progressFill');
+            Papa.parse(file, {
+                header: false,
+                skipEmptyLines: true,
+                complete: async (results) => {
+                    const rows = results.data;
+                    let records = [];
 
-            if (!csvFile) {
-                showMessage('Please select a CSV file', 'error');
-                return;
-            }
-
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Processing...';
-            progressBar.classList.add('show');
-            progressFill.style.width = '10%';
-
-            try {
-                // Parse CSV
-                Papa.parse(csvFile, {
-                    header: false,
-                    skipEmptyLines: true,
-                    complete: async (results) => {
-                        try {
-                            const rows = results.data;
-                            progressFill.style.width = '30%';
-
-                            if (rows.length < 2) {
-                                showMessage('CSV file appears to be empty or invalid', 'error');
-                                resetUploadForm();
-                                return;
-                            }
-
-                            // Process rows based on audit type
-                            let recordsToSave = [];
-                            
-                            if (auditType === 'post_completion') {
-                                // Column G (index 6) = Installation Date
-                                // Column H (index 7) = Audit Outcome
-                                // Column I (index 8) = Job Reference
-                                // Column K (index 10) = Audit Type
-                                for (let i = 1; i < rows.length; i++) {
-                                    const row = rows[i];
-                                    if (row.length > 10) {
-                                        const installationDate = row[6]?.trim();
-                                        const auditOutcome = row[7]?.trim();
-                                        const jobReference = row[8]?.trim();
-                                        const auditType = row[10]?.trim();
-                                        
-                                        if (installationDate) {
-                                            recordsToSave.push({
-                                                type: 'post_completion',
-                                                installationDate: installationDate,
-                                                auditOutcome: auditOutcome || '',
-                                                jobReference: jobReference || '',
-                                                auditType: auditType || '',
-                                                uploadedAt: serverTimestamp()
-                                            });
-                                        }
-                                    }
-                                }
-                            } else if (auditType === 'wip') {
-        // Updated Index Mapping for WIP Upload
-        // Column E (index 4) = Installation Date
-        // Column F (index 5) = Audit Outcome
-        // Column G (index 6) = Job Reference
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (row.length > 6) { // Ensure row has enough columns
-                const installationDate = row[4]?.trim();
-                const auditOutcome = row[5]?.trim();
-                const jobReference = row[6]?.trim();
-                
-                if (installationDate) {
-                    recordsToSave.push({
-                        type: 'wip',
-                        installationDate: installationDate,
-                        auditOutcome: auditOutcome || '',
-                        jobReference: jobReference || '',
-                        uploadedAt: serverTimestamp()
-                    });
-                }
-            }
-        }
-    }
-
-                            progressFill.style.width = '50%';
-
-                            if (recordsToSave.length === 0) {
-                                showMessage('No valid records found in CSV file', 'error');
-                                resetUploadForm();
-                                return;
-                            }
-
-                            // Save to Firestore
-                            const batchSize = 10;
-                            for (let i = 0; i < recordsToSave.length; i += batchSize) {
-                                const batch = recordsToSave.slice(i, i + batchSize);
-                                await Promise.all(
-                                    batch.map(record => addDoc(collection(db, "compliance"), record))
-                                );
-                                
-                                const progress = 50 + ((i + batchSize) / recordsToSave.length) * 50;
-                                progressFill.style.width = Math.min(progress, 100) + '%';
-                            }
-
-                            progressFill.style.width = '100%';
-                            showMessage(`Successfully uploaded ${recordsToSave.length} records!`, 'success');
-                            
-                            // Reset form
-                            document.getElementById('csvForm').reset();
-                            fileInfo.classList.remove('show');
-                            
-                            setTimeout(() => {
-                                resetUploadForm();
-                            }, 2000);
-
-                        } catch (error) {
-                            console.error("Error processing CSV:", error);
-                            showMessage('Error processing CSV data. Please try again.', 'error');
-                            resetUploadForm();
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (type === 'post_completion' && row.length > 10) {
+                            records.push({
+                                type, installationDate: row[6]?.trim(), auditOutcome: row[7]?.trim(),
+                                jobReference: row[8]?.trim(), auditType: row[10]?.trim(), uploadedAt: serverTimestamp()
+                            });
+                        } else if (type === 'wip' && row.length > 6) {
+                            records.push({
+                                type, installationDate: row[4]?.trim(), auditOutcome: row[5]?.trim(),
+                                jobReference: row[6]?.trim(), uploadedAt: serverTimestamp()
+                            });
                         }
-                    },
-                    error: (error) => {
-                        console.error("Error parsing CSV:", error);
-                        showMessage('Error parsing CSV file. Please check the file format.', 'error');
-                        resetUploadForm();
                     }
-                });
 
-            } catch (error) {
-                console.error("Error uploading CSV:", error);
-                showMessage('Error uploading CSV. Please try again.', 'error');
-                resetUploadForm();
-            }
+                    if (records.length === 0) {
+                        showMessage('No valid data found', 'error');
+                        resetForm();
+                        return;
+                    }
+
+                    try {
+                        for (let i = 0; i < records.length; i++) {
+                            await addDoc(collection(db, "compliance"), records[i]);
+                            fill.style.width = ((i / records.length) * 100) + '%';
+                        }
+                        showMessage(`Uploaded ${records.length} records`, 'success');
+                    } catch (err) {
+                        showMessage('Firestore Error', 'error');
+                    } finally {
+                        resetForm();
+                    }
+                }
+            });
         });
 
-        function resetUploadForm() {
-            const uploadBtn = document.getElementById('uploadBtn');
-            const progressBar = document.getElementById('progressBar');
-            const progressFill = document.getElementById('progressFill');
-            
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = 'Upload & Process CSV';
-            progressBar.classList.remove('show');
-            progressFill.style.width = '0%';
+        function resetForm() {
+            document.getElementById('uploadBtn').disabled = false;
+            document.getElementById('progressBar').classList.remove('show');
+            document.getElementById('fileInfo').classList.remove('show');
+            document.getElementById('csvForm').reset();
         }
 
         function showMessage(text, type) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = text;
-            messageDiv.className = `message ${type} show`;
-            
-            setTimeout(() => {
-                messageDiv.className = 'message';
-            }, 5000);
+            const m = document.getElementById('message');
+            m.textContent = text;
+            m.className = `message ${type} show`;
+            setTimeout(() => m.classList.remove('show'), 5000);
         }
     </script>
 </body>
