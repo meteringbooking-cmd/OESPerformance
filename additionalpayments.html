@@ -1327,6 +1327,7 @@
                 });
 
                 applyFilters();
+                checkForDuplicateJobs();
 
             } catch (error) {
                 console.error("Error loading payments:", error);
@@ -1334,6 +1335,74 @@
                 document.getElementById('noDataDiv').innerHTML = '❌ Error loading payments: ' + error.message;
                 document.getElementById('noDataDiv').style.display = 'block';
             }
+        }
+
+        function checkForDuplicateJobs() {
+            // Build a map of job numbers to their submission details
+            const jobNumberMap = new Map();
+
+            allPayments.forEach(payment => {
+                if (payment.hasJobs && payment.jobs && payment.jobs.length > 0) {
+                    payment.jobs.forEach(job => {
+                        if (job.claimPricePerJob === 'yes' && job.jobNumber) {
+                            if (!jobNumberMap.has(job.jobNumber)) {
+                                jobNumberMap.set(job.jobNumber, []);
+                            }
+                            jobNumberMap.get(job.jobNumber).push({
+                                paymentId: payment.id,
+                                engineerName: payment.engineerName,
+                                date: payment.date,
+                                submittedAt: payment.submittedAt,
+                                status: payment.status || 'pending',
+                                jobType: job.jobType,
+                                postcode: job.postcode
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Check for duplicates
+            const duplicates = [];
+            jobNumberMap.forEach((submissions, jobNumber) => {
+                if (submissions.length > 1) {
+                    duplicates.push({
+                        jobNumber: jobNumber,
+                        submissions: submissions.sort((a, b) => {
+                            if (a.submittedAt && b.submittedAt) {
+                                return a.submittedAt.toMillis() - b.submittedAt.toMillis();
+                            }
+                            return 0;
+                        })
+                    });
+                }
+            });
+
+            if (duplicates.length > 0) {
+                showDuplicateJobsAlert(duplicates);
+            }
+        }
+
+        function showDuplicateJobsAlert(duplicates) {
+            let alertMessage = '⚠️ DUPLICATE JOB NUMBERS DETECTED!\n\n';
+            alertMessage += `Found ${duplicates.length} job number(s) submitted multiple times:\n\n`;
+
+            duplicates.forEach(dup => {
+                alertMessage += `Job #${dup.jobNumber}:\n`;
+                dup.submissions.forEach((sub, index) => {
+                    const submittedDate = sub.submittedAt ? 
+                        new Date(sub.submittedAt.toMillis()).toLocaleString('en-GB') : 
+                        'Unknown';
+                    alertMessage += `  ${index + 1}. ${sub.engineerName} - ${sub.date} - ${sub.status.toUpperCase()}\n`;
+                    alertMessage += `     Submitted: ${submittedDate}\n`;
+                    alertMessage += `     ${sub.jobType} - ${sub.postcode}\n`;
+                });
+                alertMessage += '\n';
+            });
+
+            alertMessage += '\nPlease review these submissions carefully before approving.';
+            
+            alert(alertMessage);
         }
 
         window.applyFilters = function() {
