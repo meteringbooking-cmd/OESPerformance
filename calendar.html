@@ -1193,15 +1193,15 @@
             document.getElementById('meeting-form').reset();
         }
 
-        function openWIPModal() {
+       function openWIPModal() {
             const monthKey = getMonthKey(currentDate);
             const monthDisplay = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
             document.getElementById('wip-month-display').textContent = monthDisplay;
             
-            // Get current WIP required teams for this month
-            const currentWIPTeams = wipRequiredData[monthKey]?.teams || [];
+            // Get current WIP required engineers for this month
+            const currentWIPEngineers = wipRequiredData[monthKey]?.engineers || [];
             
-            // Populate checklist with team leaders
+            // Populate checklist grouped by team leader
             const checklist = document.getElementById('wip-checklist');
             checklist.innerHTML = '';
             
@@ -1215,16 +1215,43 @@
                 'Subbies'
             ];
             
-            teamLeaders.forEach(team => {
-                const isChecked = currentWIPTeams.includes(team);
+            teamLeaders.forEach(leader => {
+                // Get engineers for this team leader
+                const teamEngineers = allEmployees
+                    .filter(emp => {
+                        const empLeader = emp['Team Leader'] || emp.teamLeader;
+                        return empLeader === leader && !emp.leaveDate;
+                    })
+                    .sort((a, b) => (a['Full Name'] || '').localeCompare(b['Full Name'] || ''));
                 
-                const label = document.createElement('label');
-                label.className = 'checkbox-label';
-                label.innerHTML = `
-                    <input type="checkbox" value="${team}" ${isChecked ? 'checked' : ''}>
-                    <span>${team}</span>
-                `;
-                checklist.appendChild(label);
+                if (teamEngineers.length > 0) {
+                    const teamGroup = document.createElement('div');
+                    teamGroup.className = 'wip-team-group';
+                    
+                    const teamHeader = document.createElement('div');
+                    teamHeader.className = 'wip-team-header';
+                    teamHeader.textContent = leader;
+                    teamGroup.appendChild(teamHeader);
+                    
+                    const engineersDiv = document.createElement('div');
+                    engineersDiv.className = 'wip-team-engineers';
+                    
+                    teamEngineers.forEach(emp => {
+                        const engineerName = emp['Full Name'];
+                        const isChecked = currentWIPEngineers.includes(engineerName);
+                        
+                        const label = document.createElement('label');
+                        label.className = 'checkbox-label';
+                        label.innerHTML = `
+                            <input type="checkbox" value="${engineerName}" ${isChecked ? 'checked' : ''}>
+                            <span>${engineerName}</span>
+                        `;
+                        engineersDiv.appendChild(label);
+                    });
+                    
+                    teamGroup.appendChild(engineersDiv);
+                    checklist.appendChild(teamGroup);
+                }
             });
             
             document.getElementById('wip-modal').classList.add('show');
