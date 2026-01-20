@@ -19,6 +19,7 @@
             --success: #4ECCA3;
             --error: #FF6B6B;
             --shadow: rgba(255, 107, 53, 0.3);
+            --wip-highlight: #FFC857;
         }
 
         * {
@@ -161,6 +162,10 @@
 
         .btn-secondary {
             background: linear-gradient(135deg, var(--secondary), var(--accent));
+        }
+
+        .btn-wip {
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
         }
 
         .calendar-header {
@@ -525,6 +530,47 @@
             margin-bottom: 0.4rem;
             font-size: 0.85rem;
             color: var(--text-dim);
+            transition: all 0.3s ease;
+        }
+
+        .engineer-name-item.wip-required {
+            background: var(--wip-highlight);
+            color: var(--dark);
+            font-weight: 700;
+            box-shadow: 0 0 10px rgba(255, 200, 87, 0.5);
+        }
+
+        .wip-modal-content {
+            max-width: 800px;
+        }
+
+        .wip-checklist {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+            background: var(--dark-lighter);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .select-all-btn {
+            background: var(--dark-lighter);
+            border: 2px solid var(--secondary);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 1rem;
+        }
+
+        .select-all-btn:hover {
+            background: var(--secondary);
+            color: var(--dark);
         }
 
         @media (max-width: 768px) {
@@ -552,6 +598,10 @@
                 padding: 0.5rem;
                 font-size: 0.8rem;
             }
+
+            .wip-checklist {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
         }
     </style>
 </head>
@@ -567,6 +617,9 @@
         <div class="actions-card">
             <button class="btn" onclick="openMeetingModal()">
                 📅 Input Meeting
+            </button>
+            <button class="btn btn-wip" onclick="openWIPModal()">
+                🔧 WIP Required
             </button>
             <button class="btn btn-secondary" onclick="exportToCSV()">
                 📊 Export to CSV
@@ -673,6 +726,24 @@
                     Schedule Meeting
                 </button>
             </form>
+        </div>
+    </div>
+
+    <!-- WIP Required Modal -->
+    <div class="modal" id="wip-modal">
+        <div class="modal-content wip-modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">WIP Required - <span id="wip-month-display">January 2026</span></h2>
+                <button class="close-btn" onclick="closeWIPModal()">×</button>
+            </div>
+            <p style="margin-bottom: 1rem; color: var(--text-dim);">Select engineers who require WIP for this month:</p>
+            <button class="select-all-btn" onclick="toggleSelectAll()">Select All / Deselect All</button>
+            <div class="wip-checklist" id="wip-checklist">
+                <!-- Will be populated dynamically -->
+            </div>
+            <button class="btn" onclick="submitWIPRequired()" style="width: 100%;">
+                Submit WIP Required
+            </button>
         </div>
     </div>
 
@@ -792,7 +863,7 @@
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
@@ -807,7 +878,7 @@
         try {
             const app = initializeApp(firebaseConfig);
             window.db = getFirestore(app);
-            window.firebaseModules = { collection, addDoc, getDocs, query, where, doc, updateDoc };
+            window.firebaseModules = { collection, addDoc, getDocs, query, where, doc, updateDoc, setDoc };
             console.log('Firebase initialized');
 
             window.addEventListener('DOMContentLoaded', () => {
@@ -823,6 +894,7 @@
         let currentDate = new Date();
         let allEmployees = [];
         let allMeetings = [];
+        let wipRequiredData = {};
 
         const monthNames = [
             'January', 'February', 'March', 'April', 'May', 'June',
@@ -863,6 +935,26 @@
             }
         }
 
+        async function loadWIPRequired() {
+            try {
+                const { collection, getDocs } = window.firebaseModules;
+                const querySnapshot = await getDocs(collection(window.db, 'wipRequired'));
+                wipRequiredData = {};
+                querySnapshot.forEach((doc) => {
+                    wipRequiredData[doc.id] = doc.data();
+                });
+                console.log('Loaded WIP Required data:', Object.keys(wipRequiredData).length);
+            } catch (error) {
+                console.error('Error loading WIP Required:', error);
+            }
+        }
+
+        function getMonthKey(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            return `${year}-${month}`;
+        }
+
         function getDaysInMonth(date) {
             return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
         }
@@ -886,6 +978,7 @@
 
         async function renderCalendar() {
             await loadMeetings();
+            await loadWIPRequired();
             
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
@@ -1001,6 +1094,10 @@
         function renderUnscheduledEngineers() {
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
+            const monthKey = getMonthKey(currentDate);
+            
+            // Get WIP required engineers for this month
+            const wipEngineers = wipRequiredData[monthKey]?.engineers || [];
             
             // Get all meetings for the current month
             const monthMeetings = allMeetings.filter(m => {
@@ -1056,7 +1153,10 @@
                     const engineers = unscheduledByTeam[leader];
                     
                     if (i < engineers.length) {
-                        td.innerHTML = `<div class="engineer-name-item">${engineers[i]['Full Name']}</div>`;
+                        const engineerName = engineers[i]['Full Name'];
+                        const isWIPRequired = wipEngineers.includes(engineerName);
+                        const wipClass = isWIPRequired ? 'wip-required' : '';
+                        td.innerHTML = `<div class="engineer-name-item ${wipClass}">${engineerName}</div>`;
                     } else {
                         td.innerHTML = '';
                     }
@@ -1091,6 +1191,74 @@
         function closeMeetingModal() {
             document.getElementById('meeting-modal').classList.remove('show');
             document.getElementById('meeting-form').reset();
+        }
+
+        function openWIPModal() {
+            const monthKey = getMonthKey(currentDate);
+            const monthDisplay = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+            document.getElementById('wip-month-display').textContent = monthDisplay;
+            
+            // Get current WIP required engineers for this month
+            const currentWIPEngineers = wipRequiredData[monthKey]?.engineers || [];
+            
+            // Populate checklist
+            const checklist = document.getElementById('wip-checklist');
+            checklist.innerHTML = '';
+            
+            const activeEmployees = allEmployees
+                .filter(emp => !emp.leaveDate)
+                .sort((a, b) => (a['Full Name'] || '').localeCompare(b['Full Name'] || ''));
+            
+            activeEmployees.forEach(emp => {
+                const engineerName = emp['Full Name'];
+                const isChecked = currentWIPEngineers.includes(engineerName);
+                
+                const label = document.createElement('label');
+                label.className = 'checkbox-label';
+                label.innerHTML = `
+                    <input type="checkbox" value="${engineerName}" ${isChecked ? 'checked' : ''}>
+                    <span>${engineerName}</span>
+                `;
+                checklist.appendChild(label);
+            });
+            
+            document.getElementById('wip-modal').classList.add('show');
+        }
+
+        function closeWIPModal() {
+            document.getElementById('wip-modal').classList.remove('show');
+        }
+
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('#wip-checklist input[type="checkbox"]');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+            });
+        }
+
+        async function submitWIPRequired() {
+            const monthKey = getMonthKey(currentDate);
+            const checkboxes = document.querySelectorAll('#wip-checklist input[type="checkbox"]:checked');
+            const selectedEngineers = Array.from(checkboxes).map(cb => cb.value);
+            
+            try {
+                const { doc, setDoc } = window.firebaseModules;
+                
+                await setDoc(doc(window.db, 'wipRequired', monthKey), {
+                    month: monthKey,
+                    engineers: selectedEngineers,
+                    updatedAt: new Date().toISOString()
+                });
+                
+                showToast('WIP Required updated successfully');
+                closeWIPModal();
+                renderCalendar();
+            } catch (error) {
+                console.error('Error saving WIP Required:', error);
+                showToast('Failed to update WIP Required', 'error');
+            }
         }
 
         function loadEngineers() {
@@ -1221,12 +1389,22 @@
             }
         });
 
+        document.getElementById('wip-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'wip-modal') {
+                closeWIPModal();
+            }
+        });
+
         // Expose functions to global scope
         window.previousMonth = previousMonth;
         window.nextMonth = nextMonth;
         window.goToToday = goToToday;
         window.openMeetingModal = openMeetingModal;
         window.closeMeetingModal = closeMeetingModal;
+        window.openWIPModal = openWIPModal;
+        window.closeWIPModal = closeWIPModal;
+        window.toggleSelectAll = toggleSelectAll;
+        window.submitWIPRequired = submitWIPRequired;
         window.loadEngineers = loadEngineers;
         window.handleMeetingSubmit = handleMeetingSubmit;
         window.exportToCSV = exportToCSV;
