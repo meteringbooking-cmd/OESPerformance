@@ -5,10 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Meters Dashboard • OES</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
     :root {
@@ -19,9 +15,8 @@
       --text: #e2e8f0;
       --text-dim: #94a3b8;
       --border: #334155;
-      --green: #10b981;
+      --error: #f87171;
     }
-
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
       font-family: 'Segoe UI', system-ui, sans-serif;
@@ -31,7 +26,6 @@
       display: grid;
       grid-template-columns: 280px 1fr;
     }
-
     aside {
       background: var(--card);
       border-right: 1px solid var(--border);
@@ -41,7 +35,6 @@
       top: 0;
       overflow-y: auto;
     }
-
     .logo {
       font-size: 1.6rem;
       font-weight: 700;
@@ -51,7 +44,6 @@
       margin-bottom: 2.5rem;
       text-align: center;
     }
-
     h2 {
       font-size: 1.1rem;
       color: var(--text-dim);
@@ -60,7 +52,6 @@
       letter-spacing: 0.5px;
       font-weight: 600;
     }
-
     .period-btn, .team-btn {
       display: block;
       width: 100%;
@@ -75,38 +66,32 @@
       transition: all 0.18s ease;
       font-size: 0.97rem;
     }
-
     .period-btn:hover, .team-btn:hover {
       background: rgba(99,102,241,0.08);
       border-color: var(--accent);
     }
-
     .period-btn.active {
       background: var(--accent);
       color: white;
       border-color: var(--accent);
       box-shadow: 0 3px 12px rgba(99,102,241,0.3);
     }
-
     .team-btn.active {
       background: rgba(99,102,241,0.25);
       color: white;
       font-weight: 600;
       border-color: var(--accent);
     }
-
     main {
       padding: 2.5rem 3rem;
       max-width: 1600px;
     }
-
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 2rem;
     }
-
     h1 {
       font-size: 2.1rem;
       font-weight: 700;
@@ -114,7 +99,6 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-
     .card {
       background: var(--card);
       border-radius: 16px;
@@ -122,13 +106,11 @@
       padding: 1.8rem 2rem;
       box-shadow: 0 10px 30px rgba(0,0,0,0.35);
     }
-
     #chartContainer {
       height: 540px;
       position: relative;
       margin-top: 1.5rem;
     }
-
     .loading, .error-msg {
       position: absolute;
       inset: 0;
@@ -142,7 +124,10 @@
       text-align: center;
       padding: 2rem;
     }
-
+    .error-msg {
+      color: var(--error) !important;
+      font-weight: 500;
+    }
     @media (max-width: 1100px) {
       body { grid-template-columns: 1fr; }
       aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); }
@@ -156,10 +141,10 @@
   <div class="logo">OES Meters</div>
 
   <h2>Time Period</h2>
-  <button class="period-btn active" data-period="7days">Last 7 working days (bar)</button>
-  <button class="period-btn" data-period="4weeks">4 week rolling (line)</button>
-  <button class="period-btn" data-period="6months">6 months (line)</button>
-  <button class="period-btn" data-period="year">Year to date (line)</button>
+  <button class="period-btn active" data-period="7days">Last 7 days</button>
+  <button class="period-btn" data-period="4weeks">4 week rolling</button>
+  <button class="period-btn" data-period="6months">6 months</button>
+  <button class="period-btn" data-period="year">Year to date</button>
 
   <h2>Team Leader</h2>
   <button class="team-btn active" data-team="all">All Teams</button>
@@ -179,183 +164,200 @@
 
   <div class="card">
     <div id="chartContainer">
-      <div class="loading">Loading performance data from Firebase…</div>
+      <div class="loading">Connecting to Firebase…</div>
     </div>
   </div>
 </main>
 
 <script type="module">
-// ──────────────────────────────────────────────────────────────
-const { initializeApp } from await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-const { getFirestore, collection, query, where, getDocs, orderBy } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+  // ──────────────────────────────────────────────────────────────
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
-  authDomain: "oesperformance-a54c0.firebaseapp.com",
-  projectId: "oesperformance-a54c0",
-  storageBucket: "oesperformance-a54c0.firebasestorage.app",
-  messagingSenderId: "484894102454",
-  appId: "1:484894102454:web:17535ee497eac2d90d6717",
-  measurementId: "G-R56BGZYV8N"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
 
-// ──────────────────────────────────────────────────────────────
-const ctx = document.createElement('canvas');
-document.querySelector('#chartContainer').appendChild(ctx);
-let chart = null;
-
-const periods = {
-  "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1" },
-  "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6" },
-  "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa" },
-  "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc" },
-};
-
-let currentPeriod = "7days";
-let currentTeam   = "all";
-
-// ─── Fetch & aggregate meters (mirrors original logic) ────────
-async function fetchAndAggregateMeters(periodKey, team) {
-  const cfg = periods[periodKey];
-
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - cfg.daysBack);
-
-  const startDate = start.toISOString().split('T')[0];
-  const endDate   = today.toISOString().split('T')[0];
-
-  const q = query(
-    collection(db, "performance"),
-    where("date", ">=", startDate),
-    where("date", "<=", endDate),
-    orderBy("date", "asc")
-  );
-
-  const snapshot = await getDocs(q);
-  let records = [];
-
-  snapshot.forEach(doc => {
-    const d = doc.data();
-    if (team === "all" || d.teamLeader === team) {
-      records.push(d);
-    }
-  });
-
-  // Build weekday dates (same as original)
-  const allWeekdayDates = [];
-  const current = new Date(start);
-  while (current <= today) {
-    const dayOfWeek = current.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      allWeekdayDates.push(current.toISOString().split('T')[0]);
-    }
-    current.setDate(current.getDate() + 1);
+  // Attempt anonymous sign-in (fixes most "stuck loading" permission issues)
+  try {
+    await signInAnonymously(auth);
+    console.log("Signed in anonymously");
+  } catch (err) {
+    console.warn("Anonymous auth failed:", err.code, err.message);
+    // Continue anyway — some projects allow unauthenticated reads
   }
 
-  const dateMap = {};
-  allWeekdayDates.forEach(date => dateMap[date] = 0);
+  // ──────────────────────────────────────────────────────────────
+  const ctx = document.createElement('canvas');
+  document.querySelector('#chartContainer').appendChild(ctx);
+  let chart = null;
 
-  records.forEach(r => {
-    if (dateMap[r.date] !== undefined) {
-      dateMap[r.date] += Number(r.meters || 0);
-    }
-  });
-
-  return {
-    labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
-    values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
-    dates: allWeekdayDates
+  const periods = {
+    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1" },
+    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6" },
+    "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa" },
+    "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc" },
   };
-}
 
-// ─── Update chart (line style like original meters view) ──────
-async function updateChart() {
-  const container = document.querySelector('#chartContainer');
-  let loading = container.querySelector('.loading');
-  let errorEl = container.querySelector('.error-msg');
+  let currentPeriod = "7days";
+  let currentTeam   = "all";
 
-  if (loading) loading.remove();
-  if (errorEl) errorEl.remove();
+  // ─── Fetch & aggregate meters ────────────────────────────────
+  async function fetchAndAggregateMeters(periodKey, team) {
+    const cfg = periods[periodKey];
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - cfg.daysBack);
 
-  try {
-    const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
-    const cfg = periods[currentPeriod];
+    const startDate = start.toISOString().split('T')[0];
+    const endDate   = today.toISOString().split('T')[0];
 
-    if (chart) chart.destroy();
+    const q = query(
+      collection(db, "performance"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc")
+    );
 
-    chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.labels,
-        datasets: [{
-          label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
-          data: data.values,
-          borderColor: cfg.color,
-          backgroundColor: 'rgba(99,102,241,0.12)',
-          borderWidth: 3,
-          tension: 0.35,
-          fill: true,
-          pointRadius: 3,
-          pointHoverRadius: 7,
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: {
-            display: true,
-            text: `${cfg.label} – Meters Installed`,
-            color: '#e2e8f0',
-            font: { size: 18, weight: '600' },
-            padding: { bottom: 20 }
-          },
-          legend: { labels: { color: '#cbd5e1', font: { size: 14 } } }
-        },
-        scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-          y: {
-            beginAtZero: true,
-            ticks: { color: '#94a3b8', stepSize: 50 },
-            grid: { color: '#334155' }
-          }
-        }
+    const snapshot = await getDocs(q);
+    let records = [];
+
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      if (team === "all" || d.teamLeader === team) {
+        records.push(d);
       }
     });
-  } catch (err) {
-    console.error(err);
-    const msg = document.createElement('div');
-    msg.className = 'error-msg';
-    msg.innerHTML = `Error loading data:<br><br>${err.message}<br><br>(check console)`;
-    container.appendChild(msg);
+
+    // Build list of dates (weekdays only, like original code)
+    const allWeekdayDates = [];
+    const current = new Date(start);
+    while (current <= today) {
+      const dayOfWeek = current.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        allWeekdayDates.push(current.toISOString().split('T')[0]);
+      }
+      current.setDate(current.getDate() + 1);
+    }
+
+    const dateMap = {};
+    allWeekdayDates.forEach(date => dateMap[date] = 0);
+
+    records.forEach(r => {
+      if (dateMap.hasOwnProperty(r.date)) {
+        dateMap[r.date] += Number(r.meters || 0);
+      }
+    });
+
+    return {
+      labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
+      values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
+      dates: allWeekdayDates
+    };
   }
-}
 
-// ─── Event listeners ───────────────────────────────────────────
-document.querySelectorAll('.period-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentPeriod = btn.dataset.period;
-    updateChart();
+  // ─── Update chart ─────────────────────────────────────────────
+  async function updateChart() {
+    const container = document.querySelector('#chartContainer');
+    container.innerHTML = '<div class="loading">Loading meters data...</div>';
+
+    try {
+      const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
+      const cfg = periods[currentPeriod];
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [{
+            label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
+            data: data.values,
+            borderColor: cfg.color,
+            backgroundColor: 'rgba(99,102,241,0.12)',
+            borderWidth: 3,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3,
+            pointHoverRadius: 7,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `${cfg.label} – Meters Installed`,
+              color: '#e2e8f0',
+              font: { size: 18, weight: '600' },
+              padding: { bottom: 20 }
+            },
+            legend: { labels: { color: '#cbd5e1', font: { size: 14 } } }
+          },
+          scales: {
+            x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#94a3b8', stepSize: 50 },
+              grid: { color: '#334155' }
+            }
+          }
+        }
+      });
+
+    } catch (err) {
+      console.error("Error:", err);
+      let displayMsg = err.message || "Unknown error";
+
+      if (err.code === 'permission-denied') {
+        displayMsg = "Permission denied. Check Firebase Security Rules or sign-in status.";
+      } else if (displayMsg.includes("index")) {
+        displayMsg = "Missing Firestore index. Open browser console (F12) and click the blue link to create it.";
+      }
+
+      container.innerHTML = `
+        <div class="error-msg">
+          ${displayMsg}<br><br>
+          <small>Open DevTools (F12) → Console tab for full details and possible index creation link.</small>
+        </div>`;
+    }
+  }
+
+  // ─── Event listeners ──────────────────────────────────────────
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      updateChart();
+    });
   });
-});
 
-document.querySelectorAll('.team-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentTeam = btn.dataset.team;
-    updateChart();
+  document.querySelectorAll('.team-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTeam = btn.dataset.team;
+      updateChart();
+    });
   });
-});
 
-// Initial load
-updateChart();
+  // Initial load
+  updateChart();
 </script>
+
 </body>
 </html>
