@@ -122,6 +122,7 @@
       border-radius: 12px;
       text-align: center;
       padding: 2rem;
+      z-index: 10;
     }
     .error-msg {
       color: var(--error) !important;
@@ -140,10 +141,10 @@
   <div class="logo">OES Meters</div>
 
   <h2>Time Period</h2>
-  <button class="period-btn active" data-period="7days">Last 7 days</button>
-  <button class="period-btn" data-period="4weeks">4 week rolling</button>
-  <button class="period-btn" data-period="6months">6 months</button>
-  <button class="period-btn" data-period="year">Year to date</button>
+  <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
+  <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
+  <button class="period-btn" data-period="6months">6 months (line)</button>
+  <button class="period-btn" data-period="year">Year to date (line)</button>
 
   <h2>Team Leader</h2>
   <button class="team-btn active" data-team="all">All Teams</button>
@@ -169,7 +170,6 @@
 </main>
 
 <script type="module">
-  // ──────────────────────────────────────────────────────────────
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -186,22 +186,20 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // ──────────────────────────────────────────────────────────────
   const ctx = document.createElement('canvas');
   document.querySelector('#chartContainer').appendChild(ctx);
   let chart = null;
 
   const periods = {
-    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1" },
-    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6" },
-    "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa" },
-    "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc" },
+    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1", type: "bar"  },
+    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6", type: "bar"  },
+    "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa", type: "line" },
+    "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc", type: "line" },
   };
 
   let currentPeriod = "7days";
   let currentTeam   = "all";
 
-  // ─── Fetch & aggregate meters ────────────────────────────────
   async function fetchAndAggregateMeters(periodKey, team) {
     const cfg = periods[periodKey];
     const today = new Date();
@@ -218,26 +216,9 @@
       orderBy("date", "asc")
     );
 
-    let snapshot;
-    try {
-      snapshot = await getDocs(q);
-    } catch (err) {
-      if (err.code === 'failed-precondition' || err.message?.includes('index')) {
-        throw new Error(
-          "Missing Firestore index. " +
-          "Open browser console (F12) — look for a blue URL starting with https://console.firebase.google.com/…/indexes — click it, create the index, wait 2–5 minutes, then refresh this page."
-        );
-      }
-      if (err.code === 'permission-denied') {
-        throw new Error(
-          "Permission denied. Your Firestore security rules do not allow unauthenticated reads. " +
-          "Either enable Anonymous sign-in (Authentication → Sign-in method), or change rules to allow read: if true; for testing."
-        );
-      }
-      throw err;
-    }
-
+    const snapshot = await getDocs(q);
     let records = [];
+
     snapshot.forEach(doc => {
       const d = doc.data();
       if (team === "all" || d.teamLeader === team) {
@@ -245,7 +226,6 @@
       }
     });
 
-    // Build weekday dates (Mon–Fri) like original code
     const allWeekdayDates = [];
     const current = new Date(start);
     while (current <= today) {
@@ -266,36 +246,46 @@
     });
 
     return {
-      labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
+      labels: allWeekdayDates.map(d => d.slice(5)),
       values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
       dates: allWeekdayDates
     };
   }
 
-  // ─── Update chart ─────────────────────────────────────────────
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
-    container.innerHTML = '<div class="loading">Loading performance data…</div>';
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'loading';
+    loadingDiv.textContent = 'Loading performance data…';
+    container.innerHTML = '';
+    container.appendChild(loadingDiv);
 
     try {
       const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
       const cfg = periods[currentPeriod];
 
+      // Remove loading
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
       if (chart) chart.destroy();
 
       chart = new Chart(ctx, {
-        type: 'line',
+        type: cfg.type,
         data: {
           labels: data.labels,
           datasets: [{
             label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
             data: data.values,
+            backgroundColor: cfg.type === 'bar' 
+              ? 'rgba(99,102,241,0.65)' 
+              : 'rgba(99,102,241,0.12)',
             borderColor: cfg.color,
-            backgroundColor: 'rgba(99,102,241,0.12)',
-            borderWidth: 3,
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
+            borderWidth: cfg.type === 'bar' ? 1 : 3,
+            borderRadius: cfg.type === 'bar' ? 6 : 0,
+            tension: cfg.type === 'line' ? 0.35 : 0,
+            fill: cfg.type === 'line',
+            pointRadius: cfg.type === 'bar' ? 0 : 3,
             pointHoverRadius: 7,
           }]
         },
@@ -324,17 +314,22 @@
       });
     } catch (err) {
       console.error("Error:", err);
-      let msg = err.message || "Unknown error occurred";
+      let msg = err.message || "Unknown error";
+
+      if (err.code === 'permission-denied') {
+        msg = "Permission denied – check Firestore security rules";
+      } else if (msg.includes('index')) {
+        msg = "Missing index – check console for the blue creation link";
+      }
 
       container.innerHTML = `
         <div class="error-msg">
           ${msg}<br><br>
-          <small>Open DevTools (F12) → Console tab for full error details.</small>
+          <small>Press F12 → Console for details</small>
         </div>`;
     }
   }
 
-  // ─── Event listeners ──────────────────────────────────────────
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
@@ -353,7 +348,7 @@
     });
   });
 
-  // Initial load — same as original page
+  // Initial load
   updateChart();
 </script>
 
