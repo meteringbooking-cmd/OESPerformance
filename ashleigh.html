@@ -165,6 +165,9 @@
             color: white;
             transition: all 0.3s ease;
             font-family: 'Inter', sans-serif;
+        }
+
+        select {
             appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='white' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
@@ -455,6 +458,25 @@
         .action-cell {
             white-space: nowrap;
         }
+
+        .divider {
+            margin: 30px 0;
+            border-top: 2px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .divider::after {
+            content: 'OR';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f0f1e;
+            padding: 0 15px;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 600;
+            font-size: 0.85em;
+        }
         
         @media (max-width: 768px) {
             .grid {
@@ -540,21 +562,64 @@
             <div class="card">
                 <h2><span class="emoji">📊</span> Job Data Upload</h2>
                 <div id="uploadMessage" class="message"></div>
+                
+                <!-- Single Job Data Entry Form -->
+                <form id="singleJobDataForm">
+                    <div class="form-group">
+                        <label for="singleJobNumber">Job Number</label>
+                        <input type="text" id="singleJobNumber" placeholder="Enter job number" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="singleJobType">Job Type</label>
+                        <select id="singleJobType" required>
+                            <option value="">Select job type...</option>
+                            <option value="METERING_ELECTRICITY_METER_EXCHANGE">Electricity Meter Exchange (£113.30)</option>
+                            <option value="METERING_DUAL_FUEL_METER_EXCHANGE">Dual Fuel Meter Exchange (£139.05)</option>
+                            <option value="METERING_SITE_INVESTIGATION">Site Investigation (£72.10)</option>
+                            <option value="METERING_GAS_METER_EXCHANGE">Gas Meter Exchange (£113.30)</option>
+                            <option value="METERING_GAS_METER_REMOVAL">Gas Meter Removal (£92.70)</option>
+                            <option value="METERING_ELECTRICITY_NEW_CONNECTION">Electricity New Connection (£113.30)</option>
+                            <option value="METERING_DUAL_FUEL_METER_COMMISSION">Dual Fuel Meter Commission (£72.10)</option>
+                            <option value="METERING_ELECTRICITY_METER_COMMISSION">Electricity Meter Commission (£72.10)</option>
+                            <option value="METERING_GAS_METER_COMMISSION">Gas Meter Commission (£72.10)</option>
+                            <option value="METERING_GAS_METER_NEW_CONNECTION">Gas Meter New Connection (£113.30)</option>
+                            <option value="METERING_INSTALL_ISOLATOR_SWITCH">Install Isolator Switch (£72.10)</option>
+                            <option value="METERING_INSTALL_CONSUMER_DEVICE">Install Consumer Device (£72.10)</option>
+                            <option value="METERING_TRACE_LABEL">Trace Label (£72.10)</option>
+                            <option value="METERING_COMMUNICATIONS_HUB_EXCHANGE">Communications Hub Exchange (£72.10)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="singleJobStatus">Booking Status</label>
+                        <select id="singleJobStatus" required>
+                            <option value="">Select status...</option>
+                            <option value="Complete">Complete</option>
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <button type="submit">Add Job Data</button>
+                </form>
+
+                <div class="divider"></div>
+
+                <!-- CSV Upload -->
                 <div class="form-group">
-                    <label>CSV with Job Details</label>
+                    <label>Or Upload CSV with Job Details</label>
                     <div class="file-input">
                         <input type="file" id="csvFile" accept=".csv" onchange="updateFileName('csv')">
                         <label for="csvFile" class="file-label">
                             <span style="font-size: 2em;">📄</span>
                             <div>
                                 <div style="font-weight: 600;">Click to upload CSV</div>
-                                <div style="font-size: 0.85em; opacity: 0.7;">Booking Ref, Date, Job Type, Status</div>
+                                <div style="font-size: 0.85em; opacity: 0.7;">Booking Reference, Job Type, Booking Status</div>
                             </div>
                         </label>
                     </div>
                     <div id="csvFileName" class="file-name"></div>
                 </div>
-                <button onclick="uploadCSV()">Process Job Data</button>
+                <button onclick="uploadCSV()">Process CSV Data</button>
             </div>
         </div>
 
@@ -605,6 +670,39 @@
             'METERING_TRACE_LABEL': 72.1,
             'METERING_COMMUNICATIONS_HUB_EXCHANGE': 72.1
         };
+
+        // SINGLE JOB DATA ENTRY FORM HANDLER
+        document.getElementById('singleJobDataForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const messageEl = document.getElementById('uploadMessage');
+            
+            try {
+                const entry = {
+                    jobNumber: document.getElementById('singleJobNumber').value.trim(),
+                    jobType: document.getElementById('singleJobType').value,
+                    bookingStatus: document.getElementById('singleJobStatus').value,
+                    uploadedAt: new Date().toISOString(),
+                    type: 'csv'
+                };
+
+                await addDoc(collection(db, 'workEntries'), entry);
+                
+                messageEl.textContent = `✓ Job data added successfully for job #${entry.jobNumber}`;
+                messageEl.className = 'message success';
+                messageEl.style.display = 'block';
+                document.getElementById('singleJobDataForm').reset();
+                
+                setTimeout(() => {
+                    messageEl.style.display = 'none';
+                }, 3000);
+                
+                await loadWeekCommencingDates();
+            } catch (error) {
+                messageEl.textContent = '✗ Error: ' + error.message;
+                messageEl.className = 'message error';
+                messageEl.style.display = 'block';
+            }
+        });
 
         // DUPLICATE CHECK FUNCTION
         async function checkDuplicateJobNumber(jobNumber) {
