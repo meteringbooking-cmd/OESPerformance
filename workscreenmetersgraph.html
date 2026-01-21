@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Meters Dashboard • OES</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <!-- Chart.js datalabels plugin for showing values above bars -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
@@ -108,7 +107,7 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.35);
     }
     #chartContainer {
-      height: 540px;
+      height: 580px; /* slightly taller to fit two-line labels */
       position: relative;
       margin-top: 1.5rem;
     }
@@ -247,8 +246,19 @@
       }
     });
 
+    // Prepare two-line labels only for bar charts
+    const labels = allWeekdayDates.map(dateStr => {
+      const dateObj = new Date(dateStr);
+      const mmdd = dateStr.slice(5);
+      const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
+      if (periods[periodKey].type === 'bar') {
+        return [mmdd, weekday]; // array = multi-line label
+      }
+      return mmdd; // single line for line charts
+    });
+
     return {
-      labels: allWeekdayDates.map(d => d.slice(5)),
+      labels,
       values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
       dates: allWeekdayDates
     };
@@ -256,17 +266,12 @@
 
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'loading';
-    loadingDiv.textContent = 'Loading performance data…';
-    container.innerHTML = '';
-    container.appendChild(loadingDiv);
+    container.innerHTML = '<div class="loading">Loading performance data…</div>';
 
     try {
       const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
       const cfg = periods[currentPeriod];
 
-      // Clear loading
       container.innerHTML = '';
       container.appendChild(ctx);
 
@@ -303,23 +308,32 @@
               padding: { bottom: 20 }
             },
             legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
-            // Data labels (only shown on bar charts)
             datalabels: cfg.type === 'bar' ? {
               anchor: 'end',
               align: 'top',
               offset: 4,
               color: '#e2e8f0',
-              font: {
-                weight: 'bold',
-                size: 12
-              },
+              font: { weight: 'bold', size: 12 },
               formatter: (value) => value > 0 ? value : '',
               textShadowColor: 'rgba(0,0,0,0.8)',
               textShadowBlur: 4
             } : false
           },
           scales: {
-            x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+            x: {
+              ticks: {
+                color: '#94a3b8',
+                font: {
+                  size: cfg.type === 'bar' ? 11 : 12
+                },
+                padding: 8,
+                callback: function(value, index) {
+                  // Chart.js passes the label array directly when it's multi-line
+                  return this.getLabelForValue(value);
+                }
+              },
+              grid: { color: '#334155' }
+            },
             y: {
               beginAtZero: true,
               ticks: { color: '#94a3b8', stepSize: 50 },
@@ -327,12 +341,11 @@
             }
           }
         },
-        plugins: [ChartDataLabels]  // register the plugin
+        plugins: [ChartDataLabels]
       });
     } catch (err) {
       console.error("Error:", err);
       let msg = err.message || "Unknown error";
-
       container.innerHTML = `
         <div class="error-msg">
           ${msg}<br><br>
@@ -359,7 +372,6 @@
     });
   });
 
-  // Initial load
   updateChart();
 </script>
 
