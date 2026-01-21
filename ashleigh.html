@@ -394,6 +394,67 @@
         .duplicate-indicator.show {
             display: block;
         }
+
+        /* Edit mode styles */
+        .edit-btn {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .edit-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(23, 162, 184, 0.4);
+        }
+
+        .save-btn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            padding: 6px 12px;
+            margin-right: 5px;
+        }
+
+        .save-btn:hover {
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+        }
+
+        .cancel-btn {
+            background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+            padding: 6px 12px;
+        }
+
+        .cancel-btn:hover {
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+        }
+
+        .edit-input {
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(102, 126, 234, 0.5);
+            border-radius: 6px;
+            color: white;
+            font-size: 0.9em;
+            width: 120px;
+        }
+
+        .edit-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        tr.editing {
+            background: rgba(102, 126, 234, 0.15);
+        }
+
+        .action-cell {
+            white-space: nowrap;
+        }
         
         @media (max-width: 768px) {
             .grid {
@@ -584,6 +645,148 @@
                 return [];
             }
         }
+
+        // EDIT JOB NUMBER FUNCTION
+        let currentlyEditingRow = null;
+
+        async function editJobNumber(entryId, currentJobNumber) {
+            // If already editing another row, cancel that first
+            if (currentlyEditingRow) {
+                cancelEdit();
+            }
+
+            const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
+            if (!row) return;
+
+            currentlyEditingRow = {
+                row: row,
+                entryId: entryId,
+                originalJobNumber: currentJobNumber
+            };
+
+            const jobNumberCell = row.querySelector('.job-number-cell');
+            const actionCell = row.querySelector('.action-cell');
+
+            // Add editing class to row
+            row.classList.add('editing');
+
+            // Replace job number with input
+            jobNumberCell.innerHTML = `
+                <input type="text" 
+                       class="edit-input" 
+                       id="edit-input-${entryId}" 
+                       value="${currentJobNumber}" 
+                       placeholder="Enter new job number">
+            `;
+
+            // Replace edit button with save/cancel buttons
+            actionCell.innerHTML = `
+                <button class="edit-btn save-btn" onclick="saveJobNumber('${entryId}')">💾 Save</button>
+                <button class="edit-btn cancel-btn" onclick="cancelEdit()">✖ Cancel</button>
+            `;
+
+            // Focus the input
+            document.getElementById(`edit-input-${entryId}`).focus();
+            document.getElementById(`edit-input-${entryId}`).select();
+        }
+
+        window.editJobNumber = editJobNumber;
+
+        async function saveJobNumber(entryId) {
+            const input = document.getElementById(`edit-input-${entryId}`);
+            if (!input) return;
+
+            const newJobNumber = input.value.trim();
+
+            if (!newJobNumber) {
+                alert('Job number cannot be empty');
+                input.focus();
+                return;
+            }
+
+            // Check if job number actually changed
+            if (newJobNumber === currentlyEditingRow.originalJobNumber) {
+                cancelEdit();
+                return;
+            }
+
+            // Check for duplicates (excluding the current entry)
+            const duplicates = await checkDuplicateJobNumber(newJobNumber);
+            const otherDuplicates = duplicates.filter(d => d.id !== entryId);
+
+            if (otherDuplicates.length > 0) {
+                const duplicate = otherDuplicates[0];
+                const warningMsg = `⚠️ WARNING: Job #${newJobNumber} already exists!\n\n` +
+                    `Previously submitted:\n` +
+                    `  Date: ${duplicate.workDate}\n` +
+                    `  Name: ${duplicate.name}\n` +
+                    `  Postcode: ${duplicate.postcode}\n\n` +
+                    `Do you want to use this job number anyway?`;
+
+                if (!confirm(warningMsg)) {
+                    input.focus();
+                    return;
+                }
+            }
+
+            try {
+                // Update in Firebase
+                const { doc: docRef, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+                const entryRef = docRef(db, 'workEntries', entryId);
+                await updateDoc(entryRef, {
+                    jobNumber: newJobNumber,
+                    lastModified: new Date().toISOString()
+                });
+
+                // Show success message
+                const messageEl = document.createElement('div');
+                messageEl.className = 'message success';
+                messageEl.textContent = `✓ Job number updated successfully!`;
+                messageEl.style.display = 'block';
+                messageEl.style.position = 'fixed';
+                messageEl.style.top = '20px';
+                messageEl.style.right = '20px';
+                messageEl.style.zIndex = '9999';
+                document.body.appendChild(messageEl);
+
+                setTimeout(() => {
+                    messageEl.remove();
+                }, 3000);
+
+                // Reload the report
+                await loadWeeklyReport();
+                currentlyEditingRow = null;
+
+            } catch (error) {
+                console.error('Error updating job number:', error);
+                alert('Error updating job number: ' + error.message);
+            }
+        }
+
+        window.saveJobNumber = saveJobNumber;
+
+        function cancelEdit() {
+            if (!currentlyEditingRow) return;
+
+            const { row, originalJobNumber } = currentlyEditingRow;
+
+            // Remove editing class
+            row.classList.remove('editing');
+
+            // Restore original job number
+            const jobNumberCell = row.querySelector('.job-number-cell');
+            jobNumberCell.textContent = originalJobNumber;
+
+            // Restore edit button
+            const actionCell = row.querySelector('.action-cell');
+            actionCell.innerHTML = `
+                <button class="edit-btn" onclick="editJobNumber('${currentlyEditingRow.entryId}', '${originalJobNumber}')">✏️ Edit</button>
+            `;
+
+            currentlyEditingRow = null;
+        }
+
+        window.cancelEdit = cancelEdit;
 
         // JOB NUMBER VALIDATION WITH VISUAL FEEDBACK
         async function validateJobNumber(jobNumber, showConfirm = true) {
@@ -1030,6 +1233,7 @@
                     const csvMatch = csvData[jobNum];
                     
                     return {
+                        id: manual.id,  // Include the document ID for editing
                         jobNumber: manual.jobNumber,
                         name: manual.name || '-',
                         address: manual.address || '-',
@@ -1047,22 +1251,25 @@
                 const matchedCount = mergedEntries.filter(e => e.matched).length;
                 debugDiv.innerHTML += `<br>Matched entries: ${matchedCount} / ${mergedEntries.length}`;
 
-                let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th></tr></thead><tbody>';
+                let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th><th>Actions</th></tr></thead><tbody>';
 
                 mergedEntries.forEach(entry => {
                     const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
                     const value = isComplete ? (jobTypeValues[entry.jobType] || 0) : 0;
                     const statusClass = isComplete ? 'status-complete' : 'status-pending';
                     
-                    html += `<tr>
+                    html += `<tr data-entry-id="${entry.id}">
                         <td>${entry.workDate}</td>
                         <td>${entry.name}</td>
                         <td>${entry.address}</td>
                         <td>${entry.postcode}</td>
-                        <td>${entry.jobNumber}</td>
+                        <td class="job-number-cell">${entry.jobNumber}</td>
                         <td>${entry.jobType}</td>
                         <td class="${statusClass}">${entry.bookingStatus}</td>
                         <td>${isComplete ? '£' + value.toFixed(2) : '-'}</td>
+                        <td class="action-cell">
+                            <button class="edit-btn" onclick="editJobNumber('${entry.id}', '${entry.jobNumber}')">✏️ Edit</button>
+                        </td>
                     </tr>`;
                 });
 
