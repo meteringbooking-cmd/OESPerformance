@@ -189,13 +189,29 @@
   const db = getFirestore(app);
   const auth = getAuth(app);
 
-  // Attempt anonymous sign-in (fixes most "stuck loading" permission issues)
+  // Try anonymous sign-in — if it fails, show message but attempt data load anyway
+  let authSuccess = false;
   try {
     await signInAnonymously(auth);
-    console.log("Signed in anonymously");
+    console.log("Anonymous sign-in successful");
+    authSuccess = true;
   } catch (err) {
     console.warn("Anonymous auth failed:", err.code, err.message);
-    // Continue anyway — some projects allow unauthenticated reads
+    if (err.code === 'auth/admin-restricted-operation') {
+      document.querySelector('#chartContainer').innerHTML = `
+        <div class="error-msg">
+          Anonymous sign-in is disabled in your Firebase project.<br><br>
+          <strong>Fix:</strong> Go to Firebase Console → Authentication → Sign-in method → Enable "Anonymous"<br><br>
+          After enabling, refresh this page.
+        </div>`;
+      // Still try to load data in case rules allow unauthenticated reads
+    } else {
+      document.querySelector('#chartContainer').innerHTML = `
+        <div class="error-msg">
+          Auth error: ${err.message}<br><br>
+          Check console (F12) for details.
+        </div>`;
+    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -213,7 +229,6 @@
   let currentPeriod = "7days";
   let currentTeam   = "all";
 
-  // ─── Fetch & aggregate meters ────────────────────────────────
   async function fetchAndAggregateMeters(periodKey, team) {
     const cfg = periods[periodKey];
     const today = new Date();
@@ -230,9 +245,17 @@
       orderBy("date", "asc")
     );
 
-    const snapshot = await getDocs(q);
-    let records = [];
+    let snapshot;
+    try {
+      snapshot = await getDocs(q);
+    } catch (err) {
+      if (err.code === 'failed-precondition' || err.message.includes('index')) {
+        throw new Error("Missing Firestore index – check console for creation link (blue URL). Click it, create index, wait 2-5 min, refresh.");
+      }
+      throw err;
+    }
 
+    let records = [];
     snapshot.forEach(doc => {
       const d = doc.data();
       if (team === "all" || d.teamLeader === team) {
@@ -240,7 +263,6 @@
       }
     });
 
-    // Build list of dates (weekdays only, like original code)
     const allWeekdayDates = [];
     const current = new Date(start);
     while (current <= today) {
@@ -255,22 +277,23 @@
     allWeekdayDates.forEach(date => dateMap[date] = 0);
 
     records.forEach(r => {
-      if (dateMap.hasOwnProperty(r.date)) {
+      if (dateMap[r.date] !== undefined) {
         dateMap[r.date] += Number(r.meters || 0);
       }
     });
 
     return {
-      labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
+      labels: allWeekdayDates.map(d => d.slice(5)),
       values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
       dates: allWeekdayDates
     };
   }
 
-  // ─── Update chart ─────────────────────────────────────────────
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
-    container.innerHTML = '<div class="loading">Loading meters data...</div>';
+    if (!container.querySelector('.loading') && !container.querySelector('.error-msg')) {
+      container.innerHTML = '<div class="loading">Loading meters data...</div>';
+    }
 
     try {
       const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
@@ -319,24 +342,23 @@
       });
 
     } catch (err) {
-      console.error("Error:", err);
-      let displayMsg = err.message || "Unknown error";
+      console.error("Fetch error:", err);
+      let msg = err.message || "Unknown error";
 
-      if (err.code === 'permission-denied') {
-        displayMsg = "Permission denied. Check Firebase Security Rules or sign-in status.";
-      } else if (displayMsg.includes("index")) {
-        displayMsg = "Missing Firestore index. Open browser console (F12) and click the blue link to create it.";
+      if (msg.includes("permission-denied")) {
+        msg = "Permission denied – your Firestore rules likely require authentication. After enabling Anonymous, refresh.";
+      } else if (msg.includes("index")) {
+        msg = "Missing index – check console (F12) for blue URL → click to create index (wait 2-5 min).";
       }
 
       container.innerHTML = `
         <div class="error-msg">
-          ${displayMsg}<br><br>
-          <small>Open DevTools (F12) → Console tab for full details and possible index creation link.</small>
+          ${msg}<br><br>
+          <small>DevTools (F12) → Console for full details / index link.</small>
         </div>`;
     }
   }
 
-  // ─── Event listeners ──────────────────────────────────────────
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
