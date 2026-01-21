@@ -474,6 +474,102 @@
             font-weight: 600;
         }
 
+        .graph-button {
+            display: inline-block;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.3), rgba(58, 123, 213, 0.3));
+            border: 1px solid rgba(0, 210, 255, 0.4);
+            border-radius: 8px;
+            color: #00d2ff;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 12px;
+        }
+
+        .graph-button:hover {
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.4), rgba(58, 123, 213, 0.4));
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 210, 255, 0.4);
+        }
+
+        .popup-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .popup-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .popup-content {
+            width: 90%;
+            height: 90%;
+            background: #1a1a2e;
+            border-radius: 16px;
+            border: 2px solid rgba(0, 210, 255, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease;
+        }
+
+        .popup-header {
+            padding: 20px;
+            border-bottom: 2px solid rgba(0, 210, 255, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .popup-title {
+            color: #00d2ff;
+            font-size: 1.2em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .popup-close {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            border-radius: 8px;
+            color: #ef4444;
+            font-size: 1.2em;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 700;
+        }
+
+        .popup-close:hover {
+            background: rgba(239, 68, 68, 0.3);
+            transform: scale(1.1);
+        }
+
+        .popup-iframe {
+            flex: 1;
+            border: none;
+            border-radius: 0 0 14px 14px;
+        }
+
         @media (max-width: 1024px) {
             .kpi-grid {
                 grid-template-columns: 1fr;
@@ -485,6 +581,11 @@
 
             .logo {
                 font-size: 2em;
+            }
+
+            .popup-content {
+                width: 95%;
+                height: 95%;
             }
         }
     </style>
@@ -506,7 +607,10 @@
                 <div class="kpi-card expandable" onclick="toggleExpand(this)">
                     <span class="expand-indicator">▼</span>
                     <div class="kpi-header">
-                        <span class="kpi-title">Meters Installed</span>
+                        <span class="kpi-title">
+                            Meters Installed
+                            <button class="graph-button" onclick="openGraphPopup(event)">📊 Graphs</button>
+                        </span>
                         <span class="kpi-icon">🪛</span>
                     </div>
                     <div class="kpi-value" id="metersActual">0</div>
@@ -706,9 +810,46 @@
         </div>
     </div>
 
+    <!-- Popup Overlay -->
+    <div class="popup-overlay" id="graphPopup" onclick="closeGraphPopup(event)">
+        <div class="popup-content" onclick="event.stopPropagation()">
+            <div class="popup-header">
+                <div class="popup-title">📊 Performance Graphs</div>
+                <button class="popup-close" onclick="closeGraphPopup()">✕</button>
+            </div>
+            <iframe class="popup-iframe" id="graphIframe" src=""></iframe>
+        </div>
+    </div>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Graph popup functions
+        window.openGraphPopup = function(event) {
+            event.stopPropagation(); // Prevent card expansion
+            const popup = document.getElementById('graphPopup');
+            const iframe = document.getElementById('graphIframe');
+            iframe.src = 'https://oes-performance.vercel.app/display.html';
+            popup.classList.add('active');
+        }
+
+        window.closeGraphPopup = function(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('graphPopup');
+            const iframe = document.getElementById('graphIframe');
+            popup.classList.remove('active');
+            // Clear iframe src to stop any running content
+            setTimeout(() => {
+                iframe.src = '';
+            }, 300);
+        }
+
+        // Close popup with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeGraphPopup();
+            }
+        });
 
         // Performance tracking Firebase
         const performanceConfig = {
