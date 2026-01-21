@@ -341,6 +341,12 @@
             color: #f87171;
             border: 1px solid rgba(248, 113, 113, 0.3);
         }
+
+        .message.warning {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
         
         .report-section {
             background: rgba(255, 255, 255, 0.05);
@@ -365,6 +371,28 @@
             border-radius: 8px;
             font-size: 0.85em;
             color: #fbbf24;
+        }
+
+        /* Duplicate warning styles */
+        input.duplicate-job {
+            border-color: #fbbf24 !important;
+            background-color: rgba(251, 191, 36, 0.1) !important;
+        }
+
+        .duplicate-indicator {
+            display: none;
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: rgba(251, 191, 36, 0.2);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 8px;
+            color: #fbbf24;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .duplicate-indicator.show {
+            display: block;
         }
         
         @media (max-width: 768px) {
@@ -436,6 +464,9 @@
                     <div class="form-group">
                         <label for="jobNumber">Job Number</label>
                         <input type="text" id="jobNumber" placeholder="Enter job number" required>
+                        <div id="duplicateIndicator" class="duplicate-indicator">
+                            ⚠️ <span id="duplicateText"></span>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="workDate">Work Date</label>
@@ -514,6 +545,111 @@
             'METERING_COMMUNICATIONS_HUB_EXCHANGE': 72.1
         };
 
+        // DUPLICATE CHECK FUNCTION
+        async function checkDuplicateJobNumber(jobNumber) {
+            if (!jobNumber || jobNumber.trim() === '') {
+                return [];
+            }
+
+            const trimmedJobNumber = jobNumber.trim();
+            
+            try {
+                // Query all manual entries (work entries)
+                const q = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'manual')
+                );
+                
+                const snapshot = await getDocs(q);
+                const duplicates = [];
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const existingJobNumber = (data.jobNumber || '').trim();
+                    
+                    if (existingJobNumber === trimmedJobNumber) {
+                        duplicates.push({
+                            id: doc.id,
+                            name: data.name,
+                            workDate: data.workDate,
+                            postcode: data.postcode,
+                            address: data.address
+                        });
+                    }
+                });
+                
+                return duplicates;
+            } catch (error) {
+                console.error("Error checking duplicate job number:", error);
+                return [];
+            }
+        }
+
+        // JOB NUMBER VALIDATION WITH VISUAL FEEDBACK
+        async function validateJobNumber(jobNumber, showConfirm = true) {
+            const jobInput = document.getElementById('jobNumber');
+            const duplicateIndicator = document.getElementById('duplicateIndicator');
+            const duplicateText = document.getElementById('duplicateText');
+            
+            if (!jobNumber || jobNumber.trim() === '') {
+                // Clear any duplicate indicators
+                jobInput.classList.remove('duplicate-job');
+                duplicateIndicator.classList.remove('show');
+                return true;
+            }
+            
+            const duplicates = await checkDuplicateJobNumber(jobNumber);
+            
+            if (duplicates.length > 0) {
+                const duplicate = duplicates[0];
+                
+                // Show visual indicator
+                jobInput.classList.add('duplicate-job');
+                duplicateText.textContent = `This job was already submitted on ${duplicate.workDate} (${duplicate.name} - ${duplicate.postcode})`;
+                duplicateIndicator.classList.add('show');
+                
+                if (showConfirm) {
+                    // Create detailed warning message
+                    let warningMsg = `⚠️ WARNING: Job #${jobNumber} has already been submitted!\n\n`;
+                    warningMsg += `Previously submitted:\n`;
+                    warningMsg += `  Date: ${duplicate.workDate}\n`;
+                    warningMsg += `  Name: ${duplicate.name}\n`;
+                    warningMsg += `  Address: ${duplicate.address}\n`;
+                    warningMsg += `  Postcode: ${duplicate.postcode}\n\n`;
+                    
+                    if (duplicates.length > 1) {
+                        warningMsg += `(This job appears in ${duplicates.length} previous submissions)\n\n`;
+                    }
+                    
+                    warningMsg += `Do you want to submit this duplicate job anyway?`;
+                    
+                    // Ask for confirmation
+                    if (!confirm(warningMsg)) {
+                        jobInput.focus();
+                        return false;
+                    }
+                }
+            } else {
+                // Clear duplicate indicator
+                jobInput.classList.remove('duplicate-job');
+                duplicateIndicator.classList.remove('show');
+            }
+            
+            return true;
+        }
+
+        // Add event listener for job number input to check in real-time
+        document.getElementById('jobNumber').addEventListener('blur', async function(e) {
+            await validateJobNumber(e.target.value, false); // Show indicator but don't confirm on blur
+        });
+
+        // Clear duplicate indicator when user starts typing
+        document.getElementById('jobNumber').addEventListener('input', function() {
+            const duplicateIndicator = document.getElementById('duplicateIndicator');
+            this.classList.remove('duplicate-job');
+            duplicateIndicator.classList.remove('show');
+        });
+
         function getMonday(d) {
             const date = new Date(d);
             const day = date.getDay();
@@ -558,6 +694,14 @@
             e.preventDefault();
             const messageEl = document.getElementById('manualMessage');
             
+            // CHECK FOR DUPLICATE BEFORE SUBMITTING
+            const jobNumber = document.getElementById('jobNumber').value;
+            const isValid = await validateJobNumber(jobNumber, true);
+            
+            if (!isValid) {
+                return; // User cancelled due to duplicate
+            }
+            
             try {
                 const workDate = new Date(document.getElementById('workDate').value);
                 const weekCommencing = getMonday(workDate);
@@ -580,6 +724,10 @@
                 messageEl.style.display = 'block';
                 document.getElementById('manualEntryForm').reset();
                 document.getElementById('workDate').valueAsDate = new Date();
+                
+                // Clear duplicate indicator
+                document.getElementById('jobNumber').classList.remove('duplicate-job');
+                document.getElementById('duplicateIndicator').classList.remove('show');
                 
                 setTimeout(() => {
                     messageEl.style.display = 'none';
