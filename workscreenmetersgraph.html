@@ -11,7 +11,6 @@
       --bg: #0f172a;
       --card: #1e293b;
       --accent: #6366f1;
-      --accent-dark: #4f46e5;
       --text: #e2e8f0;
       --text-dim: #94a3b8;
       --border: #334155;
@@ -164,7 +163,7 @@
 
   <div class="card">
     <div id="chartContainer">
-      <div class="loading">Connecting to Firebase…</div>
+      <div class="loading">Loading performance data…</div>
     </div>
   </div>
 </main>
@@ -173,7 +172,6 @@
   // ──────────────────────────────────────────────────────────────
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -187,32 +185,6 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
-  const auth = getAuth(app);
-
-  // Try anonymous sign-in — if it fails, show message but attempt data load anyway
-  let authSuccess = false;
-  try {
-    await signInAnonymously(auth);
-    console.log("Anonymous sign-in successful");
-    authSuccess = true;
-  } catch (err) {
-    console.warn("Anonymous auth failed:", err.code, err.message);
-    if (err.code === 'auth/admin-restricted-operation') {
-      document.querySelector('#chartContainer').innerHTML = `
-        <div class="error-msg">
-          Anonymous sign-in is disabled in your Firebase project.<br><br>
-          <strong>Fix:</strong> Go to Firebase Console → Authentication → Sign-in method → Enable "Anonymous"<br><br>
-          After enabling, refresh this page.
-        </div>`;
-      // Still try to load data in case rules allow unauthenticated reads
-    } else {
-      document.querySelector('#chartContainer').innerHTML = `
-        <div class="error-msg">
-          Auth error: ${err.message}<br><br>
-          Check console (F12) for details.
-        </div>`;
-    }
-  }
 
   // ──────────────────────────────────────────────────────────────
   const ctx = document.createElement('canvas');
@@ -229,6 +201,7 @@
   let currentPeriod = "7days";
   let currentTeam   = "all";
 
+  // ─── Fetch & aggregate meters ────────────────────────────────
   async function fetchAndAggregateMeters(periodKey, team) {
     const cfg = periods[periodKey];
     const today = new Date();
@@ -249,8 +222,17 @@
     try {
       snapshot = await getDocs(q);
     } catch (err) {
-      if (err.code === 'failed-precondition' || err.message.includes('index')) {
-        throw new Error("Missing Firestore index – check console for creation link (blue URL). Click it, create index, wait 2-5 min, refresh.");
+      if (err.code === 'failed-precondition' || err.message?.includes('index')) {
+        throw new Error(
+          "Missing Firestore index. " +
+          "Open browser console (F12) — look for a blue URL starting with https://console.firebase.google.com/…/indexes — click it, create the index, wait 2–5 minutes, then refresh this page."
+        );
+      }
+      if (err.code === 'permission-denied') {
+        throw new Error(
+          "Permission denied. Your Firestore security rules do not allow unauthenticated reads. " +
+          "Either enable Anonymous sign-in (Authentication → Sign-in method), or change rules to allow read: if true; for testing."
+        );
       }
       throw err;
     }
@@ -263,6 +245,7 @@
       }
     });
 
+    // Build weekday dates (Mon–Fri) like original code
     const allWeekdayDates = [];
     const current = new Date(start);
     while (current <= today) {
@@ -283,17 +266,16 @@
     });
 
     return {
-      labels: allWeekdayDates.map(d => d.slice(5)),
+      labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
       values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
       dates: allWeekdayDates
     };
   }
 
+  // ─── Update chart ─────────────────────────────────────────────
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
-    if (!container.querySelector('.loading') && !container.querySelector('.error-msg')) {
-      container.innerHTML = '<div class="loading">Loading meters data...</div>';
-    }
+    container.innerHTML = '<div class="loading">Loading performance data…</div>';
 
     try {
       const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
@@ -340,25 +322,19 @@
           }
         }
       });
-
     } catch (err) {
-      console.error("Fetch error:", err);
-      let msg = err.message || "Unknown error";
-
-      if (msg.includes("permission-denied")) {
-        msg = "Permission denied – your Firestore rules likely require authentication. After enabling Anonymous, refresh.";
-      } else if (msg.includes("index")) {
-        msg = "Missing index – check console (F12) for blue URL → click to create index (wait 2-5 min).";
-      }
+      console.error("Error:", err);
+      let msg = err.message || "Unknown error occurred";
 
       container.innerHTML = `
         <div class="error-msg">
           ${msg}<br><br>
-          <small>DevTools (F12) → Console for full details / index link.</small>
+          <small>Open DevTools (F12) → Console tab for full error details.</small>
         </div>`;
     }
   }
 
+  // ─── Event listeners ──────────────────────────────────────────
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
@@ -377,7 +353,7 @@
     });
   });
 
-  // Initial load
+  // Initial load — same as original page
   updateChart();
 </script>
 
