@@ -186,7 +186,7 @@
 
 <script type="module">
 // ──────────────────────────────────────────────────────────────
-const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+const { initializeApp } from await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
 const { getFirestore, collection, query, where, getDocs, orderBy } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
 
 const firebaseConfig = {
@@ -208,38 +208,25 @@ document.querySelector('#chartContainer').appendChild(ctx);
 let chart = null;
 
 const periods = {
-  "7days":   { daysBack: 14,  label: "Last 7 working days", type: "bar",   color: "#6366f1" },
-  "4weeks":  { daysBack: 40,  label: "4 week rolling",      type: "line",  color: "#8b5cf6" },
-  "6months": { daysBack: 200, label: "Last 6 months",       type: "line",  color: "#a78bfa" },
-  "year":    { daysBack: 400, label: "Year to date",        type: "line",  color: "#c084fc" },
+  "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1" },
+  "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6" },
+  "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa" },
+  "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc" },
 };
 
 let currentPeriod = "7days";
 let currentTeam   = "all";
 
-// ─── Generate list of working days (Mon–Fri) ───────────────────
-function getWorkingDaysBack(daysBack) {
-  const dates = [];
-  const today = new Date();
-  let added = 0;
-  while (added < daysBack) {
-    today.setDate(today.getDate() - 1);
-    const day = today.getDay();
-    if (day !== 0 && day !== 6) {
-      dates.unshift(today.toISOString().split('T')[0]);
-      added++;
-    }
-  }
-  return dates;
-}
-
-// ─── Fetch & aggregate meters by date ──────────────────────────
+// ─── Fetch & aggregate meters (mirrors original logic) ────────
 async function fetchAndAggregateMeters(periodKey, team) {
   const cfg = periods[periodKey];
-  const endDate = new Date().toISOString().split('T')[0];
-  const workingDates = getWorkingDaysBack(cfg.daysBack);
 
-  const startDate = workingDates[0];
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - cfg.daysBack);
+
+  const startDate = start.toISOString().split('T')[0];
+  const endDate   = today.toISOString().split('T')[0];
 
   const q = query(
     collection(db, "performance"),
@@ -249,7 +236,7 @@ async function fetchAndAggregateMeters(periodKey, team) {
   );
 
   const snapshot = await getDocs(q);
-  const records = [];
+  let records = [];
 
   snapshot.forEach(doc => {
     const d = doc.data();
@@ -258,24 +245,34 @@ async function fetchAndAggregateMeters(periodKey, team) {
     }
   });
 
-  // Aggregate meters per date
+  // Build weekday dates (same as original)
+  const allWeekdayDates = [];
+  const current = new Date(start);
+  while (current <= today) {
+    const dayOfWeek = current.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      allWeekdayDates.push(current.toISOString().split('T')[0]);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
   const dateMap = {};
-  workingDates.forEach(date => dateMap[date] = 0);
+  allWeekdayDates.forEach(date => dateMap[date] = 0);
 
   records.forEach(r => {
-    if (dateMap.hasOwnProperty(r.date)) {
+    if (dateMap[r.date] !== undefined) {
       dateMap[r.date] += Number(r.meters || 0);
     }
   });
 
   return {
-    labels: workingDates.map(d => d.slice(5)), // MM-DD
-    values: workingDates.map(d => Math.round(dateMap[d] || 0)),
-    fullDates: workingDates
+    labels: allWeekdayDates.map(d => d.slice(5)), // MM-DD
+    values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
+    dates: allWeekdayDates
   };
 }
 
-// ─── Update chart ──────────────────────────────────────────────
+// ─── Update chart (line style like original meters view) ──────
 async function updateChart() {
   const container = document.querySelector('#chartContainer');
   let loading = container.querySelector('.loading');
@@ -291,22 +288,19 @@ async function updateChart() {
     if (chart) chart.destroy();
 
     chart = new Chart(ctx, {
-      type: cfg.type,
+      type: 'line',
       data: {
         labels: data.labels,
         datasets: [{
-          label: `Meters Installed (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
+          label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
           data: data.values,
-          backgroundColor: currentPeriod === "7days" 
-            ? "rgba(99,102,241,0.65)" 
-            : "rgba(99,102,241,0.20)",
           borderColor: cfg.color,
-          borderWidth: currentPeriod === "7days" ? 1 : 3,
-          borderRadius: currentPeriod === "7days" ? 6 : 0,
-          tension: 0.3,
-          fill: currentPeriod !== "7days",
-          pointRadius: currentPeriod === "7days" ? 0 : 4,
-          pointHoverRadius: 8,
+          backgroundColor: 'rgba(99,102,241,0.12)',
+          borderWidth: 3,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 7,
         }]
       },
       options: {
@@ -315,7 +309,7 @@ async function updateChart() {
         plugins: {
           title: {
             display: true,
-            text: `${cfg.label} – ${currentTeam === 'all' ? 'All Teams' : currentTeam}`,
+            text: `${cfg.label} – Meters Installed`,
             color: '#e2e8f0',
             font: { size: 18, weight: '600' },
             padding: { bottom: 20 }
@@ -336,7 +330,7 @@ async function updateChart() {
     console.error(err);
     const msg = document.createElement('div');
     msg.className = 'error-msg';
-    msg.innerHTML = `Error loading data:<br><br>${err.message}<br><br>Check console for details.`;
+    msg.innerHTML = `Error loading data:<br><br>${err.message}<br><br>(check console)`;
     container.appendChild(msg);
   }
 }
@@ -362,7 +356,6 @@ document.querySelectorAll('.team-btn').forEach(btn => {
 
 // Initial load
 updateChart();
-
-  </script>
+</script>
 </body>
 </html>
