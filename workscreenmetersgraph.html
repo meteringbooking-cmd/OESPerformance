@@ -336,10 +336,11 @@
     };
   }
 
-  function updateStatsDisplay(values, workingDays, team) {
+  function updateStatsDisplay(values, workingDays, team, periodKey) {
     const totalElement = document.getElementById('totalValue');
     const avgElement = document.getElementById('avgValue');
     const targetElement = document.getElementById('targetValue');
+    const targetBox = targetElement.closest('.stats-box');
 
     // Calculate total
     const total = values.reduce((sum, val) => sum + val, 0);
@@ -350,27 +351,44 @@
     const average = populatedDays > 0 ? total / populatedDays : 0;
     avgElement.textContent = average.toFixed(1);
 
-    // Calculate target percentage - only count populated days
-    let dailyTarget = DAILY_TARGET_PER_TEAM;
-    
-    // If "All Teams", multiply target by number of teams (assuming 8 teams based on sidebar)
-    if (team === "all") {
-      dailyTarget = DAILY_TARGET_PER_TEAM * 8;
-    }
+    // Only show vs Target for 7-day period
+    if (periodKey === '7days') {
+      targetBox.style.display = 'block';
+      
+      // Calculate average daily percentage for populated days
+      let dailyTarget = DAILY_TARGET_PER_TEAM;
+      
+      // If "All Teams", multiply target by number of teams
+      if (team === "all") {
+        dailyTarget = DAILY_TARGET_PER_TEAM * 8;
+      }
 
-    const targetTotal = dailyTarget * populatedDays;
-    const targetPercentage = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
-    
-    targetElement.textContent = `${targetPercentage.toFixed(1)}%`;
-    
-    // Color code the target percentage
-    targetElement.classList.remove('success', 'warning', 'error');
-    if (targetPercentage >= 100) {
-      targetElement.classList.add('success');
-    } else if (targetPercentage >= 80) {
-      targetElement.classList.add('warning');
+      // Calculate percentage for each populated day, then average them
+      let totalPercentage = 0;
+      let daysWithData = 0;
+      
+      values.forEach(val => {
+        if (val > 0) {
+          totalPercentage += (val / dailyTarget) * 100;
+          daysWithData++;
+        }
+      });
+      
+      const targetPercentage = daysWithData > 0 ? totalPercentage / daysWithData : 0;
+      
+      targetElement.textContent = `${targetPercentage.toFixed(1)}%`;
+      
+      // Color code the target percentage
+      targetElement.classList.remove('success', 'warning', 'error');
+      if (targetPercentage >= 100) {
+        targetElement.classList.add('success');
+      } else if (targetPercentage >= 80) {
+        targetElement.classList.add('warning');
+      } else {
+        targetElement.classList.add('error');
+      }
     } else {
-      targetElement.classList.add('error');
+      targetBox.style.display = 'none';
     }
   }
 
@@ -389,7 +407,7 @@
       const cfg = periods[currentPeriod];
 
       // Update stats display
-      updateStatsDisplay(data.values, data.workingDays, currentTeam);
+      updateStatsDisplay(data.values, data.workingDays, currentTeam, currentPeriod);
 
       container.innerHTML = '';
       container.appendChild(ctx);
