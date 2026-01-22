@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Screen - OES Performance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 255, 255, 0.03) 2px, rgba(255, 255, 255, 0.03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255, 255, 255, 0.03) 2px, rgba(255, 255, 255, 0.03) 4px);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: fadeInDown 0.8s ease;
+            position: relative;
+        }
+        .header-logo-img {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 80px;
+            width: auto;
+            filter: drop-shadow(0 4px 12px rgba(0, 210, 255, 0.3));
+            animation: fadeIn 1s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .logo {
+            font-size: 3em;
+            font-weight: 900;
+            margin-bottom: 15px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 50%, #00d2ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+        }
+        .date-display {
+            font-size: 1.1em;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            font-weight: 400;
+            color: #00d2ff;
+        }
+        .last-updated {
+            font-size: 0.85em;
+            opacity: 0.6;
+            font-weight: 300;
+            color: #a8dadc;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(26, 32, 44, 0.9), rgba(45, 55, 72, 0.9));
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            animation: slideUp 0.8s ease;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(0, 210, 255, 0.2);
+        }
+        .kpi-card.expandable {
+            cursor: pointer;
+        }
+        .kpi-card.expandable .expand-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 1.2em;
+            opacity: 0.4;
+            transition: all 0.3s ease;
+            color: #00d2ff;
+        }
+        .kpi-card.expandable:hover .expand-indicator {
+            opacity: 1;
+        }
+        .kpi-card.expanded .expand-indicator {
+            transform: rotate(180deg);
+            opacity: 0.8;
+        }
+        .kpi-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 210, 255, 0.1), transparent);
+            animation: shimmerSlide 3s infinite;
+        }
+        @keyframes shimmerSlide {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .kpi-card:hover {
+            transform: translateY(-4px);
+            box-shadow:
+                0 12px 40px rgba(0, 210, 255, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            border-color: rgba(0, 210, 255, 0.4);
+        }
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid rgba(0, 210, 255, 0.2);
+        }
+        .kpi-title {
+            font-size: 0.85em;
+            color: #00d2ff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 800;
+        }
+        .kpi-icon {
+            font-size: 2.2em;
+            filter: drop-shadow(0 2px 8px rgba(0, 210, 255, 0.5));
+        }
+        .kpi-value {
+            font-size: 3em;
+            font-weight: 900;
+            background: linear-gradient(135deg, #ffffff 0%, #00d2ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+        .kpi-target {
+            font-size: 0.9em;
+            color: #a8dadc;
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+        .progress-bar-container {
+            background: rgba(0, 0, 0, 0.4);
+            height: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        .progress-bar {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.6);
+        }
+        .progress-bar.warning {
+            background: linear-gradient(90deg, #f59e0b, #d97706);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.6);
+        }
+        .progress-bar.danger {
+            background: linear-gradient(90deg, #ef4444, #dc2626);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+        }
+        .progress-text {
+            font-size: 0.8em;
+            color: #a8dadc;
+            text-align: right;
+            font-weight: 600;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: 8px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .status-green {
+            background: #10b981;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+        }
+        .status-amber {
+            background: #f59e0b;
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+        }
+        .status-red {
+            background: #ef4444;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+        }
+        .secondary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(0, 210, 255, 0.2);
+        }
+        .secondary-stat {
+            text-align: center;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 210, 255, 0.2);
+        }
+        .secondary-stat-label {
+            font-size: 0.7em;
+            color: #a8dadc;
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .secondary-stat-value {
+            font-size: 1.4em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .sub-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 210, 255, 0.15);
+        }
+        .sub-stat {
+            text-align: center;
+        }
+        .sub-stat-label {
+            font-size: 0.65em;
+            color: #a8dadc;
+            margin-bottom: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .sub-stat-value {
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .attendance-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .attendance-item {
+            text-align: center;
+            padding: 12px 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        .attendance-item:hover {
+            background: rgba(0, 210, 255, 0.1);
+            border-color: rgba(0, 210, 255, 0.4);
+            transform: translateY(-2px);
+        }
+        .attendance-item-label {
+            font-size: 0.7em;
+            color: #a8dadc;
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .attendance-item-value {
+            font-size: 1.2em;
+            font-weight: 800;
+            color: #ffffff;
+        }
+        .historical-data {
+            max-height: 0;
+            overflow: hidden;
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+            transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+                        margin-top 0.5s ease,
+                        padding-top 0.5s ease,
+                        border-top 0.5s ease;
+        }
+        .kpi-card.expanded .historical-data {
+            max-height: 2000px;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 2px solid rgba(0, 210, 255, 0.3);
+        }
+        .historical-title {
+            font-size: 0.8em;
+            font-weight: 700;
+            color: #00d2ff;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .historical-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8em;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .historical-table th {
+            text-align: left;
+            padding: 12px 10px;
+            background: rgba(0, 210, 255, 0.15);
+            color: #00d2ff;
+            font-weight: 700;
+            border-bottom: 2px solid rgba(0, 210, 255, 0.3);
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+        .historical-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(0, 210, 255, 0.1);
+            color: #e1e8ed;
+        }
+        .historical-table tr:last-child td {
+            border-bottom: none;
+        }
+        .historical-table tr:hover {
+            background: rgba(0, 210, 255, 0.08);
+        }
+        .historical-table th:last-child,
+        .historical-table td:last-child {
+            text-align: right;
+        }
+        .loading {
+            text-align: center;
+            padding: 80px;
+            color: #00d2ff;
+            font-size: 1.4em;
+            font-weight: 600;
+        }
+        .graph-button {
+            display: inline-block;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.3), rgba(58, 123, 213, 0.3));
+            border: 1px solid rgba(0, 210, 255, 0.4);
+            border-radius: 8px;
+            color: #00d2ff;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 10px;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        .graph-button:hover {
+            background: linear-gradient(135deg, rgba(0, 210, 255, 0.4), rgba(58, 123, 213, 0.4));
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 210, 255, 0.4);
+        }
+        .popup-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+        .popup-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+        }
+        .popup-content {
+            width: 90%;
+            height: 90%;
+            background: #1a1a2e;
+            border-radius: 16px;
+            border: 2px solid rgba(0, 210, 255, 0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease;
+        }
+        .popup-header {
+            padding: 20px;
+            border-bottom: 2px solid rgba(0, 210, 255, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .popup-title {
+            color: #00d2ff;
+            font-size: 1.2em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .popup-close {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            border-radius: 8px;
+            color: #ef4444;
+            font-size: 1.2em;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 700;
+        }
+        .popup-close:hover {
+            background: rgba(239, 68, 68, 0.3);
+            transform: scale(1.1);
+        }
+        .popup-iframe {
+            flex: 1;
+            border: none;
+            border-radius: 0 0 14px 14px;
+        }
+        @media (max-width: 1024px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+            .kpi-value {
+                font-size: 2.5em;
+            }
+            .logo {
+                font-size: 2em;
+            }
+            .popup-content {
+                width: 95%;
+                height: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&dl=1" alt="NGU Logo" class="header-logo-img">
+            <div class="logo">OES Work Screen</div>
+            <div class="date-display" id="statsDate">Loading...</div>
+            <div class="last-updated" id="lastUpdated">Last updated: --</div>
+        </div>
+        <div id="loadingDiv" class="loading">Loading performance data...</div>
+        <div id="dashboardContent" style="display: none;">
+            <div class="kpi-grid">
+                <!-- Meters KPI -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this)">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">
+                            Meters Installed
+                            <button class="graph-button" onclick="openGraphPopup(event, 'Meters Graphs', 'https://oes-performance.vercel.app/workscreenmetersgraph.html')">📊 Graphs</button>
+                        </span>
+                        <span class="kpi-icon">🪛</span>
+                    </div>
+                    <div class="kpi-value" id="metersActual">0</div>
+                    <div class="kpi-target">Target: <strong id="metersTarget">0</strong> meters</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="metersProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text" id="metersProgressText">0%</div>
+                  
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 10 Working Days</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Meters</th>
+                                    <th>Target</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metersHistory"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Completion Rate KPI -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this)">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">
+                            Completion Rate
+                            <button class="graph-button" onclick="openGraphPopup(event, 'Completion Rate Graphs', 'https://oes-performance.vercel.app/workscreencompletionsgraph.html')">📊 Graphs</button>
+                        </span>
+                        <span class="kpi-icon">✅</span>
+                    </div>
+                    <div class="kpi-value">
+                        <span id="completionActual">0</span>%
+                        <span class="status-indicator" id="completionStatus"></span>
+                    </div>
+                    <div class="kpi-target">Target: <strong>90%</strong></div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="completionProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
+                  
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 10 Working Days</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Completed</th>
+                                    <th>Total Jobs</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="completionHistory"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Attendance KPI -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this)">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">Attendance (OES)</span>
+                        <span class="kpi-icon">📊</span>
+                    </div>
+                    <div class="kpi-value" id="attendanceTotal">0</div>
+                    <div class="kpi-target">Total OES Engineers</div>
+                    <div class="attendance-grid">
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">At Work</div>
+                            <div class="attendance-item-value" id="atWorkPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">Holiday</div>
+                            <div class="attendance-item-value" id="holPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">Sick</div>
+                            <div class="attendance-item-value" id="sickPercent">0%</div>
+                        </div>
+                        <div class="attendance-item">
+                            <div class="attendance-item-label">AAUP</div>
+                            <div class="attendance-item-value" id="aaupPercent">0%</div>
+                        </div>
+                    </div>
+                  
+                    <div class="historical-data">
+                        <div class="historical-title">Previous 10 Working Days</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>At Work</th>
+                                    <th>Holiday</th>
+                                    <th>Sick</th>
+                                    <th>AAUP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceHistory"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Workforce KPI -->
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Workforce
+                    <button class="graph-button" onclick="openGraphPopup(event, 'Workforce Graphs', 'workscreenworkforce.html')">📊 Graphs</button>
+                    </span>
+                        <span class="kpi-icon">👥</span>
+                    </div>
+                    <div class="kpi-value" id="totalEmployees">0</div>
+                    <div class="kpi-target">Total Active Staff</div>
+                    <div class="secondary-stats">
+                        <div class="secondary-stat">
+                            <div class="secondary-stat-label">Engineers</div>
+                            <div class="secondary-stat-value" id="engineerCount">0</div>
+                            <div class="sub-stats">
+                                <div class="sub-stat">
+                                    <div class="sub-stat-label">OES</div>
+                                    <div class="sub-stat-value" id="oesCount">0</div>
+                                </div>
+                                <div class="sub-stat">
+                                    <div class="sub-stat-label">Scottish Power</div>
+                                    <div class="sub-stat-value" id="scottishPowerCount">0</div>
+                                </div>
+                                <div class="sub-stat">
+                                    <div class="sub-stat-label">EDF</div>
+                                    <div class="sub-stat-value" id="edfCount">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="secondary-stat">
+                            <div class="secondary-stat-label">Back Office</div>
+                            <div class="secondary-stat-value" id="backOfficeCount">0</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Compliance KPI -->
+<div class="kpi-card expandable" onclick="toggleExpand(this)">
+    <span class="expand-indicator">▼</span>
+    <div class="kpi-header">
+        <span class="kpi-title">
+            Compliance Overall
+            <button class="graph-button" onclick="openGraphPopup(event, 'Compliance Graphs', 'workscreencompliance.html')">📊 Graphs</button>
+        </span>
+        <span class="kpi-icon">📋</span>
+    </div>
+    <div class="kpi-value">
+        <span id="complianceOverallPass">0</span>%
+        <span class="status-indicator" id="complianceStatus"></span>
+    </div>
+    <div class="kpi-target">Current Month Pass Rate</div>
+    <div class="secondary-stats" style="margin-top: 20px;">
+        <div class="secondary-stat">
+            <div class="secondary-stat-label">WIP</div>
+            <div class="secondary-stat-value" id="wipPassRate">0%</div>
+            <div style="font-size: 0.7em; color: #a8dadc; margin-top: 4px;">
+                <span id="wipPassCount">0</span>/<span id="wipTotalCount">0</span>
+            </div>
+        </div>
+        <div class="secondary-stat">
+            <div class="secondary-stat-label">Post Completion</div>
+            <div class="secondary-stat-value" id="postCompPassRate">0%</div>
+            <div style="font-size: 0.7em; color: #a8dadc; margin-top: 4px;">
+                <span id="postCompPassCount">0</span>/<span id="postCompTotalCount">0</span>
+            </div>
+        </div>
+    </div>
+    <div class="fail-stats" style="margin-top: 20px;">
+        <div class="historical-title">Fail Categories</div>
+        <table class="historical-table">
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Cat 1</th>
+                    <th>Cat 2</th>
+                    <th>Cat 3</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Past 5 Working Days</td>
+                    <td id="cat1_5days">0</td>
+                    <td id="cat2_5days">0</td>
+                    <td id="cat3_5days">0</td>
+                </tr>
+                <tr>
+                    <td>Past 4 Weeks</td>
+                    <td id="cat1_4weeks">0</td>
+                    <td id="cat2_4weeks">0</td>
+                    <td id="cat3_4weeks">0</td>
+                </tr>
+                <tr>
+                    <td>Past 12 Weeks</td>
+                    <td id="cat1_12weeks">0</td>
+                    <td id="cat2_12weeks">0</td>
+                    <td id="cat3_12weeks">0</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="historical-data">
+        <div class="historical-title">Previous 6 Months</div>
+        <table class="historical-table" style="table-layout: auto;">
+            <thead>
+                <tr>
+                    <th style="width: 25%;">Month</th>
+                    <th style="width: 25%;">WIP</th>
+                    <th style="width: 25%;">Post Comp</th>
+                    <th style="width: 25%;">Overall</th>
+                </tr>
+            </thead>
+            <tbody id="complianceHistory"></tbody>
+        </table>
+    </div>
+</div>
+                <!-- Health & Safety KPI -->
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-title">Health & Safety</span>
+                        <span class="kpi-icon">🛡️</span>
+                    </div>
+                    <div class="kpi-value" id="daysSinceAccident" style="font-size: 2.5em;">—</div>
+                    <div class="kpi-target" id="hsTarget">Days Since Last Accident</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Popup Overlay -->
+    <div class="popup-overlay" id="graphPopup" onclick="closeGraphPopup(event)">
+        <div class="popup-content" onclick="event.stopPropagation()">
+            <div class="popup-header">
+                <div class="popup-title" id="popupTitle">📊 Performance Graphs</div>
+                <button class="popup-close" onclick="closeGraphPopup()">✕</button>
+            </div>
+            <iframe class="popup-iframe" id="graphIframe" src=""></iframe>
+        </div>
+    </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // Graph popup functions
+        window.openGraphPopup = function(event, title = 'Performance Graphs', url) {
+            event.stopPropagation();
+            document.getElementById('popupTitle').textContent = `📊 ${title}`;
+            const popup = document.getElementById('graphPopup');
+            const iframe = document.getElementById('graphIframe');
+            iframe.src = url;
+            popup.classList.add('active');
+        };
+        window.closeGraphPopup = function(event) {
+            if (event) event.stopPropagation();
+            const popup = document.getElementById('graphPopup');
+            const iframe = document.getElementById('graphIframe');
+            popup.classList.remove('active');
+            setTimeout(() => {
+                iframe.src = '';
+                document.getElementById('popupTitle').textContent = '📊 Performance Graphs';
+            }, 300);
+        };
+        // Close with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeGraphPopup();
+            }
+        });
+        const performanceConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+        const staffConfig = {
+            apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+            authDomain: "pingu-solar.firebaseapp.com",
+            projectId: "pingu-solar",
+            storageBucket: "pingu-solar.firebasestorage.app",
+            messagingSenderId: "232764952866",
+            appId: "1:232764952866:web:5923b7f419de6355d6157b",
+            measurementId: "G-PFH059DZ64"
+        };
+        const performanceApp = initializeApp(performanceConfig, "performance");
+        const staffApp = initializeApp(staffConfig, "staff");
+      
+        const performanceDb = getFirestore(performanceApp);
+        const staffDb = getFirestore(staffApp);
+        let historicalData = [];
+        let oesEngineerCount = 0;
+        let complianceData = [];
+        function getPreviousWorkingDay() {
+            const today = new Date();
+            let previousDay = new Date(today);
+            previousDay.setDate(previousDay.getDate() - 1);
+          
+            if (previousDay.getDay() === 0) {
+                previousDay.setDate(previousDay.getDate() - 2);
+            } else if (previousDay.getDay() === 6) {
+                previousDay.setDate(previousDay.getDate() - 1);
+            }
+          
+            return previousDay;
+        }
+        function getPreviousWorkingDays(count) {
+            const dates = [];
+            const today = new Date();
+            let daysFound = 0;
+            let daysBack = 1;
+          
+            while (daysFound < count) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - daysBack);
+              
+                if (date.getDay() !== 0 && date.getDay() !== 6) {
+                    dates.push(date);
+                    daysFound++;
+                }
+                daysBack++;
+            }
+          
+            return dates;
+        }
+        function getPreviousSixMonths() {
+            const months = [];
+            const today = new Date();
+          
+            for (let i = 0; i < 6; i++) {
+                const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                months.push(date);
+            }
+          
+            return months.reverse();
+        }
+        function formatDate(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            return `${day}/${month}`;
+        }
+        function formatMonth(date) {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${months[date.getMonth()]} ${date.getFullYear()}`;
+        }
+        function formatDateForQuery(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+        function parseInstallationDate(dateStr) {
+            if (!dateStr) return null;
+          
+            let parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+          
+            parts = dateStr.split('-');
+            if (parts.length === 3) {
+                return new Date(parts[0], parts[1] - 1, parts[2]);
+            }
+          
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? null : date;
+        }
+        function updateProgressBar(elementId, percentage) {
+            const bar = document.getElementById(elementId);
+            const actualPercentage = Math.min(percentage, 100);
+            bar.style.width = actualPercentage + '%';
+          
+            if (percentage >= 90) {
+                bar.className = 'progress-bar';
+            } else if (percentage >= 70) {
+                bar.className = 'progress-bar warning';
+            } else {
+                bar.className = 'progress-bar danger';
+            }
+        }
+        function updateStatusIndicator(elementId, percentage, threshold = 90) {
+            const indicator = document.getElementById(elementId);
+            if (percentage >= threshold) {
+                indicator.className = 'status-indicator status-green';
+            } else if (percentage >= threshold * 0.8) {
+                indicator.className = 'status-indicator status-amber';
+            } else {
+                indicator.className = 'status-indicator status-red';
+            }
+        }
+        window.toggleExpand = function(card) {
+            card.classList.toggle('expanded');
+          
+            if (card.classList.contains('expanded')) {
+                const complianceCard = card.querySelector('#complianceHistory');
+                if (complianceCard && complianceData.length > 0) {
+                    populateComplianceHistory();
+                }
+            }
+        };
+        function populateHistoricalTables() {
+            const metersBody = document.getElementById('metersHistory');
+            metersBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = metersBody.insertRow();
+                const percentage = day.metersTarget > 0 ? ((day.totalMeters / day.metersTarget) * 100).toFixed(1) : 0;
+                row.innerHTML = `
+                    <td>${day.displayDate}</td>
+                    <td>${day.totalMeters.toLocaleString()}</td>
+                    <td>${day.metersTarget.toLocaleString()}</td>
+                    <td>${percentage}%</td>
+                `;
+            });
+            const completionBody = document.getElementById('completionHistory');
+            completionBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = completionBody.insertRow();
+                row.innerHTML = `
+                    <td>${day.displayDate}</td>
+                    <td>${day.totalCompleted.toLocaleString()}</td>
+                    <td>${day.totalJobs.toLocaleString()}</td>
+                    <td>${day.completionRate}%</td>
+                `;
+            });
+            const attendanceBody = document.getElementById('attendanceHistory');
+            attendanceBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = attendanceBody.insertRow();
+                row.innerHTML = `
+                    <td>${day.displayDate}</td>
+                    <td>${day.atWorkPercent}%</td>
+                    <td>${day.holPercent}%</td>
+                    <td>${day.sickPercent}%</td>
+                    <td>${day.aaupPercent}%</td>
+                `;
+            });
+        }
+        function populateComplianceHistory() {
+            const tbody = document.getElementById('complianceHistory');
+            tbody.innerHTML = '';
+          
+            complianceData.forEach(monthData => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${monthData.monthLabel}</td>
+                    <td>${monthData.wipPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.wipPass}/${monthData.wipTotal}</span></td>
+                    <td>${monthData.postCompPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.postCompPass}/${monthData.postCompTotal}</span></td>
+                    <td><span style="font-weight: 700;">${monthData.overallPassRate}%</span></td>
+                `;
+            });
+        }
+        async function loadComplianceData() {
+            try {
+                const complianceSnapshot = await getDocs(collection(performanceDb, "compliance"));
+              
+                const months = getPreviousSixMonths();
+                const currentMonth = new Date();
+                months.push(currentMonth);
+              
+                complianceData = [];
+              
+                for (const month of months) {
+                    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+                    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                  
+                    const wipJobs = new Map();
+                    const postCompJobs = new Map();
+                  
+                    complianceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const installDate = parseInstallationDate(data.installationDate);
+                      
+                        if (installDate && installDate >= monthStart && installDate <= monthEnd) {
+                            const jobRef = data.jobReference;
+                            const outcome = (data.auditOutcome || '').toLowerCase();
+                            const isPassed = outcome.includes('pass') || outcome === 'p';
+                          
+                            if (data.type === 'wip') {
+                                if (!wipJobs.has(jobRef)) {
+                                    wipJobs.set(jobRef, isPassed);
+                                }
+                            } else if (data.type === 'post_completion') {
+                                if (!postCompJobs.has(jobRef)) {
+                                    postCompJobs.set(jobRef, isPassed);
+                                }
+                            }
+                        }
+                    });
+                  
+                    const wipTotal = wipJobs.size;
+                    const wipPass = Array.from(wipJobs.values()).filter(passed => passed).length;
+                    const wipPassRate = wipTotal > 0 ? ((wipPass / wipTotal) * 100).toFixed(1) : 0;
+                  
+                    const postCompTotal = postCompJobs.size;
+                    const postCompPass = Array.from(postCompJobs.values()).filter(passed => passed).length;
+                    const postCompPassRate = postCompTotal > 0 ? ((postCompPass / postCompTotal) * 100).toFixed(1) : 0;
+                  
+                    const overallTotal = wipTotal + postCompTotal;
+                    const overallPass = wipPass + postCompPass;
+                    const overallPassRate = overallTotal > 0 ? ((overallPass / overallTotal) * 100).toFixed(1) : 0;
+                  
+                    complianceData.push({
+                        month,
+                        monthLabel: formatMonth(month),
+                        wipTotal,
+                        wipPass,
+                        wipPassRate,
+                        postCompTotal,
+                        postCompPass,
+                        postCompPassRate,
+                        overallTotal,
+                        overallPass,
+                        overallPassRate
+                    });
+                }
+              
+                if (complianceData.length > 0) {
+                    const currentData = complianceData[complianceData.length - 1];
+                  
+                    document.getElementById('complianceOverallPass').textContent = currentData.overallPassRate;
+                    document.getElementById('wipPassRate').textContent = currentData.wipPassRate + '%';
+                    document.getElementById('wipPassCount').textContent = currentData.wipPass;
+                    document.getElementById('wipTotalCount').textContent = currentData.wipTotal;
+                    document.getElementById('postCompPassRate').textContent = currentData.postCompPassRate + '%';
+                    document.getElementById('postCompPassCount').textContent = currentData.postCompPass;
+                    document.getElementById('postCompTotalCount').textContent = currentData.postCompTotal;
+                  
+                    updateStatusIndicator('complianceStatus', parseFloat(currentData.overallPassRate), 90);
+                }
+              
+                complianceData.pop();
+              
+            } catch (error) {
+                console.error("Error loading compliance data:", error);
+            }
+        }
+        async function getFailCounts(period) {
+            let q;
+            if (period === '5days') {
+                const dates = getPreviousWorkingDays(5);
+                const dateStrings = dates.map(d => formatDateForQuery(d));
+                q = query(collection(performanceDb, "compliance"), where("installationDate", "in", dateStrings));
+            } else {
+                let daysBack;
+                if (period === '4weeks') {
+                    daysBack = 28;
+                } else if (period === '12weeks') {
+                    daysBack = 84;
+                } else {
+                    return {cat1: 0, cat2: 0, cat3: 0};
+                }
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - daysBack);
+                const startDateStr = formatDateForQuery(startDate);
+                q = query(collection(performanceDb, "compliance"), where("installationDate", ">=", startDateStr));
+            }
+            const snap = await getDocs(q);
+            let cat1 = 0, cat2 = 0, cat3 = 0;
+            snap.forEach(doc => {
+                const outcome = (doc.data().auditOutcome || '').toLowerCase();
+                if (outcome.includes('fail')) {
+                    if (outcome.includes('category 1') || outcome.includes('cat 1')) {
+                        cat1++;
+                    } else if (outcome.includes('category 2') || outcome.includes('cat 2')) {
+                        cat2++;
+                    } else if (outcome.includes('category 3') || outcome.includes('cat 3')) {
+                        cat3++;
+                    }
+                }
+            });
+            return {cat1, cat2, cat3};
+        }
+        async function loadLastAccident() {
+            try {
+                const q = query(collection(performanceDb, "accidents"), orderBy("accidentDate", "desc"), limit(1));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    const data = snap.docs[0].data();
+                    const accDate = new Date(data.accidentDate);
+                    const now = new Date();
+                    const timeDiff = now - accDate;
+                    const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                    document.getElementById('daysSinceAccident').textContent = days;
+                    document.getElementById('hsTarget').textContent = 'Days Since Last Accident';
+                } else {
+                    document.getElementById('daysSinceAccident').textContent = 'N/A';
+                    document.getElementById('hsTarget').textContent = 'No Accidents Recorded';
+                }
+            } catch (error) {
+                console.error("Error loading last accident:", error);
+                document.getElementById('daysSinceAccident').textContent = 'Error';
+                document.getElementById('hsTarget').textContent = 'Error Loading Data';
+            }
+        }
+        async function loadDashboard() {
+            try {
+                const previousDay = getPreviousWorkingDay();
+                const dateString = formatDateForQuery(previousDay);
+                const displayDate = formatDate(previousDay);
+              
+                document.getElementById('statsDate').textContent = `Stats for ${displayDate}`;
+              
+                const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
+                let oesEngineers = 0;
+                let scottishPowerEngineers = 0;
+                let edfEngineers = 0;
+                let backOfficeCount = 0;
+              
+                employeesSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const teamLeader = data['Team Leader'] || data.teamLeader;
+                    const location = data.Location || data.location;
+                  
+                    if (!data.leaveDate) {
+                        if (teamLeader === 'Back Office') {
+                            backOfficeCount++;
+                        } else if (location === 'OES') {
+                            oesEngineers++;
+                        } else if (location === 'Scottish Power') {
+                            scottishPowerEngineers++;
+                        } else if (location === 'EDF') {
+                            edfEngineers++;
+                        }
+                    }
+                });
+              
+                oesEngineerCount = oesEngineers;
+                const totalEngineers = oesEngineers + scottishPowerEngineers + edfEngineers;
+                const totalEmployees = totalEngineers + backOfficeCount;
+              
+                document.getElementById('totalEmployees').textContent = totalEmployees;
+                document.getElementById('engineerCount').textContent = totalEngineers;
+                document.getElementById('oesCount').textContent = oesEngineers;
+                document.getElementById('scottishPowerCount').textContent = scottishPowerEngineers;
+                document.getElementById('edfCount').textContent = edfEngineers;
+                document.getElementById('backOfficeCount').textContent = backOfficeCount;
+              
+                const metersTarget = oesEngineers * 6;
+                document.getElementById('metersTarget').textContent = metersTarget;
+              
+                const performanceQuery = query(
+                    collection(performanceDb, "performance"),
+                    where("date", "==", dateString)
+                );
+              
+                const performanceSnapshot = await getDocs(performanceQuery);
+              
+                let totalMeters = 0;
+                let totalJobs = 0;
+                let totalCompleted = 0;
+              
+                performanceSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    totalMeters += data.meters || 0;
+                    totalJobs += data.jobs || 0;
+                    totalCompleted += data.completed || 0;
+                });
+              
+                const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
+                const metersPercentage = metersTarget > 0 ? ((totalMeters / metersTarget) * 100).toFixed(1) : 0;
+              
+                document.getElementById('metersActual').textContent = totalMeters.toLocaleString();
+                document.getElementById('metersProgressText').textContent = metersPercentage + '%';
+                updateProgressBar('metersProgress', parseFloat(metersPercentage));
+              
+                document.getElementById('completionActual').textContent = completionRate;
+                document.getElementById('completionProgressText').textContent =
+                    `${totalCompleted.toLocaleString()} of ${totalJobs.toLocaleString()} jobs`;
+                updateProgressBar('completionProgress', parseFloat(completionRate));
+                updateStatusIndicator('completionStatus', parseFloat(completionRate), 90);
+              
+                const garethStatsQuery = query(
+                    collection(performanceDb, "garethstats"),
+                    where("date", "==", dateString)
+                );
+              
+                const garethStatsSnapshot = await getDocs(garethStatsQuery);
+              
+                let atWorkPercent = 0;
+                let holPercent = 0;
+                let sickPercent = 0;
+                let aaupPercent = 0;
+              
+                garethStatsSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    atWorkPercent = data.atWorkPercent || 0;
+                    holPercent = data.holidayPercent || 0;
+                    sickPercent = data.sickPercent || 0;
+                    aaupPercent = data.aaupPercent || 0;
+                });
+              
+                document.getElementById('attendanceTotal').textContent = oesEngineers;
+                document.getElementById('atWorkPercent').textContent = atWorkPercent.toFixed(1) + '%';
+                document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
+                document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
+                document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
+              
+                await loadComplianceData();
+                await loadHistoricalData();
+              
+                populateHistoricalTables();
+              
+                const now = new Date();
+                document.getElementById('lastUpdated').textContent =
+                    `Last updated: ${now.toLocaleTimeString()}`;
+              
+                document.getElementById('loadingDiv').style.display = 'none';
+                document.getElementById('dashboardContent').style.display = 'block';
+              
+                // Load fail counts
+                const fiveDaysCounts = await getFailCounts('5days');
+                document.getElementById('cat1_5days').textContent = fiveDaysCounts.cat1;
+                document.getElementById('cat2_5days').textContent = fiveDaysCounts.cat2;
+                document.getElementById('cat3_5days').textContent = fiveDaysCounts.cat3;
+              
+                const fourWeeksCounts = await getFailCounts('4weeks');
+                document.getElementById('cat1_4weeks').textContent = fourWeeksCounts.cat1;
+                document.getElementById('cat2_4weeks').textContent = fourWeeksCounts.cat2;
+                document.getElementById('cat3_4weeks').textContent = fourWeeksCounts.cat3;
+              
+                const twelveWeeksCounts = await getFailCounts('12weeks');
+                document.getElementById('cat1_12weeks').textContent = twelveWeeksCounts.cat1;
+                document.getElementById('cat2_12weeks').textContent = twelveWeeksCounts.cat2;
+                document.getElementById('cat3_12weeks').textContent = twelveWeeksCounts.cat3;
+              
+                // Load last accident
+                await loadLastAccident();
+              
+            } catch (error) {
+                console.error("Error loading dashboard:", error);
+                document.getElementById('loadingDiv').innerHTML =
+                    '<div style="color: #ef4444;">Error loading data. Please check console for details.</div>';
+            }
+        }
+        async function loadHistoricalData() {
+            try {
+                const dates = getPreviousWorkingDays(10);
+                historicalData = [];
+              
+                for (const date of dates) {
+                    const dateString = formatDateForQuery(date);
+                    const displayDate = formatDate(date);
+                  
+                    const performanceQuery = query(
+                        collection(performanceDb, "performance"),
+                        where("date", "==", dateString)
+                    );
+                  
+                    const performanceSnapshot = await getDocs(performanceQuery);
+                  
+                    let totalMeters = 0;
+                    let totalJobs = 0;
+                    let totalCompleted = 0;
+                  
+                    performanceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        totalMeters += data.meters || 0;
+                        totalJobs += data.jobs || 0;
+                        totalCompleted += data.completed || 0;
+                    });
+                  
+                    const garethStatsQuery = query(
+                        collection(performanceDb, "garethstats"),
+                        where("date", "==", dateString)
+                    );
+                  
+                    const garethStatsSnapshot = await getDocs(garethStatsQuery);
+                  
+                    let atWorkPercent = 0;
+                    let holPercent = 0;
+                    let sickPercent = 0;
+                    let aaupPercent = 0;
+                  
+                    garethStatsSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        atWorkPercent = (data.atWorkPercent || 0).toFixed(1);
+                        holPercent = (data.holidayPercent || 0).toFixed(1);
+                        sickPercent = (data.sickPercent || 0).toFixed(1);
+                        aaupPercent = (data.aaupPercent || 0).toFixed(1);
+                    });
+                  
+                    const metersTarget = oesEngineerCount * 6;
+                    const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
+                  
+                    historicalData.push({
+                        displayDate,
+                        dateString,
+                        totalMeters,
+                        metersTarget,
+                        totalJobs,
+                        totalCompleted,
+                        completionRate,
+                        atWorkPercent,
+                        holPercent,
+                        sickPercent,
+                        aaupPercent
+                    });
+                }
+              
+            } catch (error) {
+                console.error("Error loading historical data:", error);
+            }
+        }
+        // Initial load + auto-refresh
+        loadDashboard();
+        setInterval(loadDashboard, 300000);
+    </script>
+</body>
+</html>
