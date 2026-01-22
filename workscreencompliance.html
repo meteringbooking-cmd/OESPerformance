@@ -209,49 +209,29 @@
     const start = new Date(today);
     start.setDate(start.getDate() - cfg.daysBack);
 
-    const startDate = start.toISOString().split('T')[0];
-    const endDate   = today.toISOString().split('T')[0];
-
-    const q = query(
-      collection(db, "compliance"),
-      where("installationDate", ">=", startDate),
-      where("installationDate", "<=", endDate),
-      orderBy("installationDate", "asc")
-    );
-
-    const snapshot = await getDocs(q);
-    let records = [];
-
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      // Filter by team (using lineManager field)
-      const teamMatch = team === "all" || d.lineManager === team;
-      // Filter by audit type
-      const auditMatch = auditType === "all" || d.type === auditType;
+    // Fetch all compliance data (no date filter in query due to installationDate format)
+    const snapshot = await getDocs(collection(db, "compliance"));
+    
+    // Helper function to parse installation date
+    function parseInstallationDate(dateStr) {
+      if (!dateStr) return null;
       
-      if (teamMatch && auditMatch && d.installationDate && d.auditOutcome) {
-        records.push(d);
-      }
-    });
-
-    // Group by month
-    const monthMap = {};
-    records.forEach(r => {
-      const date = new Date(r.installationDate);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
-      if (!monthMap[monthKey]) {
-        monthMap[monthKey] = { total: 0, passed: 0 };
+      // Try DD/MM/YYYY format
+      let parts = dateStr.split('/');
+      if (parts.length === 3) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
       }
       
-      monthMap[monthKey].total++;
-      
-      // Check if audit passed (case-insensitive check for "pass")
-      const outcome = (r.auditOutcome || '').toLowerCase();
-      if (outcome.includes('pass')) {
-        monthMap[monthKey].passed++;
+      // Try YYYY-MM-DD format
+      parts = dateStr.split('-');
+      if (parts.length === 3) {
+        return new Date(parts[0], parts[1] - 1, parts[2]);
       }
-    });
+      
+      // Try parsing as standard date
+      const date = new Date(dateStr);
+      return isNaN(date.getTime()) ? null : date;
+    }
 
     // Generate all months in the period
     const allMonths = [];
@@ -264,6 +244,47 @@
       currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
+    // Group data by month and job reference
+    const monthMap = {};
+    allMonths.forEach(monthKey => {
+      monthMap[monthKey] = {
+        wipJobs: new Map(),
+        postCompJobs: new Map()
+      };
+    });
+
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const installDate = parseInstallationDate(d.installationDate);
+      
+      if (!installDate || installDate < start || installDate > today) return;
+      
+      // Filter by team (using lineManager field)
+      const teamMatch = team === "all" || d.lineManager === team;
+      // Filter by audit type
+      const auditMatch = auditType === "all" || d.type === auditType;
+      
+      if (!teamMatch || !auditMatch) return;
+      
+      const monthKey = `${installDate.getFullYear()}-${String(installDate.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (!monthMap[monthKey]) return;
+      
+      const jobRef = d.jobReference;
+      const outcome = (d.auditOutcome || '').toLowerCase();
+      const isPassed = outcome.includes('pass') || outcome === 'p';
+      
+      if (d.type === 'wip') {
+        if (!monthMap[monthKey].wipJobs.has(jobRef)) {
+          monthMap[monthKey].wipJobs.set(jobRef, isPassed);
+        }
+      } else if (d.type === 'post_completion') {
+        if (!monthMap[monthKey].postCompJobs.has(jobRef)) {
+          monthMap[monthKey].postCompJobs.set(jobRef, isPassed);
+        }
+      }
+    });
+
     // Calculate percentages
     const labels = allMonths.map(monthKey => {
       const [year, month] = monthKey.split('-');
@@ -273,8 +294,23 @@
 
     const values = allMonths.map(monthKey => {
       const data = monthMap[monthKey];
-      if (!data || data.total === 0) return 0;
-      return Math.round((data.passed / data.total) * 100);
+      
+      // Combine WIP and Post Completion based on audit type filter
+      let totalJobs = 0;
+      let passedJobs = 0;
+      
+      if (auditType === 'all' || auditType === 'wip') {
+        totalJobs += data.wipJobs.size;
+        passedJobs += Array.from(data.wipJobs.values()).filter(passed => passed).length;
+      }
+      
+      if (auditType === 'all' || auditType === 'post_completion') {
+        totalJobs += data.postCompJobs.size;
+        passedJobs += Array.from(data.postCompJobs.values()).filter(passed => passed).length;
+      }
+      
+      if (totalJobs === 0) return 0;
+      return Math.round((passedJobs / totalJobs) * 100);
     });
 
     return { labels, values, monthMap, allMonths };
@@ -338,7 +374,20 @@
                   const monthKey = data.allMonths[context.dataIndex];
                   const monthData = data.monthMap[monthKey];
                   if (monthData) {
-                    return `Passed: ${monthData.passed} / ${monthData.total}`;
+                    let totalJobs = 0;
+                    let passedJobs = 0;
+                    
+                    if (currentAudit === 'all' || currentAudit === 'wip') {
+                      totalJobs += monthData.wipJobs.size;
+                      passedJobs += Array.from(monthData.wipJobs.values()).filter(p => p).length;
+                    }
+                    
+                    if (currentAudit === 'all' || currentAudit === 'post_completion') {
+                      totalJobs += monthData.postCompJobs.size;
+                      passedJobs += Array.from(monthData.postCompJobs.values()).filter(p => p).length;
+                    }
+                    
+                    return `Passed: ${passedJobs} / ${totalJobs}`;
                   }
                   return '';
                 }
