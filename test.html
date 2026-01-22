@@ -683,39 +683,7 @@
             </div>
         </div>
     </div>
-    <div class="fail-stats" style="margin-top: 20px;">
-        <div class="historical-title">Fail Categories</div>
-        <table class="historical-table">
-            <thead>
-                <tr>
-                    <th>Period</th>
-                    <th>Cat 1</th>
-                    <th>Cat 2</th>
-                    <th>Cat 3</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Past 5 Working Days</td>
-                    <td id="cat1_5days">0</td>
-                    <td id="cat2_5days">0</td>
-                    <td id="cat3_5days">0</td>
-                </tr>
-                <tr>
-                    <td>Past 4 Weeks</td>
-                    <td id="cat1_4weeks">0</td>
-                    <td id="cat2_4weeks">0</td>
-                    <td id="cat3_4weeks">0</td>
-                </tr>
-                <tr>
-                    <td>Past 12 Weeks</td>
-                    <td id="cat1_12weeks">0</td>
-                    <td id="cat2_12weeks">0</td>
-                    <td id="cat3_12weeks">0</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+  
     <div class="historical-data">
         <div class="historical-title">Previous 6 Months</div>
         <table class="historical-table" style="table-layout: auto;">
@@ -739,6 +707,39 @@
                     </div>
                     <div class="kpi-value" id="daysSinceAccident" style="font-size: 2.5em;">—</div>
                     <div class="kpi-target" id="hsTarget">Days Since Last Accident</div>
+                    <div class="fail-stats" style="margin-top: 20px;">
+                        <div class="historical-title">Fail Categories</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Cat 1</th>
+                                    <th>Cat 2</th>
+                                    <th>Cat 3</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Past 5 Working Days</td>
+                                    <td id="cat1_5days">0</td>
+                                    <td id="cat2_5days">0</td>
+                                    <td id="cat3_5days">0</td>
+                                </tr>
+                                <tr>
+                                    <td>Past 4 Weeks</td>
+                                    <td id="cat1_4weeks">0</td>
+                                    <td id="cat2_4weeks">0</td>
+                                    <td id="cat3_4weeks">0</td>
+                                </tr>
+                                <tr>
+                                    <td>Past 12 Weeks</td>
+                                    <td id="cat1_12weeks">0</td>
+                                    <td id="cat2_12weeks">0</td>
+                                    <td id="cat3_12weeks">0</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1051,40 +1052,54 @@
             }
         }
         async function getFailCounts(period) {
-            let q;
-            if (period === '5days') {
-                const dates = getPreviousWorkingDays(5);
-                const dateStrings = dates.map(d => formatDateForQuery(d));
-                q = query(collection(performanceDb, "compliance"), where("installationDate", "in", dateStrings));
-            } else {
-                let daysBack;
-                if (period === '4weeks') {
-                    daysBack = 28;
-                } else if (period === '12weeks') {
-                    daysBack = 84;
+            try {
+                const snap = await getDocs(collection(performanceDb, "compliance"));
+                let cat1 = 0, cat2 = 0, cat3 = 0;
+                const now = new Date();
+                let startDate = new Date();
+                if (period === '5days') {
+                    const dates = getPreviousWorkingDays(5);
+                    const dateSet = new Set(dates.map(d => formatDate(d))); // 'DD/MM'
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        const installDateStr = data.installationDate?.trim();
+                        if (dateSet.has(installDateStr)) {
+                            const outcome = (data.auditOutcome || '').toLowerCase();
+                            if (outcome.includes('fail')) {
+                                if (outcome.includes('category 1') || outcome.includes('cat 1')) {
+                                    cat1++;
+                                } else if (outcome.includes('category 2') || outcome.includes('cat 2')) {
+                                    cat2++;
+                                } else if (outcome.includes('category 3') || outcome.includes('cat 3')) {
+                                    cat3++;
+                                }
+                            }
+                        }
+                    });
                 } else {
-                    return {cat1: 0, cat2: 0, cat3: 0};
+                    const daysBack = period === '4weeks' ? 28 : 84;
+                    startDate.setDate(startDate.getDate() - daysBack);
+                    snap.forEach(doc => {
+                        const installDate = parseInstallationDate(doc.data().installationDate);
+                        if (installDate && installDate >= startDate) {
+                            const outcome = (doc.data().auditOutcome || '').toLowerCase();
+                            if (outcome.includes('fail')) {
+                                if (outcome.includes('category 1') || outcome.includes('cat 1')) {
+                                    cat1++;
+                                } else if (outcome.includes('category 2') || outcome.includes('cat 2')) {
+                                    cat2++;
+                                } else if (outcome.includes('category 3') || outcome.includes('cat 3')) {
+                                    cat3++;
+                                }
+                            }
+                        }
+                    });
                 }
-                const startDate = new Date();
-                startDate.setDate(startDate.getDate() - daysBack);
-                const startDateStr = formatDateForQuery(startDate);
-                q = query(collection(performanceDb, "compliance"), where("installationDate", ">=", startDateStr));
+                return {cat1, cat2, cat3};
+            } catch (error) {
+                console.error(`Error getting fail counts for ${period}:`, error);
+                return {cat1: 0, cat2: 0, cat3: 0};
             }
-            const snap = await getDocs(q);
-            let cat1 = 0, cat2 = 0, cat3 = 0;
-            snap.forEach(doc => {
-                const outcome = (doc.data().auditOutcome || '').toLowerCase();
-                if (outcome.includes('fail')) {
-                    if (outcome.includes('category 1') || outcome.includes('cat 1')) {
-                        cat1++;
-                    } else if (outcome.includes('category 2') || outcome.includes('cat 2')) {
-                        cat2++;
-                    } else if (outcome.includes('category 3') || outcome.includes('cat 3')) {
-                        cat3++;
-                    }
-                }
-            });
-            return {cat1, cat2, cat3};
         }
         async function loadLastAccident() {
             try {
