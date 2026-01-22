@@ -109,6 +109,7 @@
 
         .form-group input[type="date"],
         .form-group input[type="number"],
+        .form-group input[type="text"],
         .form-group select {
             width: 100%;
             padding: 12px 15px;
@@ -326,7 +327,7 @@
             </form>
         </div>
 
-<div class="section-divider"></div>
+        <div class="section-divider"></div>
 
         <div class="form-section">
             <h2 class="section-title">🛡️ Safety Record</h2>
@@ -411,6 +412,8 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        console.log('Firebase initialized successfully');
+
         // Date Setup
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
@@ -448,15 +451,50 @@
                 }
 
                 await addDoc(collection(db, "garethstats"), {
-                    date, holidayPercent: h, sickPercent: s, aaupPercent: a,
-                    atWorkPercent: (100 - h - s - a), submittedAt: serverTimestamp()
+                    date, 
+                    holidayPercent: h, 
+                    sickPercent: s, 
+                    aaupPercent: a,
+                    atWorkPercent: (100 - h - s - a), 
+                    submittedAt: serverTimestamp()
                 });
 
                 showMessage('Stats saved!', 'success');
                 e.target.reset();
+                document.getElementById('dataDate').valueAsDate = yesterday;
                 updateAtWorkPercent();
             } catch (err) {
-                showMessage('Error saving data', 'error');
+                console.error('Error saving stats:', err);
+                showMessage('Error saving data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Accident Form Submit
+        document.getElementById('accidentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('.btn');
+            btn.disabled = true;
+
+            try {
+                const accidentDate = document.getElementById('accidentDate').value;
+                const description = document.getElementById('accidentDescription').value.trim();
+
+                console.log('Submitting accident data:', { accidentDate, description });
+
+                const docRef = await addDoc(collection(db, "accidents"), {
+                    accidentDate,
+                    description: description || 'No description provided',
+                    submittedAt: serverTimestamp()
+                });
+
+                console.log('Accident record saved with ID:', docRef.id);
+                showMessage('Accident record saved!', 'success');
+                e.target.reset();
+            } catch (err) {
+                console.error('Error saving accident record:', err);
+                showMessage('Error saving accident record: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -497,14 +535,21 @@
                         const row = rows[i];
                         if (type === 'post_completion' && row.length > 10) {
                             records.push({
-                                type, lineManager: row[5]?.trim(), installationDate: row[6]?.trim(), 
-                                auditOutcome: row[7]?.trim(), jobReference: row[8]?.trim(), 
-                                auditType: row[10]?.trim(), uploadedAt: serverTimestamp()
+                                type, 
+                                lineManager: row[5]?.trim(), 
+                                installationDate: row[6]?.trim(), 
+                                auditOutcome: row[7]?.trim(), 
+                                jobReference: row[8]?.trim(), 
+                                auditType: row[10]?.trim(), 
+                                uploadedAt: serverTimestamp()
                             });
                         } else if (type === 'wip' && row.length > 8) {
                             records.push({
-                                type, installationDate: row[4]?.trim(), auditOutcome: row[5]?.trim(),
-                                jobReference: row[6]?.trim(), lineManager: row[8]?.trim(), 
+                                type, 
+                                installationDate: row[4]?.trim(), 
+                                auditOutcome: row[5]?.trim(),
+                                jobReference: row[6]?.trim(), 
+                                lineManager: row[8]?.trim(), 
                                 uploadedAt: serverTimestamp()
                             });
                         }
@@ -523,7 +568,8 @@
                         }
                         showMessage(`Uploaded ${records.length} records`, 'success');
                     } catch (err) {
-                        showMessage('Firestore Error', 'error');
+                        console.error('Firestore Error:', err);
+                        showMessage('Firestore Error: ' + err.message, 'error');
                     } finally {
                         resetForm();
                     }
