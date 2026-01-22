@@ -16,6 +16,8 @@
       --text-dim: #94a3b8;
       --border: #334155;
       --error: #f87171;
+      --success: #10b981;
+      --warning: #f59e0b;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
@@ -91,11 +93,58 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 2rem;
+      gap: 2rem;
     }
     h1 {
       font-size: 2.1rem;
       font-weight: 700;
       background: linear-gradient(90deg, #e2e8f0, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-container {
+      display: flex;
+      gap: 1rem;
+    }
+    .stats-box {
+      background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      box-shadow: 0 4px 15px rgba(99,102,241,0.2);
+      min-width: 140px;
+    }
+    .stats-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.4rem;
+      font-weight: 600;
+    }
+    .stats-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+    .stats-value.large {
+      font-size: 2rem;
+    }
+    .stats-value.success {
+      background: linear-gradient(90deg, var(--success), #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.warning {
+      background: linear-gradient(90deg, var(--warning), #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.error {
+      background: linear-gradient(90deg, var(--error), #fca5a5);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -133,6 +182,8 @@
       body { grid-template-columns: 1fr; }
       aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); }
       main { padding: 2rem 1.5rem; }
+      header { flex-direction: column; align-items: flex-start; }
+      .stats-container { width: 100%; }
     }
   </style>
 </head>
@@ -161,6 +212,20 @@
 <main>
   <header>
     <h1>Meters Installed</h1>
+    <div class="stats-container">
+      <div class="stats-box">
+        <div class="stats-label">Total</div>
+        <div class="stats-value large" id="totalValue">—</div>
+      </div>
+      <div class="stats-box">
+        <div class="stats-label">Daily Avg</div>
+        <div class="stats-value" id="avgValue">—</div>
+      </div>
+      <div class="stats-box">
+        <div class="stats-label">vs Target</div>
+        <div class="stats-value" id="targetValue">—</div>
+      </div>
+    </div>
   </header>
 
   <div class="card">
@@ -197,6 +262,9 @@
     "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa", type: "line" },
     "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc", type: "line" },
   };
+
+  // Daily target per team (adjust these values as needed)
+  const DAILY_TARGET_PER_TEAM = 30;
 
   let currentPeriod = "7days";
   let currentTeam   = "all";
@@ -263,17 +331,64 @@
     return {
       labels,
       values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
-      dates: allWeekdayDates
+      dates: allWeekdayDates,
+      workingDays: allWeekdayDates.length
     };
+  }
+
+  function updateStatsDisplay(values, workingDays, team) {
+    const totalElement = document.getElementById('totalValue');
+    const avgElement = document.getElementById('avgValue');
+    const targetElement = document.getElementById('targetValue');
+
+    // Calculate total
+    const total = values.reduce((sum, val) => sum + val, 0);
+    totalElement.textContent = total.toLocaleString();
+
+    // Calculate average per day
+    const average = workingDays > 0 ? total / workingDays : 0;
+    avgElement.textContent = average.toFixed(1);
+
+    // Calculate target percentage
+    let dailyTarget = DAILY_TARGET_PER_TEAM;
+    
+    // If "All Teams", multiply target by number of teams (assuming 8 teams based on sidebar)
+    if (team === "all") {
+      dailyTarget = DAILY_TARGET_PER_TEAM * 8;
+    }
+
+    const targetTotal = dailyTarget * workingDays;
+    const targetPercentage = targetTotal > 0 ? (total / targetTotal) * 100 : 0;
+    
+    targetElement.textContent = `${targetPercentage.toFixed(1)}%`;
+    
+    // Color code the target percentage
+    targetElement.classList.remove('success', 'warning', 'error');
+    if (targetPercentage >= 100) {
+      targetElement.classList.add('success');
+    } else if (targetPercentage >= 80) {
+      targetElement.classList.add('warning');
+    } else {
+      targetElement.classList.add('error');
+    }
   }
 
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading performance data…</div>';
+    
+    // Reset stats
+    document.getElementById('totalValue').textContent = '—';
+    document.getElementById('avgValue').textContent = '—';
+    document.getElementById('targetValue').textContent = '—';
+    document.getElementById('targetValue').classList.remove('success', 'warning', 'error');
 
     try {
       const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
       const cfg = periods[currentPeriod];
+
+      // Update stats display
+      updateStatsDisplay(data.values, data.workingDays, currentTeam);
 
       container.innerHTML = '';
       container.appendChild(ctx);
