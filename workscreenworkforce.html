@@ -1,1 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Workforce Dashboard • OES</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #6366f1;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #334155;
+      --error: #f87171;
+      --oes: #6366f1;
+      --sp: #8b5cf6;
+      --edf: #a78bfa;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+    aside {
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow-y: auto;
+    }
+    .logo {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2.5rem;
+      text-align: center;
+    }
+    h2 {
+      font-size: 1.1rem;
+      color: var(--text-dim);
+      margin: 1.8rem 0 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    .period-btn, .team-btn {
+      display: block;
+      width: 100%;
+      padding: 0.95rem 1.2rem;
+      margin: 0.4rem 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-size: 0.97rem;
+    }
+    .period-btn:hover, .team-btn:hover {
+      background: rgba(99,102,241,0.08);
+      border-color: var(--accent);
+    }
+    .period-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      box-shadow: 0 3px 12px rgba(99,102,241,0.3);
+    }
+    .team-btn.active {
+      background: rgba(99,102,241,0.25);
+      color: white;
+      font-weight: 600;
+      border-color: var(--accent);
+    }
+    main {
+      padding: 2.5rem 3rem;
+      max-width: 1600px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    h1 {
+      font-size: 2.1rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #e2e8f0, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 1.8rem 2rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    #chartContainer {
+      height: 580px;
+      position: relative;
+      margin-top: 1.5rem;
+    }
+    .loading, .error-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 1.2rem;
+      background: rgba(15,23,42,0.6);
+      border-radius: 12px;
+      text-align: center;
+      padding: 2rem;
+      z-index: 10;
+    }
+    .error-msg {
+      color: var(--error) !important;
+      font-weight: 500;
+    }
+    @media (max-width: 1100px) {
+      body { grid-template-columns: 1fr; }
+      aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); }
+      main { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
 
+<aside>
+  <div class="logo">OES Workforce</div>
+
+  <h2>Time Period</h2>
+  <button class="period-btn active" data-period="6months">6 months (bar)</button>
+  <button class="period-btn" data-period="year">Year to date (bar)</button>
+
+  <h2>Category</h2>
+  <button class="team-btn active" data-category="engineers">Engineers</button>
+  <button class="team-btn" data-category="backoffice">Back Office</button>
+
+  <h2>Location (Engineers)</h2>
+  <button class="team-btn active" data-location="all">All Locations</button>
+  <button class="team-btn" data-location="OES">OES</button>
+  <button class="team-btn" data-location="Scottish Power">Scottish Power</button>
+  <button class="team-btn" data-location="EDF">EDF</button>
+
+  <h2>Team Leader</h2>
+  <button class="team-btn active" data-team="all">All Teams</button>
+  <button class="team-btn" data-team="Ali Cavan">Ali Cavan</button>
+  <button class="team-btn" data-team="Craig Barnes">Craig Barnes</button>
+  <button class="team-btn" data-team="Paul Simpson">Paul Simpson</button>
+  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko</button>
+  <button class="team-btn" data-team="Scott Carson">Scott Carson</button>
+  <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte</button>
+  <button class="team-btn" data-team="Subbies">Subbies</button>
+</aside>
+
+<main>
+  <header>
+    <h1>Workforce Statistics</h1>
+  </header>
+
+  <div class="card">
+    <div id="chartContainer">
+      <div class="loading">Loading workforce data…</div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+    authDomain: "pingu-solar.firebaseapp.com",
+    projectId: "pingu-solar",
+    storageBucket: "pingu-solar.firebasestorage.app",
+    messagingSenderId: "232764952866",
+    appId: "1:232764952866:web:5923b7f419de6355d6157b",
+    measurementId: "G-PFH059DZ64"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const ctx = document.createElement('canvas');
+  document.querySelector('#chartContainer').appendChild(ctx);
+  let chart = null;
+
+  const periods = {
+    "6months": { label: "Last 6 months", daysBack: 180, color: "#6366f1", type: "bar" },
+    "year":    { label: "Year to date",  daysBack: 365, color: "#8b5cf6", type: "bar" },
+  };
+
+  let currentPeriod = "6months";
+  let currentCategory = "engineers";
+  let currentLocation = "all";
+  let currentTeam = "all";
+
+  function parseDateDDMMYYYY(dateStr) {
+    if (!dateStr) return null;
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+    const dashParts = dateStr.split('-');
+    if (dashParts.length === 3) {
+      return new Date(dashParts[0], dashParts[1] - 1, dashParts[2]);
+    }
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  function getFirstDayOfMonth(date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+
+  async function fetchAndAggregateWorkforce(periodKey, category, location, team) {
+    const cfg = periods[periodKey];
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - cfg.daysBack);
+
+    const snapshot = await getDocs(collection(db, "employees"));
+    
+    const allMonths = [];
+    const currentMonth = new Date(start);
+    currentMonth.setDate(1);
+    
+    while (currentMonth <= today) {
+      const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+      allMonths.push(monthKey);
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    const monthMap = {};
+    allMonths.forEach(monthKey => {
+      monthMap[monthKey] = {
+        oes: 0,
+        scottishPower: 0,
+        edf: 0,
+        backOffice: 0,
+        total: 0
+      };
+    });
+
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const teamLeader = d['Team Leader'] || d.teamLeader;
+      const employeeLocation = d.Location || d.location;
+      const startDateStr = d.startDate || d['Start Date'];
+      const leaveDateStr = d.leaveDate;
+
+      // Filter by category
+      const isBackOffice = teamLeader === 'Back Office';
+      if (category === 'engineers' && isBackOffice) return;
+      if (category === 'backoffice' && !isBackOffice) return;
+
+      // Filter by location (only for engineers)
+      if (category === 'engineers' && location !== 'all' && employeeLocation !== location) return;
+
+      // Filter by team
+      if (team !== 'all' && teamLeader !== team) return;
+
+      const startDate = parseDateDDMMYYYY(startDateStr);
+      const leaveDate = leaveDateStr ? parseDateDDMMYYYY(leaveDateStr) : null;
+
+      // Count employee in each month they were active
+      allMonths.forEach(monthKey => {
+        const [year, month] = monthKey.split('-');
+        const monthDate = new Date(year, parseInt(month) - 1, 1);
+        
+        // Check if employee was active during this month
+        const wasActive = startDate && startDate <= monthDate && 
+                         (!leaveDate || leaveDate > monthDate);
+
+        if (wasActive) {
+          if (isBackOffice) {
+            monthMap[monthKey].backOffice++;
+          } else {
+            if (employeeLocation === 'OES') monthMap[monthKey].oes++;
+            else if (employeeLocation === 'Scottish Power') monthMap[monthKey].scottishPower++;
+            else if (employeeLocation === 'EDF') monthMap[monthKey].edf++;
+          }
+          monthMap[monthKey].total++;
+        }
+      });
+    });
+
+    const labels = allMonths.map(monthKey => {
+      const [year, month] = monthKey.split('-');
+      const date = new Date(year, parseInt(month) - 1);
+      return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    });
+
+    return { labels, monthMap, allMonths };
+  }
+
+  async function updateChart() {
+    const container = document.querySelector('#chartContainer');
+    container.innerHTML = '<div class="loading">Loading workforce data…</div>';
+
+    try {
+      const data = await fetchAndAggregateWorkforce(currentPeriod, currentCategory, currentLocation, currentTeam);
+      const cfg = periods[currentPeriod];
+
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      if (chart) chart.destroy();
+
+      const categoryLabel = currentCategory === 'engineers' ? 'Engineers' : 'Back Office';
+      const locationLabel = currentLocation === 'all' ? 'All Locations' : currentLocation;
+      const teamLabel = currentTeam === 'all' ? 'All Teams' : currentTeam;
+
+      let datasets = [];
+
+      if (currentCategory === 'engineers' && currentTeam !== 'all') {
+        // Show breakdown by location for specific team
+        datasets = [
+          {
+            label: 'OES',
+            data: data.allMonths.map(m => data.monthMap[m].oes),
+            backgroundColor: 'rgba(99,102,241,0.75)',
+            borderColor: '#6366f1',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+          {
+            label: 'Scottish Power',
+            data: data.allMonths.map(m => data.monthMap[m].scottishPower),
+            backgroundColor: 'rgba(139,92,246,0.75)',
+            borderColor: '#8b5cf6',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+          {
+            label: 'EDF',
+            data: data.allMonths.map(m => data.monthMap[m].edf),
+            backgroundColor: 'rgba(167,139,250,0.75)',
+            borderColor: '#a78bfa',
+            borderWidth: 1,
+            borderRadius: 6,
+          }
+        ];
+      } else {
+        // Show total for selected filters
+        datasets = [{
+          label: `${categoryLabel} (${teamLabel})`,
+          data: data.allMonths.map(m => data.monthMap[m].total),
+          backgroundColor: 'rgba(99,102,241,0.75)',
+          borderColor: cfg.color,
+          borderWidth: 1,
+          borderRadius: 6,
+        }];
+      }
+
+      chart = new Chart(ctx, {
+        type: cfg.type,
+        data: {
+          labels: data.labels,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `${cfg.label} – ${categoryLabel}${currentTeam !== 'all' && currentCategory === 'engineers' ? ' by Location' : ''}`,
+              color: '#e2e8f0',
+              font: { size: 18, weight: '600' },
+              padding: { bottom: 20 }
+            },
+            legend: { 
+              display: datasets.length > 1,
+              labels: { color: '#cbd5e1', font: { size: 14 } } 
+            },
+            datalabels: {
+              anchor: 'end',
+              align: 'top',
+              offset: 4,
+              color: '#e2e8f0',
+              font: { weight: 'bold', size: 12 },
+              formatter: (value) => value > 0 ? value : '',
+              textShadowColor: 'rgba(0,0,0,0.8)',
+              textShadowBlur: 4
+            }
+          },
+          scales: {
+            x: {
+              stacked: datasets.length > 1,
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 11 },
+                padding: 8,
+              },
+              grid: { color: '#334155' }
+            },
+            y: {
+              stacked: datasets.length > 1,
+              beginAtZero: true,
+              ticks: { 
+                color: '#94a3b8', 
+                stepSize: 5
+              },
+              grid: { color: '#334155' }
+            }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+    } catch (err) {
+      console.error("Error:", err);
+      let msg = err.message || "Unknown error";
+      container.innerHTML = `
+        <div class="error-msg">
+          ${msg}<br><br>
+          <small>Press F12 → Console for details</small>
+        </div>`;
+    }
+  }
+
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('[data-category]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-category]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCategory = btn.dataset.category;
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('[data-location]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-location]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentLocation = btn.dataset.location;
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('[data-team]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-team]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTeam = btn.dataset.team;
+      updateChart();
+    });
+  });
+
+  updateChart();
+</script>
+
+</body>
+</html>
