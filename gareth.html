@@ -627,7 +627,6 @@
             font-size: 1.1em;
         }
 
-        /* Smaller text for revenue team leader cards */
         #revenueTeamLeaderList .team-leader-stats {
             font-size: 0.7em;
         }
@@ -720,6 +719,10 @@
             padding: 60px;
             color: white;
             font-size: 1.2em;
+        }
+
+        .fail-stats {
+            margin-top: 24px;
         }
 
         @media (max-width: 768px) {
@@ -1009,8 +1012,48 @@
                         <span class="kpi-title">Health & Safety</span>
                         <span class="kpi-icon">🛡️</span>
                     </div>
-                    <div class="kpi-value" style="font-size: 2em;">—</div>
-                    <div class="kpi-target" style="opacity: 0;">Placeholder</div>
+                    <div class="kpi-value" id="daysSinceAccident" style="font-size: 2em;">—</div>
+                    <div class="kpi-target" id="hsTarget">Days Since Last Accident</div>
+
+                    <div class="fail-stats">
+                        <div class="historical-title">Compliance Fail Categories (by Date Submitted)</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Cat 1</th>
+                                    <th>Cat 2</th>
+                                    <th>Cat 3</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Previous Working Day</td>
+                                    <td id="cat1_prevday">0</td>
+                                    <td id="cat2_prevday">0</td>
+                                    <td id="cat3_prevday">0</td>
+                                </tr>
+                                <tr>
+                                    <td>Last 5 Working Days</td>
+                                    <td id="cat1_5days">0</td>
+                                    <td id="cat2_5days">0</td>
+                                    <td id="cat3_5days">0</td>
+                                </tr>
+                                <tr>
+                                    <td>Last 4 Weeks</td>
+                                    <td id="cat1_4weeks">0</td>
+                                    <td id="cat2_4weeks">0</td>
+                                    <td id="cat3_4weeks">0</td>
+                                </tr>
+                                <tr>
+                                    <td>Last 12 Weeks</td>
+                                    <td id="cat1_12weeks">0</td>
+                                    <td id="cat2_12weeks">0</td>
+                                    <td id="cat3_12weeks">0</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1020,9 +1063,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Performance tracking Firebase
         const performanceConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
             authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -1033,7 +1075,6 @@
             measurementId: "G-R56BGZYV8N"
         };
 
-        // Staff management Firebase
         const staffConfig = {
             apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
             authDomain: "pingu-solar.firebasestorage.app",
@@ -1060,7 +1101,6 @@
             let previousDay = new Date(today);
             previousDay.setDate(previousDay.getDate() - 1);
             
-            // If it's Monday, go back to Friday
             if (previousDay.getDay() === 0) {
                 previousDay.setDate(previousDay.getDate() - 2);
             } else if (previousDay.getDay() === 6) {
@@ -1068,6 +1108,18 @@
             }
             
             return previousDay;
+        }
+
+        function getPreviousWorkingDays(count) {
+            const dates = [];
+            let d = new Date();
+            while (dates.length < count) {
+                d.setDate(d.getDate() - 1);
+                if (d.getDay() !== 0 && d.getDay() !== 6) {
+                    dates.push(new Date(d));
+                }
+            }
+            return dates;
         }
 
         function getPreviousTwoWeeks() {
@@ -1078,13 +1130,12 @@
                 const date = new Date(today);
                 date.setDate(date.getDate() - i);
                 
-                // Skip weekends
                 if (date.getDay() !== 0 && date.getDay() !== 6) {
                     dates.push(date);
                 }
             }
             
-            return dates.reverse(); // Oldest first
+            return dates.reverse();
         }
 
         function getPreviousSixMonths() {
@@ -1096,7 +1147,7 @@
                 months.push(date);
             }
             
-            return months.reverse(); // Oldest first
+            return months.reverse();
         }
 
         function formatDate(date) {
@@ -1117,25 +1168,14 @@
             return `${year}-${month}-${day}`;
         }
 
-        function parseInstallationDate(dateStr) {
-            // Handle various date formats
-            if (!dateStr) return null;
-            
-            // Try DD/MM/YYYY format
-            let parts = dateStr.split('/');
-            if (parts.length === 3) {
-                return new Date(parts[2], parts[1] - 1, parts[0]);
-            }
-            
-            // Try YYYY-MM-DD format
-            parts = dateStr.split('-');
-            if (parts.length === 3) {
-                return new Date(parts[0], parts[1] - 1, parts[2]);
-            }
-            
-            // Try parsing as standard date
-            const date = new Date(dateStr);
-            return isNaN(date.getTime()) ? null : date;
+        function parseDateSubmitted(str) {
+            if (!str || typeof str !== 'string') return null;
+            const cleaned = str.trim().replace(/\s+/g, ' ');
+            const match = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+            if (!match) return null;
+
+            const [_, dd, mm, yyyy, hh, min, sec = '0'] = match;
+            return new Date(+yyyy, +mm - 1, +dd, +hh, +min, +sec);
         }
 
         function updateProgressBar(elementId, percentage) {
@@ -1166,7 +1206,6 @@
         window.toggleExpand = function(card, type) {
             card.classList.toggle('expanded');
             
-            // Load historical data if not already loaded
             if (card.classList.contains('expanded')) {
                 if (type === 'compliance' && complianceData.length > 0) {
                     populateComplianceHistory();
@@ -1252,10 +1291,8 @@
 
         async function loadComplianceData() {
             try {
-                // Load all compliance data
                 const complianceSnapshot = await getDocs(collection(performanceDb, "compliance"));
                 
-                // Get current month and previous 6 months
                 const months = getPreviousSixMonths();
                 const currentMonth = new Date();
                 months.push(currentMonth);
@@ -1264,28 +1301,27 @@
                 
                 for (const month of months) {
                     const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-                    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+                    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
                     
-                    // Track unique job references for WIP and Post Completion separately
                     const wipJobs = new Map();
                     const postCompJobs = new Map();
                     
                     complianceSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        const installDate = parseInstallationDate(data.installationDate);
                         
-                        if (installDate && installDate >= monthStart && installDate <= monthEnd) {
+                        const dateSubmittedStr = data["Date Submitted"] || data.dateSubmitted || "";
+                        const submittedDate = parseDateSubmitted(dateSubmittedStr);
+                        
+                        if (submittedDate && submittedDate >= monthStart && submittedDate <= monthEnd) {
                             const jobRef = data.jobReference;
                             const outcome = (data.auditOutcome || '').toLowerCase();
                             const isPassed = outcome.includes('pass') || outcome === 'p';
                             
                             if (data.type === 'wip') {
-                                // Only add if this job reference hasn't been seen for WIP
                                 if (!wipJobs.has(jobRef)) {
                                     wipJobs.set(jobRef, isPassed);
                                 }
                             } else if (data.type === 'post_completion') {
-                                // Only add if this job reference hasn't been seen for Post Completion
                                 if (!postCompJobs.has(jobRef)) {
                                     postCompJobs.set(jobRef, isPassed);
                                 }
@@ -1293,17 +1329,14 @@
                         }
                     });
                     
-                    // Calculate WIP stats
                     const wipTotal = wipJobs.size;
                     const wipPass = Array.from(wipJobs.values()).filter(passed => passed).length;
                     const wipPassRate = wipTotal > 0 ? ((wipPass / wipTotal) * 100).toFixed(1) : 0;
                     
-                    // Calculate Post Completion stats
                     const postCompTotal = postCompJobs.size;
                     const postCompPass = Array.from(postCompJobs.values()).filter(passed => passed).length;
                     const postCompPassRate = postCompTotal > 0 ? ((postCompPass / postCompTotal) * 100).toFixed(1) : 0;
                     
-                    // Calculate overall stats
                     const overallTotal = wipTotal + postCompTotal;
                     const overallPass = wipPass + postCompPass;
                     const overallPassRate = overallTotal > 0 ? ((overallPass / overallTotal) * 100).toFixed(1) : 0;
@@ -1323,7 +1356,6 @@
                     });
                 }
                 
-                // Update current month display (last entry in array)
                 if (complianceData.length > 0) {
                     const currentData = complianceData[complianceData.length - 1];
                     
@@ -1337,7 +1369,6 @@
                     
                     updateStatusIndicator('complianceStatus', parseFloat(currentData.overallPassRate), 90);
                     
-                    // Update card colors
                     const complianceCard = document.querySelector('.kpi-card.expandable[onclick*="compliance"]');
                     if (parseFloat(currentData.overallPassRate) >= 90) {
                         complianceCard.classList.add('target-met');
@@ -1348,11 +1379,86 @@
                     }
                 }
                 
-                // Remove current month from historical display, keep only previous 6
                 complianceData.pop();
                 
             } catch (error) {
                 console.error("Error loading compliance data:", error);
+            }
+        }
+
+        async function getFailCountsBySubmission(period) {
+            try {
+                const snap = await getDocs(collection(performanceDb, "compliance"));
+                let cat1 = 0, cat2 = 0, cat3 = 0;
+
+                let minDate = new Date();
+                let maxDate = null;
+
+                if (period === 'prevday') {
+                    minDate = getPreviousWorkingDay();
+                    minDate.setHours(0, 0, 0, 0);
+                    maxDate = new Date(minDate);
+                    maxDate.setDate(maxDate.getDate() + 1);
+                    maxDate.setHours(0, 0, 0, 0);
+                } else if (period === '5days') {
+                    const days = getPreviousWorkingDays(5);
+                    minDate = days[days.length - 1];
+                    minDate.setHours(0, 0, 0, 0);
+                } else if (period === '4weeks') {
+                    minDate.setDate(minDate.getDate() - 28);
+                    minDate.setHours(0, 0, 0, 0);
+                } else if (period === '12weeks') {
+                    minDate.setDate(minDate.getDate() - 84);
+                    minDate.setHours(0, 0, 0, 0);
+                }
+
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const submittedStr = data["Date Submitted"] || data.dateSubmitted || "";
+                    const submitted = parseDateSubmitted(submittedStr);
+                    if (!submitted) return;
+
+                    let include = false;
+                    if (period === 'prevday') {
+                        include = submitted >= minDate && submitted < maxDate;
+                    } else {
+                        include = submitted >= minDate;
+                    }
+
+                    if (include) {
+                        const outcome = (data.auditOutcome || '').toLowerCase();
+                        if (outcome.includes('fail')) {
+                            if (outcome.includes('category 1') || outcome.includes('cat 1')) cat1++;
+                            else if (outcome.includes('category 2') || outcome.includes('cat 2')) cat2++;
+                            else if (outcome.includes('category 3') || outcome.includes('cat 3')) cat3++;
+                        }
+                    }
+                });
+
+                return { cat1, cat2, cat3 };
+            } catch (err) {
+                console.error("Fail count error:", err);
+                return { cat1: 0, cat2: 0, cat3: 0 };
+            }
+        }
+
+        async function loadLastAccident() {
+            try {
+                const q = query(collection(performanceDb, "accidents"), orderBy("accidentDate", "desc"), limit(1));
+                const snap = await getDocs(q);
+                if (snap.empty) {
+                    document.getElementById('daysSinceAccident').textContent = 'N/A';
+                    document.getElementById('hsTarget').textContent = 'No Accidents Recorded';
+                    return;
+                }
+                const data = snap.docs[0].data();
+                const accDate = new Date(data.accidentDate);
+                const days = Math.floor((Date.now() - accDate) / 86400000);
+                document.getElementById('daysSinceAccident').textContent = days;
+                document.getElementById('hsTarget').textContent = 'Days Since Last Accident';
+            } catch (err) {
+                console.error("Accident load error:", err);
+                document.getElementById('daysSinceAccident').textContent = 'Error';
             }
         }
 
@@ -1364,7 +1470,6 @@
                 
                 document.getElementById('statsDate').textContent = `Stats for ${displayDate}`;
                 
-                // Load staff data first
                 const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
                 let oesEngineers = 0;
                 let scottishPowerEngineers = 0;
@@ -1376,7 +1481,6 @@
                     const teamLeader = data['Team Leader'] || data.teamLeader;
                     const location = data.Location || data.location;
                     
-                    // Only count active employees (no leave date)
                     if (!data.leaveDate) {
                         if (teamLeader === 'Back Office') {
                             backOfficeCount++;
@@ -1394,7 +1498,6 @@
                 const totalEngineers = oesEngineers + scottishPowerEngineers + edfEngineers;
                 const totalEmployees = totalEngineers + backOfficeCount;
                 
-                // Update employee KPIs
                 document.getElementById('totalEmployees').textContent = totalEmployees;
                 document.getElementById('engineerCount').textContent = totalEngineers;
                 document.getElementById('oesCount').textContent = oesEngineers;
@@ -1402,14 +1505,12 @@
                 document.getElementById('edfCount').textContent = edfEngineers;
                 document.getElementById('backOfficeCount').textContent = backOfficeCount;
                 
-                // Set targets based on OES engineer count only
                 const metersTarget = oesEngineers * 6;
                 const revenueTarget = oesEngineers * 500;
                 
                 document.getElementById('metersTarget').textContent = metersTarget;
                 document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLocaleString();
                 
-                // Load performance data for current day
                 const performanceQuery = query(
                     collection(performanceDb, "performance"),
                     where("date", "==", dateString)
@@ -1430,29 +1531,24 @@
                     totalValue += data.value || 0;
                 });
                 
-                // Calculate metrics
                 const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
                 const metersPercentage = metersTarget > 0 ? ((totalMeters / metersTarget) * 100).toFixed(1) : 0;
                 const revenuePercentage = revenueTarget > 0 ? ((totalValue / revenueTarget) * 100).toFixed(1) : 0;
                 
-                // Update Meters KPI
                 document.getElementById('metersActual').textContent = totalMeters.toLocaleString();
                 document.getElementById('metersProgressText').textContent = metersPercentage + '%';
                 updateProgressBar('metersProgress', parseFloat(metersPercentage));
                 
-                // Update Completion KPI
                 document.getElementById('completionActual').textContent = completionRate;
                 document.getElementById('completionProgressText').textContent = 
                     `${totalCompleted.toLocaleString()} of ${totalJobs.toLocaleString()} jobs`;
                 updateProgressBar('completionProgress', parseFloat(completionRate));
                 updateStatusIndicator('completionStatus', parseFloat(completionRate), 90);
                 
-                // Update Revenue KPI
                 document.getElementById('revenueActual').textContent = '£' + Math.round(totalValue).toLocaleString();
                 document.getElementById('revenueProgressText').textContent = revenuePercentage + '%';
                 updateProgressBar('revenueProgress', parseFloat(revenuePercentage));
                 
-                // Load attendance data from garethstats for current day
                 const garethStatsQuery = query(
                     collection(performanceDb, "garethstats"),
                     where("date", "==", dateString)
@@ -1473,30 +1569,33 @@
                     aaupPercent = data.aaupPercent || 0;
                 });
                 
-                // Update Attendance KPI
                 document.getElementById('attendanceTotal').textContent = oesEngineers;
                 document.getElementById('atWorkPercent').textContent = atWorkPercent.toFixed(1) + '%';
                 document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
                 document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
                 document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
                 
-                // Load compliance data
                 await loadComplianceData();
-                
-                // Load historical data for previous 2 weeks
                 await loadHistoricalData();
                 
-                // Update last updated time
                 const now = new Date();
                 document.getElementById('lastUpdated').textContent = 
                     `Last updated: ${now.toLocaleTimeString()}`;
                 
-                // Show dashboard
                 document.getElementById('loadingDiv').style.display = 'none';
                 document.getElementById('dashboardContent').style.display = 'block';
                 
-                // Update card colors based on targets
                 updateCardColors();
+
+                const periods = ['prevday', '5days', '4weeks', '12weeks'];
+                for (const p of periods) {
+                    const counts = await getFailCountsBySubmission(p);
+                    document.getElementById(`cat1_${p}`).textContent = counts.cat1;
+                    document.getElementById(`cat2_${p}`).textContent = counts.cat2;
+                    document.getElementById(`cat3_${p}`).textContent = counts.cat3;
+                }
+
+                await loadLastAccident();
                 
             } catch (error) {
                 console.error("Error loading dashboard:", error);
