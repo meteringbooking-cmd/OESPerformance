@@ -142,10 +142,13 @@
   <div class="logo">OES Workscreen</div>
 
   <h2>Time Period</h2>
-  <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
-  <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
-  <button class="period-btn" data-period="6months">6 months (line)</button>
-  <button class="period-btn" data-period="year">Year to date (line)</button>
+  <button class="period-btn active" data-period="6months">6 months (bar)</button>
+  <button class="period-btn" data-period="year">Year to date (bar)</button>
+
+  <h2>Audit Type</h2>
+  <button class="team-btn active" data-audit="all">All Types</button>
+  <button class="team-btn" data-audit="wip">WIP</button>
+  <button class="team-btn" data-audit="post_completion">Post Completes</button>
 
   <h2>Team Leader</h2>
   <button class="team-btn active" data-team="all">All Teams</button>
@@ -192,16 +195,15 @@
   let chart = null;
 
   const periods = {
-    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1", type: "bar"  },
-    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6", type: "bar"  },
-    "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa", type: "line" },
-    "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc", type: "line" },
+    "6months": { label: "Last 6 months",        daysBack: 180, color: "#6366f1", type: "bar" },
+    "year":    { label: "Year to date",         daysBack: 365, color: "#8b5cf6", type: "bar" },
   };
 
-  let currentPeriod = "7days";
+  let currentPeriod = "6months";
   let currentTeam   = "all";
+  let currentAudit  = "all";
 
-  async function fetchAndAggregateWorkscreen(periodKey, team) {
+  async function fetchAndAggregateCompliance(periodKey, team, auditType) {
     const cfg = periods[periodKey];
     const today = new Date();
     const start = new Date(today);
@@ -211,10 +213,10 @@
     const endDate   = today.toISOString().split('T')[0];
 
     const q = query(
-      collection(db, "workscreencompliance"),
-      where("date", ">=", startDate),
-      where("date", "<=", endDate),
-      orderBy("date", "asc")
+      collection(db, "compliance"),
+      where("installationDate", ">=", startDate),
+      where("installationDate", "<=", endDate),
+      orderBy("installationDate", "asc")
     );
 
     const snapshot = await getDocs(q);
@@ -222,57 +224,68 @@
 
     snapshot.forEach(doc => {
       const d = doc.data();
-      if (team === "all" || d.teamLeader === team) {
+      // Filter by team (using lineManager field)
+      const teamMatch = team === "all" || d.lineManager === team;
+      // Filter by audit type
+      const auditMatch = auditType === "all" || d.type === auditType;
+      
+      if (teamMatch && auditMatch && d.installationDate && d.auditOutcome) {
         records.push(d);
       }
     });
 
-    const allWeekdayDates = [];
-    const current = new Date(start);
-    while (current <= today) {
-      const dayOfWeek = current.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        allWeekdayDates.push(current.toISOString().split('T')[0]);
+    // Group by month
+    const monthMap = {};
+    records.forEach(r => {
+      const date = new Date(r.installationDate);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (!monthMap[monthKey]) {
+        monthMap[monthKey] = { total: 0, passed: 0 };
       }
-      current.setDate(current.getDate() + 1);
+      
+      monthMap[monthKey].total++;
+      
+      // Check if audit passed (case-insensitive check for "pass")
+      const outcome = (r.auditOutcome || '').toLowerCase();
+      if (outcome.includes('pass')) {
+        monthMap[monthKey].passed++;
+      }
+    });
+
+    // Generate all months in the period
+    const allMonths = [];
+    const currentMonth = new Date(start);
+    currentMonth.setDate(1); // Set to first day of month
+    
+    while (currentMonth <= today) {
+      const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+      allMonths.push(monthKey);
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
     }
 
-    const dateMap = {};
-    allWeekdayDates.forEach(date => dateMap[date] = 0);
-
-    records.forEach(r => {
-      if (dateMap[r.date] !== undefined) {
-        dateMap[r.date] += Number(r.workscreens || 0);
-      }
+    // Calculate percentages
+    const labels = allMonths.map(monthKey => {
+      const [year, month] = monthKey.split('-');
+      const date = new Date(year, parseInt(month) - 1);
+      return date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
     });
 
-    // UK format dd/mm + weekday
-    const labels = allWeekdayDates.map(dateStr => {
-      const dateObj = new Date(dateStr);
-      const day   = String(dateObj.getDate()).padStart(2, '0');
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const ddmm  = `${day}/${month}`;
-      const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
-
-      if (periods[periodKey].type === 'bar') {
-        return [ddmm, weekday]; // two lines for bar charts
-      }
-      return ddmm; // single line for line charts
+    const values = allMonths.map(monthKey => {
+      const data = monthMap[monthKey];
+      if (!data || data.total === 0) return 0;
+      return Math.round((data.passed / data.total) * 100);
     });
 
-    return {
-      labels,
-      values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
-      dates: allWeekdayDates
-    };
+    return { labels, values, monthMap, allMonths };
   }
 
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
-    container.innerHTML = '<div class="loading">Loading workscreen data…</div>';
+    container.innerHTML = '<div class="loading">Loading compliance data…</div>';
 
     try {
-      const data = await fetchAndAggregateWorkscreen(currentPeriod, currentTeam);
+      const data = await fetchAndAggregateCompliance(currentPeriod, currentTeam, currentAudit);
       const cfg = periods[currentPeriod];
 
       container.innerHTML = '';
@@ -280,23 +293,21 @@
 
       if (chart) chart.destroy();
 
+      const auditLabel = currentAudit === 'all' ? 'All Types' : 
+                         currentAudit === 'wip' ? 'WIP' : 'Post Completes';
+      const teamLabel = currentTeam === 'all' ? 'All Teams' : currentTeam;
+
       chart = new Chart(ctx, {
         type: cfg.type,
         data: {
           labels: data.labels,
           datasets: [{
-            label: `Workscreens (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
+            label: `Pass % (${auditLabel} - ${teamLabel})`,
             data: data.values,
-            backgroundColor: cfg.type === 'bar' 
-              ? 'rgba(99,102,241,0.75)' 
-              : 'rgba(99,102,241,0.12)',
+            backgroundColor: 'rgba(99,102,241,0.75)',
             borderColor: cfg.color,
-            borderWidth: cfg.type === 'bar' ? 1 : 3,
-            borderRadius: cfg.type === 'bar' ? 6 : 0,
-            tension: cfg.type === 'line' ? 0.35 : 0,
-            fill: cfg.type === 'line',
-            pointRadius: cfg.type === 'bar' ? 0 : 3,
-            pointHoverRadius: 7,
+            borderWidth: 1,
+            borderRadius: 6,
           }]
         },
         options: {
@@ -305,38 +316,54 @@
           plugins: {
             title: {
               display: true,
-              text: `${cfg.label} – Workscreen Compliance`,
+              text: `${cfg.label} – Compliance Pass Rate`,
               color: '#e2e8f0',
               font: { size: 18, weight: '600' },
               padding: { bottom: 20 }
             },
             legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
-            datalabels: cfg.type === 'bar' ? {
+            datalabels: {
               anchor: 'end',
               align: 'top',
               offset: 4,
               color: '#e2e8f0',
               font: { weight: 'bold', size: 12 },
-              formatter: (value) => value > 0 ? value : '',
+              formatter: (value) => value > 0 ? value + '%' : '',
               textShadowColor: 'rgba(0,0,0,0.8)',
               textShadowBlur: 4
-            } : false
+            },
+            tooltip: {
+              callbacks: {
+                afterLabel: function(context) {
+                  const monthKey = data.allMonths[context.dataIndex];
+                  const monthData = data.monthMap[monthKey];
+                  if (monthData) {
+                    return `Passed: ${monthData.passed} / ${monthData.total}`;
+                  }
+                  return '';
+                }
+              }
+            }
           },
           scales: {
             x: {
               ticks: {
                 color: '#94a3b8',
-                font: { size: cfg.type === 'bar' ? 11 : 12 },
+                font: { size: 11 },
                 padding: 8,
-                callback: function(value, index) {
-                  return this.getLabelForValue(value);
-                }
               },
               grid: { color: '#334155' }
             },
             y: {
               beginAtZero: true,
-              ticks: { color: '#94a3b8', stepSize: 50 },
+              max: 100,
+              ticks: { 
+                color: '#94a3b8', 
+                stepSize: 10,
+                callback: function(value) {
+                  return value + '%';
+                }
+              },
               grid: { color: '#334155' }
             }
           }
@@ -363,11 +390,20 @@
     });
   });
 
-  document.querySelectorAll('.team-btn').forEach(btn => {
+  document.querySelectorAll('[data-team]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('[data-team]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentTeam = btn.dataset.team;
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('[data-audit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-audit]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentAudit = btn.dataset.audit;
       updateChart();
     });
   });
