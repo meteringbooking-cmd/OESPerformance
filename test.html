@@ -503,12 +503,9 @@
             <div class="date-display" id="statsDate">Loading...</div>
             <div class="last-updated" id="lastUpdated">Last updated: --</div>
         </div>
-
         <div id="loadingDiv" class="loading">Loading performance data...</div>
-
         <div id="dashboardContent" style="display: none;">
             <div class="kpi-grid">
-
                 <!-- Meters KPI -->
                 <div class="kpi-card expandable" onclick="toggleExpand(this)">
                     <span class="expand-indicator">▼</span>
@@ -529,7 +526,12 @@
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
                             <thead>
-                                <tr><th>Date</th><th>Meters</th><th>Target</th><th>%</th></tr>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Meters</th>
+                                    <th>Target</th>
+                                    <th>%</th>
+                                </tr>
                             </thead>
                             <tbody id="metersHistory"></tbody>
                         </table>
@@ -559,7 +561,12 @@
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
                             <thead>
-                                <tr><th>Date</th><th>Completed</th><th>Total Jobs</th><th>%</th></tr>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Completed</th>
+                                    <th>Total Jobs</th>
+                                    <th>%</th>
+                                </tr>
                             </thead>
                             <tbody id="completionHistory"></tbody>
                         </table>
@@ -597,7 +604,13 @@
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
                             <thead>
-                                <tr><th>Date</th><th>At Work</th><th>Holiday</th><th>Sick</th><th>AAUP</th></tr>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>At Work</th>
+                                    <th>Holiday</th>
+                                    <th>Sick</th>
+                                    <th>AAUP</th>
+                                </tr>
                             </thead>
                             <tbody id="attendanceHistory"></tbody>
                         </table>
@@ -687,7 +700,7 @@
                     </div>
                 </div>
 
-                <!-- Health & Safety KPI + Fail Categories -->
+                <!-- Health & Safety KPI (with Fail Categories below) -->
                 <div class="kpi-card">
                     <div class="kpi-header">
                         <span class="kpi-title">Health & Safety</span>
@@ -736,7 +749,6 @@
                         </table>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
@@ -756,9 +768,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // ────────────────────────────────────────────────
         // Graph popup functions
-        // ────────────────────────────────────────────────
         window.openGraphPopup = function(event, title = 'Performance Graphs', url) {
             event.stopPropagation();
             document.getElementById('popupTitle').textContent = `📊 ${title}`;
@@ -780,12 +790,11 @@
         };
 
         document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') closeGraphPopup();
+            if (event.key === 'Escape') {
+                closeGraphPopup();
+            }
         });
 
-        // ────────────────────────────────────────────────
-        // Firebase Config
-        // ────────────────────────────────────────────────
         const performanceConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
             authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -807,415 +816,487 @@
         };
 
         const performanceApp = initializeApp(performanceConfig, "performance");
-        const staffApp   = initializeApp(staffConfig, "staff");
+        const staffApp = initializeApp(staffConfig, "staff");
 
         const performanceDb = getFirestore(performanceApp);
-        const staffDb       = getFirestore(staffApp);
+        const staffDb = getFirestore(staffApp);
 
         let historicalData = [];
         let oesEngineerCount = 0;
         let complianceData = [];
 
-        // ────────────────────────────────────────────────
-        // Date Helpers
-        // ────────────────────────────────────────────────
         function getPreviousWorkingDay() {
             const today = new Date();
-            let d = new Date(today);
-            d.setDate(d.getDate() - 1);
-            while (d.getDay() === 0 || d.getDay() === 6) {
-                d.setDate(d.getDate() - 1);
-            }
-            return d;
+            let previousDay = new Date(today);
+            previousDay.setDate(previousDay.getDate() - 1);
+            if (previousDay.getDay() === 0) previousDay.setDate(previousDay.getDate() - 2);
+            if (previousDay.getDay() === 6) previousDay.setDate(previousDay.getDate() - 1);
+            return previousDay;
         }
 
         function getPreviousWorkingDays(count) {
             const dates = [];
-            let d = new Date();
-            while (dates.length < count) {
-                d.setDate(d.getDate() - 1);
-                if (d.getDay() !== 0 && d.getDay() !== 6) {
-                    dates.push(new Date(d));
+            const today = new Date();
+            let daysFound = 0;
+            let daysBack = 1;
+            while (daysFound < count) {
+                const date = new Date(today);
+                date.setDate(date.getDate() - daysBack);
+                if (date.getDay() !== 0 && date.getDay() !== 6) {
+                    dates.push(date);
+                    daysFound++;
                 }
+                daysBack++;
             }
             return dates;
         }
 
-        function formatDate(d) {
-            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+        function getPreviousSixMonths() {
+            const months = [];
+            const today = new Date();
+            for (let i = 0; i < 6; i++) {
+                const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                months.push(date);
+            }
+            return months.reverse();
         }
 
-        function formatDateForQuery(d) {
-            return d.toISOString().split('T')[0];
+        function formatDate(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            return `${day}/${month}`;
         }
 
-        function parseInstallationDate(str) {
-            if (!str) return null;
-            let parts = str.split('/');
-            if (parts.length === 3) return new Date(parts[2], parts[1]-1, parts[0]);
-            parts = str.split('-');
-            if (parts.length === 3) return new Date(parts[0], parts[1]-1, parts[2]);
-            const dt = new Date(str);
-            return isNaN(dt.getTime()) ? null : dt;
+        function formatMonth(date) {
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[date.getMonth()]} ${date.getFullYear()}`;
         }
 
-        // ────────────────────────────────────────────────
-        // UI Helpers
-        // ────────────────────────────────────────────────
-        function updateProgressBar(id, pct) {
-            const bar = document.getElementById(id);
-            const val = Math.min(pct, 100);
-            bar.style.width = val + '%';
-            bar.className = 'progress-bar' + (val >= 90 ? '' : val >= 70 ? ' warning' : ' danger');
+        function formatDateForQuery(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
 
-        function updateStatusIndicator(id, pct, thresh = 90) {
-            const el = document.getElementById(id);
-            el.className = 'status-indicator ' + (pct >= thresh ? 'status-green' : pct >= thresh*0.8 ? 'status-amber' : 'status-red');
+        function parseInstallationDate(dateStr) {
+            if (!dateStr) return null;
+            let parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1]-1, parts[0]);
+            }
+            parts = dateStr.split('-');
+            if (parts.length === 3) {
+                return new Date(parts[0], parts[1]-1, parts[2]);
+            }
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? null : date;
+        }
+
+        function updateProgressBar(elementId, percentage) {
+            const bar = document.getElementById(elementId);
+            const actualPercentage = Math.min(percentage, 100);
+            bar.style.width = actualPercentage + '%';
+            if (percentage >= 90) {
+                bar.className = 'progress-bar';
+            } else if (percentage >= 70) {
+                bar.className = 'progress-bar warning';
+            } else {
+                bar.className = 'progress-bar danger';
+            }
+        }
+
+        function updateStatusIndicator(elementId, percentage, threshold = 90) {
+            const indicator = document.getElementById(elementId);
+            if (percentage >= threshold) {
+                indicator.className = 'status-indicator status-green';
+            } else if (percentage >= threshold * 0.8) {
+                indicator.className = 'status-indicator status-amber';
+            } else {
+                indicator.className = 'status-indicator status-red';
+            }
         }
 
         window.toggleExpand = function(card) {
             card.classList.toggle('expanded');
-            if (card.classList.contains('expanded') && complianceData.length > 0) {
-                populateComplianceHistory();
+            if (card.classList.contains('expanded')) {
+                const complianceCard = card.querySelector('#complianceHistory');
+                if (complianceCard && complianceData.length > 0) {
+                    populateComplianceHistory();
+                }
             }
         };
 
         function populateHistoricalTables() {
-            // meters
-            document.getElementById('metersHistory').innerHTML = historicalData.map(d => `
-                <tr>
-                    <td>${d.displayDate}</td>
-                    <td>${d.totalMeters.toLocaleString()}</td>
-                    <td>${d.metersTarget.toLocaleString()}</td>
-                    <td>${d.metersTarget > 0 ? ((d.totalMeters/d.metersTarget)*100).toFixed(1) : 0}%</td>
-                </tr>
-            `).join('');
+            const metersBody = document.getElementById('metersHistory');
+            metersBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = metersBody.insertRow();
+                const percentage = day.metersTarget > 0 ? ((day.totalMeters / day.metersTarget) * 100).toFixed(1) : 0;
+                row.innerHTML = `<td>${day.displayDate}</td><td>${day.totalMeters.toLocaleString()}</td><td>${day.metersTarget.toLocaleString()}</td><td>${percentage}%</td>`;
+            });
 
-            // completion
-            document.getElementById('completionHistory').innerHTML = historicalData.map(d => `
-                <tr>
-                    <td>${d.displayDate}</td>
-                    <td>${d.totalCompleted.toLocaleString()}</td>
-                    <td>${d.totalJobs.toLocaleString()}</td>
-                    <td>${d.completionRate}%</td>
-                </tr>
-            `).join('');
+            const completionBody = document.getElementById('completionHistory');
+            completionBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = completionBody.insertRow();
+                row.innerHTML = `<td>${day.displayDate}</td><td>${day.totalCompleted.toLocaleString()}</td><td>${day.totalJobs.toLocaleString()}</td><td>${day.completionRate}%</td>`;
+            });
 
-            // attendance
-            document.getElementById('attendanceHistory').innerHTML = historicalData.map(d => `
-                <tr>
-                    <td>${d.displayDate}</td>
-                    <td>${d.atWorkPercent}%</td>
-                    <td>${d.holPercent}%</td>
-                    <td>${d.sickPercent}%</td>
-                    <td>${d.aaupPercent}%</td>
-                </tr>
-            `).join('');
+            const attendanceBody = document.getElementById('attendanceHistory');
+            attendanceBody.innerHTML = '';
+            historicalData.forEach(day => {
+                const row = attendanceBody.insertRow();
+                row.innerHTML = `<td>${day.displayDate}</td><td>${day.atWorkPercent}%</td><td>${day.holPercent}%</td><td>${day.sickPercent}%</td><td>${day.aaupPercent}%</td>`;
+            });
         }
 
         function populateComplianceHistory() {
             const tbody = document.getElementById('complianceHistory');
-            tbody.innerHTML = complianceData.map(m => `
-                <tr>
-                    <td>${m.monthLabel}</td>
-                    <td>${m.wipPassRate}%<br><small>${m.wipPass}/${m.wipTotal}</small></td>
-                    <td>${m.postCompPassRate}%<br><small>${m.postCompPass}/${m.postCompTotal}</small></td>
-                    <td><strong>${m.overallPassRate}%</strong></td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = '';
+            complianceData.forEach(monthData => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${monthData.monthLabel}</td>
+                    <td>${monthData.wipPassRate}%<br><span style="font-size:0.85em;opacity:0.7;">${monthData.wipPass}/${monthData.wipTotal}</span></td>
+                    <td>${monthData.postCompPassRate}%<br><span style="font-size:0.85em;opacity:0.7;">${monthData.postCompPass}/${monthData.postCompTotal}</span></td>
+                    <td><span style="font-weight:700;">${monthData.overallPassRate}%</span></td>
+                `;
+            });
         }
 
-        // ────────────────────────────────────────────────
-        // Core Data Loading
-        // ────────────────────────────────────────────────
         async function loadComplianceData() {
             try {
-                const snap = await getDocs(collection(performanceDb, "compliance"));
-                const months = [...getPreviousSixMonths(), new Date()];
+                const complianceSnapshot = await getDocs(collection(performanceDb, "compliance"));
+                const months = getPreviousSixMonths();
+                const currentMonth = new Date();
+                months.push(currentMonth);
                 complianceData = [];
 
-                for (const m of months) {
-                    const start = new Date(m.getFullYear(), m.getMonth(), 1);
-                    const end   = new Date(m.getFullYear(), m.getMonth()+1, 0, 23,59,59,999);
+                for (const month of months) {
+                    const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+                    const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
 
-                    const wipMap = new Map();
-                    const postMap = new Map();
+                    const wipJobs = new Map();
+                    const postCompJobs = new Map();
 
-                    snap.forEach(doc => {
-                        const d = doc.data();
-                        const idate = parseInstallationDate(d.installationDate);
-                        if (!idate || idate < start || idate > end) return;
+                    complianceSnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const installDate = parseInstallationDate(data.installationDate);
+                        if (installDate && installDate >= monthStart && installDate <= monthEnd) {
+                            const jobRef = data.jobReference;
+                            const outcome = (data.auditOutcome || '').toLowerCase();
+                            const isPassed = outcome.includes('pass') || outcome === 'p';
 
-                        const outcome = (d.auditOutcome || '').toLowerCase();
-                        const passed = outcome.includes('pass') || outcome === 'p';
-                        const ref = d.jobReference;
-
-                        if (d.type === 'wip') {
-                            if (!wipMap.has(ref)) wipMap.set(ref, passed);
-                        } else if (d.type === 'post_completion') {
-                            if (!postMap.has(ref)) postMap.set(ref, passed);
+                            if (data.type === 'wip') {
+                                if (!wipJobs.has(jobRef)) wipJobs.set(jobRef, isPassed);
+                            } else if (data.type === 'post_completion') {
+                                if (!postCompJobs.has(jobRef)) postCompJobs.set(jobRef, isPassed);
+                            }
                         }
                     });
 
-                    const wipT = wipMap.size, wipP = [...wipMap.values()].filter(v=>v).length;
-                    const postT = postMap.size, postP = [...postMap.values()].filter(v=>v).length;
+                    const wipTotal = wipJobs.size;
+                    const wipPass = Array.from(wipJobs.values()).filter(p => p).length;
+                    const wipPassRate = wipTotal > 0 ? ((wipPass / wipTotal) * 100).toFixed(1) : 0;
 
-                    const overallT = wipT + postT;
-                    const overallP = wipP + postP;
+                    const postCompTotal = postCompJobs.size;
+                    const postCompPass = Array.from(postCompJobs.values()).filter(p => p).length;
+                    const postCompPassRate = postCompTotal > 0 ? ((postCompPass / postCompTotal) * 100).toFixed(1) : 0;
+
+                    const overallTotal = wipTotal + postCompTotal;
+                    const overallPass = wipPass + postCompPass;
+                    const overallPassRate = overallTotal > 0 ? ((overallPass / overallTotal) * 100).toFixed(1) : 0;
 
                     complianceData.push({
-                        monthLabel: formatMonth(m),
-                        wipTotal: wipT,     wipPass: wipP,     wipPassRate: wipT ? ((wipP/wipT)*100).toFixed(1) : '0',
-                        postCompTotal: postT, postCompPass: postP, postCompPassRate: postT ? ((postP/postT)*100).toFixed(1) : '0',
-                        overallPassRate: overallT ? ((overallP/overallT)*100).toFixed(1) : '0'
+                        month,
+                        monthLabel: formatMonth(month),
+                        wipTotal, wipPass, wipPassRate,
+                        postCompTotal, postCompPass, postCompPassRate,
+                        overallTotal, overallPass, overallPassRate
                     });
                 }
 
-                if (complianceData.length) {
-                    const cur = complianceData[complianceData.length-1];
-                    document.getElementById('complianceOverallPass').textContent = cur.overallPassRate;
-                    document.getElementById('wipPassRate').textContent = cur.wipPassRate + '%';
-                    document.getElementById('wipPassCount').textContent = cur.wipPass;
-                    document.getElementById('wipTotalCount').textContent = cur.wipTotal;
-                    document.getElementById('postCompPassRate').textContent = cur.postCompPassRate + '%';
-                    document.getElementById('postCompPassCount').textContent = cur.postCompPass;
-                    document.getElementById('postCompTotalCount').textContent = cur.postCompTotal;
-                    updateStatusIndicator('complianceStatus', parseFloat(cur.overallPassRate));
+                if (complianceData.length > 0) {
+                    const currentData = complianceData[complianceData.length - 1];
+                    document.getElementById('complianceOverallPass').textContent = currentData.overallPassRate;
+                    document.getElementById('wipPassRate').textContent = currentData.wipPassRate + '%';
+                    document.getElementById('wipPassCount').textContent = currentData.wipPass;
+                    document.getElementById('wipTotalCount').textContent = currentData.wipTotal;
+                    document.getElementById('postCompPassRate').textContent = currentData.postCompPassRate + '%';
+                    document.getElementById('postCompPassCount').textContent = currentData.postCompPass;
+                    document.getElementById('postCompTotalCount').textContent = currentData.postCompTotal;
+                    updateStatusIndicator('complianceStatus', parseFloat(currentData.overallPassRate), 90);
                 }
 
-                complianceData.pop(); // remove current month from history table
-            } catch (e) {
-                console.error("Compliance load error:", e);
+                complianceData.pop();
+            } catch (error) {
+                console.error("Error loading compliance data:", error);
             }
         }
 
         async function getFailCountsBySubmission(period) {
-            const snap = await getDocs(collection(performanceDb, "compliance"));
-            let cat1 = 0, cat2 = 0, cat3 = 0;
+            try {
+                let startDate;
+                const now = new Date();
 
-            const now = new Date();
-
-            let minDate;
-            if (period === 'prevday') {
-                minDate = getPreviousWorkingDay();
-                minDate.setHours(0,0,0,0);
-                const maxDate = new Date(minDate);
-                maxDate.setDate(maxDate.getDate() + 1);
-                maxDate.setHours(0,0,0,0);
-            } else if (period === '5days') {
-                const days = getPreviousWorkingDays(5);
-                minDate = days[days.length-1];
-                minDate.setHours(0,0,0,0);
-            } else if (period === '4weeks') {
-                minDate = new Date(now);
-                minDate.setDate(minDate.getDate() - 28);
-                minDate.setHours(0,0,0,0);
-            } else if (period === '12weeks') {
-                minDate = new Date(now);
-                minDate.setDate(minDate.getDate() - 84);
-                minDate.setHours(0,0,0,0);
-            }
-
-            snap.forEach(doc => {
-                const data = doc.data();
-
-                // Try to get real submission timestamp first
-                let submitted = null;
-                if (data.uploadedAt   && typeof data.uploadedAt.toDate === 'function') submitted = data.uploadedAt.toDate();
-                else if (data.submittedAt && typeof data.submittedAt.toDate === 'function') submitted = data.submittedAt.toDate();
-
-                // Fallback to installation date only if no timestamp exists
-                if (!submitted) {
-                    submitted = parseInstallationDate(data.installationDate);
-                }
-
-                if (!submitted) return;
-
-                let include = false;
                 if (period === 'prevday') {
-                    include = submitted >= minDate && submitted < maxDate;
-                } else {
-                    include = submitted >= minDate;
+                    startDate = getPreviousWorkingDay();
+                    startDate.setHours(0,0,0,0);
+                    const endDate = new Date(startDate);
+                    endDate.setDate(endDate.getDate() + 1);
+                    endDate.setHours(0,0,0,0);
+                } else if (period === '5days') {
+                    const days = getPreviousWorkingDays(5);
+                    startDate = days[days.length - 1];
+                    startDate.setHours(0,0,0,0);
+                } else if (period === '4weeks') {
+                    startDate = new Date(now);
+                    startDate.setDate(startDate.getDate() - 28);
+                    startDate.setHours(0,0,0,0);
+                } else if (period === '12weeks') {
+                    startDate = new Date(now);
+                    startDate.setDate(startDate.getDate() - 84);
+                    startDate.setHours(0,0,0,0);
                 }
 
-                if (include) {
-                    const outcome = (data.auditOutcome || '').toLowerCase();
-                    if (outcome.includes('fail')) {
-                        if (outcome.includes('category 1') || outcome.includes('cat 1')) cat1++;
-                        else if (outcome.includes('category 2') || outcome.includes('cat 2')) cat2++;
-                        else if (outcome.includes('category 3') || outcome.includes('cat 3')) cat3++;
+                const snap = await getDocs(collection(performanceDb, "compliance"));
+
+                let cat1 = 0, cat2 = 0, cat3 = 0;
+
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const submitted = data.uploadedAt ? data.uploadedAt.toDate() : (data.submittedAt ? data.submittedAt.toDate() : null);
+
+                    if (!submitted) {
+                        // fallback to installation date if no timestamp
+                        const installDate = parseInstallationDate(data.installationDate);
+                        if (!installDate) return;
+                        submitted = installDate;
                     }
-                }
-            });
 
-            return { cat1, cat2, cat3 };
+                    if (period === 'prevday') {
+                        if (submitted >= startDate && submitted < endDate) {
+                            processOutcome(data.auditOutcome, (c1,c2,c3) => {cat1+=c1; cat2+=c2; cat3+=c3;});
+                        }
+                    } else {
+                        if (submitted >= startDate) {
+                            processOutcome(data.auditOutcome, (c1,c2,c3) => {cat1+=c1; cat2+=c2; cat3+=c3;});
+                        }
+                    }
+                });
+
+                return {cat1, cat2, cat3};
+            } catch (error) {
+                console.error("Error counting fails:", error);
+                return {cat1:0, cat2:0, cat3:0};
+            }
+        }
+
+        function processOutcome(outcomeStr, callback) {
+            const outcome = (outcomeStr || '').toLowerCase();
+            if (!outcome.includes('fail')) return;
+            let c1=0, c2=0, c3=0;
+            if (outcome.includes('category 1') || outcome.includes('cat 1')) c1 = 1;
+            else if (outcome.includes('category 2') || outcome.includes('cat 2')) c2 = 1;
+            else if (outcome.includes('category 3') || outcome.includes('cat 3')) c3 = 1;
+            callback(c1, c2, c3);
         }
 
         async function loadLastAccident() {
             try {
                 const q = query(collection(performanceDb, "accidents"), orderBy("accidentDate", "desc"), limit(1));
                 const snap = await getDocs(q);
-                if (snap.empty) {
+                if (!snap.empty) {
+                    const data = snap.docs[0].data();
+                    const accDate = new Date(data.accidentDate);
+                    const now = new Date();
+                    const days = Math.floor((now - accDate) / (1000 * 60 * 60 * 24));
+                    document.getElementById('daysSinceAccident').textContent = days;
+                    document.getElementById('hsTarget').textContent = 'Days Since Last Accident';
+                } else {
                     document.getElementById('daysSinceAccident').textContent = 'N/A';
                     document.getElementById('hsTarget').textContent = 'No Accidents Recorded';
-                    return;
                 }
-                const data = snap.docs[0].data();
-                const accDate = new Date(data.accidentDate);
-                const days = Math.floor((Date.now() - accDate.getTime()) / 86400000);
-                document.getElementById('daysSinceAccident').textContent = days;
-                document.getElementById('hsTarget').textContent = 'Days Since Last Accident';
-            } catch (e) {
-                console.error("Accident load error:", e);
+            } catch (error) {
+                console.error("Error loading accident:", error);
                 document.getElementById('daysSinceAccident').textContent = 'Error';
             }
         }
 
         async function loadDashboard() {
             try {
-                const prevDay = getPreviousWorkingDay();
-                const dateStr = formatDateForQuery(prevDay);
-                document.getElementById('statsDate').textContent = `Stats for ${formatDate(prevDay)}`;
+                const previousDay = getPreviousWorkingDay();
+                const dateString = formatDateForQuery(previousDay);
+                const displayDate = formatDate(previousDay);
 
-                // Staff
-                const staffSnap = await getDocs(collection(staffDb, "employees"));
-                let oes = 0, sp = 0, edf = 0, bo = 0;
-                staffSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.leaveDate) return;
-                    const loc = d.Location || d.location;
-                    const tl  = d['Team Leader'] || d.teamLeader;
-                    if (tl === 'Back Office') bo++;
-                    else if (loc === 'OES') oes++;
-                    else if (loc === 'Scottish Power') sp++;
-                    else if (loc === 'EDF') edf++;
+                document.getElementById('statsDate').textContent = `Stats for ${displayDate}`;
+
+                // ... (staff loading, meters target, performance data, attendance, compliance history - unchanged) ...
+
+                const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
+                let oesEngineers = 0, scottishPowerEngineers = 0, edfEngineers = 0, backOfficeCount = 0;
+
+                employeesSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const teamLeader = data['Team Leader'] || data.teamLeader;
+                    const location = data.Location || data.location;
+                    if (!data.leaveDate) {
+                        if (teamLeader === 'Back Office') backOfficeCount++;
+                        else if (location === 'OES') oesEngineers++;
+                        else if (location === 'Scottish Power') scottishPowerEngineers++;
+                        else if (location === 'EDF') edfEngineers++;
+                    }
                 });
 
-                oesEngineerCount = oes;
-                const totEng = oes + sp + edf;
-                document.getElementById('totalEmployees').textContent   = totEng + bo;
-                document.getElementById('engineerCount').textContent    = totEng;
-                document.getElementById('oesCount').textContent         = oes;
-                document.getElementById('scottishPowerCount').textContent = sp;
-                document.getElementById('edfCount').textContent         = edf;
-                document.getElementById('backOfficeCount').textContent  = bo;
+                oesEngineerCount = oesEngineers;
+                const totalEngineers = oesEngineers + scottishPowerEngineers + edfEngineers;
+                const totalEmployees = totalEngineers + backOfficeCount;
 
-                document.getElementById('metersTarget').textContent = oes * 6;
+                document.getElementById('totalEmployees').textContent = totalEmployees;
+                document.getElementById('engineerCount').textContent = totalEngineers;
+                document.getElementById('oesCount').textContent = oesEngineers;
+                document.getElementById('scottishPowerCount').textContent = scottishPowerEngineers;
+                document.getElementById('edfCount').textContent = edfEngineers;
+                document.getElementById('backOfficeCount').textContent = backOfficeCount;
 
-                // Performance
-                const perfQ = query(collection(performanceDb, "performance"), where("date","==",dateStr));
-                const perfSnap = await getDocs(perfQ);
-                let m=0, j=0, c=0;
-                perfSnap.forEach(d => {
-                    const data = d.data();
-                    m += data.meters || 0;
-                    j += data.jobs || 0;
-                    c += data.completed || 0;
+                const metersTarget = oesEngineers * 6;
+                document.getElementById('metersTarget').textContent = metersTarget;
+
+                const performanceQuery = query(collection(performanceDb, "performance"), where("date", "==", dateString));
+                const performanceSnapshot = await getDocs(performanceQuery);
+
+                let totalMeters = 0, totalJobs = 0, totalCompleted = 0;
+                performanceSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    totalMeters += data.meters || 0;
+                    totalJobs += data.jobs || 0;
+                    totalCompleted += data.completed || 0;
                 });
 
-                const compRate = j ? ((c/j)*100).toFixed(1) : 0;
-                const mPct = (oes*6) ? ((m/(oes*6))*100).toFixed(1) : 0;
+                const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
+                const metersPercentage = metersTarget > 0 ? ((totalMeters / metersTarget) * 100).toFixed(1) : 0;
 
-                document.getElementById('metersActual').textContent = m.toLocaleString();
-                document.getElementById('metersProgressText').textContent = mPct + '%';
-                updateProgressBar('metersProgress', parseFloat(mPct));
+                document.getElementById('metersActual').textContent = totalMeters.toLocaleString();
+                document.getElementById('metersProgressText').textContent = metersPercentage + '%';
+                updateProgressBar('metersProgress', parseFloat(metersPercentage));
 
-                document.getElementById('completionActual').textContent = compRate;
-                document.getElementById('completionProgressText').textContent = `${c.toLocaleString()} of ${j.toLocaleString()} jobs`;
-                updateProgressBar('completionProgress', parseFloat(compRate));
-                updateStatusIndicator('completionStatus', parseFloat(compRate));
+                document.getElementById('completionActual').textContent = completionRate;
+                document.getElementById('completionProgressText').textContent = `${totalCompleted.toLocaleString()} of ${totalJobs.toLocaleString()} jobs`;
+                updateProgressBar('completionProgress', parseFloat(completionRate));
+                updateStatusIndicator('completionStatus', parseFloat(completionRate), 90);
 
-                // Attendance
-                const gsQ = query(collection(performanceDb, "garethstats"), where("date","==",dateStr));
-                const gsSnap = await getDocs(gsQ);
-                let aw=0, h=0, s=0, aa=0;
-                gsSnap.forEach(d => {
-                    const data = d.data();
-                    aw = data.atWorkPercent || 0;
-                    h  = data.holidayPercent || 0;
-                    s  = data.sickPercent || 0;
-                    aa = data.aaupPercent || 0;
+                const garethStatsQuery = query(collection(performanceDb, "garethstats"), where("date", "==", dateString));
+                const garethStatsSnapshot = await getDocs(garethStatsQuery);
+
+                let atWorkPercent = 0, holPercent = 0, sickPercent = 0, aaupPercent = 0;
+                garethStatsSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    atWorkPercent = data.atWorkPercent || 0;
+                    holPercent = data.holidayPercent || 0;
+                    sickPercent = data.sickPercent || 0;
+                    aaupPercent = data.aaupPercent || 0;
                 });
 
-                document.getElementById('attendanceTotal').textContent = oes;
-                document.getElementById('atWorkPercent').textContent = aw.toFixed(1) + '%';
-                document.getElementById('holPercent').textContent    = h.toFixed(1) + '%';
-                document.getElementById('sickPercent').textContent   = s.toFixed(1) + '%';
-                document.getElementById('aaupPercent').textContent   = aa.toFixed(1) + '%';
+                document.getElementById('attendanceTotal').textContent = oesEngineers;
+                document.getElementById('atWorkPercent').textContent = atWorkPercent.toFixed(1) + '%';
+                document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
+                document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
+                document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
 
-                // Load other sections
                 await loadComplianceData();
                 await loadHistoricalData();
                 populateHistoricalTables();
 
-                document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+                const now = new Date();
+                document.getElementById('lastUpdated').textContent = `Last updated: ${now.toLocaleTimeString()}`;
 
                 document.getElementById('loadingDiv').style.display = 'none';
                 document.getElementById('dashboardContent').style.display = 'block';
 
-                // Fail counts
-                const periods = ['prevday','5days','4weeks','12weeks'];
-                for (const p of periods) {
-                    const counts = await getFailCountsBySubmission(p);
-                    document.getElementById(`cat1_${p}`).textContent = counts.cat1;
-                    document.getElementById(`cat2_${p}`).textContent = counts.cat2;
-                    document.getElementById(`cat3_${p}`).textContent = counts.cat3;
-                }
+                // Load fail counts based on submission date
+                const prevDayCounts   = await getFailCountsBySubmission('prevday');
+                const fiveDaysCounts  = await getFailCountsBySubmission('5days');
+                const fourWeeksCounts = await getFailCountsBySubmission('4weeks');
+                const twelveWeeksCounts = await getFailCountsBySubmission('12weeks');
+
+                document.getElementById('cat1_prevday').textContent = prevDayCounts.cat1;
+                document.getElementById('cat2_prevday').textContent = prevDayCounts.cat2;
+                document.getElementById('cat3_prevday').textContent = prevDayCounts.cat3;
+
+                document.getElementById('cat1_5days').textContent = fiveDaysCounts.cat1;
+                document.getElementById('cat2_5days').textContent = fiveDaysCounts.cat2;
+                document.getElementById('cat3_5days').textContent = fiveDaysCounts.cat3;
+
+                document.getElementById('cat1_4weeks').textContent = fourWeeksCounts.cat1;
+                document.getElementById('cat2_4weeks').textContent = fourWeeksCounts.cat2;
+                document.getElementById('cat3_4weeks').textContent = fourWeeksCounts.cat3;
+
+                document.getElementById('cat1_12weeks').textContent = twelveWeeksCounts.cat1;
+                document.getElementById('cat2_12weeks').textContent = twelveWeeksCounts.cat2;
+                document.getElementById('cat3_12weeks').textContent = twelveWeeksCounts.cat3;
 
                 await loadLastAccident();
 
-            } catch (err) {
-                console.error("Dashboard load error:", err);
-                document.getElementById('loadingDiv').innerHTML = '<div style="color:#ef4444">Error loading data. Check console.</div>';
+            } catch (error) {
+                console.error("Error loading dashboard:", error);
+                document.getElementById('loadingDiv').innerHTML = '<div style="color:#ef4444;">Error loading data. Check console.</div>';
             }
         }
 
         async function loadHistoricalData() {
-            const dates = getPreviousWorkingDays(10);
-            historicalData = [];
+            try {
+                const dates = getPreviousWorkingDays(10);
+                historicalData = [];
 
-            for (const d of dates) {
-                const ds = formatDateForQuery(d);
-                const disp = formatDate(d);
+                for (const date of dates) {
+                    const dateString = formatDateForQuery(date);
+                    const displayDate = formatDate(date);
 
-                const perfQ = query(collection(performanceDb, "performance"), where("date","==",ds));
-                const perfSnap = await getDocs(perfQ);
-                let tm=0, tj=0, tc=0;
-                perfSnap.forEach(doc => {
-                    const data = doc.data();
-                    tm += data.meters || 0;
-                    tj += data.jobs || 0;
-                    tc += data.completed || 0;
-                });
+                    const performanceQuery = query(collection(performanceDb, "performance"), where("date", "==", dateString));
+                    const performanceSnapshot = await getDocs(performanceQuery);
 
-                const gsQ = query(collection(performanceDb, "garethstats"), where("date","==",ds));
-                const gsSnap = await getDocs(gsQ);
-                let aw=0,h=0,s=0,aa=0;
-                gsSnap.forEach(doc => {
-                    const data = doc.data();
-                    aw = data.atWorkPercent?.toFixed(1) || '0';
-                    h  = data.holidayPercent?.toFixed(1) || '0';
-                    s  = data.sickPercent?.toFixed(1) || '0';
-                    aa = data.aaupPercent?.toFixed(1) || '0';
-                });
+                    let totalMeters = 0, totalJobs = 0, totalCompleted = 0;
+                    performanceSnapshot.forEach(doc => {
+                        const data = doc.data();
+                        totalMeters += data.meters || 0;
+                        totalJobs += data.jobs || 0;
+                        totalCompleted += data.completed || 0;
+                    });
 
-                historicalData.push({
-                    displayDate: disp,
-                    totalMeters: tm,
-                    metersTarget: oesEngineerCount * 6,
-                    totalJobs: tj,
-                    totalCompleted: tc,
-                    completionRate: tj ? ((tc/tj)*100).toFixed(1) : '0',
-                    atWorkPercent: aw,
-                    holPercent: h,
-                    sickPercent: s,
-                    aaupPercent: aa
-                });
+                    const garethStatsQuery = query(collection(performanceDb, "garethstats"), where("date", "==", dateString));
+                    const garethStatsSnapshot = await getDocs(garethStatsQuery);
+
+                    let atWorkPercent = 0, holPercent = 0, sickPercent = 0, aaupPercent = 0;
+                    garethStatsSnapshot.forEach(doc => {
+                        const data = doc.data();
+                        atWorkPercent = (data.atWorkPercent || 0).toFixed(1);
+                        holPercent = (data.holidayPercent || 0).toFixed(1);
+                        sickPercent = (data.sickPercent || 0).toFixed(1);
+                        aaupPercent = (data.aaupPercent || 0).toFixed(1);
+                    });
+
+                    const metersTarget = oesEngineerCount * 6;
+                    const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
+
+                    historicalData.push({
+                        displayDate,
+                        totalMeters,
+                        metersTarget,
+                        totalJobs,
+                        totalCompleted,
+                        completionRate,
+                        atWorkPercent,
+                        holPercent,
+                        sickPercent,
+                        aaupPercent
+                    });
+                }
+            } catch (error) {
+                console.error("Error loading historical data:", error);
             }
         }
 
-        // Start
         loadDashboard();
         setInterval(loadDashboard, 300000);
     </script>
