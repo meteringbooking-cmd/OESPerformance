@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OES Yesterday's Performance</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #6366f1;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #334155;
+      --success: #10b981;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2.2rem;
+      margin-bottom: 2rem;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-align: center;
+    }
+    .team-section {
+      background: var(--card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 2rem;
+      overflow: hidden;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    }
+    .team-header {
+      background: rgba(99,102,241,0.25);
+      padding: 1.2rem 1.8rem;
+      font-size: 1.4rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.98rem;
+    }
+    th, td {
+      padding: 1rem 1.2rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: rgba(99,102,241,0.12);
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-size: 0.88rem;
+      letter-spacing: 0.4px;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    .engineer-row:hover {
+      background: rgba(99,102,241,0.08);
+    }
+    .meters-col {
+      background: rgba(251,191,36,0.1);
+      font-weight: 600;
+    }
+    .total-row {
+      font-weight: bold;
+      background: rgba(16,185,129,0.12);
+      color: var(--success);
+    }
+    .total-row td:first-child {
+      text-align: right;
+      padding-right: 1.5rem;
+    }
+    .loading, .error-msg {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-dim);
+      font-size: 1.3rem;
+    }
+    .error-msg {
+      color: #f87171;
+      font-weight: 500;
+    }
+    @media (max-width: 900px) {
+      body { padding: 1.5rem; }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead tr { position: absolute; top: -9999px; left: -9999px; }
+      tr { margin-bottom: 1.5rem; border: 1px solid var(--border); border-radius: 8px; }
+      td { border: none; border-bottom: 1px solid var(--border); position: relative; padding-left: 50%; }
+      td:before {
+        position: absolute;
+        top: 1rem;
+        left: 1.2rem;
+        width: 45%;
+        padding-right: 1rem;
+        white-space: nowrap;
+        font-weight: 600;
+        color: var(--text-dim);
+      }
+      td:nth-of-type(1):before { content: "Engineer"; }
+      td:nth-of-type(2):before { content: "Jobs"; }
+      td:nth-of-type(3):before { content: "Completed"; }
+      td:nth-of-type(4):before { content: "Comp%"; }
+      td:nth-of-type(5):before { content: "Aborts"; }
+      td:nth-of-type(6):before { content: "Abort%"; }
+      td:nth-of-type(7):before { content: "Meters"; }
+      td:nth-of-type(8):before { content: "Duals"; }
+      td:nth-of-type(9):before { content: "Singles"; }
+      td:nth-of-type(10):before { content: "Comms/Site Visits"; }
+      td:nth-of-type(11):before { content: "Dual Removal"; }
+      td:nth-of-type(12):before { content: "Single Removal"; }
+      td:nth-of-type(13):before { content: "Value"; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Yesterday's Performance Breakdown</h1>
+    <div id="dataContainer">
+      <div class="loading">Loading yesterday's data…</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+      authDomain: "oesperformance-a54c0.firebaseapp.com",
+      projectId: "oesperformance-a54c0",
+      storageBucket: "oesperformance-a54c0.firebasestorage.app",
+      messagingSenderId: "484894102454",
+      appId: "1:484894102454:web:17535ee497eac2d90d6717",
+      measurementId: "G-R56BGZYV8N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    async function loadYesterdayData() {
+      const container = document.getElementById('dataContainer');
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yestDate = yesterday.toISOString().split('T')[0];
+
+        const q = query(
+          collection(db, "performance"),
+          where("date", "==", yestDate)
+        );
+
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          container.innerHTML = '<div class="error-msg">No data found for yesterday.</div>';
+          return;
+        }
+
+        const teamMap = {};
+
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          const team = d.teamLeader || "Unknown Team";
+          const eng = d.engineerName || "Unknown Engineer";
+
+          if (!teamMap[team]) {
+            teamMap[team] = {
+              engineers: {},
+              totals: {
+                jobs: 0, completed: 0, aborts: 0, meters: 0, value: 0,
+                duals: 0, singles: 0, commsSiteVisits: 0,
+                dualRemoval: 0, singleRemoval: 0
+              }
+            };
+          }
+
+          const engData = teamMap[team].engineers[eng] || {
+            jobs: 0, completed: 0, aborts: 0, meters: 0, value: 0,
+            duals: 0, singles: 0, commsSiteVisits: 0,
+            dualRemoval: 0, singleRemoval: 0
+          };
+
+          engData.jobs += Number(d.jobs || 0);
+          engData.completed += Number(d.completed || 0);
+          engData.aborts += Number(d.aborted || 0);
+          engData.meters += Number(d.meters || 0);
+          engData.value += Number(d.value || 0);
+          engData.duals += Number(d.duals || 0);
+          engData.singles += Number(d.singles || 0);
+          engData.commsSiteVisits += Number(d.comms || 0);
+          engData.dualRemoval += Number(d.dualRemoval || 0);
+          engData.singleRemoval += Number(d.singleRemoval || 0);
+
+          teamMap[team].engineers[eng] = engData;
+
+          // Add to team totals
+          teamMap[team].totals.jobs += Number(d.jobs || 0);
+          teamMap[team].totals.completed += Number(d.completed || 0);
+          teamMap[team].totals.aborts += Number(d.aborted || 0);
+          teamMap[team].totals.meters += Number(d.meters || 0);
+          teamMap[team].totals.value += Number(d.value || 0);
+          teamMap[team].totals.duals += Number(d.duals || 0);
+          teamMap[team].totals.singles += Number(d.singles || 0);
+          teamMap[team].totals.commsSiteVisits += Number(d.comms || 0);
+          teamMap[team].totals.dualRemoval += Number(d.dualRemoval || 0);
+          teamMap[team].totals.singleRemoval += Number(d.singleRemoval || 0);
+        });
+
+        // Build HTML
+        let html = '';
+        Object.keys(teamMap).sort().forEach(team => {
+          const data = teamMap[team];
+          html += `<div class="team-section">
+            <div class="team-header">${team}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Engineer</th>
+                  <th>Jobs</th>
+                  <th>Completed</th>
+                  <th>Comp%</th>
+                  <th>Aborts</th>
+                  <th>Abort%</th>
+                  <th>Meters</th>
+                  <th>Duals</th>
+                  <th>Singles</th>
+                  <th>Comms/Site Visits</th>
+                  <th>Dual Removal</th>
+                  <th>Single Removal</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>`;
+
+          Object.keys(data.engineers).sort().forEach(eng => {
+            const row = data.engineers[eng];
+            const compPerc = row.jobs > 0 ? ((row.completed / row.jobs) * 100).toFixed(1) : '0.0';
+            const abortPerc = row.jobs > 0 ? ((row.aborts / row.jobs) * 100).toFixed(1) : '0.0';
+            html += `
+              <tr class="engineer-row">
+                <td>${eng}</td>
+                <td>${row.jobs}</td>
+                <td>${row.completed}</td>
+                <td>${compPerc}%</td>
+                <td>${row.aborts}</td>
+                <td>${abortPerc}%</td>
+                <td class="meters-col">${row.meters}</td>
+                <td>${row.duals}</td>
+                <td>${row.singles}</td>
+                <td>${row.commsSiteVisits}</td>
+                <td>${row.dualRemoval}</td>
+                <td>${row.singleRemoval}</td>
+                <td>£${row.value.toFixed(2)}</td>
+              </tr>`;
+          });
+
+          // Team total row
+          const teamCompPerc = data.totals.jobs > 0 ? ((data.totals.completed / data.totals.jobs) * 100).toFixed(1) : '0.0';
+          const teamAbortPerc = data.totals.jobs > 0 ? ((data.totals.aborts / data.totals.jobs) * 100).toFixed(1) : '0.0';
+          html += `
+              <tr class="total-row">
+                <td>Team Total</td>
+                <td>${data.totals.jobs}</td>
+                <td>${data.totals.completed}</td>
+                <td>${teamCompPerc}%</td>
+                <td>${data.totals.aborts}</td>
+                <td>${teamAbortPerc}%</td>
+                <td class="meters-col">${data.totals.meters}</td>
+                <td>${data.totals.duals}</td>
+                <td>${data.totals.singles}</td>
+                <td>${data.totals.commsSiteVisits}</td>
+                <td>${data.totals.dualRemoval}</td>
+                <td>${data.totals.singleRemoval}</td>
+                <td>£${data.totals.value.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>`;
+        });
+
+        // Grand total
+        let grand = { jobs:0, completed:0, aborts:0, meters:0, value:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0 };
+        Object.values(teamMap).forEach(t => {
+          Object.keys(grand).forEach(k => grand[k] += t.totals[k]);
+        });
+
+        const grandCompPerc = grand.jobs > 0 ? ((grand.completed / grand.jobs) * 100).toFixed(1) : '0.0';
+        const grandAbortPerc = grand.jobs > 0 ? ((grand.aborts / grand.jobs) * 100).toFixed(1) : '0.0';
+
+        html += `
+          <div class="team-section">
+            <div class="team-header">Overall Total</div>
+            <table>
+              <thead>
+                <tr>
+                  <th colspan="13">All Teams Combined</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="total-row">
+                  <td>Grand Total</td>
+                  <td>${grand.jobs}</td>
+                  <td>${grand.completed}</td>
+                  <td>${grandCompPerc}%</td>
+                  <td>${grand.aborts}</td>
+                  <td>${grandAbortPerc}%</td>
+                  <td class="meters-col">${grand.meters}</td>
+                  <td>${grand.duals}</td>
+                  <td>${grand.singles}</td>
+                  <td>${grand.commsSiteVisits}</td>
+                  <td>${grand.dualRemoval}</td>
+                  <td>${grand.singleRemoval}</td>
+                  <td>£${grand.value.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>`;
+
+        container.innerHTML = html;
+
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = `<div class="error-msg">Error loading data: ${err.message || 'Unknown error'}</div>`;
+      }
+    }
+
+    // Load on page open
+    loadYesterdayData();
+  </script>
+</body>
+</html>
