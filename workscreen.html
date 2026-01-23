@@ -401,6 +401,34 @@
             border: none;
             border-radius: 0 0 14px 14px;
         }
+        .export-pptx-btn {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.9), rgba(99, 102, 241, 0.9));
+            border: 2px solid rgba(139, 92, 246, 0.6);
+            border-radius: 10px;
+            color: white;
+            font-size: 0.85em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+            z-index: 100;
+        }
+        .export-pptx-btn:hover {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 1), rgba(99, 102, 241, 1));
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6);
+        }
+        .export-pptx-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
         @media (max-width: 1024px) {
             .kpi-grid { grid-template-columns: 1fr; }
             .kpi-value { font-size: 2.5em; }
@@ -683,6 +711,14 @@
             <iframe class="popup-iframe" id="graphIframe" src=""></iframe>
         </div>
     </div>
+
+    <!-- Export PowerPoint Button -->
+    <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()">
+        📊 Export PowerPoint
+    </button>
+
+    <!-- Load PptxGenJS library -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -1143,6 +1179,291 @@
         // Start loading
         loadDashboard();
         setInterval(loadDashboard, 300000);
+
+        // Helper function to get last 7 working days data
+        async function getLast7DaysData(teamLeader = null) {
+            const dates = getPreviousWorkingDays(7).reverse();
+            const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
+            
+            for (const date of dates) {
+                const ds = formatDateForQuery(date);
+                const perfQ = query(
+                    collection(performanceDb, "performance"), 
+                    where("date", "==", ds),
+                    ...(teamLeader ? [where("teamLeader", "==", teamLeader)] : [])
+                );
+                const perfSnap = await getDocs(perfQ);
+                
+                let m = 0, j = 0, c = 0;
+                perfSnap.forEach(doc => {
+                    const d = doc.data();
+                    m += d.meters || 0;
+                    j += d.jobs || 0;
+                    c += d.completed || 0;
+                });
+                
+                data.dates.push(formatDate(date));
+                data.meters.push(m);
+                data.jobs.push(j);
+                data.completed.push(c);
+                data.completion.push(j > 0 ? Math.round((c / j) * 100) : 0);
+            }
+            
+            return data;
+        }
+
+        // Helper function to get 6 months compliance data
+        async function get6MonthsCompliance(teamLeader = null) {
+            const snap = await getDocs(collection(performanceDb, "compliance"));
+            const months = getPreviousSixMonths();
+            const data = { months: [], wipPass: [], postPass: [], overall: [] };
+            
+            for (const month of months) {
+                const start = new Date(month.getFullYear(), month.getMonth(), 1);
+                const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
+                
+                const wipJobs = new Map();
+                const postJobs = new Map();
+                
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (teamLeader && d.teamLeader !== teamLeader) return;
+                    
+                    const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
+                    const submittedDate = parseDateSubmitted(dateSubmittedStr);
+                    if (!submittedDate || submittedDate < start || submittedDate > end) return;
+                    
+                    const ref = d.jobReference;
+                    const passed = (d.auditOutcome || '').toLowerCase().includes('pass');
+                    
+                    if (d.type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
+                    if (d.type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
+                });
+                
+                const wt = wipJobs.size, wp = [...wipJobs.values()].filter(v => v).length;
+                const pt = postJobs.size, pp = [...postJobs.values()].filter(v => v).length;
+                const ot = wt + pt, op = wp + pp;
+                
+                data.months.push(formatMonth(month));
+                data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
+                data.postPass.push(pt > 0 ? Math.round((pp / pt) * 100) : 0);
+                data.overall.push(ot > 0 ? Math.round((op / ot) * 100) : 0);
+            }
+            
+            return data;
+        }
+
+        // Export to PowerPoint functionality
+        window.exportToPowerPoint = async function() {
+            const btn = document.getElementById('exportPptxBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Fetching data...';
+
+            try {
+                const pptx = new PptxGenJS();
+                pptx.layout = 'LAYOUT_16x9';
+                pptx.author = 'OES Performance System';
+                pptx.company = 'NGU';
+                pptx.title = 'Weekly Performance Report';
+                
+                const teamLeaders = ['Ali Cavan', 'Craig Barnes', 'Paul Simpson', 'Richard Wiecko', 'Scott Carson', 'Stuart Whyte', 'Subbies'];
+                
+                // Page 1: Overall Meters Chart
+                btn.textContent = '⏳ Creating Page 1...';
+                await createMetersSlide(pptx, null, 'Overall Performance - Last 7 Days');
+                
+                // Page 2: Overview slide
+                btn.textContent = '⏳ Creating Page 2...';
+                await createOverviewSlide(pptx);
+                
+                // Pages 3-9: Team leader slides
+                for (let i = 0; i < teamLeaders.length; i++) {
+                    btn.textContent = `⏳ Creating Page ${i + 3}...`;
+                    await createTeamLeaderSlide(pptx, teamLeaders[i]);
+                }
+                
+                btn.textContent = '⏳ Saving file...';
+                const fileName = `OES_Performance_Report_${new Date().toISOString().split('T')[0]}.pptx`;
+                await pptx.writeFile({ fileName });
+                
+                btn.textContent = '✅ Complete!';
+                setTimeout(() => {
+                    btn.textContent = '📊 Export PowerPoint';
+                    btn.disabled = false;
+                }, 2000);
+                
+            } catch (err) {
+                console.error('Export error:', err);
+                alert('Error generating PowerPoint: ' + err.message);
+                btn.textContent = '📊 Export PowerPoint';
+                btn.disabled = false;
+            }
+        };
+
+        async function createMetersSlide(pptx, teamLeader, title) {
+            const slide = pptx.addSlide();
+            const data = await getLast7DaysData(teamLeader);
+            
+            // Title
+            slide.addText(title, {
+                x: 0.5, y: 0.3, w: '90%', h: 0.6,
+                fontSize: 28, bold: true, color: '00D2FF', align: 'center'
+            });
+            
+            // Meters chart
+            const chartData = [{
+                name: 'Meters Installed',
+                labels: data.dates,
+                values: data.meters
+            }];
+            
+            slide.addChart(pptx.ChartType.bar, chartData, {
+                x: 1.0, y: 1.2, w: 8.0, h: 4.0,
+                chartColors: ['00D2FF'],
+                showTitle: false,
+                showLegend: false,
+                valAxisMaxVal: Math.max(...data.meters) * 1.2,
+                catAxisLabelFontSize: 11,
+                valAxisLabelFontSize: 11
+            });
+        }
+
+        async function createOverviewSlide(pptx) {
+            const slide = pptx.addSlide();
+            const metersData = await getLast7DaysData();
+            const complianceData = await get6MonthsCompliance();
+            
+            // Title
+            slide.addText('Performance Overview', {
+                x: 0.5, y: 0.2, w: '90%', h: 0.5,
+                fontSize: 28, bold: true, color: '00D2FF', align: 'center'
+            });
+            
+            // Meters chart (smaller)
+            slide.addChart(pptx.ChartType.bar, [{
+                name: 'Meters',
+                labels: metersData.dates,
+                values: metersData.meters
+            }], {
+                x: 0.5, y: 1.0, w: 4.0, h: 2.5,
+                chartColors: ['00D2FF'],
+                showTitle: true,
+                title: 'Meters Installed - Last 7 Days',
+                titleFontSize: 14,
+                showLegend: false
+            });
+            
+            // Completion % chart
+            slide.addChart(pptx.ChartType.bar, [{
+                name: 'Completion %',
+                labels: metersData.dates,
+                values: metersData.completion
+            }], {
+                x: 5.5, y: 1.0, w: 4.0, h: 2.5,
+                chartColors: ['10B981'],
+                showTitle: true,
+                title: 'Completion Rate - Last 7 Days',
+                titleFontSize: 14,
+                showLegend: false,
+                valAxisMaxVal: 100
+            });
+            
+            // Attendance data
+            const prevDay = getPreviousWorkingDay();
+            const dateStr = formatDateForQuery(prevDay);
+            const gsQ = query(collection(performanceDb, "garethstats"), where("date", "==", dateStr));
+            const gsSnap = await getDocs(gsQ);
+            let aw = 0, hol = 0, sick = 0, aaup = 0;
+            gsSnap.forEach(doc => {
+                const d = doc.data();
+                aw = d.atWorkPercent || 0;
+                hol = d.holidayPercent || 0;
+                sick = d.sickPercent || 0;
+                aaup = d.aaupPercent || 0;
+            });
+            
+            slide.addText('Attendance (Yesterday)', {
+                x: 0.5, y: 3.8, w: 4.0, h: 0.4,
+                fontSize: 14, bold: true, color: '00D2FF'
+            });
+            
+            const attendanceText = `At Work: ${aw.toFixed(1)}%  |  Holiday: ${hol.toFixed(1)}%  |  Sick: ${sick.toFixed(1)}%  |  AAUP: ${aaup.toFixed(1)}%`;
+            slide.addText(attendanceText, {
+                x: 0.5, y: 4.2, w: 4.0, h: 0.6,
+                fontSize: 12, color: 'FFFFFF'
+            });
+            
+            // Compliance chart
+            slide.addChart(pptx.ChartType.line, [{
+                name: 'Overall Pass Rate',
+                labels: complianceData.months,
+                values: complianceData.overall
+            }], {
+                x: 5.5, y: 3.8, w: 4.0, h: 1.8,
+                chartColors: ['A78BFA'],
+                showTitle: true,
+                title: 'Compliance - Last 6 Months',
+                titleFontSize: 14,
+                showLegend: false,
+                valAxisMaxVal: 100
+            });
+        }
+
+        async function createTeamLeaderSlide(pptx, teamLeader) {
+            const slide = pptx.addSlide();
+            const metersData = await getLast7DaysData(teamLeader);
+            const complianceData = await get6MonthsCompliance(teamLeader);
+            
+            // Title
+            slide.addText(`${teamLeader} - Performance Report`, {
+                x: 0.5, y: 0.2, w: '90%', h: 0.5,
+                fontSize: 28, bold: true, color: '00D2FF', align: 'center'
+            });
+            
+            // Meters chart
+            slide.addChart(pptx.ChartType.bar, [{
+                name: 'Meters',
+                labels: metersData.dates,
+                values: metersData.meters
+            }], {
+                x: 0.5, y: 1.0, w: 4.0, h: 2.5,
+                chartColors: ['00D2FF'],
+                showTitle: true,
+                title: 'Meters Installed - Last 7 Days',
+                titleFontSize: 14,
+                showLegend: false
+            });
+            
+            // Completion % chart
+            slide.addChart(pptx.ChartType.bar, [{
+                name: 'Completion %',
+                labels: metersData.dates,
+                values: metersData.completion
+            }], {
+                x: 5.5, y: 1.0, w: 4.0, h: 2.5,
+                chartColors: ['10B981'],
+                showTitle: true,
+                title: 'Completion Rate - Last 7 Days',
+                titleFontSize: 14,
+                showLegend: false,
+                valAxisMaxVal: 100
+            });
+            
+            // Compliance chart
+            slide.addChart(pptx.ChartType.line, [{
+                name: 'Overall Pass Rate',
+                labels: complianceData.months,
+                values: complianceData.overall
+            }], {
+                x: 2.5, y: 3.8, w: 5.0, h: 2.2,
+                chartColors: ['A78BFA'],
+                showTitle: true,
+                title: 'Compliance Pass Rate - Last 6 Months',
+                titleFontSize: 14,
+                showLegend: false,
+                valAxisMaxVal: 100
+            });
+        }
     </script>
 </body>
 </html>
