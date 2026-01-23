@@ -714,7 +714,7 @@
 
     <!-- Export PowerPoint Button -->
     <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()">
-        📊 Export PowerPoint
+        📊 Testing
     </button>
 
     <!-- Load PptxGenJS library -->
@@ -1180,9 +1180,9 @@
         loadDashboard();
         setInterval(loadDashboard, 300000);
 
-        // Helper function to get last 7 working days data
-        async function getLast7DaysData(teamLeader = null) {
-            const dates = getPreviousWorkingDays(7).reverse();
+        // Helper function to get last 5 working days data
+        async function getLast5DaysData(teamLeader = null) {
+            const dates = getPreviousWorkingDays(5).reverse();
             const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
             
             for (const date of dates) {
@@ -1212,10 +1212,19 @@
             return data;
         }
 
-        // Helper function to get 6 months compliance data
-        async function get6MonthsCompliance(teamLeader = null) {
+        // Helper function to get 5 months compliance data
+        async function get5MonthsCompliance(teamLeader = null) {
             const snap = await getDocs(collection(performanceDb, "compliance"));
-            const months = getPreviousSixMonths();
+            const allDocs = [];
+            snap.forEach(doc => allDocs.push(doc.data()));
+            
+            const months = [];
+            const d = new Date();
+            for (let i = 0; i < 5; i++) {
+                months.push(new Date(d.getFullYear(), d.getMonth() - i, 1));
+            }
+            months.reverse();
+            
             const data = { months: [], wipPass: [], postPass: [], overall: [] };
             
             for (const month of months) {
@@ -1225,24 +1234,38 @@
                 const wipJobs = new Map();
                 const postJobs = new Map();
                 
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    if (teamLeader && d.teamLeader !== teamLeader) return;
+                allDocs.forEach(d => {
+                    // Filter by team leader if specified
+                    if (teamLeader) {
+                        const docTeamLeader = d.teamLeader || d['Team Leader'] || '';
+                        if (docTeamLeader !== teamLeader) return;
+                    }
                     
                     const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
                     const submittedDate = parseDateSubmitted(dateSubmittedStr);
                     if (!submittedDate || submittedDate < start || submittedDate > end) return;
                     
-                    const ref = d.jobReference;
-                    const passed = (d.auditOutcome || '').toLowerCase().includes('pass');
+                    const ref = d.jobReference || d['Job Reference'] || '';
+                    if (!ref) return;
                     
-                    if (d.type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
-                    if (d.type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
+                    const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
+                    const passed = outcome.includes('pass') || outcome === 'p';
+                    
+                    const type = (d.type || '').toLowerCase();
+                    if (type === 'wip' && !wipJobs.has(ref)) {
+                        wipJobs.set(ref, passed);
+                    }
+                    if (type === 'post_completion' && !postJobs.has(ref)) {
+                        postJobs.set(ref, passed);
+                    }
                 });
                 
-                const wt = wipJobs.size, wp = [...wipJobs.values()].filter(v => v).length;
-                const pt = postJobs.size, pp = [...postJobs.values()].filter(v => v).length;
-                const ot = wt + pt, op = wp + pp;
+                const wt = wipJobs.size;
+                const wp = [...wipJobs.values()].filter(v => v).length;
+                const pt = postJobs.size;
+                const pp = [...postJobs.values()].filter(v => v).length;
+                const ot = wt + pt;
+                const op = wp + pp;
                 
                 data.months.push(formatMonth(month));
                 data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
@@ -1270,7 +1293,7 @@
                 
                 // Page 1: Overall Meters Chart
                 btn.textContent = '⏳ Creating Page 1...';
-                await createMetersSlide(pptx, null, 'Overall Performance - Last 7 Days');
+                await createMetersSlide(pptx, null, 'Overall Performance - Last 5 Days');
                 
                 // Page 2: Overview slide
                 btn.textContent = '⏳ Creating Page 2...';
@@ -1302,15 +1325,16 @@
 
         async function createMetersSlide(pptx, teamLeader, title) {
             const slide = pptx.addSlide();
-            const data = await getLast7DaysData(teamLeader);
+            slide.background = { color: '1A1A2E' };
+            const data = await getLast5DaysData(teamLeader);
             
             // Title
             slide.addText(title, {
-                x: 0.5, y: 0.3, w: '90%', h: 0.6,
-                fontSize: 28, bold: true, color: '00D2FF', align: 'center'
+                x: 0.5, y: 0.4, w: '90%', h: 0.7,
+                fontSize: 32, bold: true, color: '00D2FF', align: 'center'
             });
             
-            // Meters chart
+            // Meters chart with better styling
             const chartData = [{
                 name: 'Meters Installed',
                 labels: data.dates,
@@ -1318,39 +1342,58 @@
             }];
             
             slide.addChart(pptx.ChartType.bar, chartData, {
-                x: 1.0, y: 1.2, w: 8.0, h: 4.0,
+                x: 1.5, y: 1.5, w: 7.0, h: 4.0,
                 chartColors: ['00D2FF'],
                 showTitle: false,
                 showLegend: false,
-                valAxisMaxVal: Math.max(...data.meters) * 1.2,
-                catAxisLabelFontSize: 11,
-                valAxisLabelFontSize: 11
+                valAxisMaxVal: Math.max(...data.meters) * 1.15,
+                catAxisLabelFontSize: 14,
+                valAxisLabelFontSize: 14,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                showValue: true,
+                dataLabelFontSize: 12,
+                dataLabelColor: 'FFFFFF',
+                dataLabelPosition: 'outEnd',
+                fill: '2D3748',
+                border: { pt: 1, color: '00D2FF' }
             });
         }
 
         async function createOverviewSlide(pptx) {
             const slide = pptx.addSlide();
-            const metersData = await getLast7DaysData();
-            const complianceData = await get6MonthsCompliance();
+            slide.background = { color: '1A1A2E' };
+            const metersData = await getLast5DaysData();
+            const complianceData = await get5MonthsCompliance();
             
             // Title
-            slide.addText('Performance Overview', {
-                x: 0.5, y: 0.2, w: '90%', h: 0.5,
+            slide.addText('Performance Overview - Last 5 Days', {
+                x: 0.5, y: 0.3, w: '90%', h: 0.6,
                 fontSize: 28, bold: true, color: '00D2FF', align: 'center'
             });
             
-            // Meters chart (smaller)
+            // Meters chart
             slide.addChart(pptx.ChartType.bar, [{
                 name: 'Meters',
                 labels: metersData.dates,
                 values: metersData.meters
             }], {
-                x: 0.5, y: 1.0, w: 4.0, h: 2.5,
+                x: 0.5, y: 1.2, w: 4.5, h: 2.3,
                 chartColors: ['00D2FF'],
                 showTitle: true,
-                title: 'Meters Installed - Last 7 Days',
-                titleFontSize: 14,
-                showLegend: false
+                title: 'Meters Installed',
+                titleFontSize: 16,
+                titleColor: '00D2FF',
+                titleBold: true,
+                showLegend: false,
+                catAxisLabelFontSize: 11,
+                valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                showValue: true,
+                dataLabelFontSize: 10,
+                dataLabelColor: 'FFFFFF',
+                fill: '2D3748'
             });
             
             // Completion % chart
@@ -1359,13 +1402,23 @@
                 labels: metersData.dates,
                 values: metersData.completion
             }], {
-                x: 5.5, y: 1.0, w: 4.0, h: 2.5,
+                x: 5.5, y: 1.2, w: 4.0, h: 2.3,
                 chartColors: ['10B981'],
                 showTitle: true,
-                title: 'Completion Rate - Last 7 Days',
-                titleFontSize: 14,
+                title: 'Completion Rate %',
+                titleFontSize: 16,
+                titleColor: '10B981',
+                titleBold: true,
                 showLegend: false,
-                valAxisMaxVal: 100
+                valAxisMaxVal: 100,
+                catAxisLabelFontSize: 11,
+                valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                showValue: true,
+                dataLabelFontSize: 10,
+                dataLabelColor: 'FFFFFF',
+                fill: '2D3748'
             });
             
             // Attendance data
@@ -1383,40 +1436,75 @@
             });
             
             slide.addText('Attendance (Yesterday)', {
-                x: 0.5, y: 3.8, w: 4.0, h: 0.4,
-                fontSize: 14, bold: true, color: '00D2FF'
+                x: 0.5, y: 3.7, w: 4.5, h: 0.4,
+                fontSize: 16, bold: true, color: '00D2FF'
             });
             
-            const attendanceText = `At Work: ${aw.toFixed(1)}%  |  Holiday: ${hol.toFixed(1)}%  |  Sick: ${sick.toFixed(1)}%  |  AAUP: ${aaup.toFixed(1)}%`;
-            slide.addText(attendanceText, {
-                x: 0.5, y: 4.2, w: 4.0, h: 0.6,
-                fontSize: 12, color: 'FFFFFF'
+            slide.addText(`At Work: ${aw.toFixed(1)}%`, {
+                x: 0.5, y: 4.2, w: 2.0, h: 0.5,
+                fontSize: 14, color: 'FFFFFF', bold: true
+            });
+            slide.addText(`Holiday: ${hol.toFixed(1)}%`, {
+                x: 2.7, y: 4.2, w: 2.0, h: 0.5,
+                fontSize: 14, color: 'FFFFFF', bold: true
+            });
+            slide.addText(`Sick: ${sick.toFixed(1)}%`, {
+                x: 0.5, y: 4.8, w: 2.0, h: 0.5,
+                fontSize: 14, color: 'FFFFFF', bold: true
+            });
+            slide.addText(`AAUP: ${aaup.toFixed(1)}%`, {
+                x: 2.7, y: 4.8, w: 2.0, h: 0.5,
+                fontSize: 14, color: 'FFFFFF', bold: true
             });
             
             // Compliance chart
-            slide.addChart(pptx.ChartType.line, [{
-                name: 'Overall Pass Rate',
-                labels: complianceData.months,
-                values: complianceData.overall
-            }], {
-                x: 5.5, y: 3.8, w: 4.0, h: 1.8,
-                chartColors: ['A78BFA'],
+            slide.addChart(pptx.ChartType.line, [
+                {
+                    name: 'WIP',
+                    labels: complianceData.months,
+                    values: complianceData.wipPass
+                },
+                {
+                    name: 'Post Comp',
+                    labels: complianceData.months,
+                    values: complianceData.postPass
+                },
+                {
+                    name: 'Overall',
+                    labels: complianceData.months,
+                    values: complianceData.overall
+                }
+            ], {
+                x: 5.5, y: 3.7, w: 4.0, h: 1.9,
+                chartColors: ['F59E0B', '3B82F6', 'A78BFA'],
                 showTitle: true,
-                title: 'Compliance - Last 6 Months',
-                titleFontSize: 14,
-                showLegend: false,
-                valAxisMaxVal: 100
+                title: 'Compliance - Last 5 Months',
+                titleFontSize: 16,
+                titleColor: 'A78BFA',
+                titleBold: true,
+                showLegend: true,
+                legendPos: 'b',
+                legendFontSize: 10,
+                legendColor: 'FFFFFF',
+                valAxisMaxVal: 100,
+                catAxisLabelFontSize: 10,
+                valAxisLabelFontSize: 10,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                fill: '2D3748',
+                lineSize: 3
             });
         }
 
         async function createTeamLeaderSlide(pptx, teamLeader) {
             const slide = pptx.addSlide();
-            const metersData = await getLast7DaysData(teamLeader);
-            const complianceData = await get6MonthsCompliance(teamLeader);
+            slide.background = { color: '1A1A2E' };
+            const metersData = await getLast5DaysData(teamLeader);
+            const complianceData = await get5MonthsCompliance(teamLeader);
             
             // Title
             slide.addText(`${teamLeader} - Performance Report`, {
-                x: 0.5, y: 0.2, w: '90%', h: 0.5,
+                x: 0.5, y: 0.3, w: '90%', h: 0.6,
                 fontSize: 28, bold: true, color: '00D2FF', align: 'center'
             });
             
@@ -1426,12 +1514,22 @@
                 labels: metersData.dates,
                 values: metersData.meters
             }], {
-                x: 0.5, y: 1.0, w: 4.0, h: 2.5,
+                x: 0.5, y: 1.2, w: 4.5, h: 2.5,
                 chartColors: ['00D2FF'],
                 showTitle: true,
-                title: 'Meters Installed - Last 7 Days',
-                titleFontSize: 14,
-                showLegend: false
+                title: 'Meters Installed - Last 5 Days',
+                titleFontSize: 16,
+                titleColor: '00D2FF',
+                titleBold: true,
+                showLegend: false,
+                catAxisLabelFontSize: 12,
+                valAxisLabelFontSize: 12,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                showValue: true,
+                dataLabelFontSize: 11,
+                dataLabelColor: 'FFFFFF',
+                fill: '2D3748'
             });
             
             // Completion % chart
@@ -1440,28 +1538,61 @@
                 labels: metersData.dates,
                 values: metersData.completion
             }], {
-                x: 5.5, y: 1.0, w: 4.0, h: 2.5,
+                x: 5.5, y: 1.2, w: 4.0, h: 2.5,
                 chartColors: ['10B981'],
                 showTitle: true,
-                title: 'Completion Rate - Last 7 Days',
-                titleFontSize: 14,
+                title: 'Completion Rate % - Last 5 Days',
+                titleFontSize: 16,
+                titleColor: '10B981',
+                titleBold: true,
                 showLegend: false,
-                valAxisMaxVal: 100
+                valAxisMaxVal: 100,
+                catAxisLabelFontSize: 12,
+                valAxisLabelFontSize: 12,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                showValue: true,
+                dataLabelFontSize: 11,
+                dataLabelColor: 'FFFFFF',
+                fill: '2D3748'
             });
             
-            // Compliance chart
-            slide.addChart(pptx.ChartType.line, [{
-                name: 'Overall Pass Rate',
-                labels: complianceData.months,
-                values: complianceData.overall
-            }], {
-                x: 2.5, y: 3.8, w: 5.0, h: 2.2,
-                chartColors: ['A78BFA'],
+            // Compliance chart with all three lines
+            slide.addChart(pptx.ChartType.line, [
+                {
+                    name: 'WIP',
+                    labels: complianceData.months,
+                    values: complianceData.wipPass
+                },
+                {
+                    name: 'Post Comp',
+                    labels: complianceData.months,
+                    values: complianceData.postPass
+                },
+                {
+                    name: 'Overall',
+                    labels: complianceData.months,
+                    values: complianceData.overall
+                }
+            ], {
+                x: 2.0, y: 4.0, w: 6.0, h: 2.0,
+                chartColors: ['F59E0B', '3B82F6', 'A78BFA'],
                 showTitle: true,
-                title: 'Compliance Pass Rate - Last 6 Months',
-                titleFontSize: 14,
-                showLegend: false,
-                valAxisMaxVal: 100
+                title: 'Compliance Pass Rate - Last 5 Months',
+                titleFontSize: 16,
+                titleColor: 'A78BFA',
+                titleBold: true,
+                showLegend: true,
+                legendPos: 'b',
+                legendFontSize: 11,
+                legendColor: 'FFFFFF',
+                valAxisMaxVal: 100,
+                catAxisLabelFontSize: 11,
+                valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF',
+                valAxisLabelColor: 'FFFFFF',
+                fill: '2D3748',
+                lineSize: 3
             });
         }
     </script>
