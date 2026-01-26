@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OES Yesterday's Performance</title>
+  <title>OES Previous Working Day Performance</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
     :root {
@@ -30,11 +30,17 @@
     }
     h1 {
       font-size: 2.2rem;
-      margin-bottom: 2rem;
+      margin-bottom: 0.5rem;
       background: linear-gradient(90deg, var(--accent), #a78bfa);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       text-align: center;
+    }
+    .date-subtitle {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
     }
     .team-section {
       background: var(--card);
@@ -131,9 +137,10 @@
 </head>
 <body>
   <div class="container">
-    <h1>Yesterday's Performance Breakdown</h1>
+    <h1>Previous Working Day Performance</h1>
+    <div class="date-subtitle" id="dateDisplay">Loading...</div>
     <div id="dataContainer">
-      <div class="loading">Loading yesterday's data…</div>
+      <div class="loading">Loading data…</div>
     </div>
   </div>
 
@@ -154,12 +161,33 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
+    // Get previous working day (skip weekends)
+    function getPreviousWorkingDay() {
+      let d = new Date();
+      d.setDate(d.getDate() - 1);
+      while (d.getDay() === 0 || d.getDay() === 6) {
+        d.setDate(d.getDate() - 1);
+      }
+      return d;
+    }
+
+    function formatDateForDisplay(d) {
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+
     async function loadYesterdayData() {
       const container = document.getElementById('dataContainer');
+      const dateDisplay = document.getElementById('dateDisplay');
+      
       try {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yestDate = yesterday.toISOString().split('T')[0];
+        // Get previous working day
+        const targetDate = getPreviousWorkingDay();
+        const yestDate = targetDate.toISOString().split('T')[0];
+        
+        // Update date display
+        dateDisplay.textContent = formatDateForDisplay(targetDate);
 
         const q = query(
           collection(db, "performance"),
@@ -169,7 +197,7 @@
         const snapshot = await getDocs(q);
 
         if (snapshot.empty) {
-          container.innerHTML = '<div class="error-msg">No data found for yesterday.</div>';
+          container.innerHTML = `<div class="error-msg">No data found for ${formatDateForDisplay(targetDate)}.</div>`;
           return;
         }
 
