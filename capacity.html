@@ -198,6 +198,7 @@
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
+            cursor: pointer;
         }
         .day-card::before {
             content: '';
@@ -470,6 +471,49 @@
             background: var(--danger);
             color: white;
         }
+        .absence-list {
+            display: grid;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+        .absence-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+        .absence-item:hover {
+            border-color: var(--accent-primary);
+        }
+        .absence-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .absence-name {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        .absence-type {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .absence-dates {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+        .empty-message {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
         ::-webkit-scrollbar {
             width: 8px;
         }
@@ -569,6 +613,17 @@
                 <div class="spinner"></div>
                 Loading calendar...
             </div>
+        </div>
+    </div>
+
+    <!-- Day Details Modal -->
+    <div id="dayDetailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="dayDetailsTitle">Day Details</h2>
+                <button class="close-btn" onclick="closeModal('dayDetailsModal')">×</button>
+            </div>
+            <div id="dayDetailsContent"></div>
         </div>
     </div>
 
@@ -806,6 +861,128 @@
             updateStats();
         };
 
+        window.showDayDetails = function(dateStr, filteredEngineers) {
+            const date = new Date(dateStr);
+            const formattedDate = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+
+            document.getElementById('dayDetailsTitle').textContent = formattedDate;
+
+            // Find all absences for this day
+            const absencesOnDay = holidays.filter(h => {
+                const start = new Date(h.startDate);
+                const end = new Date(h.endDate);
+                const current = new Date(dateStr);
+                return current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
+            }).map(h => {
+                const engineer = engineers.find(e => e.id === h.engineerId);
+                return { ...h, engineerName: engineer ? engineer.name : 'Unknown' };
+            });
+
+            const content = document.getElementById('dayDetailsContent');
+            
+            if (absencesOnDay.length === 0) {
+                content.innerHTML = '<div class="empty-message">✅ All engineers available on this day</div>';
+            } else {
+                content.innerHTML = `
+                    <div class="absence-list">
+                        ${absencesOnDay.map(absence => {
+                            const typeLabel = absence.type === 'full' ? 'Full Day Holiday' : 
+                                            absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
+                            const startDate = new Date(absence.startDate).toLocaleDateString('en-GB');
+                            const endDate = new Date(absence.endDate).toLocaleDateString('en-GB');
+                            const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+                            
+                            return `
+                                <div class="absence-item">
+                                    <div class="absence-info">
+                                        <div class="absence-name">${absence.engineerName}</div>
+                                        <div class="absence-type">${typeLabel}</div>
+                                        <div class="absence-dates">Period: ${dateRange}</div>
+                                    </div>
+                                    <button class="delete-btn" onclick="deleteHolidayEntry('${absence.id}', '${dateStr}')">
+                                        Delete for ${date.getDate()}/${date.getMonth() + 1}
+                                    </button>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
+            openModal('dayDetailsModal');
+        };
+
+        window.deleteHolidayEntry = async function(holidayId, dateStr) {
+            const holiday = holidays.find(h => h.id === holidayId);
+            if (!holiday) return;
+
+            const targetDate = new Date(dateStr);
+            const startDate = new Date(holiday.startDate);
+            const endDate = new Date(holiday.endDate);
+
+            if (confirm(`Delete this absence entry for ${targetDate.toLocaleDateString('en-GB')}?`)) {
+                // If it's a single day entry, delete the whole thing
+                if (startDate.toDateString() === endDate.toDateString()) {
+                    await deleteDoc(doc(db, 'capacity', 'data', 'holidays', holidayId));
+                } else {
+                    // Multi-day entry: check if we're deleting the first, last, or middle day
+                    if (targetDate.toDateString() === startDate.toDateString()) {
+                        // Deleting first day - update start date to next day
+                        const newStart = new Date(targetDate);
+                        newStart.setDate(newStart.getDate() + 1);
+                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                            startDate: newStart.toISOString().split('T')[0]
+                        });
+                    } else if (targetDate.toDateString() === endDate.toDateString()) {
+                        // Deleting last day - update end date to previous day
+                        const newEnd = new Date(targetDate);
+                        newEnd.setDate(newEnd.getDate() - 1);
+                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                            endDate: newEnd.toISOString().split('T')[0]
+                        });
+                    } else {
+                        // Deleting middle day - split into two entries
+                        const dayBefore = new Date(targetDate);
+                        dayBefore.setDate(dayBefore.getDate() - 1);
+                        const dayAfter = new Date(targetDate);
+                        dayAfter.setDate(dayAfter.getDate() + 1);
+
+                        // Update existing entry to end the day before
+                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                            endDate: dayBefore.toISOString().split('T')[0]
+                        });
+
+                        // Create new entry starting the day after
+                        await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
+                            engineerId: holiday.engineerId,
+                            startDate: dayAfter.toISOString().split('T')[0],
+                            endDate: holiday.endDate,
+                            type: holiday.type
+                        });
+                    }
+                }
+
+                // Reload and refresh
+                await loadData();
+                renderCalendar();
+                updateStats();
+                
+                // Refresh the day details modal
+                const teamFilter = document.getElementById('teamFilter').value;
+                const contractFilter = document.getElementById('contractFilter').value;
+                let filteredEngineers = engineers;
+                if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
+                if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+                
+                showDayDetails(dateStr, filteredEngineers);
+            }
+        };
+
         function renderCalendar() {
             const grid = document.getElementById('calendarGrid');
             grid.innerHTML = '';
@@ -865,6 +1042,10 @@
                         <div class="capacity-text">${availablePercentage}% available</div>
                     </div>
                 `;
+                
+                // Make day card clickable
+                dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
+                
                 grid.appendChild(dayCard);
             }
         }
