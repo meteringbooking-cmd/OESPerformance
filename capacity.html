@@ -735,7 +735,7 @@
         </div>
     </div>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK + Application Logic -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -987,52 +987,58 @@
 
             const totalEngineers = filteredEngineers.length;
 
-            for (let date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
-                const dayOfWeek = date.getDay();
-                // Skip weekends completely – only Mon–Fri
-                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+            let d = new Date(firstDay);
+            while (d <= lastDay) {
+                // Create explicit local midnight to avoid DST transition bugs
+                const currentDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+                const dayOfWeek = currentDay.getDay();
 
-                const dateStr = date.toISOString().split('T')[0];
-                const currentComp = compareDate(dateStr);
+                // Only Monday to Friday
+                if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                    const dateStr = currentDay.toISOString().split('T')[0];
+                    const currentComp = compareDate(dateStr);
 
-                const onHolidayCount = holidays.reduce((count, h) => {
-                    const start = compareDate(h.startDate);
-                    const end   = compareDate(h.endDate);
-                    const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                    return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-                }, 0);
+                    const onHolidayCount = holidays.reduce((count, h) => {
+                        const start = compareDate(h.startDate);
+                        const end   = compareDate(h.endDate);
+                        const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                        return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                    }, 0);
 
-                const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
+                    const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
 
-                const dispDate = displayDate(dateStr);
+                    const dispDate = displayDate(dateStr);
 
-                const dayCard = document.createElement('div');
-                dayCard.className = 'day-card';
+                    const dayCard = document.createElement('div');
+                    dayCard.className = 'day-card';
 
-                let capacityClass = '';
-                let cardStyle = '';
-                if (availablePercentage < 85) {
-                    capacityClass = 'high';
-                    cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
-                } else if (availablePercentage < 90) {
-                    capacityClass = 'medium';
-                    cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
-                }
-                dayCard.setAttribute('style', cardStyle);
+                    let capacityClass = '';
+                    let cardStyle = '';
+                    if (availablePercentage < 85) {
+                        capacityClass = 'high';
+                        cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
+                    } else if (availablePercentage < 90) {
+                        capacityClass = 'medium';
+                        cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
+                    }
+                    dayCard.setAttribute('style', cardStyle);
 
-                dayCard.innerHTML = `
-                    <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                    <div class="day-number">${dispDate.getDate()}</div>
-                    <div class="capacity-info">
-                        <div class="capacity-bar">
-                            <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
+                    dayCard.innerHTML = `
+                        <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                        <div class="day-number">${dispDate.getDate()}</div>
+                        <div class="capacity-info">
+                            <div class="capacity-bar">
+                                <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
+                            </div>
+                            <div class="capacity-text">${availablePercentage}% available</div>
                         </div>
-                        <div class="capacity-text">${availablePercentage}% available</div>
-                    </div>
-                `;
+                    `;
 
-                dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
-                grid.appendChild(dayCard);
+                    dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
+                    grid.appendChild(dayCard);
+                }
+
+                d.setDate(d.getDate() + 1);
             }
         }
 
@@ -1064,23 +1070,29 @@
             let totalCapacity = 0;
             let workingDays = 0;
 
-            for (let date = new Date(firstDay); date <= lastDay; date.setDate(date.getDate() + 1)) {
-                const dayOfWeek = date.getDay();
-                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-                workingDays++;
+            let d = new Date(firstDay);
+            while (d <= lastDay) {
+                const currentDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+                const dayOfWeek = currentDay.getDay();
 
-                const dateStr = date.toISOString().split('T')[0];
-                const currentComp = compareDate(dateStr);
+                if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                    workingDays++;
 
-                const onHolidayCount = holidays.reduce((count, h) => {
-                    const start = compareDate(h.startDate);
-                    const end   = compareDate(h.endDate);
-                    const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                    return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-                }, 0);
+                    const dateStr = currentDay.toISOString().split('T')[0];
+                    const currentComp = compareDate(dateStr);
 
-                const capacity = filteredEngineers.length > 0 ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100 : 100;
-                totalCapacity += capacity;
+                    const onHolidayCount = holidays.reduce((count, h) => {
+                        const start = compareDate(h.startDate);
+                        const end   = compareDate(h.endDate);
+                        const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                        return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                    }, 0);
+
+                    const capacity = filteredEngineers.length > 0 ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100 : 100;
+                    totalCapacity += capacity;
+                }
+
+                d.setDate(d.getDate() + 1);
             }
 
             const avgCapacity = workingDays > 0 ? Math.round(totalCapacity / workingDays) : 100;
