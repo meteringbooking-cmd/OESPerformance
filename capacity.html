@@ -990,28 +990,32 @@
         for (let day = 1; day <= lastDay.getDate(); day++) {
             const d = new Date(year, month, day);
             const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
 
-            // Only include Mon–Fri (1-5)
-            if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-                const dateStr = d.toISOString().split('T')[0];
-                const currentComp = compareDate(dateStr);
+            const dateStr = d.toISOString().split('T')[0];
+            const currentComp = compareDate(dateStr);
 
-                const onHolidayCount = holidays.reduce((count, h) => {
-                    const start = compareDate(h.startDate);
-                    const end = compareDate(h.endDate);
-                    const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                    return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-                }, 0);
+            const onHolidayCount = holidays.reduce((count, h) => {
+                const start = compareDate(h.startDate);
+                const end = compareDate(h.endDate);
+                const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+            }, 0);
 
-                const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
+            const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
 
-                const dispDate = displayDate(dateStr);
+            const dispDate = displayDate(dateStr);
 
-                const dayCard = document.createElement('div');
-                dayCard.className = 'day-card';
+            const dayCard = document.createElement('div');
+            dayCard.className = 'day-card';
 
-                let capacityClass = '';
-                let cardStyle = '';
+            let capacityClass = '';
+            let cardStyle = '';
+            
+            // Style weekends differently
+            if (isWeekend) {
+                cardStyle = 'background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); cursor: default;';
+            } else {
                 if (availablePercentage < 85) {
                     capacityClass = 'high';
                     cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
@@ -1019,8 +1023,18 @@
                     capacityClass = 'medium';
                     cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
                 }
-                dayCard.setAttribute('style', cardStyle);
+            }
+            
+            dayCard.setAttribute('style', cardStyle);
 
+            if (isWeekend) {
+                // Weekend card - no capacity info
+                dayCard.innerHTML = `
+                    <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                    <div class="day-number">${dispDate.getDate()}</div>
+                `;
+            } else {
+                // Weekday card - with capacity info
                 dayCard.innerHTML = `
                     <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     <div class="day-number">${dispDate.getDate()}</div>
@@ -1031,10 +1045,10 @@
                         <div class="capacity-text">${availablePercentage}% available</div>
                     </div>
                 `;
-
                 dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
-                grid.appendChild(dayCard);
             }
+            
+            grid.appendChild(dayCard);
         }
     }
 
