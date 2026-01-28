@@ -737,462 +737,456 @@
 
     <!-- Firebase SDK + Application Logic -->
     <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
-            authDomain: "oesperformance-a54c0.firebaseapp.com",
-            projectId: "oesperformance-a54c0",
-            storageBucket: "oesperformance-a54c0.firebasestorage.app",
-            messagingSenderId: "484894102454",
-            appId: "1:484894102454:web:17535ee497eac2d90d6717",
-            measurementId: "G-R56BGZYV8N"
-        };
+    const firebaseConfig = {
+        apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+        authDomain: "oesperformance-a54c0.firebaseapp.com",
+        projectId: "oesperformance-a54c0",
+        storageBucket: "oesperformance-a54c0.firebasestorage.app",
+        messagingSenderId: "484894102454",
+        appId: "1:484894102454:web:17535ee497eac2d90d6717",
+        measurementId: "G-R56BGZYV8N"
+    };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-        // Helpers – display uses local parsing, comparison uses UTC
-        function displayDate(str) {
-            return new Date(str); // local midnight
-        }
+    // Helpers
+    function displayDate(str) {
+        return new Date(str); // local midnight for display
+    }
 
-        function compareDate(str) {
-            return new Date(str + "T00:00:00Z"); // UTC midnight for range checks
-        }
+    function compareDate(str) {
+        return new Date(str + "T00:00:00Z"); // UTC for range checks
+    }
 
-        // Global state
-        let currentDate = new Date();
-        let engineers = [];
-        let holidays = [];
-        let headcounts = {};
+    // Global state
+    let currentDate = new Date();
+    let engineers = [];
+    let holidays = [];
+    let headcounts = {};
 
-        // Modal helpers
-        window.openModal = function(modalId) {
-            document.getElementById(modalId).classList.add('active');
-        };
+    window.openModal = function(modalId) {
+        document.getElementById(modalId).classList.add('active');
+    };
 
-        window.closeModal = function(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-            if (modalId === 'memberModal') resetMemberForm();
-        };
+    window.closeModal = function(modalId) {
+        document.getElementById(modalId).classList.remove('active');
+        if (modalId === 'memberModal') resetMemberForm();
+    };
 
-        function resetMemberForm() {
-            document.getElementById('memberForm').reset();
-            document.getElementById('editingEngineerId').value = '';
-            document.getElementById('memberSubmitBtn').textContent = 'Add Engineer';
-        }
+    function resetMemberForm() {
+        document.getElementById('memberForm').reset();
+        document.getElementById('editingEngineerId').value = '';
+        document.getElementById('memberSubmitBtn').textContent = 'Add Engineer';
+    }
 
-        async function loadData() {
-            const engineersSnap = await getDocs(collection(db, 'capacity', 'data', 'engineers'));
-            engineers = engineersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            engineers.sort((a, b) => a.name.localeCompare(b.name));
+    async function loadData() {
+        const engineersSnap = await getDocs(collection(db, 'capacity', 'data', 'engineers'));
+        engineers = engineersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        engineers.sort((a, b) => a.name.localeCompare(b.name));
 
-            const holidaysSnap = await getDocs(collection(db, 'capacity', 'data', 'holidays'));
-            holidays = holidaysSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const holidaysSnap = await getDocs(collection(db, 'capacity', 'data', 'holidays'));
+        holidays = holidaysSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const headcountsSnap = await getDocs(collection(db, 'capacity', 'data', 'headcounts'));
-            headcounts = {};
-            headcountsSnap.docs.forEach(doc => {
-                const data = doc.data();
-                headcounts[data.team] = { id: doc.id, count: data.count };
-            });
+        const headcountsSnap = await getDocs(collection(db, 'capacity', 'data', 'headcounts'));
+        headcounts = {};
+        headcountsSnap.docs.forEach(doc => {
+            const data = doc.data();
+            headcounts[data.team] = { id: doc.id, count: data.count };
+        });
 
-            const engineerSelect = document.getElementById('holidayEngineer');
-            engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
-            engineers.forEach(eng => {
-                const option = document.createElement('option');
-                option.value = eng.id;
-                option.textContent = `${eng.name} (${eng.team})`;
-                engineerSelect.appendChild(option);
-            });
+        const engineerSelect = document.getElementById('holidayEngineer');
+        engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
+        engineers.forEach(eng => {
+            const option = document.createElement('option');
+            option.value = eng.id;
+            option.textContent = `${eng.name} (${eng.team})`;
+            engineerSelect.appendChild(option);
+        });
 
-            renderTeamList();
-        }
+        renderTeamList();
+    }
 
-        function renderTeamList() {
-            const teamList = document.getElementById('teamList');
-            teamList.innerHTML = '';
-            engineers.forEach(eng => {
-                const div = document.createElement('div');
-                div.className = 'team-member';
-                div.innerHTML = `
-                    <div class="member-info">
-                        <div class="member-name">${eng.name}</div>
-                        <div class="member-details">${eng.team} • ${eng.contract}</div>
-                    </div>
-                    <div class="team-member-actions">
-                        <button class="edit-btn" onclick="editMember('${eng.id}', '${eng.name.replace(/'/g,"\\'")}', '${eng.team.replace(/'/g,"\\'")}', '${eng.contract.replace(/'/g,"\\'")}')">Edit</button>
-                        <button class="delete-btn" onclick="deleteMember('${eng.id}')">Delete</button>
-                    </div>
-                `;
-                teamList.appendChild(div);
-            });
-        }
+    function renderTeamList() {
+        const teamList = document.getElementById('teamList');
+        teamList.innerHTML = '';
+        engineers.forEach(eng => {
+            const div = document.createElement('div');
+            div.className = 'team-member';
+            div.innerHTML = `
+                <div class="member-info">
+                    <div class="member-name">${eng.name}</div>
+                    <div class="member-details">${eng.team} • ${eng.contract}</div>
+                </div>
+                <div class="team-member-actions">
+                    <button class="edit-btn" onclick="editMember('${eng.id}', '${eng.name.replace(/'/g,"\\'")}', '${eng.team.replace(/'/g,"\\'")}', '${eng.contract.replace(/'/g,"\\'")}')">Edit</button>
+                    <button class="delete-btn" onclick="deleteMember('${eng.id}')">Delete</button>
+                </div>
+            `;
+            teamList.appendChild(div);
+        });
+    }
 
-        window.editMember = function(id, name, team, contract) {
-            document.getElementById('editingEngineerId').value = id;
-            document.getElementById('memberName').value = name;
-            document.getElementById('memberTeam').value = team;
-            document.getElementById('memberContract').value = contract;
-            document.getElementById('memberSubmitBtn').textContent = 'Save Changes';
-            openModal('memberModal');
-        };
+    window.editMember = function(id, name, team, contract) {
+        document.getElementById('editingEngineerId').value = id;
+        document.getElementById('memberName').value = name;
+        document.getElementById('memberTeam').value = team;
+        document.getElementById('memberContract').value = contract;
+        document.getElementById('memberSubmitBtn').textContent = 'Save Changes';
+        openModal('memberModal');
+    };
 
-        window.deleteMember = async function(id) {
-            if (!confirm('Are you sure you want to delete this engineer?')) return;
-            await deleteDoc(doc(db, 'capacity', 'data', 'engineers', id));
-            engineers = engineers.filter(e => e.id !== id);
-            renderTeamList();
-            const engineerSelect = document.getElementById('holidayEngineer');
-            engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
-            engineers.forEach(eng => {
-                const option = document.createElement('option');
-                option.value = eng.id;
-                option.textContent = `${eng.name} (${eng.team})`;
-                engineerSelect.appendChild(option);
-            });
-            renderCalendar();
-            updateStats();
-        };
+    window.deleteMember = async function(id) {
+        if (!confirm('Are you sure you want to delete this engineer?')) return;
+        await deleteDoc(doc(db, 'capacity', 'data', 'engineers', id));
+        engineers = engineers.filter(e => e.id !== id);
+        renderTeamList();
+        const engineerSelect = document.getElementById('holidayEngineer');
+        engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
+        engineers.forEach(eng => {
+            const option = document.createElement('option');
+            option.value = eng.id;
+            option.textContent = `${eng.name} (${eng.team})`;
+            engineerSelect.appendChild(option);
+        });
+        renderCalendar();
+        updateStats();
+    };
 
-        window.showDayDetails = function(dateStr, filteredEngineers) {
-            const dispDate = displayDate(dateStr);
+    window.showDayDetails = function(dateStr, filteredEngineers) {
+        const dispDate = displayDate(dateStr);
 
-            document.getElementById('dayDetailsTitle').textContent = dispDate.toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            });
+        document.getElementById('dayDetailsTitle').textContent = dispDate.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
 
-            const currentComp = compareDate(dateStr);
+        const currentComp = compareDate(dateStr);
 
-            const absencesOnDay = holidays.filter(h => {
-                const start = compareDate(h.startDate);
-                const end   = compareDate(h.endDate);
-                return currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-            }).map(h => {
-                const engineer = engineers.find(e => e.id === h.engineerId);
-                return { ...h, engineerName: engineer ? engineer.name : 'Unknown' };
-            });
+        const absencesOnDay = holidays.filter(h => {
+            const start = compareDate(h.startDate);
+            const end = compareDate(h.endDate);
+            return currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+        }).map(h => {
+            const engineer = engineers.find(e => e.id === h.engineerId);
+            return { ...h, engineerName: engineer ? engineer.name : 'Unknown' };
+        });
 
-            const content = document.getElementById('dayDetailsContent');
+        const content = document.getElementById('dayDetailsContent');
 
-            if (absencesOnDay.length === 0) {
-                content.innerHTML = '<div class="empty-message">✅ All engineers available on this day</div>';
-            } else {
-                content.innerHTML = `
-                    <div class="absence-list">
-                        ${absencesOnDay.map(absence => {
-                            const typeLabel = absence.type === 'full' ? 'Full Day Holiday' :
-                                             absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
-                            const startDisp = displayDate(absence.startDate).toLocaleDateString('en-GB');
-                            const endDisp   = displayDate(absence.endDate).toLocaleDateString('en-GB');
-                            const dateRange = startDisp === endDisp ? startDisp : `${startDisp} - ${endDisp}`;
+        if (absencesOnDay.length === 0) {
+            content.innerHTML = '<div class="empty-message">✅ All engineers available on this day</div>';
+        } else {
+            content.innerHTML = `
+                <div class="absence-list">
+                    ${absencesOnDay.map(absence => {
+                        const typeLabel = absence.type === 'full' ? 'Full Day Holiday' :
+                                         absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
+                        const startDisp = displayDate(absence.startDate).toLocaleDateString('en-GB');
+                        const endDisp = displayDate(absence.endDate).toLocaleDateString('en-GB');
+                        const dateRange = startDisp === endDisp ? startDisp : `${startDisp} - ${endDisp}`;
 
-                            return `
-                                <div class="absence-item">
-                                    <div class="absence-info">
-                                        <div class="absence-name">${absence.engineerName}</div>
-                                        <div class="absence-type">${typeLabel}</div>
-                                        <div class="absence-dates">Period: ${dateRange}</div>
-                                    </div>
-                                    <button class="delete-btn" onclick="deleteHolidayEntry('${absence.id}', '${dateStr}')">
-                                        Delete for ${dispDate.getDate()}/${dispDate.getMonth() + 1}
-                                    </button>
+                        return `
+                            <div class="absence-item">
+                                <div class="absence-info">
+                                    <div class="absence-name">${absence.engineerName}</div>
+                                    <div class="absence-type">${typeLabel}</div>
+                                    <div class="absence-dates">Period: ${dateRange}</div>
                                 </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `;
-            }
-            openModal('dayDetailsModal');
-        };
-
-        window.deleteHolidayEntry = async function(holidayId, dateStr) {
-            const holiday = holidays.find(h => h.id === holidayId);
-            if (!holiday) return;
-
-            const targetComp = compareDate(dateStr);
-            const startComp  = compareDate(holiday.startDate);
-            const endComp    = compareDate(holiday.endDate);
-
-            const targetDisp = displayDate(dateStr);
-
-            if (confirm(`Delete this absence entry for ${targetDisp.toLocaleDateString('en-GB')}?`)) {
-                if (startComp.toDateString() === endComp.toDateString()) {
-                    await deleteDoc(doc(db, 'capacity', 'data', 'holidays', holidayId));
-                } else if (targetComp.toDateString() === startComp.toDateString()) {
-                    const newStart = new Date(targetComp);
-                    newStart.setDate(newStart.getDate() + 1);
-                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                        startDate: newStart.toISOString().split('T')[0]
-                    });
-                } else if (targetComp.toDateString() === endComp.toDateString()) {
-                    const newEnd = new Date(targetComp);
-                    newEnd.setDate(newEnd.getDate() - 1);
-                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                        endDate: newEnd.toISOString().split('T')[0]
-                    });
-                } else {
-                    const dayBefore = new Date(targetComp);
-                    dayBefore.setDate(dayBefore.getDate() - 1);
-                    const dayAfter = new Date(targetComp);
-                    dayAfter.setDate(dayAfter.getDate() + 1);
-
-                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                        endDate: dayBefore.toISOString().split('T')[0]
-                    });
-
-                    await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
-                        engineerId: holiday.engineerId,
-                        startDate: dayAfter.toISOString().split('T')[0],
-                        endDate: holiday.endDate,
-                        type: holiday.type
-                    });
-                }
-
-                await loadData();
-                renderCalendar();
-                updateStats();
-
-                const teamFilter = document.getElementById('teamFilter').value;
-                const contractFilter = document.getElementById('contractFilter').value;
-                let filteredEngineers = engineers;
-                if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
-                if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
-
-                showDayDetails(dateStr, filteredEngineers);
-            }
-        };
-
-        function renderCalendar() {
-            const grid = document.getElementById('calendarGrid');
-            grid.innerHTML = '';
-
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-            document.getElementById('currentMonth').textContent = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
-
-            const teamFilter = document.getElementById('teamFilter').value;
-            const contractFilter = document.getElementById('contractFilter').value;
-            let filteredEngineers = engineers;
-            if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
-            if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
-
-            const totalEngineers = filteredEngineers.length;
-
-            let d = new Date(firstDay);
-            while (d <= lastDay) {
-                // Explicit local midnight date object
-                const currentDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-
-                // Get weekday reliably using toLocaleDateString (handles DST correctly)
-                const weekdayName = currentDay.toLocaleDateString('en-US', { weekday: 'long' });
-                const weekdayNum = currentDay.getDay(); // still use this for quick check
-
-                // Only Monday to Friday
-                if (weekdayNum >= 1 && weekdayNum <= 5) {
-                    const dateStr = currentDay.toISOString().split('T')[0];
-                    const currentComp = compareDate(dateStr);
-
-                    const onHolidayCount = holidays.reduce((count, h) => {
-                        const start = compareDate(h.startDate);
-                        const end   = compareDate(h.endDate);
-                        const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                        return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-                    }, 0);
-
-                    const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
-
-                    const dispDate = displayDate(dateStr);
-
-                    const dayCard = document.createElement('div');
-                    dayCard.className = 'day-card';
-
-                    let capacityClass = '';
-                    let cardStyle = '';
-                    if (availablePercentage < 85) {
-                        capacityClass = 'high';
-                        cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
-                    } else if (availablePercentage < 90) {
-                        capacityClass = 'medium';
-                        cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
-                    }
-                    dayCard.setAttribute('style', cardStyle);
-
-                    dayCard.innerHTML = `
-                        <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                        <div class="day-number">${dispDate.getDate()}</div>
-                        <div class="capacity-info">
-                            <div class="capacity-bar">
-                                <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
+                                <button class="delete-btn" onclick="deleteHolidayEntry('${absence.id}', '${dateStr}')">
+                                    Delete for ${dispDate.getDate()}/${dispDate.getMonth() + 1}
+                                </button>
                             </div>
-                            <div class="capacity-text">${availablePercentage}% available</div>
-                        </div>
-                    `;
-
-                    dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
-                    grid.appendChild(dayCard);
-                }
-
-                d.setDate(d.getDate() + 1);
-            }
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
+        openModal('dayDetailsModal');
+    };
 
-        function updateStats() {
-            const teamFilter = document.getElementById('teamFilter').value;
-            const contractFilter = document.getElementById('contractFilter').value;
-            let filteredEngineers = engineers;
-            if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
-            if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+    window.deleteHolidayEntry = async function(holidayId, dateStr) {
+        const holiday = holidays.find(h => h.id === holidayId);
+        if (!holiday) return;
 
-            document.getElementById('totalEngineers').textContent = filteredEngineers.length;
+        const targetComp = compareDate(dateStr);
+        const startComp = compareDate(holiday.startDate);
+        const endComp = compareDate(holiday.endDate);
 
-            const todayStr = new Date().toISOString().split('T')[0];
-            const todayComp = compareDate(todayStr);
+        const targetDisp = displayDate(dateStr);
 
-            const holidayToday = holidays.reduce((count, h) => {
-                const start = compareDate(h.startDate);
-                const end   = compareDate(h.endDate);
-                const isOnHoliday = todayComp >= start && todayComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-            }, 0);
-            document.getElementById('holidayToday').textContent = holidayToday;
+        if (confirm(`Delete this absence entry for ${targetDisp.toLocaleDateString('en-GB')}?`)) {
+            if (startComp.toDateString() === endComp.toDateString()) {
+                await deleteDoc(doc(db, 'capacity', 'data', 'holidays', holidayId));
+            } else if (targetComp.toDateString() === startComp.toDateString()) {
+                const newStart = new Date(targetComp);
+                newStart.setDate(newStart.getDate() + 1);
+                await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                    startDate: newStart.toISOString().split('T')[0]
+                });
+            } else if (targetComp.toDateString() === endComp.toDateString()) {
+                const newEnd = new Date(targetComp);
+                newEnd.setDate(newEnd.getDate() - 1);
+                await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                    endDate: newEnd.toISOString().split('T')[0]
+                });
+            } else {
+                const dayBefore = new Date(targetComp);
+                dayBefore.setDate(dayBefore.getDate() - 1);
+                const dayAfter = new Date(targetComp);
+                dayAfter.setDate(dayAfter.getDate() + 1);
 
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
-
-            let totalCapacity = 0;
-            let workingDays = 0;
-
-            let d = new Date(firstDay);
-            while (d <= lastDay) {
-                const currentDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-                const weekdayNum = currentDay.getDay();
-
-                if (weekdayNum >= 1 && weekdayNum <= 5) {
-                    workingDays++;
-
-                    const dateStr = currentDay.toISOString().split('T')[0];
-                    const currentComp = compareDate(dateStr);
-
-                    const onHolidayCount = holidays.reduce((count, h) => {
-                        const start = compareDate(h.startDate);
-                        const end   = compareDate(h.endDate);
-                        const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
-                        return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
-                    }, 0);
-
-                    const capacity = filteredEngineers.length > 0 ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100 : 100;
-                    totalCapacity += capacity;
-                }
-
-                d.setDate(d.getDate() + 1);
-            }
-
-            const avgCapacity = workingDays > 0 ? Math.round(totalCapacity / workingDays) : 100;
-            document.getElementById('avgCapacity').textContent = avgCapacity + '%';
-        }
-
-        function setupEventListeners() {
-            document.getElementById('prevMonth').addEventListener('click', () => {
-                currentDate.setMonth(currentDate.getMonth() - 1);
-                renderCalendar();
-                updateStats();
-            });
-
-            document.getElementById('nextMonth').addEventListener('click', () => {
-                currentDate.setMonth(currentDate.getMonth() + 1);
-                renderCalendar();
-                updateStats();
-            });
-
-            document.getElementById('teamFilter').addEventListener('change', () => {
-                renderCalendar();
-                updateStats();
-            });
-
-            document.getElementById('contractFilter').addEventListener('change', () => {
-                renderCalendar();
-                updateStats();
-            });
-
-            document.getElementById('holidayForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const engineerId = document.getElementById('holidayEngineer').value;
-                const startDate = document.getElementById('holidayStart').value;
-                const endDate = document.getElementById('holidayEnd').value;
-                const type = document.getElementById('holidayType').value;
-
-                await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
-                    engineerId,
-                    startDate,
-                    endDate,
-                    type
+                await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                    endDate: dayBefore.toISOString().split('T')[0]
                 });
 
-                closeModal('holidayModal');
-                document.getElementById('holidayForm').reset();
-                await loadData();
-                renderCalendar();
-                updateStats();
-            });
+                await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
+                    engineerId: holiday.engineerId,
+                    startDate: dayAfter.toISOString().split('T')[0],
+                    endDate: holiday.endDate,
+                    type: holiday.type
+                });
+            }
 
-            document.getElementById('headcountForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const team = document.getElementById('headcountTeam').value;
-                const count = parseInt(document.getElementById('headcountNumber').value);
-
-                if (headcounts[team]) {
-                    await updateDoc(doc(db, 'capacity', 'data', 'headcounts', headcounts[team].id), { count });
-                } else {
-                    await addDoc(collection(db, 'capacity', 'data', 'headcounts'), { team, count });
-                }
-
-                closeModal('headcountModal');
-                document.getElementById('headcountForm').reset();
-                await loadData();
-                updateStats();
-            });
-
-            document.getElementById('memberForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const id = document.getElementById('editingEngineerId').value;
-                const name = document.getElementById('memberName').value.trim();
-                const team = document.getElementById('memberTeam').value;
-                const contract = document.getElementById('memberContract').value;
-
-                if (!name || !team || !contract) return;
-
-                if (id) {
-                    await updateDoc(doc(db, 'capacity', 'data', 'engineers', id), { name, team, contract });
-                } else {
-                    await addDoc(collection(db, 'capacity', 'data', 'engineers'), { name, team, contract });
-                }
-
-                closeModal('memberModal');
-                await loadData();
-                renderCalendar();
-                updateStats();
-            });
-        }
-
-        async function init() {
             await loadData();
             renderCalendar();
-            setupEventListeners();
             updateStats();
+
+            const teamFilter = document.getElementById('teamFilter').value;
+            const contractFilter = document.getElementById('contractFilter').value;
+            let filteredEngineers = engineers;
+            if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
+            if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+
+            showDayDetails(dateStr, filteredEngineers);
+        }
+    };
+
+    function renderCalendar() {
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '';
+
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        document.getElementById('currentMonth').textContent = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+
+        const teamFilter = document.getElementById('teamFilter').value;
+        const contractFilter = document.getElementById('contractFilter').value;
+        let filteredEngineers = engineers;
+        if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
+        if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+
+        const totalEngineers = filteredEngineers.length;
+
+        let d = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate());
+        while (d <= lastDay) {
+            // Get weekday name reliably (handles DST transitions correctly)
+            const weekdayLong = d.toLocaleDateString('en-US', { weekday: 'long' });
+
+            // Only include Mon–Fri
+            if (!['Saturday', 'Sunday'].includes(weekdayLong)) {
+                const dateStr = d.toISOString().split('T')[0];
+                const currentComp = compareDate(dateStr);
+
+                const onHolidayCount = holidays.reduce((count, h) => {
+                    const start = compareDate(h.startDate);
+                    const end = compareDate(h.endDate);
+                    const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                    return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                }, 0);
+
+                const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
+
+                const dispDate = displayDate(dateStr);
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'day-card';
+
+                let capacityClass = '';
+                let cardStyle = '';
+                if (availablePercentage < 85) {
+                    capacityClass = 'high';
+                    cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
+                } else if (availablePercentage < 90) {
+                    capacityClass = 'medium';
+                    cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
+                }
+                dayCard.setAttribute('style', cardStyle);
+
+                dayCard.innerHTML = `
+                    <div class="day-name">${dispDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                    <div class="day-number">${dispDate.getDate()}</div>
+                    <div class="capacity-info">
+                        <div class="capacity-bar">
+                            <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
+                        </div>
+                        <div class="capacity-text">${availablePercentage}% available</div>
+                    </div>
+                `;
+
+                dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
+                grid.appendChild(dayCard);
+            }
+
+            d.setDate(d.getDate() + 1);
+        }
+    }
+
+    function updateStats() {
+        const teamFilter = document.getElementById('teamFilter').value;
+        const contractFilter = document.getElementById('contractFilter').value;
+        let filteredEngineers = engineers;
+        if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
+        if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+
+        document.getElementById('totalEngineers').textContent = filteredEngineers.length;
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayComp = compareDate(todayStr);
+
+        const holidayToday = holidays.reduce((count, h) => {
+            const start = compareDate(h.startDate);
+            const end = compareDate(h.endDate);
+            const isOnHoliday = todayComp >= start && todayComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+            return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+        }, 0);
+        document.getElementById('holidayToday').textContent = holidayToday;
+
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+
+        let totalCapacity = 0;
+        let workingDays = 0;
+
+        let d = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate());
+        while (d <= lastDay) {
+            const weekdayLong = d.toLocaleDateString('en-US', { weekday: 'long' });
+
+            if (!['Saturday', 'Sunday'].includes(weekdayLong)) {
+                workingDays++;
+
+                const dateStr = d.toISOString().split('T')[0];
+                const currentComp = compareDate(dateStr);
+
+                const onHolidayCount = holidays.reduce((count, h) => {
+                    const start = compareDate(h.startDate);
+                    const end = compareDate(h.endDate);
+                    const isOnHoliday = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                    return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                }, 0);
+
+                const capacity = filteredEngineers.length > 0 ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100 : 100;
+                totalCapacity += capacity;
+            }
+
+            d.setDate(d.getDate() + 1);
         }
 
-        init();
+        const avgCapacity = workingDays > 0 ? Math.round(totalCapacity / workingDays) : 100;
+        document.getElementById('avgCapacity').textContent = avgCapacity + '%';
+    }
+
+    function setupEventListeners() {
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+            updateStats();
+        });
+
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+            updateStats();
+        });
+
+        document.getElementById('teamFilter').addEventListener('change', () => {
+            renderCalendar();
+            updateStats();
+        });
+
+        document.getElementById('contractFilter').addEventListener('change', () => {
+            renderCalendar();
+            updateStats();
+        });
+
+        document.getElementById('holidayForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const engineerId = document.getElementById('holidayEngineer').value;
+            const startDate = document.getElementById('holidayStart').value;
+            const endDate = document.getElementById('holidayEnd').value;
+            const type = document.getElementById('holidayType').value;
+
+            await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
+                engineerId,
+                startDate,
+                endDate,
+                type
+            });
+
+            closeModal('holidayModal');
+            document.getElementById('holidayForm').reset();
+            await loadData();
+            renderCalendar();
+            updateStats();
+        });
+
+        document.getElementById('headcountForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const team = document.getElementById('headcountTeam').value;
+            const count = parseInt(document.getElementById('headcountNumber').value);
+
+            if (headcounts[team]) {
+                await updateDoc(doc(db, 'capacity', 'data', 'headcounts', headcounts[team].id), { count });
+            } else {
+                await addDoc(collection(db, 'capacity', 'data', 'headcounts'), { team, count });
+            }
+
+            closeModal('headcountModal');
+            document.getElementById('headcountForm').reset();
+            await loadData();
+            updateStats();
+        });
+
+        document.getElementById('memberForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('editingEngineerId').value;
+            const name = document.getElementById('memberName').value.trim();
+            const team = document.getElementById('memberTeam').value;
+            const contract = document.getElementById('memberContract').value;
+
+            if (!name || !team || !contract) return;
+
+            if (id) {
+                await updateDoc(doc(db, 'capacity', 'data', 'engineers', id), { name, team, contract });
+            } else {
+                await addDoc(collection(db, 'capacity', 'data', 'engineers'), { name, team, contract });
+            }
+
+            closeModal('memberModal');
+            await loadData();
+            renderCalendar();
+            updateStats();
+        });
+    }
+
+    async function init() {
+        await loadData();
+        renderCalendar();
+        setupEventListeners();
+        updateStats();
+    }
+
+    init();
     </script>
 </body>
 </html>
