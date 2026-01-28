@@ -758,11 +758,17 @@
         const db = getFirestore(app);
 
         // ────────────────────────────────────────────────
-        // Helper – treat YYYY-MM-DD strings as UTC date-only
+        // Helpers
         // ────────────────────────────────────────────────
         function parseDate(str) {
             if (!str) return null;
-            return new Date(str + "T00:00:00Z");
+            return new Date(str + "T00:00:00Z"); // UTC midnight – correct for comparisons
+        }
+
+        function formatForDisplay(utcDateObj) {
+            // Shift back by timezone offset so displayed weekday/date matches local expectation
+            const offsetMs = utcDateObj.getTimezoneOffset() * 60 * 1000;
+            return new Date(utcDateObj.getTime() - offsetMs);
         }
 
         // Global state
@@ -788,16 +794,13 @@
         }
 
         async function loadData() {
-            // Engineers - sorted alphabetically
             const engineersSnap = await getDocs(collection(db, 'capacity', 'data', 'engineers'));
             engineers = engineersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             engineers.sort((a, b) => a.name.localeCompare(b.name));
 
-            // Holidays
             const holidaysSnap = await getDocs(collection(db, 'capacity', 'data', 'holidays'));
             holidays = holidaysSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Headcounts
             const headcountsSnap = await getDocs(collection(db, 'capacity', 'data', 'headcounts'));
             headcounts = {};
             headcountsSnap.docs.forEach(doc => {
@@ -805,7 +808,6 @@
                 headcounts[data.team] = { id: doc.id, count: data.count };
             });
 
-            // Populate engineer dropdown in holiday modal
             const engineerSelect = document.getElementById('holidayEngineer');
             engineerSelect.innerHTML = '<option value="">Select Engineer</option>';
             engineers.forEach(eng => {
@@ -865,8 +867,10 @@
         };
 
         window.showDayDetails = function(dateStr, filteredEngineers) {
-            const date = parseDate(dateStr);
-            const formattedDate = date.toLocaleDateString('en-US', {
+            const utcDate = parseDate(dateStr);
+            const displayDate = formatForDisplay(utcDate);
+
+            const formattedDate = displayDate.toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -874,7 +878,6 @@
             });
             document.getElementById('dayDetailsTitle').textContent = formattedDate;
 
-            // Find all absences for this day
             const absencesOnDay = holidays.filter(h => {
                 const start = parseDate(h.startDate);
                 const end = parseDate(h.endDate);
@@ -895,9 +898,9 @@
                         ${absencesOnDay.map(absence => {
                             const typeLabel = absence.type === 'full' ? 'Full Day Holiday' :
                                              absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
-                            const startDate = parseDate(absence.startDate).toLocaleDateString('en-GB');
-                            const endDate = parseDate(absence.endDate).toLocaleDateString('en-GB');
-                            const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+                            const startDisplay = formatForDisplay(parseDate(absence.startDate)).toLocaleDateString('en-GB');
+                            const endDisplay = formatForDisplay(parseDate(absence.endDate)).toLocaleDateString('en-GB');
+                            const dateRange = startDisplay === endDisplay ? startDisplay : `${startDisplay} - ${endDisplay}`;
 
                             return `
                                 <div class="absence-item">
@@ -907,7 +910,7 @@
                                         <div class="absence-dates">Period: ${dateRange}</div>
                                     </div>
                                     <button class="delete-btn" onclick="deleteHolidayEntry('${absence.id}', '${dateStr}')">
-                                        Delete for ${date.getDate()}/${date.getMonth() + 1}
+                                        Delete for ${displayDate.getDate()}/${displayDate.getMonth() + 1}
                                     </button>
                                 </div>
                             `;
@@ -926,26 +929,22 @@
             const startDate  = parseDate(holiday.startDate);
             const endDate    = parseDate(holiday.endDate);
 
-            if (confirm(`Delete this absence entry for ${targetDate.toLocaleDateString('en-GB')}?`)) {
+            if (confirm(`Delete this absence entry for ${formatForDisplay(targetDate).toLocaleDateString('en-GB')}?`)) {
                 if (startDate.toDateString() === endDate.toDateString()) {
-                    // Single day → delete whole document
                     await deleteDoc(doc(db, 'capacity', 'data', 'holidays', holidayId));
                 } else if (targetDate.toDateString() === startDate.toDateString()) {
-                    // First day → move start forward
                     const newStart = new Date(targetDate);
                     newStart.setDate(newStart.getDate() + 1);
                     await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
                         startDate: newStart.toISOString().split('T')[0]
                     });
                 } else if (targetDate.toDateString() === endDate.toDateString()) {
-                    // Last day → move end back
                     const newEnd = new Date(targetDate);
                     newEnd.setDate(newEnd.getDate() - 1);
                     await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
                         endDate: newEnd.toISOString().split('T')[0]
                     });
                 } else {
-                    // Middle day → split
                     const dayBefore = new Date(targetDate);
                     dayBefore.setDate(dayBefore.getDate() - 1);
                     const dayAfter = new Date(targetDate);
@@ -967,7 +966,6 @@
                 renderCalendar();
                 updateStats();
 
-                // Refresh modal
                 const teamFilter = document.getElementById('teamFilter').value;
                 const contractFilter = document.getElementById('contractFilter').value;
                 let filteredEngineers = engineers;
@@ -1013,6 +1011,8 @@
 
                 const availablePercentage = totalEngineers > 0 ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100) : 100;
 
+                const displayDate = formatForDisplay(date);
+
                 const dayCard = document.createElement('div');
                 dayCard.className = 'day-card';
 
@@ -1028,8 +1028,8 @@
                 dayCard.setAttribute('style', cardStyle);
 
                 dayCard.innerHTML = `
-                    <div class="day-name">${date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                    <div class="day-number">${date.getDate()}</div>
+                    <div class="day-name">${displayDate.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                    <div class="day-number">${displayDate.getDate()}</div>
                     <div class="capacity-info">
                         <div class="capacity-bar">
                             <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
@@ -1053,16 +1053,16 @@
             document.getElementById('totalEngineers').textContent = filteredEngineers.length;
 
             const todayStr = new Date().toISOString().split('T')[0];
+            const todayUtc = parseDate(todayStr);
+
             const holidayToday = holidays.reduce((count, h) => {
                 const start = parseDate(h.startDate);
                 const end = parseDate(h.endDate);
-                const current = parseDate(todayStr);
-                const isOnHoliday = current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                const isOnHoliday = todayUtc >= start && todayUtc <= end && filteredEngineers.some(e => e.id === h.engineerId);
                 return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
             }, 0);
             document.getElementById('holidayToday').textContent = holidayToday;
 
-            // Average capacity for month
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
             const firstDay = new Date(year, month, 1);
@@ -1116,7 +1116,6 @@
                 updateStats();
             });
 
-            // Holiday form
             document.getElementById('holidayForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const engineerId = document.getElementById('holidayEngineer').value;
@@ -1138,7 +1137,6 @@
                 updateStats();
             });
 
-            // Headcount form
             document.getElementById('headcountForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const team = document.getElementById('headcountTeam').value;
@@ -1156,7 +1154,6 @@
                 updateStats();
             });
 
-            // Engineer add/edit form
             document.getElementById('memberForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const id = document.getElementById('editingEngineerId').value;
