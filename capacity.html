@@ -60,7 +60,7 @@
         }
         @keyframes slideDown {
             from { opacity: 0; transform: translateY(-20px); }
-            to   { opacity: 1; transform: translateY(0); }
+            to { opacity: 1; transform: translateY(0); }
         }
         h1 {
             font-size: 3rem;
@@ -87,7 +87,7 @@
         }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
-            to   { opacity: 1; transform: translateY(0); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .month-nav {
             display: flex;
@@ -340,7 +340,7 @@
         }
         @keyframes slideUp {
             from { opacity: 0; transform: translateY(50px) scale(0.9); }
-            to   { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
         .modal-header {
             display: flex;
@@ -561,7 +561,6 @@
             <h1>Team Capacity</h1>
             <div class="subtitle">Engineer availability across teams and contracts</div>
         </header>
-
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
                 <div class="stat-label">Total Engineers</div>
@@ -576,7 +575,6 @@
                 <div class="stat-value" id="avgCapacity">100%</div>
             </div>
         </div>
-
         <div class="controls">
             <div class="month-nav">
                 <button id="prevMonth">‹</button>
@@ -607,7 +605,6 @@
                 <button class="btn" onclick="openModal('memberModal')">+ Engineer</button>
             </div>
         </div>
-
         <div class="calendar-grid" id="calendarGrid">
             <div class="loading">
                 <div class="spinner"></div>
@@ -705,7 +702,6 @@
                 <h2 class="modal-title">Manage Engineers</h2>
                 <button class="close-btn" onclick="closeModal('memberModal')">×</button>
             </div>
-
             <form id="memberForm">
                 <input type="hidden" id="editingEngineerId" value="">
                 <div class="form-group">
@@ -739,7 +735,6 @@
                     <button type="submit" class="btn" id="memberSubmitBtn">Add Engineer</button>
                 </div>
             </form>
-
             <div class="team-list" id="teamList"></div>
         </div>
     </div>
@@ -761,6 +756,14 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
+        // ────────────────────────────────────────────────
+        // Helper – treat YYYY-MM-DD strings as UTC date-only
+        // ────────────────────────────────────────────────
+        function parseDate(str) {
+            if (!str) return null;
+            return new Date(str + "T00:00:00Z");
+        }
 
         // Global state
         let currentDate = new Date();
@@ -862,21 +865,20 @@
         };
 
         window.showDayDetails = function(dateStr, filteredEngineers) {
-            const date = new Date(dateStr);
-            const formattedDate = date.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+            const date = parseDate(dateStr);
+            const formattedDate = date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
             });
-
             document.getElementById('dayDetailsTitle').textContent = formattedDate;
 
             // Find all absences for this day
             const absencesOnDay = holidays.filter(h => {
-                const start = new Date(h.startDate);
-                const end = new Date(h.endDate);
-                const current = new Date(dateStr);
+                const start = parseDate(h.startDate);
+                const end = parseDate(h.endDate);
+                const current = parseDate(dateStr);
                 return current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
             }).map(h => {
                 const engineer = engineers.find(e => e.id === h.engineerId);
@@ -884,19 +886,19 @@
             });
 
             const content = document.getElementById('dayDetailsContent');
-            
+
             if (absencesOnDay.length === 0) {
                 content.innerHTML = '<div class="empty-message">✅ All engineers available on this day</div>';
             } else {
                 content.innerHTML = `
                     <div class="absence-list">
                         ${absencesOnDay.map(absence => {
-                            const typeLabel = absence.type === 'full' ? 'Full Day Holiday' : 
-                                            absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
-                            const startDate = new Date(absence.startDate).toLocaleDateString('en-GB');
-                            const endDate = new Date(absence.endDate).toLocaleDateString('en-GB');
+                            const typeLabel = absence.type === 'full' ? 'Full Day Holiday' :
+                                             absence.type === 'half' ? 'Half Day Holiday' : 'AAUP';
+                            const startDate = parseDate(absence.startDate).toLocaleDateString('en-GB');
+                            const endDate = parseDate(absence.endDate).toLocaleDateString('en-GB');
                             const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
-                            
+
                             return `
                                 <div class="absence-item">
                                     <div class="absence-info">
@@ -913,7 +915,6 @@
                     </div>
                 `;
             }
-
             openModal('dayDetailsModal');
         };
 
@@ -921,64 +922,58 @@
             const holiday = holidays.find(h => h.id === holidayId);
             if (!holiday) return;
 
-            const targetDate = new Date(dateStr);
-            const startDate = new Date(holiday.startDate);
-            const endDate = new Date(holiday.endDate);
+            const targetDate = parseDate(dateStr);
+            const startDate  = parseDate(holiday.startDate);
+            const endDate    = parseDate(holiday.endDate);
 
             if (confirm(`Delete this absence entry for ${targetDate.toLocaleDateString('en-GB')}?`)) {
-                // If it's a single day entry, delete the whole thing
                 if (startDate.toDateString() === endDate.toDateString()) {
+                    // Single day → delete whole document
                     await deleteDoc(doc(db, 'capacity', 'data', 'holidays', holidayId));
+                } else if (targetDate.toDateString() === startDate.toDateString()) {
+                    // First day → move start forward
+                    const newStart = new Date(targetDate);
+                    newStart.setDate(newStart.getDate() + 1);
+                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                        startDate: newStart.toISOString().split('T')[0]
+                    });
+                } else if (targetDate.toDateString() === endDate.toDateString()) {
+                    // Last day → move end back
+                    const newEnd = new Date(targetDate);
+                    newEnd.setDate(newEnd.getDate() - 1);
+                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                        endDate: newEnd.toISOString().split('T')[0]
+                    });
                 } else {
-                    // Multi-day entry: check if we're deleting the first, last, or middle day
-                    if (targetDate.toDateString() === startDate.toDateString()) {
-                        // Deleting first day - update start date to next day
-                        const newStart = new Date(targetDate);
-                        newStart.setDate(newStart.getDate() + 1);
-                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                            startDate: newStart.toISOString().split('T')[0]
-                        });
-                    } else if (targetDate.toDateString() === endDate.toDateString()) {
-                        // Deleting last day - update end date to previous day
-                        const newEnd = new Date(targetDate);
-                        newEnd.setDate(newEnd.getDate() - 1);
-                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                            endDate: newEnd.toISOString().split('T')[0]
-                        });
-                    } else {
-                        // Deleting middle day - split into two entries
-                        const dayBefore = new Date(targetDate);
-                        dayBefore.setDate(dayBefore.getDate() - 1);
-                        const dayAfter = new Date(targetDate);
-                        dayAfter.setDate(dayAfter.getDate() + 1);
+                    // Middle day → split
+                    const dayBefore = new Date(targetDate);
+                    dayBefore.setDate(dayBefore.getDate() - 1);
+                    const dayAfter = new Date(targetDate);
+                    dayAfter.setDate(dayAfter.getDate() + 1);
 
-                        // Update existing entry to end the day before
-                        await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
-                            endDate: dayBefore.toISOString().split('T')[0]
-                        });
+                    await updateDoc(doc(db, 'capacity', 'data', 'holidays', holidayId), {
+                        endDate: dayBefore.toISOString().split('T')[0]
+                    });
 
-                        // Create new entry starting the day after
-                        await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
-                            engineerId: holiday.engineerId,
-                            startDate: dayAfter.toISOString().split('T')[0],
-                            endDate: holiday.endDate,
-                            type: holiday.type
-                        });
-                    }
+                    await addDoc(collection(db, 'capacity', 'data', 'holidays'), {
+                        engineerId: holiday.engineerId,
+                        startDate: dayAfter.toISOString().split('T')[0],
+                        endDate: holiday.endDate,
+                        type: holiday.type
+                    });
                 }
 
-                // Reload and refresh
                 await loadData();
                 renderCalendar();
                 updateStats();
-                
-                // Refresh the day details modal
+
+                // Refresh modal
                 const teamFilter = document.getElementById('teamFilter').value;
                 const contractFilter = document.getElementById('contractFilter').value;
                 let filteredEngineers = engineers;
                 if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
                 if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
-                
+
                 showDayDetails(dateStr, filteredEngineers);
             }
         };
@@ -986,6 +981,7 @@
         function renderCalendar() {
             const grid = document.getElementById('calendarGrid');
             grid.innerHTML = '';
+
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
             document.getElementById('currentMonth').textContent = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -995,7 +991,6 @@
 
             const teamFilter = document.getElementById('teamFilter').value;
             const contractFilter = document.getElementById('contractFilter').value;
-
             let filteredEngineers = engineers;
             if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
             if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
@@ -1007,11 +1002,11 @@
                 if (dayOfWeek === 0 || dayOfWeek === 6) continue;
 
                 const dateStr = date.toISOString().split('T')[0];
+                const current = parseDate(dateStr);
 
                 const onHolidayCount = holidays.reduce((count, h) => {
-                    const start = new Date(h.startDate);
-                    const end = new Date(h.endDate);
-                    const current = new Date(dateStr);
+                    const start = parseDate(h.startDate);
+                    const end = parseDate(h.endDate);
                     const isOnHoliday = current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
                     return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
                 }, 0);
@@ -1042,10 +1037,8 @@
                         <div class="capacity-text">${availablePercentage}% available</div>
                     </div>
                 `;
-                
-                // Make day card clickable
+
                 dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
-                
                 grid.appendChild(dayCard);
             }
         }
@@ -1053,18 +1046,17 @@
         function updateStats() {
             const teamFilter = document.getElementById('teamFilter').value;
             const contractFilter = document.getElementById('contractFilter').value;
-
             let filteredEngineers = engineers;
             if (teamFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team === teamFilter);
             if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
 
             document.getElementById('totalEngineers').textContent = filteredEngineers.length;
 
-            const today = new Date().toISOString().split('T')[0];
+            const todayStr = new Date().toISOString().split('T')[0];
             const holidayToday = holidays.reduce((count, h) => {
-                const start = new Date(h.startDate);
-                const end = new Date(h.endDate);
-                const current = new Date(today);
+                const start = parseDate(h.startDate);
+                const end = parseDate(h.endDate);
+                const current = parseDate(todayStr);
                 const isOnHoliday = current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
                 return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
             }, 0);
@@ -1084,10 +1076,11 @@
                 workingDays++;
 
                 const dateStr = date.toISOString().split('T')[0];
+                const current = parseDate(dateStr);
+
                 const onHolidayCount = holidays.reduce((count, h) => {
-                    const start = new Date(h.startDate);
-                    const end = new Date(h.endDate);
-                    const current = new Date(dateStr);
+                    const start = parseDate(h.startDate);
+                    const end = parseDate(h.endDate);
                     const isOnHoliday = current >= start && current <= end && filteredEngineers.some(e => e.id === h.engineerId);
                     return isOnHoliday ? count + (h.type === 'half' ? 0.5 : 1) : count;
                 }, 0);
@@ -1123,7 +1116,7 @@
                 updateStats();
             });
 
-            // Holiday / AAUP form
+            // Holiday form
             document.getElementById('holidayForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const engineerId = document.getElementById('holidayEngineer').value;
@@ -1163,10 +1156,9 @@
                 updateStats();
             });
 
-            // Engineer add / edit form
+            // Engineer add/edit form
             document.getElementById('memberForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
-
                 const id = document.getElementById('editingEngineerId').value;
                 const name = document.getElementById('memberName').value.trim();
                 const team = document.getElementById('memberTeam').value;
