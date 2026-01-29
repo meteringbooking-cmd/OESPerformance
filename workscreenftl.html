@@ -518,23 +518,6 @@
                     </div>
                     <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
                     
-                    <!-- Aborts Section (hidden by default) -->
-                    <div id="abortsSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid rgba(0, 210, 255, 0.3);">
-                        <div class="historical-title">Yesterday's Aborts by Team</div>
-                        <table class="historical-table">
-                            <thead>
-                                <tr>
-                                    <th>Team Leader</th>
-                                    <th>Aborts</th>
-                                </tr>
-                            </thead>
-                            <tbody id="abortsTableBody"></tbody>
-                        </table>
-                        <div style="margin-top: 12px; text-align: right; color: #00d2ff; font-weight: 700; font-size: 0.9em;">
-                            Total Aborts: <span id="totalAborts">0</span>
-                        </div>
-                    </div>
-                    
                     <div class="historical-data">
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
@@ -744,6 +727,22 @@
         </div>
     </div>
 
+    <!-- Aborts Popup Overlay -->
+    <div class="popup-overlay" id="abortsPopup" onclick="closeAbortsPopup(event)">
+        <div class="popup-content" onclick="event.stopPropagation()" style="height: 85%;">
+            <div class="popup-header">
+                <div class="popup-title">📊 Yesterday's Aborts - Detailed Breakdown</div>
+                <button class="popup-close" onclick="closeAbortsPopup()">✕</button>
+            </div>
+            <div id="abortsDetailContainer" style="flex: 1; overflow-y: auto; padding: 30px;">
+                <div style="text-align: center; padding: 60px; color: #a8dadc;">
+                    <div style="font-size: 2em;">⏳</div>
+                    <div>Loading abort data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Export PowerPoint Button -->
     <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()">
         📊 Export PowerPoint
@@ -773,20 +772,23 @@
             }, 300);
         };
 
-        // Toggle Aborts Section
+        // Toggle Aborts - Open popup instead
         window.toggleAborts = async function(event) {
             event.stopPropagation();
-            const section = document.getElementById('abortsSection');
-            if (section.style.display === 'none') {
-                section.style.display = 'block';
-                await loadYesterdayAborts();
-            } else {
-                section.style.display = 'none';
-            }
+            document.getElementById('abortsPopup').classList.add('active');
+            await loadDetailedAborts();
+        };
+
+        window.closeAbortsPopup = function(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('abortsPopup').classList.remove('active');
         };
 
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') closeGraphPopup();
+            if (e.key === 'Escape') {
+                closeGraphPopup();
+                closeAbortsPopup();
+            }
         });
 
         // Firebase initialization
@@ -875,9 +877,9 @@
         }
 
         // ────────────────────────────────────────────────
-        // Load Yesterday's Aborts by Team
+        // Load Detailed Aborts with Engineer Names and Reasons
         // ────────────────────────────────────────────────
-        window.loadYesterdayAborts = async function() {
+        window.loadDetailedAborts = async function() {
             try {
                 const prevDay = getPreviousWorkingDay();
                 const dateStr = formatDateForQuery(prevDay);
@@ -885,42 +887,108 @@
                 const perfQ = query(collection(performanceDb, "performance"), where("date", "==", dateStr));
                 const perfSnap = await getDocs(perfQ);
                 
-                const teamAborts = {};
-                let totalAborts = 0;
+                // Group by team leader
+                const teamData = {};
+                let grandTotal = 0;
                 
                 perfSnap.forEach(doc => {
                     const data = doc.data();
                     const teamLeader = data.teamLeader || 'Unknown Team';
+                    const engineerName = data.engineerName || data.engineer || 'Unknown Engineer';
                     const aborts = data.aborted || 0;
+                    const abortReason = data.abortReason || data.abortedReason || 'No reason provided';
                     
-                    if (!teamAborts[teamLeader]) {
-                        teamAborts[teamLeader] = 0;
+                    if (aborts > 0) {
+                        if (!teamData[teamLeader]) {
+                            teamData[teamLeader] = {
+                                total: 0,
+                                engineers: []
+                            };
+                        }
+                        
+                        teamData[teamLeader].total += aborts;
+                        teamData[teamLeader].engineers.push({
+                            name: engineerName,
+                            aborts: aborts,
+                            reason: abortReason
+                        });
+                        
+                        grandTotal += aborts;
                     }
-                    teamAborts[teamLeader] += aborts;
-                    totalAborts += aborts;
                 });
                 
-                // Sort teams by abort count (highest first)
-                const sortedTeams = Object.entries(teamAborts)
-                    .sort((a, b) => b[1] - a[1]);
+                // Sort teams by abort count
+                const sortedTeams = Object.entries(teamData)
+                    .sort((a, b) => b[1].total - a[1].total);
                 
-                const tbody = document.getElementById('abortsTableBody');
+                const container = document.getElementById('abortsDetailContainer');
+                
                 if (sortedTeams.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #10b981;">No aborts yesterday! 🎉</td></tr>';
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 60px; color: #10b981; font-size: 1.5em;">
+                            <div style="font-size: 4em; margin-bottom: 20px;">🎉</div>
+                            <div style="font-weight: 700;">No Aborts Yesterday!</div>
+                            <div style="font-size: 0.8em; margin-top: 10px; opacity: 0.8;">All jobs completed successfully</div>
+                        </div>
+                    `;
                 } else {
-                    tbody.innerHTML = sortedTeams.map(([team, count]) => `
-                        <tr>
-                            <td>${team}</td>
-                            <td style="text-align: right; font-weight: 700; color: ${count > 0 ? '#ef4444' : '#10b981'};">${count}</td>
-                        </tr>
-                    `).join('');
+                    let html = '';
+                    
+                    sortedTeams.forEach(([teamLeader, data]) => {
+                        html += `
+                            <div style="margin-bottom: 30px; background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 20px; border: 2px solid rgba(239, 68, 68, 0.3);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid rgba(239, 68, 68, 0.2);">
+                                    <div style="font-size: 1.2em; font-weight: 700; color: #00d2ff;">${teamLeader}</div>
+                                    <div style="font-size: 1.5em; font-weight: 800; color: #ef4444;">${data.total} Abort${data.total > 1 ? 's' : ''}</div>
+                                </div>
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background: rgba(0, 210, 255, 0.15);">
+                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Engineer</th>
+                                            <th style="text-align: center; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Quantity</th>
+                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+                        
+                        data.engineers.forEach(eng => {
+                            html += `
+                                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                                    <td style="padding: 12px; color: #e1e8ed; font-weight: 600;">${eng.name}</td>
+                                    <td style="padding: 12px; text-align: center; color: #ef4444; font-weight: 700; font-size: 1.1em;">${eng.aborts}</td>
+                                    <td style="padding: 12px; color: #a8dadc; font-size: 0.9em;">${eng.reason}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    });
+                    
+                    // Add grand total at the bottom
+                    html += `
+                        <div style="text-align: right; padding: 20px; background: rgba(239, 68, 68, 0.2); border-radius: 12px; border: 2px solid rgba(239, 68, 68, 0.4);">
+                            <div style="font-size: 1.1em; color: #a8dadc; margin-bottom: 8px;">Total Aborts Yesterday</div>
+                            <div style="font-size: 2.5em; font-weight: 900; color: #ef4444;">${grandTotal}</div>
+                        </div>
+                    `;
+                    
+                    container.innerHTML = html;
                 }
                 
-                document.getElementById('totalAborts').textContent = totalAborts;
-                
             } catch (err) {
-                console.error("Error loading aborts:", err);
-                document.getElementById('abortsTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; color: #ef4444;">Error loading data</td></tr>';
+                console.error("Error loading detailed aborts:", err);
+                document.getElementById('abortsDetailContainer').innerHTML = `
+                    <div style="text-align: center; padding: 60px; color: #ef4444;">
+                        <div style="font-size: 2em; margin-bottom: 20px;">⚠️</div>
+                        <div>Error loading abort data</div>
+                        <div style="font-size: 0.8em; margin-top: 10px; opacity: 0.7;">Please check console for details</div>
+                    </div>
+                `;
             }
         };
 
