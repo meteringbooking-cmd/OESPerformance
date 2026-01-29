@@ -229,9 +229,48 @@
             width: 0%;
             transition: width 0.3s ease;
         }
+        
+        /* Aborts table styles */
+        #abortsTable {
+            font-size: 0.9em;
+        }
+        #abortsTable th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        #abortsTable td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        #abortsTable input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        #abortsTable input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        #abortsTable tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-group .btn {
+            flex: 1;
+        }
+        
         @media (max-width: 768px) {
             .container { padding: 20px; }
             .percentage-grid { grid-template-columns: 1fr; }
+            #abortsTable { font-size: 0.8em; }
+            #abortsTable th, #abortsTable td { padding: 8px 4px; }
         }
     </style>
 </head>
@@ -341,6 +380,50 @@
             </form>
         </div>
 
+        <div class="section-divider"></div>
+
+        <div class="form-section">
+            <h2 class="section-title">🚫 Aborts Upload</h2>
+           
+            <div class="info-box">
+                <h3>Upload Aborts Data</h3>
+                <p><strong>CSV Format:</strong> Column A (Team Leader), Column B (Engineers), Columns D-N (Abort Types and Counts)</p>
+                <p><strong>Abort Types:</strong> Tech abort, No access, Refused access, Higher skill set required, Work not required, DNO Issue, Stock issue, Wrong details, H&S issue, No abort code, Customer Cancellation</p>
+                <p>Upload your CSV, preview the data, make any edits needed, then save to the database.</p>
+            </div>
+            <form id="abortsForm">
+                <div class="form-group">
+                    <label for="abortsDate">Select Date for Aborts Data</label>
+                    <input type="date" id="abortsDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Upload Aborts CSV File</label>
+                    <div class="file-upload-area" id="abortsUploadArea">
+                        <div class="upload-icon">📄</div>
+                        <p><strong>Click to browse</strong> or drag and drop your aborts CSV file here</p>
+                        <input type="file" id="abortsFile" accept=".csv" style="display: none;" required>
+                    </div>
+                    <div class="file-info" id="abortsFileInfo"></div>
+                </div>
+                
+                <div id="abortsPreview" style="display: none; margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #333;">Preview & Edit Data</h3>
+                    <div style="overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <table id="abortsTable" style="width: 100%; border-collapse: collapse; background: white;">
+                            <thead style="background: #667eea; color: white;">
+                                <tr id="abortsTableHeader"></tr>
+                            </thead>
+                            <tbody id="abortsTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn" id="saveAbortsBtn">Save Aborts Data</button>
+                        <button type="button" class="btn" id="cancelAbortsBtn" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">Cancel</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
@@ -363,10 +446,11 @@
         const db = getFirestore(app);
         console.log('Firebase initialized successfully');
 
-        // Set default date to yesterday
+        // Set default dates to yesterday
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         document.getElementById('dataDate').valueAsDate = yesterday;
+        document.getElementById('abortsDate').valueAsDate = yesterday;
 
         // Real-time At Work % calculation
         function updateAtWorkPercent() {
@@ -446,7 +530,7 @@
             }
         });
 
-        // File Upload Handling
+        // File Upload Handling (Compliance)
         const area = document.getElementById('fileUploadArea');
         const input = document.getElementById('csvFile');
 
@@ -549,11 +633,204 @@
             document.getElementById('csvForm').reset();
         }
 
+        // ========== ABORTS UPLOAD FUNCTIONALITY ==========
+        
+        let abortsData = [];
+        const abortTypes = [
+            'Tech abort',
+            'No access',
+            'Refused access',
+            'Higher skill set required',
+            'Work not required',
+            'DNO Issue',
+            'Stock issue',
+            'Wrong details',
+            'H&S issue',
+            'No abort code',
+            'Customer Cancellation'
+        ];
+
+        // Aborts file upload handling
+        const abortsArea = document.getElementById('abortsUploadArea');
+        const abortsInput = document.getElementById('abortsFile');
+
+        abortsArea.addEventListener('click', () => abortsInput.click());
+        abortsInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                displayAbortsFileInfo(e.target.files[0]);
+                parseAbortsCSV(e.target.files[0]);
+            }
+        });
+
+        function displayAbortsFileInfo(file) {
+            const info = document.getElementById('abortsFileInfo');
+            info.innerHTML = `<strong>Selected:</strong> ${file.name}`;
+            info.classList.add('show');
+        }
+
+        function parseAbortsCSV(file) {
+            Papa.parse(file, {
+                header: false,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    const rows = results.data;
+                    
+                    if (rows.length < 2) {
+                        showMessage('CSV file appears to be empty or invalid', 'error');
+                        return;
+                    }
+
+                    // Process data starting from row 2 (index 1) - skip header row
+                    abortsData = [];
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (row.length >= 14) { // Ensure we have enough columns (A, B, D-N)
+                            const record = {
+                                teamLeader: row[0]?.trim() || '',
+                                engineers: row[1]?.trim() || '',
+                                aborts: {}
+                            };
+
+                            // Map columns D-N (indices 3-13) to abort types
+                            abortTypes.forEach((type, idx) => {
+                                record.aborts[type] = parseInt(row[3 + idx]) || 0;
+                            });
+
+                            abortsData.push(record);
+                        }
+                    }
+
+                    if (abortsData.length === 0) {
+                        showMessage('No valid abort data found in CSV', 'error');
+                        return;
+                    }
+
+                    displayAbortsPreview();
+                },
+                error: (err) => {
+                    console.error('Error parsing aborts CSV:', err);
+                    showMessage('Error parsing CSV: ' + err.message, 'error');
+                }
+            });
+        }
+
+        function displayAbortsPreview() {
+            const preview = document.getElementById('abortsPreview');
+            const headerRow = document.getElementById('abortsTableHeader');
+            const tbody = document.getElementById('abortsTableBody');
+
+            // Clear existing content
+            headerRow.innerHTML = '';
+            tbody.innerHTML = '';
+
+            // Create header
+            const headers = ['Team Leader', 'Engineers', ...abortTypes];
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+
+            // Create rows
+            abortsData.forEach((record, rowIdx) => {
+                const tr = document.createElement('tr');
+
+                // Team Leader cell
+                const tdTeam = document.createElement('td');
+                tdTeam.innerHTML = `<input type="text" value="${record.teamLeader}" data-row="${rowIdx}" data-field="teamLeader">`;
+                tr.appendChild(tdTeam);
+
+                // Engineers cell
+                const tdEng = document.createElement('td');
+                tdEng.innerHTML = `<input type="text" value="${record.engineers}" data-row="${rowIdx}" data-field="engineers">`;
+                tr.appendChild(tdEng);
+
+                // Abort type cells
+                abortTypes.forEach(type => {
+                    const td = document.createElement('td');
+                    td.innerHTML = `<input type="number" min="0" value="${record.aborts[type]}" data-row="${rowIdx}" data-abort="${type}">`;
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+
+            // Add event listeners for editing
+            tbody.querySelectorAll('input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const rowIdx = parseInt(e.target.dataset.row);
+                    const field = e.target.dataset.field;
+                    const abortType = e.target.dataset.abort;
+
+                    if (field === 'teamLeader') {
+                        abortsData[rowIdx].teamLeader = e.target.value;
+                    } else if (field === 'engineers') {
+                        abortsData[rowIdx].engineers = e.target.value;
+                    } else if (abortType) {
+                        abortsData[rowIdx].aborts[abortType] = parseInt(e.target.value) || 0;
+                    }
+                });
+            });
+
+            preview.style.display = 'block';
+        }
+
+        // Cancel aborts preview
+        document.getElementById('cancelAbortsBtn').addEventListener('click', () => {
+            document.getElementById('abortsPreview').style.display = 'none';
+            document.getElementById('abortsForm').reset();
+            document.getElementById('abortsFileInfo').classList.remove('show');
+            document.getElementById('abortsDate').valueAsDate = yesterday;
+            abortsData = [];
+        });
+
+        // Save aborts data
+        document.getElementById('abortsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const date = document.getElementById('abortsDate').value;
+            const btn = document.getElementById('saveAbortsBtn');
+            btn.disabled = true;
+
+            try {
+                for (let i = 0; i < abortsData.length; i++) {
+                    const record = abortsData[i];
+                    await addDoc(collection(db, "aborts"), {
+                        date,
+                        teamLeader: record.teamLeader,
+                        engineers: record.engineers,
+                        aborts: record.aborts,
+                        submittedAt: serverTimestamp()
+                    });
+                }
+
+                showMessage(`Successfully saved ${abortsData.length} abort records!`, 'success');
+                
+                // Reset form
+                document.getElementById('abortsPreview').style.display = 'none';
+                document.getElementById('abortsForm').reset();
+                document.getElementById('abortsFileInfo').classList.remove('show');
+                document.getElementById('abortsDate').valueAsDate = yesterday;
+                abortsData = [];
+                
+            } catch (err) {
+                console.error('Error saving aborts:', err);
+                showMessage('Error saving aborts data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ========== UTILITY FUNCTIONS ==========
+
         function showMessage(text, type) {
             const m = document.getElementById('message');
             m.textContent = text;
             m.className = `message ${type} show`;
             setTimeout(() => m.classList.remove('show'), 5000);
+            
+            // Scroll to top to show message
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     </script>
 </body>
