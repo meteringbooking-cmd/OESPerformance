@@ -504,6 +504,7 @@
                         <span class="kpi-title">
                             Completion Rate
                             <button class="graph-button" onclick="openGraphPopup(event, 'Completion Rate Graphs', 'https://oes-performance.vercel.app/workscreencompletionsgraph.html')">📊 Graphs</button>
+                            <button class="graph-button" onclick="toggleAborts(event)">📊 Aborts</button>
                         </span>
                         <span class="kpi-icon">✅</span>
                     </div>
@@ -516,6 +517,24 @@
                         <div class="progress-bar" id="completionProgress" style="width: 0%"></div>
                     </div>
                     <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
+                    
+                    <!-- Aborts Section (hidden by default) -->
+                    <div id="abortsSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid rgba(0, 210, 255, 0.3);">
+                        <div class="historical-title">Yesterday's Aborts by Team</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Team Leader</th>
+                                    <th>Aborts</th>
+                                </tr>
+                            </thead>
+                            <tbody id="abortsTableBody"></tbody>
+                        </table>
+                        <div style="margin-top: 12px; text-align: right; color: #00d2ff; font-weight: 700; font-size: 0.9em;">
+                            Total Aborts: <span id="totalAborts">0</span>
+                        </div>
+                    </div>
+                    
                     <div class="historical-data">
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
@@ -754,6 +773,18 @@
             }, 300);
         };
 
+        // Toggle Aborts Section
+        window.toggleAborts = async function(event) {
+            event.stopPropagation();
+            const section = document.getElementById('abortsSection');
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                await loadYesterdayAborts();
+            } else {
+                section.style.display = 'none';
+            }
+        };
+
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') closeGraphPopup();
         });
@@ -844,6 +875,56 @@
         }
 
         // ────────────────────────────────────────────────
+        // Load Yesterday's Aborts by Team
+        // ────────────────────────────────────────────────
+        window.loadYesterdayAborts = async function() {
+            try {
+                const prevDay = getPreviousWorkingDay();
+                const dateStr = formatDateForQuery(prevDay);
+                
+                const perfQ = query(collection(performanceDb, "performance"), where("date", "==", dateStr));
+                const perfSnap = await getDocs(perfQ);
+                
+                const teamAborts = {};
+                let totalAborts = 0;
+                
+                perfSnap.forEach(doc => {
+                    const data = doc.data();
+                    const teamLeader = data.teamLeader || 'Unknown Team';
+                    const aborts = data.aborted || 0;
+                    
+                    if (!teamAborts[teamLeader]) {
+                        teamAborts[teamLeader] = 0;
+                    }
+                    teamAborts[teamLeader] += aborts;
+                    totalAborts += aborts;
+                });
+                
+                // Sort teams by abort count (highest first)
+                const sortedTeams = Object.entries(teamAborts)
+                    .sort((a, b) => b[1] - a[1]);
+                
+                const tbody = document.getElementById('abortsTableBody');
+                if (sortedTeams.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #10b981;">No aborts yesterday! 🎉</td></tr>';
+                } else {
+                    tbody.innerHTML = sortedTeams.map(([team, count]) => `
+                        <tr>
+                            <td>${team}</td>
+                            <td style="text-align: right; font-weight: 700; color: ${count > 0 ? '#ef4444' : '#10b981'};">${count}</td>
+                        </tr>
+                    `).join('');
+                }
+                
+                document.getElementById('totalAborts').textContent = totalAborts;
+                
+            } catch (err) {
+                console.error("Error loading aborts:", err);
+                document.getElementById('abortsTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; color: #ef4444;">Error loading data</td></tr>';
+            }
+        };
+
+        // ────────────────────────────────────────────────
         // UI helpers
         // ────────────────────────────────────────────────
         function updateProgressBar(id, pct) {
@@ -914,7 +995,6 @@
                     snap.forEach(doc => {
                         const d = doc.data();
                         
-                        // CHANGED: Use Date Submitted instead of Installation Date
                         const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
                         const submittedDate = parseDateSubmitted(dateSubmittedStr);
                         
