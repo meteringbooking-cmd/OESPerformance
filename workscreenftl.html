@@ -884,8 +884,14 @@
                 const prevDay = getPreviousWorkingDay();
                 const dateStr = formatDateForQuery(prevDay);
                 
+                // Query both performance and aborts collections
                 const perfQ = query(collection(performanceDb, "performance"), where("date", "==", dateStr));
-                const perfSnap = await getDocs(perfQ);
+                const abortsQ = query(collection(performanceDb, "aborts"), where("date", "==", dateStr));
+                
+                const [perfSnap, abortsSnap] = await Promise.all([
+                    getDocs(perfQ),
+                    getDocs(abortsQ)
+                ]);
                 
                 // Group by team leader
                 const teamData = {};
@@ -906,6 +912,27 @@
                     'Wrong details'
                 ];
                 
+                // Create a map of engineer -> abort reasons from aborts collection
+                const abortReasonsMap = {};
+                abortsSnap.forEach(doc => {
+                    const data = doc.data();
+                    const engineerName = data.engineerName || data.engineer || 'Unknown Engineer';
+                    
+                    // Check each abort reason field
+                    const reasons = [];
+                    abortReasonFields.forEach(field => {
+                        const count = data[field] || 0;
+                        if (count > 0) {
+                            reasons.push(`${field} (${count})`);
+                        }
+                    });
+                    
+                    if (reasons.length > 0) {
+                        abortReasonsMap[engineerName] = reasons.join(', ');
+                    }
+                });
+                
+                // Process performance data and combine with abort reasons
                 perfSnap.forEach(doc => {
                     const data = doc.data();
                     const teamLeader = data.teamLeader || 'Unknown Team';
@@ -914,27 +941,6 @@
                     
                     // Only process if there are aborts
                     if (aborts > 0) {
-                        // Debug: Log the data for Alessandro Cilia
-                        if (engineerName.includes('Alessandro') || engineerName.includes('Cilia')) {
-                            console.log('Alessandro Cilia data:', data);
-                            console.log('All fields:', Object.keys(data));
-                        }
-                        
-                        // Check each abort reason field to find which ones have values > 0
-                        const reasons = [];
-                        
-                        abortReasonFields.forEach(field => {
-                            const count = data[field] || 0;
-                            if (count > 0) {
-                                reasons.push(`${field} (${count})`);
-                            }
-                        });
-                        
-                        // Debug: Log reasons found
-                        if (engineerName.includes('Alessandro') || engineerName.includes('Cilia')) {
-                            console.log('Reasons found:', reasons);
-                        }
-                        
                         if (!teamData[teamLeader]) {
                             teamData[teamLeader] = {
                                 total: 0,
@@ -942,7 +948,8 @@
                             };
                         }
                         
-                        const reasonText = reasons.length > 0 ? reasons.join(', ') : 'No reason specified';
+                        // Get reasons from the aborts collection
+                        const reasonText = abortReasonsMap[engineerName] || 'No reason specified';
                         
                         teamData[teamLeader].total += aborts;
                         teamData[teamLeader].engineers.push({
