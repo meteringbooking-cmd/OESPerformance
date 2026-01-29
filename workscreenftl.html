@@ -891,14 +891,43 @@
                 const teamData = {};
                 let grandTotal = 0;
                 
+                // Define all possible abort reason fields
+                const abortReasonFields = [
+                    'Customer Cancellation',
+                    'DNO Issue',
+                    'H&S issue',
+                    'Higher skill set required',
+                    'No abort code',
+                    'No access',
+                    'Refused access',
+                    'Stock issue',
+                    'Tech abort',
+                    'Work not required',
+                    'Wrong details'
+                ];
+                
                 perfSnap.forEach(doc => {
                     const data = doc.data();
                     const teamLeader = data.teamLeader || 'Unknown Team';
                     const engineerName = data.engineerName || data.engineer || 'Unknown Engineer';
-                    const aborts = data.aborted || 0;
-                    const abortReason = data.abortReason || data.abortedReason || 'No reason provided';
                     
-                    if (aborts > 0) {
+                    // Check each abort reason field to find which ones have values > 0
+                    const reasons = [];
+                    let totalAborts = 0;
+                    
+                    abortReasonFields.forEach(field => {
+                        const count = data[field] || 0;
+                        if (count > 0) {
+                            reasons.push({
+                                reason: field,
+                                count: count
+                            });
+                            totalAborts += count;
+                        }
+                    });
+                    
+                    // Only add if there are actual aborts
+                    if (totalAborts > 0) {
                         if (!teamData[teamLeader]) {
                             teamData[teamLeader] = {
                                 total: 0,
@@ -906,14 +935,14 @@
                             };
                         }
                         
-                        teamData[teamLeader].total += aborts;
+                        teamData[teamLeader].total += totalAborts;
                         teamData[teamLeader].engineers.push({
                             name: engineerName,
-                            aborts: aborts,
-                            reason: abortReason
+                            aborts: totalAborts,
+                            reasons: reasons
                         });
                         
-                        grandTotal += aborts;
+                        grandTotal += totalAborts;
                     }
                 });
                 
@@ -946,18 +975,23 @@
                                         <tr style="background: rgba(0, 210, 255, 0.15);">
                                             <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Engineer</th>
                                             <th style="text-align: center; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Quantity</th>
-                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason</th>
+                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason(s)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                         `;
                         
                         data.engineers.forEach(eng => {
+                            // Format reasons as a list
+                            const reasonsText = eng.reasons.map(r => 
+                                `${r.reason}${r.count > 1 ? ` (×${r.count})` : ''}`
+                            ).join('<br>');
+                            
                             html += `
                                 <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
                                     <td style="padding: 12px; color: #e1e8ed; font-weight: 600;">${eng.name}</td>
                                     <td style="padding: 12px; text-align: center; color: #ef4444; font-weight: 700; font-size: 1.1em;">${eng.aborts}</td>
-                                    <td style="padding: 12px; color: #a8dadc; font-size: 0.9em;">${eng.reason}</td>
+                                    <td style="padding: 12px; color: #a8dadc; font-size: 0.9em; line-height: 1.6;">${reasonsText}</td>
                                 </tr>
                             `;
                         });
