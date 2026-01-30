@@ -745,7 +745,8 @@
 
     <!-- Export PowerPoint Button -->
     <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()">
-            </button>
+        📊 Export PowerPoint
+    </button>
 
     <!-- Load PptxGenJS library -->
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
@@ -883,96 +884,51 @@
                 const prevDay = getPreviousWorkingDay();
                 const dateStr = formatDateForQuery(prevDay);
                 
-                // Query both performance and aborts collections
-                const perfQ = query(collection(performanceDb, "performance"), where("date", "==", dateStr));
+                // Query aborts collection
                 const abortsQ = query(collection(performanceDb, "aborts"), where("date", "==", dateStr));
-                
-                const [perfSnap, abortsSnap] = await Promise.all([
-                    getDocs(perfQ),
-                    getDocs(abortsQ)
-                ]);
+                const abortsSnap = await getDocs(abortsQ);
                 
                 // Group by team leader
                 const teamData = {};
                 let grandTotal = 0;
                 
-                // Define all possible abort reason fields
-                const abortReasonFields = [
-                    'Customer Cancellation',
-                    'DNO Issue',
-                    'H&S issue',
-                    'Higher skill set required',
-                    'No abort code',
-                    'No access',
-                    'Refused access',
-                    'Stock issue',
-                    'Tech abort',
-                    'Work not required',
-                    'Wrong details'
-                ];
-                
-                // Create a map of engineer -> abort reasons from aborts collection
-                const abortReasonsMap = {};
-                console.log('Total aborts documents:', abortsSnap.size);
-                
                 abortsSnap.forEach(doc => {
                     const data = doc.data();
-                    const engineerName = data.engineers || 'Unknown Engineer';  // Field is 'engineers' not 'engineerName'
+                    const teamLeader = data.teamLeader || 'Unknown Team';
+                    const engineerName = data.engineer || 'Unknown Engineer';
+                    const reason = data.reason || 'No reason specified';
+                    const total = data.total || 1;
                     
-                    // The abort reasons are nested inside the 'aborts' object
-                    const abortsData = data.aborts || {};
+                    // Skip entries without engineer names
+                    if (!engineerName || engineerName === '' || engineerName === 'Unknown Engineer') {
+                        return;
+                    }
                     
-                    // Check each abort reason field in the nested aborts object
-                    const reasons = [];
-                    abortReasonFields.forEach(field => {
-                        const count = abortsData[field] || 0;
-                        if (count > 0) {
-                            reasons.push(`${field} (${count})`);
-                        }
+                    if (!teamData[teamLeader]) {
+                        teamData[teamLeader] = {
+                            total: 0,
+                            engineers: []
+                        };
+                    }
+                    
+                    teamData[teamLeader].total += total;
+                    teamData[teamLeader].engineers.push({
+                        name: engineerName,
+                        aborts: total,
+                        reason: reason
                     });
                     
-                    console.log('Engineer:', engineerName, 'Reasons:', reasons);
-                    
-                    if (reasons.length > 0 && engineerName !== 'Unknown Engineer' && engineerName !== '' && engineerName !== 'Engineers') {
-                        abortReasonsMap[engineerName] = reasons.join(', ');
-                    }
+                    grandTotal += total;
                 });
                 
-                console.log('Abort reasons map:', abortReasonsMap);
-                
-                // Process performance data and combine with abort reasons
-                perfSnap.forEach(doc => {
-                    const data = doc.data();
-                    const teamLeader = data.teamLeader || 'Unknown Team';
-                    const engineerName = data.engineerName || data.engineer || 'Unknown Engineer';
-                    const aborts = data.aborted || 0;
-                    
-                    // Only process if there are aborts
-                    if (aborts > 0) {
-                        if (!teamData[teamLeader]) {
-                            teamData[teamLeader] = {
-                                total: 0,
-                                engineers: []
-                            };
-                        }
-                        
-                        // Get reasons from the aborts collection
-                        const reasonText = abortReasonsMap[engineerName] || 'No reason specified';
-                        
-                        teamData[teamLeader].total += aborts;
-                        teamData[teamLeader].engineers.push({
-                            name: engineerName,
-                            aborts: aborts,
-                            reason: reasonText
-                        });
-                        
-                        grandTotal += aborts;
-                    }
-                });
-                
-                // Sort teams by abort count
+                // Sort teams by abort count (highest first)
                 const sortedTeams = Object.entries(teamData)
                     .sort((a, b) => b[1].total - a[1].total);
+                
+                // Sort engineers alphabetically within each team
+                sortedTeams.forEach(([teamLeader, data]) => {
+                    data.engineers.sort((a, b) => a.name.localeCompare(b.name));
+                });
                 
                 const container = document.getElementById('abortsDetailContainer');
                 
@@ -999,7 +955,7 @@
                                         <tr style="background: rgba(0, 210, 255, 0.15);">
                                             <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Engineer</th>
                                             <th style="text-align: center; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Quantity</th>
-                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason(s)</th>
+                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1525,14 +1481,14 @@
                 
                 btn.textContent = '✅ Complete!';
                 setTimeout(() => {
-                    btn.textContent = '';
+                    btn.textContent = '📊 Export PowerPoint';
                     btn.disabled = false;
                 }, 2000);
                 
             } catch (err) {
                 console.error('Export error:', err);
                 alert('Error generating PowerPoint: ' + err.message);
-                btn.textContent = '';
+                btn.textContent = '📊 Export PowerPoint';
                 btn.disabled = false;
             }
         };
