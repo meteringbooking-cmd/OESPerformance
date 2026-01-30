@@ -387,8 +387,8 @@
            
             <div class="info-box">
                 <h3>Upload Aborts Data</h3>
-                <p><strong>CSV Format:</strong> Column A (Team Leader), Column B (Engineers), Columns D-N (Abort Types and Counts)</p>
-                <p><strong>Abort Types:</strong> Tech abort, No access, Refused access, Higher skill set required, Work not required, DNO Issue, Stock issue, Wrong details, H&S issue, No abort code, Customer Cancellation</p>
+                <p><strong>CSV Format:</strong> Column A (Team Leader), Column B (Engineer), Column C (Reason), Column D (Total)</p>
+                <p>Each row represents one abort entry with the team leader, engineer name, abort reason, and count total.</p>
                 <p>Upload your CSV, preview the data, make any edits needed, then save to the database.</p>
             </div>
             <form id="abortsForm">
@@ -633,22 +633,9 @@
             document.getElementById('csvForm').reset();
         }
 
-        // ========== ABORTS UPLOAD FUNCTIONALITY ==========
+        // ========== ABORTS UPLOAD FUNCTIONALITY (NEW FORMAT) ==========
         
         let abortsData = [];
-        const abortTypes = [
-            'Tech abort',
-            'No access',
-            'Refused access',
-            'Higher skill set required',
-            'Work not required',
-            'DNO Issue',
-            'Stock issue',
-            'Wrong details',
-            'H&S issue',
-            'No abort code',
-            'Customer Cancellation'
-        ];
 
         // Aborts file upload handling
         const abortsArea = document.getElementById('abortsUploadArea');
@@ -681,21 +668,17 @@
                     }
 
                     // Process data starting from row 2 (index 1) - skip header row
+                    // Format: Column A (Team Leader), Column B (Engineer), Column C (Reason), Column D (Total)
                     abortsData = [];
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
-                        if (row.length >= 14) { // Ensure we have enough columns (A, B, D-N)
+                        if (row.length >= 4) { // Ensure we have all 4 columns
                             const record = {
                                 teamLeader: row[0]?.trim() || '',
-                                engineers: row[1]?.trim() || '',
-                                aborts: {}
+                                engineer: row[1]?.trim() || '',
+                                reason: row[2]?.trim() || '',
+                                total: parseInt(row[3]) || 0
                             };
-
-                            // Map columns D-N (indices 3-13) to abort types
-                            abortTypes.forEach((type, idx) => {
-                                record.aborts[type] = parseInt(row[3 + idx]) || 0;
-                            });
-
                             abortsData.push(record);
                         }
                     }
@@ -724,7 +707,7 @@
             tbody.innerHTML = '';
 
             // Create header
-            const headers = ['Team Leader', 'Engineers', ...abortTypes];
+            const headers = ['Team Leader', 'Engineer', 'Reason', 'Total'];
             headers.forEach(header => {
                 const th = document.createElement('th');
                 th.textContent = header;
@@ -740,17 +723,20 @@
                 tdTeam.innerHTML = `<input type="text" value="${record.teamLeader}" data-row="${rowIdx}" data-field="teamLeader">`;
                 tr.appendChild(tdTeam);
 
-                // Engineers cell
+                // Engineer cell
                 const tdEng = document.createElement('td');
-                tdEng.innerHTML = `<input type="text" value="${record.engineers}" data-row="${rowIdx}" data-field="engineers">`;
+                tdEng.innerHTML = `<input type="text" value="${record.engineer}" data-row="${rowIdx}" data-field="engineer">`;
                 tr.appendChild(tdEng);
 
-                // Abort type cells
-                abortTypes.forEach(type => {
-                    const td = document.createElement('td');
-                    td.innerHTML = `<input type="number" min="0" value="${record.aborts[type]}" data-row="${rowIdx}" data-abort="${type}">`;
-                    tr.appendChild(td);
-                });
+                // Reason cell
+                const tdReason = document.createElement('td');
+                tdReason.innerHTML = `<input type="text" value="${record.reason}" data-row="${rowIdx}" data-field="reason">`;
+                tr.appendChild(tdReason);
+
+                // Total cell
+                const tdTotal = document.createElement('td');
+                tdTotal.innerHTML = `<input type="number" min="0" value="${record.total}" data-row="${rowIdx}" data-field="total">`;
+                tr.appendChild(tdTotal);
 
                 tbody.appendChild(tr);
             });
@@ -760,14 +746,15 @@
                 input.addEventListener('change', (e) => {
                     const rowIdx = parseInt(e.target.dataset.row);
                     const field = e.target.dataset.field;
-                    const abortType = e.target.dataset.abort;
 
                     if (field === 'teamLeader') {
                         abortsData[rowIdx].teamLeader = e.target.value;
-                    } else if (field === 'engineers') {
-                        abortsData[rowIdx].engineers = e.target.value;
-                    } else if (abortType) {
-                        abortsData[rowIdx].aborts[abortType] = parseInt(e.target.value) || 0;
+                    } else if (field === 'engineer') {
+                        abortsData[rowIdx].engineer = e.target.value;
+                    } else if (field === 'reason') {
+                        abortsData[rowIdx].reason = e.target.value;
+                    } else if (field === 'total') {
+                        abortsData[rowIdx].total = parseInt(e.target.value) || 0;
                     }
                 });
             });
@@ -798,8 +785,9 @@
                     await addDoc(collection(db, "aborts"), {
                         date,
                         teamLeader: record.teamLeader,
-                        engineers: record.engineers,
-                        aborts: record.aborts,
+                        engineer: record.engineer,
+                        reason: record.reason,
+                        total: record.total,
                         submittedAt: serverTimestamp()
                     });
                 }
