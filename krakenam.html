@@ -985,7 +985,7 @@
             document.getElementById('totalSingle').textContent = totals.single;
             document.getElementById('totalComms').textContent = totals.comms;
             document.getElementById('totalRemoval').textContent = totals.removal;
-            document.getElementById('totalMeters').textContent = totals.meters.toFixed(2);
+            document.getElementById('totalMeters').textContent = Math.round(totals.meters);
             
             // Calculate percentages (based on dual + single + comms + removal)
             const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
@@ -1005,20 +1005,74 @@
             const tbody = document.getElementById('dataTableBody');
             tbody.innerHTML = '';
             
+            // Group records by team
+            const teamGroups = {};
             records.forEach(record => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${record.date}</td>
-                    <td>${record.team}</td>
-                    <td>${record.engineer}</td>
-                    <td>${record.totalJobs || 0}</td>
-                    <td>${record.dual || 0}</td>
-                    <td>${record.single || 0}</td>
-                    <td>${record.comms || 0}</td>
-                    <td>${record.removal || 0}</td>
-                    <td>${(record.totalMeters || 0).toFixed(2)}</td>
+                const team = record.team || 'Unknown';
+                if (!teamGroups[team]) {
+                    teamGroups[team] = [];
+                }
+                teamGroups[team].push(record);
+            });
+            
+            // Sort teams alphabetically
+            const sortedTeams = Object.keys(teamGroups).sort();
+            
+            // Display each team group
+            sortedTeams.forEach(team => {
+                const teamRecords = teamGroups[team];
+                
+                // Calculate team totals
+                const teamTotals = {
+                    jobs: 0,
+                    dual: 0,
+                    single: 0,
+                    comms: 0,
+                    removal: 0,
+                    meters: 0
+                };
+                
+                teamRecords.forEach(record => {
+                    teamTotals.jobs += record.totalJobs || 0;
+                    teamTotals.dual += record.dual || 0;
+                    teamTotals.single += record.single || 0;
+                    teamTotals.comms += record.comms || 0;
+                    teamTotals.removal += record.removal || 0;
+                    teamTotals.meters += record.totalMeters || 0;
+                });
+                
+                // Add team header row
+                const headerRow = document.createElement('tr');
+                headerRow.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(138, 43, 226, 0.15) 100%)';
+                headerRow.style.fontWeight = 'bold';
+                headerRow.innerHTML = `
+                    <td colspan="9" style="padding: 15px 10px; font-size: 1.1em; color: #0099ff;">
+                        <strong>🔷 ${team}</strong> — Total: ${teamTotals.jobs} Jobs | ${teamTotals.dual} Dual | ${teamTotals.single} Single | ${teamTotals.comms} Comms | ${teamTotals.removal} Removal | ${Math.round(teamTotals.meters)} Meters
+                    </td>
                 `;
-                tbody.appendChild(tr);
+                tbody.appendChild(headerRow);
+                
+                // Add individual records for this team
+                teamRecords.forEach(record => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${record.date}</td>
+                        <td style="color: #666;">${record.team}</td>
+                        <td>${record.engineer}</td>
+                        <td>${record.totalJobs || 0}</td>
+                        <td>${record.dual || 0}</td>
+                        <td>${record.single || 0}</td>
+                        <td>${record.comms || 0}</td>
+                        <td>${record.removal || 0}</td>
+                        <td>${Math.round(record.totalMeters || 0)}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                // Add spacing row between teams
+                const spacerRow = document.createElement('tr');
+                spacerRow.innerHTML = '<td colspan="9" style="height: 10px; background: transparent; border: none;"></td>';
+                tbody.appendChild(spacerRow);
             });
         }
 
