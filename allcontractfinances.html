@@ -558,7 +558,7 @@
                 </div>
                 <div class="upload-area">
                     <div class="upload-group">
-                        <label>Select Date</label>
+                        <label>Select Date (Data applies to)</label>
                         <input type="date" id="oesDate">
                     </div>
                     <div class="upload-group">
@@ -772,7 +772,16 @@
                         const jobType = row[1];
                         const outcomeResource = row[2];
                         const jobStatus = row[3];
-                        const value = parseFloat(row[4]) || 0;
+                        const valueRaw = row[4];
+                        
+                        // Parse value - remove £ symbol and any commas, then convert to number
+                        let value = 0;
+                        if (typeof valueRaw === 'number') {
+                            value = valueRaw;
+                        } else if (typeof valueRaw === 'string') {
+                            // Remove £, $, commas, and any whitespace, then parse
+                            value = parseFloat(valueRaw.replace(/[£$,\s]/g, '')) || 0;
+                        }
 
                         if (jobStatus && jobStatus.toString().toLowerCase() === 'completed') {
                             await addDoc(collection(window.db, "all contract financial"), {
@@ -826,28 +835,52 @@
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
 
+                    console.log('OES Upload - Total rows:', rows.length);
+                    console.log('OES Upload - First few rows:', rows.slice(0, 5));
+
                     let savedCount = 0;
 
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
-                        if (row.length < 3) continue;
+                        console.log(`Row ${i}:`, row);
+                        
+                        if (row.length < 3) {
+                            console.log(`Skipping row ${i} - not enough columns`);
+                            continue;
+                        }
 
                         const teamLeader = row[0];
                         const engineer = row[1];
-                        const value = parseFloat(row[2]) || 0;
+                        const valueRaw = row[2];
+                        
+                        // Parse value - remove £ symbol and any commas, then convert to number
+                        let value = 0;
+                        if (typeof valueRaw === 'number') {
+                            value = valueRaw;
+                        } else if (typeof valueRaw === 'string') {
+                            // Remove £, $, commas, and any whitespace, then parse
+                            value = parseFloat(valueRaw.replace(/[£$,\s]/g, '')) || 0;
+                        }
 
-                        await addDoc(collection(window.db, "all contract financial"), {
+                        console.log(`Processing row ${i} - Team Leader: ${teamLeader}, Engineer: ${engineer}, Value raw: ${valueRaw}, Value parsed: ${value}`);
+
+                        const docData = {
                             contract: 'OES',
                             date: selectedDate,
                             teamLeader: teamLeader,
                             engineer: engineer,
                             value: value,
                             timestamp: serverTimestamp()
-                        });
+                        };
+
+                        console.log('Saving to Firebase:', docData);
+
+                        await addDoc(collection(window.db, "all contract financial"), docData);
                         savedCount++;
                     }
 
-                    showStatus(`Successfully uploaded ${savedCount} OES records`, 'success', 'oesStatus');
+                    console.log(`Total OES records saved: ${savedCount}`);
+                    showStatus(`Successfully uploaded ${savedCount} OES records for ${selectedDate.toLocaleDateString('en-GB')}`, 'success', 'oesStatus');
                     updateDashboard();
                     fileInput.value = '';
 
