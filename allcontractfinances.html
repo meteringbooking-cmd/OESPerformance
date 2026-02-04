@@ -538,6 +538,10 @@
                 </div>
                 <div class="upload-area">
                     <div class="upload-group">
+                        <label>Select Date (Data applies to)</label>
+                        <input type="date" id="spDate">
+                    </div>
+                    <div class="upload-group">
                         <label>Excel/CSV File (Columns: Date | Job Type | Outcome Resource | Job Status | Value)</label>
                         <input type="file" id="spFile" accept=".xlsx,.xls,.csv">
                     </div>
@@ -638,6 +642,7 @@
             document.getElementById('endDate').valueAsDate = lastDay;
             document.getElementById('manualDate').valueAsDate = today;
             document.getElementById('oesDate').valueAsDate = today;
+            document.getElementById('spDate').valueAsDate = today;
 
             updateDashboard();
         }
@@ -723,12 +728,20 @@
         }
 
         async function uploadSPData() {
+            const dateInput = document.getElementById('spDate').value;
             const fileInput = document.getElementById('spFile');
+            
+            if (!dateInput) {
+                showStatus('Please select a date', 'error', 'spStatus');
+                return;
+            }
+            
             if (!fileInput.files.length) {
                 showStatus('Please select a file', 'error', 'spStatus');
                 return;
             }
 
+            const selectedDate = new Date(dateInput);
             const file = fileInput.files[0];
             const reader = new FileReader();
 
@@ -745,7 +758,6 @@
                         const row = rows[i];
                         if (row.length < 5) continue;
 
-                        const date = parseExcelDate(row[0]);
                         const jobType = row[1];
                         const outcomeResource = row[2];
                         const jobStatus = row[3];
@@ -754,7 +766,7 @@
                         if (jobStatus && jobStatus.toString().toLowerCase() === 'completed') {
                             await addDoc(collection(window.db, "all contract financial"), {
                                 contract: 'SP',
-                                date: date,
+                                date: selectedDate,
                                 jobType: jobType,
                                 outcomeResource: outcomeResource,
                                 jobStatus: jobStatus,
@@ -765,7 +777,7 @@
                         }
                     }
 
-                    showStatus(`Successfully uploaded ${savedCount} SP records`, 'success', 'spStatus');
+                    showStatus(`Successfully uploaded ${savedCount} SP records for ${selectedDate.toLocaleDateString('en-GB')}`, 'success', 'spStatus');
                     updateDashboard();
                     fileInput.value = '';
 
