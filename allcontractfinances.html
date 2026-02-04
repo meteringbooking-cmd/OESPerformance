@@ -660,6 +660,11 @@
                 let oesTotal = 0;
                 let spTotal = 0;
                 let edfTotal = 0;
+                
+                // Track unique dates for each contract to count entries
+                let oesDates = new Set();
+                let spDates = new Set();
+                let edfDates = new Set();
 
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
@@ -677,25 +682,31 @@
                     // Filter by date range in memory
                     if (docDate >= startDate && docDate <= endDate) {
                         const value = parseFloat(data.value) || 0;
+                        const dateKey = docDate.toDateString();
                         
                         if (data.contract === 'OES') {
                             oesTotal += value;
+                            oesDates.add(dateKey);
                         } else if (data.contract === 'SP') {
                             spTotal += value;
+                            spDates.add(dateKey);
                         } else if (data.contract === 'EDF') {
                             edfTotal += value;
+                            edfDates.add(dateKey);
                         }
                     }
                 });
 
-                // Calculate forecasts
-                const today = new Date();
-                const daysInPeriod = getWeekdaysInRange(startDate, endDate);
-                const daysElapsed = getWeekdaysInRange(startDate, today < endDate ? today : endDate);
+                // Calculate forecasts based on entries and total working days
+                const totalWorkingDays = getWeekdaysInRange(startDate, endDate);
                 
-                const oesForecast = daysElapsed > 0 ? (oesTotal / daysElapsed) * daysInPeriod : 0;
-                const spForecast = daysElapsed > 0 ? (spTotal / daysElapsed) * daysInPeriod : 0;
-                const edfForecast = daysElapsed > 0 ? (edfTotal / daysElapsed) * daysInPeriod : 0;
+                const oesEntries = oesDates.size;
+                const spEntries = spDates.size;
+                const edfEntries = edfDates.size;
+                
+                const oesForecast = oesEntries > 0 ? (oesTotal / oesEntries) * totalWorkingDays : 0;
+                const spForecast = spEntries > 0 ? (spTotal / spEntries) * totalWorkingDays : 0;
+                const edfForecast = edfEntries > 0 ? (edfTotal / edfEntries) * totalWorkingDays : 0;
 
                 // Update UI with number formatting
                 document.getElementById('oesTotal').textContent = oesTotal.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
