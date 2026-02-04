@@ -1352,99 +1352,121 @@
 
         // Helper function to get last 5 working days data
         async function getLast5DaysData(teamLeader = null) {
-            const dates = getPreviousWorkingDays(5).reverse();
-            const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
-            
-            for (const date of dates) {
-                const ds = formatDateForQuery(date);
-                const perfQ = query(
-                    collection(performanceDb, "performance"), 
-                    where("date", "==", ds),
-                    ...(teamLeader ? [where("teamLeader", "==", teamLeader)] : [])
-                );
-                const perfSnap = await getDocs(perfQ);
-                
-                let m = 0, j = 0, c = 0;
-                perfSnap.forEach(doc => {
-                    const d = doc.data();
-                    m += d.meters || 0;
-                    j += d.jobs || 0;
-                    c += d.completed || 0;
-                });
-                
-                data.dates.push(formatDate(date));
-                data.meters.push(m);
-                data.jobs.push(j);
-                data.completed.push(c);
-                data.completion.push(j > 0 ? Math.round((c / j) * 100) : 0);
-            }
-            
-            return data;
+    const dates = getPreviousWorkingDays(5).reverse();
+    const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
+    
+    for (const date of dates) {
+        const ds = formatDateForQuery(date);
+        
+        let perfQuery;
+        if (teamLeader === 'Paul Simpson') {
+            // Combine Paul Simpson and Richard Wiecko2 data
+            perfQuery = query(
+                collection(performanceDb, "performance"), 
+                where("date", "==", ds),
+                where("teamLeader", "in", ["Paul Simpson", "Richard Wiecko2"])
+            );
+        } else if (teamLeader) {
+            perfQuery = query(
+                collection(performanceDb, "performance"), 
+                where("date", "==", ds),
+                where("teamLeader", "==", teamLeader)
+            );
+        } else {
+            perfQuery = query(
+                collection(performanceDb, "performance"), 
+                where("date", "==", ds)
+            );
         }
+        
+        const perfSnap = await getDocs(perfQuery);
+        
+        let m = 0, j = 0, c = 0;
+        perfSnap.forEach(doc => {
+            const d = doc.data();
+            m += d.meters || 0;
+            j += d.jobs || 0;
+            c += d.completed || 0;
+        });
+        
+        data.dates.push(formatDate(date));
+        data.meters.push(m);
+        data.jobs.push(j);
+        data.completed.push(c);
+        data.completion.push(j > 0 ? Math.round((c / j) * 100) : 0);
+    }
+    
+    return data;
+}
 
         // Helper function to get 5 months compliance data
-        async function get5MonthsCompliance(teamLeader = null) {
-            const snap = await getDocs(collection(performanceDb, "compliance"));
-            const allDocs = [];
-            snap.forEach(doc => allDocs.push(doc.data()));
-            
-            const months = [];
-            const d = new Date();
-            for (let i = 0; i < 5; i++) {
-                months.push(new Date(d.getFullYear(), d.getMonth() - i, 1));
-            }
-            months.reverse();
-            
-            const data = { months: [], wipPass: [], postPass: [], overall: [] };
-            
-            for (const month of months) {
-                const start = new Date(month.getFullYear(), month.getMonth(), 1);
-                const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
-                
-                const wipJobs = new Map();
-                const postJobs = new Map();
-                
-                allDocs.forEach(d => {
-                    // Filter by team leader if specified
-                    if (teamLeader) {
-                        const docTeamLeader = d.teamLeader || d['Team Leader'] || '';
-                        if (docTeamLeader !== teamLeader) return;
-                    }
-                    
-                    const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
-                    const submittedDate = parseDateSubmitted(dateSubmittedStr);
-                    if (!submittedDate || submittedDate < start || submittedDate > end) return;
-                    
-                    const ref = d.jobReference || d['Job Reference'] || '';
-                    if (!ref) return;
-                    
-                    const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
-                    const passed = outcome.includes('pass') || outcome === 'p';
-                    
-                    const type = (d.type || '').toLowerCase();
-                    if (type === 'wip' && !wipJobs.has(ref)) {
-                        wipJobs.set(ref, passed);
-                    }
-                    if (type === 'post_completion' && !postJobs.has(ref)) {
-                        postJobs.set(ref, passed);
-                    }
-                });
-                
-                const wt = wipJobs.size;
-                const wp = [...wipJobs.values()].filter(v => v).length;
-                const pt = postJobs.size;
-                const pp = [...postJobs.values()].filter(v => v).length;
-                const ot = wt + pt;
-                const op = wp + pp;
-                
-                data.months.push(formatMonth(month));
-                data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
-                data.postPass.push(pt > 0 ? Math.round((pp / pt) * 100) : 0);
-                data.overall.push(ot > 0 ? Math.round((op / ot) * 100) : 0);
+async function get5MonthsCompliance(teamLeader = null) {
+    const snap = await getDocs(collection(performanceDb, "compliance"));
+    const allDocs = [];
+    snap.forEach(doc => allDocs.push(doc.data()));
+    
+    const months = [];
+    const d = new Date();
+    for (let i = 0; i < 5; i++) {
+        months.push(new Date(d.getFullYear(), d.getMonth() - i, 1));
+    }
+    months.reverse();
+    
+    const data = { months: [], wipPass: [], postPass: [], overall: [] };
+    
+    for (const month of months) {
+        const start = new Date(month.getFullYear(), month.getMonth(), 1);
+        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
+        
+        const wipJobs = new Map();
+        const postJobs = new Map();
+        
+        allDocs.forEach(d => {
+            // Filter by team leader if specified
+            if (teamLeader) {
+                const docTeamLeader = d.teamLeader || d['Team Leader'] || '';
+                // Combine Paul Simpson and Richard Wiecko2 data
+                if (teamLeader === 'Paul Simpson') {
+                    if (docTeamLeader !== 'Paul Simpson' && docTeamLeader !== 'Richard Wiecko2') return;
+                } else if (docTeamLeader !== teamLeader) {
+                    return;
+                }
             }
             
-            return data;
-        }
+            const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
+            const submittedDate = parseDateSubmitted(dateSubmittedStr);
+            if (!submittedDate || submittedDate < start || submittedDate > end) return;
+            
+            const ref = d.jobReference || d['Job Reference'] || '';
+            if (!ref) return;
+            
+            const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
+            const passed = outcome.includes('pass') || outcome === 'p';
+            
+            const type = (d.type || '').toLowerCase();
+            if (type === 'wip' && !wipJobs.has(ref)) {
+                wipJobs.set(ref, passed);
+            }
+            if (type === 'post_completion' && !postJobs.has(ref)) {
+                postJobs.set(ref, passed);
+            }
+        });
+        
+        const wt = wipJobs.size;
+        const wp = [...wipJobs.values()].filter(v => v).length;
+        const pt = postJobs.size;
+        const pp = [...postJobs.values()].filter(v => v).length;
+        const ot = wt + pt;
+        const op = wp + pp;
+        
+        data.months.push(formatMonth(month));
+        data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
+        data.postPass.push(pt > 0 ? Math.round((pp / pt) * 100) : 0);
+        data.overall.push(ot > 0 ? Math.round((op / ot) * 100) : 0);
+    }
+    
+    return data;
+}
 
         // Export to PowerPoint functionality
         window.exportToPowerPoint = async function() {
