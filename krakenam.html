@@ -188,7 +188,6 @@
             box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.1), 0 4px 12px rgba(0, 212, 255, 0.2);
             transform: translateY(-1px);
         }
-        }
         .date-range-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -506,6 +505,25 @@
         .btn-group .btn {
             flex: 1;
         }
+
+        /* Headcount styles */
+        .headcount-display {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .headcount-display.show {
+            display: block;
+        }
+        .headcount-value {
+            font-size: 3em;
+            font-weight: 900;
+            background: linear-gradient(135deg, #00d4ff 0%, #8a2be2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-top: 10px;
+        }
         
         @media (max-width: 768px) {
             .container { padding: 20px; }
@@ -523,6 +541,32 @@
         </div>
         
         <div id="message" class="message"></div>
+
+        <!-- Engineers Available Section -->
+        <div class="form-section">
+            <h2 class="section-title">👷 Engineers Available</h2>
+            
+            <div class="info-box">
+                <h3>Check Daily Headcount</h3>
+                <p>Select a date to view the number of engineers available for that day.</p>
+            </div>
+            
+            <form id="headcountForm">
+                <div class="form-group">
+                    <label for="headcountDate">Select Date</label>
+                    <input type="date" id="headcountDate" required>
+                </div>
+                
+                <button type="submit" class="btn">Check Headcount</button>
+            </form>
+            
+            <div class="headcount-display" id="headcountDisplay">
+                <h3 style="color: #666; margin-bottom: 10px;">Engineers Available</h3>
+                <div class="headcount-value" id="headcountValue">0</div>
+            </div>
+        </div>
+
+        <div class="section-divider"></div>
 
         <!-- View Data Section -->
         <div class="form-section">
@@ -583,6 +627,10 @@
                     <div class="stat-card">
                         <h4>Total Meters</h4>
                         <div class="value" id="totalMeters">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Engineers Available</h4>
+                        <div class="value" id="engineersAvailable">-</div>
                     </div>
                 </div>
                 
@@ -678,12 +726,6 @@
                 </div>
             </form>
         </div>
-
-        <div class="section-divider"></div>
-
-        <!-- View Data Section -->
-        <div class="form-section">
-            <h2 class="section-title">📊 View Team Data</h2>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -715,9 +757,44 @@
         document.getElementById('uploadDate').valueAsDate = yesterday;
         document.getElementById('startDate').valueAsDate = weekAgo;
         document.getElementById('endDate').valueAsDate = yesterday;
+        document.getElementById('headcountDate').valueAsDate = yesterday;
 
         let uploadData = [];
         let allTeams = new Set();
+
+        // Headcount form handling
+        document.getElementById('headcountForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const date = document.getElementById('headcountDate').value;
+            
+            try {
+                const q = query(
+                    collection(db, "KrakenAM Headcount"),
+                    where("date", "==", date)
+                );
+                
+                const querySnapshot = await getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    showMessage('No headcount data found for this date', 'error');
+                    document.getElementById('headcountDisplay').classList.remove('show');
+                    return;
+                }
+                
+                // Get the first (and should be only) document
+                const headcountDoc = querySnapshot.docs[0];
+                const headcount = headcountDoc.data().headcount || 0;
+                
+                document.getElementById('headcountValue').textContent = headcount;
+                document.getElementById('headcountDisplay').classList.add('show');
+                showMessage(`Headcount for ${date}: ${headcount} engineers`, 'success');
+                
+            } catch (err) {
+                console.error('Error fetching headcount:', err);
+                showMessage('Error fetching headcount: ' + err.message, 'error');
+            }
+        });
 
         // File Upload Handling
         const uploadArea = document.getElementById('uploadArea');
@@ -955,6 +1032,9 @@
                     return;
                 }
                 
+                // Fetch headcount data for the date range
+                await fetchHeadcountForRange(startDate, endDate);
+                
                 displayStatistics(records);
                 displayDataTable(records);
                 document.getElementById('statsContainer').classList.add('show');
@@ -965,6 +1045,37 @@
                 showMessage('Error fetching data: ' + err.message, 'error');
             }
         });
+
+        async function fetchHeadcountForRange(startDate, endDate) {
+            try {
+                const q = query(
+                    collection(db, "KrakenAM Headcount"),
+                    where("date", ">=", startDate),
+                    where("date", "<=", endDate)
+                );
+                
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    // Calculate average headcount across the date range
+                    let totalHeadcount = 0;
+                    let count = 0;
+                    
+                    querySnapshot.forEach((doc) => {
+                        totalHeadcount += doc.data().headcount || 0;
+                        count++;
+                    });
+                    
+                    const avgHeadcount = count > 0 ? Math.round(totalHeadcount / count) : 0;
+                    document.getElementById('engineersAvailable').textContent = avgHeadcount;
+                } else {
+                    document.getElementById('engineersAvailable').textContent = '-';
+                }
+            } catch (err) {
+                console.error('Error fetching headcount:', err);
+                document.getElementById('engineersAvailable').textContent = '-';
+            }
+        }
 
         function displayStatistics(records) {
             let totals = {
