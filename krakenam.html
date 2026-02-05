@@ -171,6 +171,7 @@
             font-size: 0.95em;
         }
         .form-group input[type="date"],
+        .form-group input[type="number"],
         .form-group select {
             width: 100%;
             padding: 14px 18px;
@@ -524,12 +525,19 @@
             background-clip: text;
             margin-top: 10px;
         }
+
+        .headcount-input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
         
         @media (max-width: 768px) {
             .container { padding: 20px; }
             .date-range-grid { grid-template-columns: 1fr; }
             .stats-grid { grid-template-columns: 1fr; }
             .percentage-grid { grid-template-columns: 1fr 1fr; }
+            .headcount-input-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -541,32 +549,6 @@
         </div>
         
         <div id="message" class="message"></div>
-
-        <!-- Engineers Available Section -->
-        <div class="form-section">
-            <h2 class="section-title">👷 Engineers Available</h2>
-            
-            <div class="info-box">
-                <h3>Check Daily Headcount</h3>
-                <p>Select a date to view the number of engineers available for that day.</p>
-            </div>
-            
-            <form id="headcountForm">
-                <div class="form-group">
-                    <label for="headcountDate">Select Date</label>
-                    <input type="date" id="headcountDate" required>
-                </div>
-                
-                <button type="submit" class="btn">Check Headcount</button>
-            </form>
-            
-            <div class="headcount-display" id="headcountDisplay">
-                <h3 style="color: #666; margin-bottom: 10px;">Engineers Available</h3>
-                <div class="headcount-value" id="headcountValue">0</div>
-            </div>
-        </div>
-
-        <div class="section-divider"></div>
 
         <!-- View Data Section -->
         <div class="form-section">
@@ -678,6 +660,38 @@
 
         <div class="section-divider"></div>
 
+        <!-- Engineers Available Section -->
+        <div class="form-section">
+            <h2 class="section-title">👷 Engineers Available</h2>
+            
+            <div class="info-box">
+                <h3>Manage Daily Headcount</h3>
+                <p>Enter the number of engineers available for a specific date. This data will be saved to Firebase and displayed in the View Team Data section.</p>
+            </div>
+            
+            <form id="headcountForm">
+                <div class="headcount-input-grid">
+                    <div class="form-group">
+                        <label for="headcountDate">Select Date</label>
+                        <input type="date" id="headcountDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="headcountInput">Number of Engineers</label>
+                        <input type="number" id="headcountInput" min="0" required>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn">Save Headcount</button>
+            </form>
+            
+            <div class="headcount-display" id="headcountDisplay">
+                <h3 style="color: #666; margin-bottom: 10px;">Current Headcount for Selected Date</h3>
+                <div class="headcount-value" id="headcountValue">0</div>
+            </div>
+        </div>
+
+        <div class="section-divider"></div>
+
         <!-- Upload Section -->
         <div class="form-section">
             <h2 class="section-title">📤 Upload Data</h2>
@@ -731,7 +745,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, setDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -762,11 +776,41 @@
         let uploadData = [];
         let allTeams = new Set();
 
-        // Headcount form handling
+        // Headcount form handling - Save headcount
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const date = document.getElementById('headcountDate').value;
+            const headcount = parseInt(document.getElementById('headcountInput').value);
+            
+            if (isNaN(headcount) || headcount < 0) {
+                showMessage('Please enter a valid number of engineers', 'error');
+                return;
+            }
+            
+            try {
+                // Use the date as the document ID to ensure only one record per date
+                await setDoc(doc(db, "KrakenAM Headcount", date), {
+                    date: date,
+                    headcount: headcount,
+                    updatedAt: serverTimestamp()
+                });
+                
+                // Display the saved value
+                document.getElementById('headcountValue').textContent = headcount;
+                document.getElementById('headcountDisplay').classList.add('show');
+                
+                showMessage(`Headcount saved successfully: ${headcount} engineers for ${date}`, 'success');
+                
+            } catch (err) {
+                console.error('Error saving headcount:', err);
+                showMessage('Error saving headcount: ' + err.message, 'error');
+            }
+        });
+
+        // Load headcount when date changes
+        document.getElementById('headcountDate').addEventListener('change', async (e) => {
+            const date = e.target.value;
             
             try {
                 const q = query(
@@ -776,23 +820,19 @@
                 
                 const querySnapshot = await getDocs(q);
                 
-                if (querySnapshot.empty) {
-                    showMessage('No headcount data found for this date', 'error');
+                if (!querySnapshot.empty) {
+                    const headcountDoc = querySnapshot.docs[0];
+                    const headcount = headcountDoc.data().headcount || 0;
+                    
+                    document.getElementById('headcountInput').value = headcount;
+                    document.getElementById('headcountValue').textContent = headcount;
+                    document.getElementById('headcountDisplay').classList.add('show');
+                } else {
+                    document.getElementById('headcountInput').value = '';
                     document.getElementById('headcountDisplay').classList.remove('show');
-                    return;
                 }
-                
-                // Get the first (and should be only) document
-                const headcountDoc = querySnapshot.docs[0];
-                const headcount = headcountDoc.data().headcount || 0;
-                
-                document.getElementById('headcountValue').textContent = headcount;
-                document.getElementById('headcountDisplay').classList.add('show');
-                showMessage(`Headcount for ${date}: ${headcount} engineers`, 'success');
-                
             } catch (err) {
-                console.error('Error fetching headcount:', err);
-                showMessage('Error fetching headcount: ' + err.message, 'error');
+                console.error('Error loading headcount:', err);
             }
         });
 
