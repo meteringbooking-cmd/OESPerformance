@@ -1837,52 +1837,171 @@
                     
                     let paymentDetails = [];
                     
+                    // Check if there are amendments (approved with changes)
+                    const hasAmendments = additionalPayment.status === 'approved-with-changes' && additionalPayment.amendments;
+                    
+                    // Standby Payment
                     if (additionalPayment.standby === 'yes') {
-                        paymentDetails.push(`✓ Standby Payment (${paymentBreakdown.standby.label}): <strong>£${paymentBreakdown.standby.amount.toFixed(2)}</strong>`);
+                        if (hasAmendments && additionalPayment.amendments.standby === false) {
+                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Standby Payment (${paymentBreakdown.standby.label}): £${paymentBreakdown.standby.amount.toFixed(2)}</span> <span style="color: #dc3545; font-weight: 600;">[REMOVED]</span>`);
+                        } else {
+                            paymentDetails.push(`✓ Standby Payment (${paymentBreakdown.standby.label}): <strong>£${paymentBreakdown.standby.amount.toFixed(2)}</strong>`);
+                        }
                     }
+                    
+                    // Working Away
                     if (additionalPayment.workingAway === 'yes') {
-                        paymentDetails.push(`✓ Working Away Allowance: <strong>£${paymentBreakdown.workingAway.amount.toFixed(2)}</strong>`);
+                        if (hasAmendments && additionalPayment.amendments.workingAway === false) {
+                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Working Away Allowance: £${paymentBreakdown.workingAway.amount.toFixed(2)}</span> <span style="color: #dc3545; font-weight: 600;">[REMOVED]</span>`);
+                        } else {
+                            paymentDetails.push(`✓ Working Away Allowance: <strong>£${paymentBreakdown.workingAway.amount.toFixed(2)}</strong>`);
+                        }
                     }
+                    
+                    // Overtime
                     if (additionalPayment.overtime === 'yes') {
                         const startTime = additionalPayment.overtimeStartTime || 'N/A';
                         const endTime = additionalPayment.overtimeEndTime || 'N/A';
-                        paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})`);
-                        paymentDetails.push(`  Rate: £${paymentBreakdown.overtime.rate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
-                        paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
-                        paymentDetails.push(`  <strong>Overtime Total: £${paymentBreakdown.overtime.amount.toFixed(2)}</strong>`);
+                        
+                        if (hasAmendments && additionalPayment.amendments.overtime === false) {
+                            // Overtime removed
+                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span> <span style="color: #dc3545; font-weight: 600;">[REMOVED]</span>`);
+                        } else if (hasAmendments && additionalPayment.amendments.overtimeHours) {
+                            // Overtime modified
+                            const newStartTime = additionalPayment.amendments.overtimeStartTime || startTime;
+                            const newEndTime = additionalPayment.amendments.overtimeEndTime || endTime;
+                            const newHours = additionalPayment.amendments.overtimeHours;
+                            
+                            // Recalculate with new hours
+                            let newRate = paymentBreakdown.overtime.rate;
+                            const newAmount = newHours * newRate;
+                            
+                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span>`);
+                            paymentDetails.push(`✓ Overtime (MODIFIED): ${newHours.toFixed(1)} hours (${newStartTime} - ${newEndTime})`);
+                            paymentDetails.push(`  Rate: £${newRate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
+                            paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
+                            paymentDetails.push(`  <strong>Overtime Total: £${newAmount.toFixed(2)}</strong>`);
+                        } else {
+                            // Overtime kept as is
+                            paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})`);
+                            paymentDetails.push(`  Rate: £${paymentBreakdown.overtime.rate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
+                            paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
+                            paymentDetails.push(`  <strong>Overtime Total: £${paymentBreakdown.overtime.amount.toFixed(2)}</strong>`);
+                        }
                     }
+                    
+                    // Jobs
                     if (additionalPayment.hasJobs && additionalPayment.jobs && additionalPayment.jobs.length > 0) {
+                        const removedJobs = hasAmendments && additionalPayment.amendments.removeJobs ? additionalPayment.amendments.removeJobs : [];
+                        
                         paymentDetails.push(`✓ Additional Jobs (${additionalPayment.jobs.length}):`);
+                        
+                        let approvedJobsTotal = 0;
                         additionalPayment.jobs.forEach((job, idx) => {
                             let jobAmount = 0;
                             if (job.jobType === 'Dual') jobAmount = 80;
                             else if (job.jobType === 'Single') jobAmount = 50;
                             else if (job.jobType === 'Comms') jobAmount = 25;
                             
-                            paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode})${job.claimPricePerJob === 'yes' ? ` - <strong>£${jobAmount}</strong>` : ' - Not claimed'}`);
+                            const isRemoved = removedJobs.includes(job.jobNumber);
+                            const isClaimed = job.claimPricePerJob === 'yes';
+                            
+                            if (isRemoved) {
+                                paymentDetails.push(`  <span style="text-decoration: line-through; color: #999;">• Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - £${jobAmount}</span> <span style="color: #dc3545; font-weight: 600;">[REMOVED]</span>`);
+                            } else if (isClaimed) {
+                                paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - <strong>£${jobAmount}</strong>`);
+                                approvedJobsTotal += jobAmount;
+                            } else {
+                                paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - Not claimed`);
+                            }
                         });
-                        if (paymentBreakdown.jobs.amount > 0) {
-                            paymentDetails.push(`  <strong>Jobs Total: £${paymentBreakdown.jobs.amount.toFixed(2)}</strong>`);
+                        
+                        if (approvedJobsTotal > 0) {
+                            paymentDetails.push(`  <strong>Jobs Total: £${approvedJobsTotal.toFixed(2)}</strong>`);
                         }
                     }
                     
-                    // Add total amount
-                    const totalAmount = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
-                                       paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
+                    // Calculate final total based on status
+                    let finalTotal = 0;
                     
-                    if (totalAmount > 0) {
-                        paymentDetails.push(`<div style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #20c997;"><strong>TOTAL CLAIMED: £${totalAmount.toFixed(2)}</strong></div>`);
+                    if (additionalPayment.status === 'approved') {
+                        // Approved as submitted - use original amounts
+                        finalTotal = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
+                                    paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
+                    } else if (additionalPayment.status === 'approved-with-changes' && hasAmendments) {
+                        // Calculate based on amendments
+                        if (additionalPayment.standby === 'yes' && additionalPayment.amendments.standby !== false) {
+                            finalTotal += paymentBreakdown.standby.amount;
+                        }
+                        if (additionalPayment.workingAway === 'yes' && additionalPayment.amendments.workingAway !== false) {
+                            finalTotal += paymentBreakdown.workingAway.amount;
+                        }
+                        if (additionalPayment.overtime === 'yes' && additionalPayment.amendments.overtime !== false) {
+                            if (additionalPayment.amendments.overtimeHours) {
+                                finalTotal += additionalPayment.amendments.overtimeHours * paymentBreakdown.overtime.rate;
+                            } else {
+                                finalTotal += paymentBreakdown.overtime.amount;
+                            }
+                        }
+                        // Jobs
+                        if (additionalPayment.hasJobs && additionalPayment.jobs) {
+                            const removedJobs = additionalPayment.amendments.removeJobs || [];
+                            additionalPayment.jobs.forEach(job => {
+                                if (job.claimPricePerJob === 'yes' && !removedJobs.includes(job.jobNumber)) {
+                                    if (job.jobType === 'Dual') finalTotal += 80;
+                                    else if (job.jobType === 'Single') finalTotal += 50;
+                                    else if (job.jobType === 'Comms') finalTotal += 25;
+                                }
+                            });
+                        }
+                    } else if (additionalPayment.status === 'pending') {
+                        // Pending - show claimed amount
+                        finalTotal = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
+                                    paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
                     }
                     
+                    // Add total amount
+                    if (finalTotal > 0 || additionalPayment.status !== 'rejected') {
+                        const totalLabel = additionalPayment.status === 'approved' ? 'APPROVED AMOUNT' : 
+                                          additionalPayment.status === 'approved-with-changes' ? 'APPROVED AMOUNT (WITH CHANGES)' : 
+                                          'TOTAL CLAIMED';
+                        paymentDetails.push(`<div style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #20c997;"><strong>${totalLabel}: £${finalTotal.toFixed(2)}</strong></div>`);
+                    }
+                    
+                    // Status badge
                     const statusBadge = additionalPayment.status === 'approved' ? 
                         '<span class="approved-badge">✓ Approved</span>' : 
                         additionalPayment.status === 'rejected' ? 
                         '<span class="rejected-badge">✗ Rejected</span>' : 
+                        additionalPayment.status === 'approved-with-changes' ?
+                        '<span class="approved-badge" style="background: #17a2b8;">✓ Approved with Changes</span>' :
                         '<span class="pending-approval">⏳ Pending Approval</span>';
                     
                     const detailsHTML = paymentDetails.map(detail => 
                         `<div class="payment-details-item">${detail}</div>`
                     ).join('');
+                    
+                    // Add rejection reason if rejected
+                    let rejectionHTML = '';
+                    if (additionalPayment.status === 'rejected' && additionalPayment.rejectionComment) {
+                        rejectionHTML = `
+                            <div style="background: #f8d7da; border-left: 4px solid #dc3545; padding: 12px; border-radius: 6px; margin-top: 10px;">
+                                <div style="color: #dc3545; font-weight: 600; margin-bottom: 5px;">Rejection Reason:</div>
+                                <div style="color: #721c24; font-style: italic;">${additionalPayment.rejectionComment}</div>
+                            </div>
+                        `;
+                    }
+                    
+                    // Add changes comment if approved with changes
+                    let changesHTML = '';
+                    if (additionalPayment.status === 'approved-with-changes' && additionalPayment.changesComment) {
+                        changesHTML = `
+                            <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 12px; border-radius: 6px; margin-top: 10px;">
+                                <div style="color: #17a2b8; font-weight: 600; margin-bottom: 5px;">Approval Comments:</div>
+                                <div style="color: #0c5460;">${additionalPayment.changesComment}</div>
+                            </div>
+                        `;
+                    }
                     
                     additionalPaymentHTML = `
                         <div class="additional-payment-section">
@@ -1893,6 +2012,8 @@
                             <div class="payment-details">
                                 ${detailsHTML}
                             </div>
+                            ${rejectionHTML}
+                            ${changesHTML}
                         </div>
                     `;
                 }
