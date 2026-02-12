@@ -1829,26 +1829,49 @@
                     `;
                 }
 
-                // Additional Payment info - NOW WITH FULL DETAILS
+                // Additional Payment info - NOW WITH FULL DETAILS INCLUDING AMOUNTS
                 let additionalPaymentHTML = '';
                 if (additionalPayment) {
+                    // Calculate payment breakdown with actual amounts
+                    const paymentBreakdown = calculateAdditionalPaymentBreakdown(additionalPayment, dateObj);
+                    
                     let paymentDetails = [];
                     
                     if (additionalPayment.standby === 'yes') {
-                        paymentDetails.push('✓ Standby Payment');
+                        paymentDetails.push(`✓ Standby Payment (${paymentBreakdown.standby.label}): <strong>£${paymentBreakdown.standby.amount.toFixed(2)}</strong>`);
                     }
                     if (additionalPayment.workingAway === 'yes') {
-                        paymentDetails.push('✓ Working Away Allowance');
+                        paymentDetails.push(`✓ Working Away Allowance: <strong>£${paymentBreakdown.workingAway.amount.toFixed(2)}</strong>`);
                     }
                     if (additionalPayment.overtime === 'yes') {
-                        paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${additionalPayment.overtimeStartTime} - ${additionalPayment.overtimeEndTime})`);
+                        const startTime = additionalPayment.overtimeStartTime || 'N/A';
+                        const endTime = additionalPayment.overtimeEndTime || 'N/A';
+                        paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})`);
+                        paymentDetails.push(`  Rate: £${paymentBreakdown.overtime.rate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
                         paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
+                        paymentDetails.push(`  <strong>Overtime Total: £${paymentBreakdown.overtime.amount.toFixed(2)}</strong>`);
                     }
                     if (additionalPayment.hasJobs && additionalPayment.jobs && additionalPayment.jobs.length > 0) {
                         paymentDetails.push(`✓ Additional Jobs (${additionalPayment.jobs.length}):`);
                         additionalPayment.jobs.forEach((job, idx) => {
-                            paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode})${job.claimPricePerJob === 'yes' ? ' [Price per job]' : ''}`);
+                            let jobAmount = 0;
+                            if (job.jobType === 'Dual') jobAmount = 80;
+                            else if (job.jobType === 'Single') jobAmount = 50;
+                            else if (job.jobType === 'Comms') jobAmount = 25;
+                            
+                            paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode})${job.claimPricePerJob === 'yes' ? ` - <strong>£${jobAmount}</strong>` : ' - Not claimed'}`);
                         });
+                        if (paymentBreakdown.jobs.amount > 0) {
+                            paymentDetails.push(`  <strong>Jobs Total: £${paymentBreakdown.jobs.amount.toFixed(2)}</strong>`);
+                        }
+                    }
+                    
+                    // Add total amount
+                    const totalAmount = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
+                                       paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
+                    
+                    if (totalAmount > 0) {
+                        paymentDetails.push(`<div style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #20c997;"><strong>TOTAL CLAIMED: £${totalAmount.toFixed(2)}</strong></div>`);
                     }
                     
                     const statusBadge = additionalPayment.status === 'approved' ? 
@@ -1872,6 +1895,75 @@
                             </div>
                         </div>
                     `;
+                }
+
+                // Helper function to calculate additional payment breakdown
+                function calculateAdditionalPaymentBreakdown(payment, dateObj) {
+                    const dayOfWeek = dateObj.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isSaturday = dayOfWeek === 6;
+                    const isSunday = dayOfWeek === 0;
+
+                    const month = dateObj.getMonth() + 1;
+                    const day = dateObj.getDate();
+                    const isChristmas = month === 12 && day === 25;
+                    const isBoxingDay = month === 12 && day === 26;
+                    const isNewYear = month === 1 && day === 1;
+                    const isSpecialHoliday = isChristmas || isBoxingDay || isNewYear;
+
+                    let breakdown = {
+                        standby: { amount: 0, label: '' },
+                        workingAway: { amount: 0 },
+                        overtime: { amount: 0, rate: 0, rateLabel: '' },
+                        jobs: { amount: 0 }
+                    };
+
+                    // Standby
+                    if (payment.standby === 'yes') {
+                        if (isSpecialHoliday) {
+                            breakdown.standby.amount = 100;
+                            breakdown.standby.label = 'Special Holiday';
+                        } else if (isWeekend) {
+                            breakdown.standby.amount = 50;
+                            breakdown.standby.label = isSaturday ? 'Saturday' : 'Sunday';
+                        } else {
+                            breakdown.standby.amount = 20;
+                            breakdown.standby.label = 'Weekday';
+                        }
+                    }
+
+                    // Working Away
+                    if (payment.workingAway === 'yes') {
+                        breakdown.workingAway.amount = 50;
+                    }
+
+                    // Overtime
+                    if (payment.overtime === 'yes' && payment.overtimeHours > 0) {
+                        if (isSunday || payment.isBankHoliday) {
+                            breakdown.overtime.rate = 37.50;
+                            breakdown.overtime.rateLabel = isSunday ? 'Sunday' : 'Bank Holiday';
+                        } else if (isSaturday) {
+                            breakdown.overtime.rate = 28.13;
+                            breakdown.overtime.rateLabel = 'Saturday';
+                        } else {
+                            breakdown.overtime.rate = 24.94;
+                            breakdown.overtime.rateLabel = 'Weekday';
+                        }
+                        breakdown.overtime.amount = payment.overtimeHours * breakdown.overtime.rate;
+                    }
+
+                    // Jobs
+                    if (payment.hasJobs && payment.jobs) {
+                        payment.jobs.forEach(job => {
+                            if (job.claimPricePerJob === 'yes') {
+                                if (job.jobType === 'Dual') breakdown.jobs.amount += 80;
+                                else if (job.jobType === 'Single') breakdown.jobs.amount += 50;
+                                else if (job.jobType === 'Comms') breakdown.jobs.amount += 25;
+                            }
+                        });
+                    }
+
+                    return breakdown;
                 }
 
                 card.innerHTML = `
