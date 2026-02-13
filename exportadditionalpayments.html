@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Export Additional Payments</title>
+    <title>Export Payment Summary</title>
     <style>
         * {
             margin: 0;
@@ -161,12 +161,12 @@
             font-weight: bold;
         }
 
-        .stat-card.pending {
-            background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+        .stat-card.payments {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
         }
 
-        .stat-card.approved {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        .stat-card.bonus {
+            background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
         }
 
         .stat-card.total {
@@ -193,6 +193,7 @@
             border-radius: 10px;
             overflow: hidden;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
 
         .preview-table th {
@@ -216,34 +217,6 @@
 
         .preview-table tr:hover {
             background: #f8f9fa;
-        }
-
-        .status-badge {
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 0.85em;
-            text-transform: uppercase;
-        }
-
-        .status-badge.pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-badge.approved {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-badge.approved-with-changes {
-            background: #d1ecf1;
-            color: #0c5460;
-        }
-
-        .status-badge.rejected {
-            background: #f8d7da;
-            color: #721c24;
         }
 
         .loading {
@@ -271,6 +244,13 @@
             color: #0c5460;
         }
 
+        .export-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -292,6 +272,10 @@
             .preview-table td {
                 padding: 8px;
             }
+
+            .export-buttons {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -299,13 +283,13 @@
     <div class="container">
         <div class="header">
             <a href="index.html" class="back-link">← Back to Home</a>
-            <div class="logo">📊 Export Additional Payments</div>
-            <div class="subtitle">Download payment data as CSV</div>
+            <div class="logo">📊 Export Payment Summary</div>
+            <div class="subtitle">Download additional payments and bonus summary as CSV</div>
         </div>
 
         <div class="export-section">
             <div class="info-box">
-                ℹ️ Select a date range to export payment submissions. All payment details including overtime, standby, jobs, and approval status will be included.
+                ℹ️ Select a date range to export payment summaries. This will include totals for additional payments and bonuses per engineer.
             </div>
 
             <div class="form-grid">
@@ -316,22 +300,6 @@
                 <div class="form-group">
                     <label for="endDate">End Date:</label>
                     <input type="date" id="endDate" required>
-                </div>
-                <div class="form-group">
-                    <label for="statusFilter">Status Filter:</label>
-                    <select id="statusFilter">
-                        <option value="">All Statuses</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="approved-with-changes">Approved with Changes</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="teamLeaderFilter">Team Leader:</label>
-                    <select id="teamLeaderFilter">
-                        <option value="">All Team Leaders</option>
-                    </select>
                 </div>
             </div>
 
@@ -345,25 +313,34 @@
         <div id="statsSection" class="stats-section" style="display: none;"></div>
 
         <div id="previewSection" class="preview-section" style="display: none;">
-            <div class="preview-header">📋 Preview (First 50 records)</div>
+            <div class="preview-header">📋 Additional Payments Summary</div>
             <div style="overflow-x: auto;">
-                <table class="preview-table" id="previewTable"></table>
+                <table class="preview-table" id="paymentsTable"></table>
             </div>
-            <div style="margin-top: 20px;">
-                <button class="btn btn-export" onclick="exportToCSV()">
-                    💾 Export to CSV
+
+            <div class="preview-header" style="margin-top: 40px;">🎁 Bonus Summary</div>
+            <div style="overflow-x: auto;">
+                <table class="preview-table" id="bonusTable"></table>
+            </div>
+
+            <div class="export-buttons">
+                <button class="btn btn-export" onclick="exportPaymentsToCSV()">
+                    💾 Export Additional Payments CSV
+                </button>
+                <button class="btn btn-export" onclick="exportBonusToCSV()">
+                    💾 Export Bonus CSV
                 </button>
             </div>
         </div>
 
         <div id="noDataDiv" class="no-data" style="display: none;">
-            📭 No payment data found for the selected criteria
+            📭 No payment data found for the selected date range
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -378,53 +355,12 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        let filteredPayments = [];
-        let engineerTeamLeaders = {};
-
-        // Load team leader mappings
-        async function loadTeamLeaderMappings() {
-            try {
-                const perfSnapshot = await getDocs(collection(db, "performance"));
-                const teamLeaderSet = new Set();
-                
-                perfSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (data.engineerName && data.teamLeader) {
-                        engineerTeamLeaders[data.engineerName] = data.teamLeader;
-                        teamLeaderSet.add(data.teamLeader);
-                    }
-                });
-
-                if (teamLeaderSet.size === 0) {
-                    const attendSnapshot = await getDocs(collection(db, "attendance"));
-                    attendSnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        if (data.engineerName && data.teamLeader) {
-                            engineerTeamLeaders[data.engineerName] = data.teamLeader;
-                            teamLeaderSet.add(data.teamLeader);
-                        }
-                    });
-                }
-
-                const teamLeaderFilter = document.getElementById('teamLeaderFilter');
-                const sortedTeamLeaders = Array.from(teamLeaderSet).sort();
-                
-                sortedTeamLeaders.forEach(leader => {
-                    const option = document.createElement('option');
-                    option.value = leader;
-                    option.textContent = leader;
-                    teamLeaderFilter.appendChild(option);
-                });
-            } catch (error) {
-                console.error("Error loading team leader mappings:", error);
-            }
-        }
+        let paymentsSummary = [];
+        let bonusSummary = [];
 
         window.loadPreview = async function() {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const statusFilter = document.getElementById('statusFilter').value;
-            const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
 
             if (!startDate || !endDate) {
                 alert('Please select both start and end dates');
@@ -442,39 +378,55 @@
             document.getElementById('noDataDiv').style.display = 'none';
 
             try {
+                // Load additional payments
                 const paymentsSnapshot = await getDocs(collection(db, "additionalPayments"));
-                filteredPayments = [];
+                const paymentsMap = {};
 
                 paymentsSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const paymentDate = data.date;
                     
-                    if (paymentDate >= startDate && paymentDate <= endDate) {
-                        const teamLeader = engineerTeamLeaders[data.engineerName] || 'Unassigned';
+                    if (paymentDate >= startDate && paymentDate <= endDate && 
+                        (data.status === 'approved' || data.status === 'approved-with-changes')) {
                         
-                        const matchesStatus = !statusFilter || data.status === statusFilter;
-                        const matchesTeamLeader = !teamLeaderFilter || teamLeader === teamLeaderFilter;
-                        
-                        if (matchesStatus && matchesTeamLeader) {
-                            filteredPayments.push({
-                                id: doc.id,
-                                ...data,
-                                teamLeader: teamLeader
-                            });
+                        if (!paymentsMap[data.engineerName]) {
+                            paymentsMap[data.engineerName] = 0;
                         }
+                        
+                        const dateObj = new Date(data.date + 'T00:00:00');
+                        const total = calculatePaymentTotal(data, dateObj);
+                        paymentsMap[data.engineerName] += total;
                     }
                 });
 
-                filteredPayments.sort((a, b) => {
-                    if (b.date !== a.date) {
-                        return b.date.localeCompare(a.date);
+                // Load bonuses
+                const bonusSnapshot = await getDocs(collection(db, "bonus"));
+                const bonusMap = {};
+
+                bonusSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const bonusDate = data.date;
+                    
+                    if (bonusDate >= startDate && bonusDate <= endDate && data.bonusAmount > 0) {
+                        if (!bonusMap[data.engineerName]) {
+                            bonusMap[data.engineerName] = 0;
+                        }
+                        bonusMap[data.engineerName] += parseFloat(data.bonusAmount);
                     }
-                    return a.engineerName.localeCompare(b.engineerName);
                 });
+
+                // Convert to arrays and sort
+                paymentsSummary = Object.entries(paymentsMap)
+                    .map(([name, total]) => ({ engineerName: name, totalAmount: total }))
+                    .sort((a, b) => a.engineerName.localeCompare(b.engineerName));
+
+                bonusSummary = Object.entries(bonusMap)
+                    .map(([name, total]) => ({ engineerName: name, totalBonus: total }))
+                    .sort((a, b) => a.engineerName.localeCompare(b.engineerName));
 
                 document.getElementById('loadingDiv').style.display = 'none';
 
-                if (filteredPayments.length === 0) {
+                if (paymentsSummary.length === 0 && bonusSummary.length === 0) {
                     document.getElementById('noDataDiv').style.display = 'block';
                     return;
                 }
@@ -489,108 +441,7 @@
             }
         }
 
-        function displayStats() {
-            const statsSection = document.getElementById('statsSection');
-            statsSection.style.display = 'grid';
-
-            const totalRecords = filteredPayments.length;
-            const pendingCount = filteredPayments.filter(p => p.status === 'pending').length;
-            const approvedCount = filteredPayments.filter(p => p.status === 'approved' || p.status === 'approved-with-changes').length;
-
-            let totalAmount = 0;
-            filteredPayments.forEach(payment => {
-                // Only include approved payments in total (not pending or rejected)
-                if (payment.status === 'approved' || payment.status === 'approved-with-changes') {
-                    totalAmount += calculatePaymentTotal(payment);
-                }
-            });
-
-            statsSection.innerHTML = `
-                <div class="stat-card total">
-                    <div class="stat-label">Total Records</div>
-                    <div class="stat-value">${totalRecords}</div>
-                </div>
-                <div class="stat-card pending">
-                    <div class="stat-label">Pending</div>
-                    <div class="stat-value">${pendingCount}</div>
-                </div>
-                <div class="stat-card approved">
-                    <div class="stat-label">Approved</div>
-                    <div class="stat-value">${approvedCount}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Total Amount (Approved Only)</div>
-                    <div class="stat-value">£${totalAmount.toFixed(2)}</div>
-                </div>
-            `;
-        }
-
-        function displayPreview() {
-            const previewSection = document.getElementById('previewSection');
-            const table = document.getElementById('previewTable');
-            
-            previewSection.style.display = 'block';
-
-            let html = `
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Engineer</th>
-                        <th>Team Leader</th>
-                        <th>Status</th>
-                        <th>Standby</th>
-                        <th>Working Away</th>
-                        <th>Overtime Hrs</th>
-                        <th>Jobs Count</th>
-                        <th>Total Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-            `;
-
-            const previewLimit = Math.min(50, filteredPayments.length);
-            
-            for (let i = 0; i < previewLimit; i++) {
-                const payment = filteredPayments[i];
-                const total = calculatePaymentTotal(payment);
-                const dateDisplay = new Date(payment.date + 'T00:00:00').toLocaleDateString('en-GB');
-                
-                const jobsCount = payment.hasJobs && payment.jobs ? 
-                    payment.jobs.filter(j => j.claimPricePerJob === 'yes').length : 0;
-
-                html += `
-                    <tr>
-                        <td>${dateDisplay}</td>
-                        <td>${payment.engineerName}</td>
-                        <td>${payment.teamLeader}</td>
-                        <td><span class="status-badge ${payment.status || 'pending'}">${(payment.status || 'pending').replace('-', ' ')}</span></td>
-                        <td>${payment.standby === 'yes' ? '✓' : '-'}</td>
-                        <td>${payment.workingAway === 'yes' ? '✓' : '-'}</td>
-                        <td>${payment.overtime === 'yes' ? payment.overtimeHours.toFixed(2) : '-'}</td>
-                        <td>${jobsCount > 0 ? jobsCount : '-'}</td>
-                        <td>£${total.toFixed(2)}</td>
-                    </tr>
-                `;
-            }
-
-            html += '</tbody>';
-            table.innerHTML = html;
-
-            if (filteredPayments.length > 50) {
-                table.innerHTML += `
-                    <tfoot>
-                        <tr>
-                            <td colspan="9" style="text-align: center; padding: 15px; background: #f8f9fa; font-style: italic;">
-                                Showing first 50 of ${filteredPayments.length} records. Export will include all records.
-                            </td>
-                        </tr>
-                    </tfoot>
-                `;
-            }
-        }
-
-        function calculatePaymentTotal(payment) {
-            const dateObj = new Date(payment.date + 'T00:00:00');
+        function calculatePaymentTotal(payment, dateObj) {
             const breakdown = calculatePaymentBreakdown(payment, dateObj);
             
             let total = 0;
@@ -662,111 +513,165 @@
             return breakdown;
         }
 
-        window.exportToCSV = function() {
-            const csv = generateCSV();
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const filename = `additional_payments_${startDate}_to_${endDate}.csv`;
-            
-            link.href = URL.createObjectURL(blob);
-            link.download = filename;
-            link.click();
+        function displayStats() {
+            const statsSection = document.getElementById('statsSection');
+            statsSection.style.display = 'grid';
+
+            const totalPayments = paymentsSummary.reduce((sum, p) => sum + p.totalAmount, 0);
+            const totalBonus = bonusSummary.reduce((sum, b) => sum + b.totalBonus, 0);
+            const grandTotal = totalPayments + totalBonus;
+
+            statsSection.innerHTML = `
+                <div class="stat-card payments">
+                    <div class="stat-label">Total Additional Payments</div>
+                    <div class="stat-value">£${totalPayments.toFixed(2)}</div>
+                </div>
+                <div class="stat-card bonus">
+                    <div class="stat-label">Total Bonuses</div>
+                    <div class="stat-value">£${totalBonus.toFixed(2)}</div>
+                </div>
+                <div class="stat-card total">
+                    <div class="stat-label">Grand Total</div>
+                    <div class="stat-value">£${grandTotal.toFixed(2)}</div>
+                </div>
+            `;
         }
 
-        function generateCSV() {
-            const headers = [
-                'Date',
-                'Engineer Name',
-                'Team Leader',
-                'Status',
-                'Standby (Yes/No)',
-                'Standby Type',
-                'Standby Amount',
-                'Working Away (Yes/No)',
-                'Working Away Amount',
-                'Overtime (Yes/No)',
-                'Overtime Hours',
-                'Overtime Rate',
-                'Overtime Rate Type',
-                'Overtime Amount',
-                'Overtime Reason',
-                'Overtime Start Time',
-                'Overtime End Time',
-                'Has Jobs',
-                'Jobs Count',
-                'Jobs Details',
-                'Jobs Total Amount',
-                'Total Claimed Amount',
-                'Submitted At',
-                'Reviewed At',
-                'Rejection Comment',
-                'Changes Comment',
-                'Amendments'
-            ];
+        function displayPreview() {
+            const previewSection = document.getElementById('previewSection');
+            previewSection.style.display = 'block';
 
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+
+            // Display payments table
+            const paymentsTable = document.getElementById('paymentsTable');
+            let paymentsHTML = `
+                <thead>
+                    <tr>
+                        <th>Engineer Name</th>
+                        <th>Date Range</th>
+                        <th>Total Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            if (paymentsSummary.length === 0) {
+                paymentsHTML += `
+                    <tr>
+                        <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
+                            No additional payments found for this period
+                        </td>
+                    </tr>
+                `;
+            } else {
+                paymentsSummary.forEach(payment => {
+                    paymentsHTML += `
+                        <tr>
+                            <td>${payment.engineerName}</td>
+                            <td>${dateRange}</td>
+                            <td>£${payment.totalAmount.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            }
+            paymentsHTML += '</tbody>';
+            paymentsTable.innerHTML = paymentsHTML;
+
+            // Display bonus table
+            const bonusTable = document.getElementById('bonusTable');
+            let bonusHTML = `
+                <thead>
+                    <tr>
+                        <th>Engineer Name</th>
+                        <th>Date Range</th>
+                        <th>Total Bonus</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            if (bonusSummary.length === 0) {
+                bonusHTML += `
+                    <tr>
+                        <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
+                            No bonuses found for this period
+                        </td>
+                    </tr>
+                `;
+            } else {
+                bonusSummary.forEach(bonus => {
+                    bonusHTML += `
+                        <tr>
+                            <td>${bonus.engineerName}</td>
+                            <td>${dateRange}</td>
+                            <td>£${bonus.totalBonus.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            }
+            bonusHTML += '</tbody>';
+            bonusTable.innerHTML = bonusHTML;
+        }
+
+        window.exportPaymentsToCSV = function() {
+            if (paymentsSummary.length === 0) {
+                alert('No additional payments data to export');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+
+            const headers = ['Engineer Name', 'Date Range', 'Total Amount'];
             let csv = headers.join(',') + '\n';
 
-            filteredPayments.forEach(payment => {
-                const dateObj = new Date(payment.date + 'T00:00:00');
-                const breakdown = calculatePaymentBreakdown(payment, dateObj);
-                const total = calculatePaymentTotal(payment);
-
-                const jobsCount = payment.hasJobs && payment.jobs ? 
-                    payment.jobs.filter(j => j.claimPricePerJob === 'yes').length : 0;
-
-                let jobsDetails = '';
-                if (payment.hasJobs && payment.jobs) {
-                    const claimedJobs = payment.jobs.filter(j => j.claimPricePerJob === 'yes');
-                    jobsDetails = claimedJobs.map(job => 
-                        `Job#${job.jobNumber} ${job.postcode} ${job.jobType}`
-                    ).join('; ');
-                }
-
-                const submittedAt = payment.submittedAt ? 
-                    new Date(payment.submittedAt.toMillis()).toLocaleString('en-GB') : '';
-                const reviewedAt = payment.reviewedAt ? 
-                    new Date(payment.reviewedAt.toMillis()).toLocaleString('en-GB') : '';
-
-                const amendmentsStr = payment.amendments ? 
-                    JSON.stringify(payment.amendments).replace(/"/g, '""') : '';
-
+            paymentsSummary.forEach(payment => {
                 const row = [
-                    payment.date,
                     escapeCSV(payment.engineerName),
-                    escapeCSV(payment.teamLeader),
-                    payment.status || 'pending',
-                    payment.standby === 'yes' ? 'Yes' : 'No',
-                    payment.standby === 'yes' ? breakdown.standby.label : '',
-                    payment.standby === 'yes' ? breakdown.standby.amount : 0,
-                    payment.workingAway === 'yes' ? 'Yes' : 'No',
-                    payment.workingAway === 'yes' ? 50 : 0,
-                    payment.overtime === 'yes' ? 'Yes' : 'No',
-                    payment.overtime === 'yes' ? payment.overtimeHours.toFixed(2) : 0,
-                    payment.overtime === 'yes' ? breakdown.overtime.rate : 0,
-                    payment.overtime === 'yes' ? breakdown.overtime.rateLabel : '',
-                    payment.overtime === 'yes' ? breakdown.overtime.amount.toFixed(2) : 0,
-                    payment.overtime === 'yes' ? escapeCSV(payment.overtimeReason || '') : '',
-                    payment.overtimeStartTime || '',
-                    payment.overtimeEndTime || '',
-                    payment.hasJobs ? 'Yes' : 'No',
-                    jobsCount,
-                    escapeCSV(jobsDetails),
-                    breakdown.jobs.amount,
-                    total.toFixed(2),
-                    submittedAt,
-                    reviewedAt,
-                    escapeCSV(payment.rejectionComment || ''),
-                    escapeCSV(payment.changesComment || ''),
-                    escapeCSV(amendmentsStr)
+                    escapeCSV(dateRange),
+                    payment.totalAmount.toFixed(2)
                 ];
-
                 csv += row.join(',') + '\n';
             });
 
-            return csv;
+            downloadCSV(csv, `additional_payments_summary_${startDate}_to_${endDate}.csv`);
+        }
+
+        window.exportBonusToCSV = function() {
+            if (bonusSummary.length === 0) {
+                alert('No bonus data to export');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+
+            const headers = ['Engineer Name', 'Date Range', 'Total Bonus'];
+            let csv = headers.join(',') + '\n';
+
+            bonusSummary.forEach(bonus => {
+                const row = [
+                    escapeCSV(bonus.engineerName),
+                    escapeCSV(dateRange),
+                    bonus.totalBonus.toFixed(2)
+                ];
+                csv += row.join(',') + '\n';
+            });
+
+            downloadCSV(csv, `bonus_summary_${startDate}_to_${endDate}.csv`);
+        }
+
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
         }
 
         function escapeCSV(str) {
@@ -779,15 +684,13 @@
         }
 
         // Set default dates (last 30 days)
-        window.addEventListener('load', async () => {
+        window.addEventListener('load', () => {
             const today = new Date();
             const thirtyDaysAgo = new Date(today);
             thirtyDaysAgo.setDate(today.getDate() - 30);
 
             document.getElementById('endDate').value = today.toISOString().split('T')[0];
             document.getElementById('startDate').value = thirtyDaysAgo.toISOString().split('T')[0];
-
-            await loadTeamLeaderMappings();
         });
     </script>
 </body>
