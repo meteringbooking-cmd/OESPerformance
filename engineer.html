@@ -1641,8 +1641,30 @@
                 });
                 console.log("Additional payments loaded:", Object.keys(additionalPayments).length, "records");
 
+                // Load average bonus data
+                console.log("Loading average bonus data...");
+                let averageBonusAmount = 0;
+                try {
+                    const avgBonusQuery = query(
+                        collection(db, "Average Bonuses"),
+                        where("name", "==", currentEngineer)
+                    );
+                    const avgBonusSnapshot = await getDocs(avgBonusQuery);
+                    if (!avgBonusSnapshot.empty) {
+                        avgBonusSnapshot.forEach((doc) => {
+                            const data = doc.data();
+                            averageBonusAmount = parseFloat(data.fullDay) || 0;
+                        });
+                        console.log("Average bonus loaded:", averageBonusAmount);
+                    } else {
+                        console.log("No average bonus found for:", currentEngineer);
+                    }
+                } catch (avgBonusError) {
+                    console.error("Error loading average bonus:", avgBonusError);
+                }
+
                 // Display daily breakdown
-                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, jobsData, currentEngineer, startDate, endDate);
+                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, jobsData, currentEngineer, startDate, endDate, averageBonusAmount);
 
                 document.getElementById('loadingDiv').style.display = 'none';
                 document.getElementById('additionalPaymentBtn').style.display = 'block';
@@ -1656,7 +1678,7 @@
             }
         }
 
-        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, jobsData, engineerName, startDate, endDate) {
+        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, jobsData, engineerName, startDate, endDate, averageBonusAmount) {
             const container = document.getElementById('dailyBreakdownContent');
             container.innerHTML = '';
 
@@ -1666,11 +1688,20 @@
                 return;
             }
 
-            // Calculate total bonus
             let totalBonus = 0;
             dates.forEach(date => {
                 const bonus = bonusData[date] || 0;
+                const attendance = attendanceData[date] || {};
+                const attendanceStatus = attendance.attendance;
+                
+                // Add regular bonus
                 totalBonus += bonus;
+                
+                // Add holiday bonus if applicable
+                if ((attendanceStatus === 'H' || attendanceStatus === 'H/H') && averageBonusAmount > 0) {
+                    const holidayBonus = attendanceStatus === 'H/H' ? averageBonusAmount / 2 : averageBonusAmount;
+                    totalBonus += holidayBonus;
+                }
             });
 
             // Update total bonus card
@@ -1722,13 +1753,23 @@
                         absenceClass = 'sick';
                     }
                     
+                    // Calculate holiday bonus if applicable
+                    let holidayBonusHTML = '';
+                    if ((attendanceStatus === 'H' || attendanceStatus === 'H/H') && averageBonusAmount > 0) {
+                        const holidayBonus = attendanceStatus === 'H/H' ? averageBonusAmount / 2 : averageBonusAmount;
+                        holidayBonusHTML = `
+                            Average Bonus: £${holidayBonus.toFixed(2)}
+                        `;
+                    }
+                    
                     absenceHTML = `
-                        <div class="absence-section">
-                            <div class="absence-title">
-                                🚫 Absence:
-                                <span class="absence-type ${absenceClass}">${absenceLabels[attendanceStatus] || attendanceStatus}</span>
-                            </div>
-                        </div>
+    <div class="absence-section">
+        <div class="absence-title">
+            🚫 Absence:
+            <span class="absence-type ${absenceClass}">${absenceLabels[attendanceStatus] || attendanceStatus}</span>
+        </div>
+        ${holidayBonusHTML}
+    </div>
                     `;
                 } else if (attendanceStatus === 'X' || !attendanceStatus) {
                     absenceHTML = `
