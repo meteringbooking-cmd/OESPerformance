@@ -55,6 +55,42 @@
             text-align: center;
         }
 
+        .month-selector {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .month-selector label {
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .month-selector select {
+            padding: 12px 20px;
+            font-size: 1em;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            background: white;
+            color: #333;
+            cursor: pointer;
+            min-width: 200px;
+            transition: all 0.3s ease;
+        }
+
+        .month-selector select:hover {
+            border-color: #764ba2;
+        }
+
+        .month-selector select:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+        }
+
         .upload-btn {
             padding: 15px 30px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -103,6 +139,31 @@
             margin-top: 5px;
         }
 
+        .filter-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .filter-section label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .filter-section select {
+            padding: 10px 15px;
+            font-size: 1em;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+        }
+
         .data-table {
             width: 100%;
             border-collapse: collapse;
@@ -138,6 +199,16 @@
 
         .data-table td {
             padding: 12px 15px;
+        }
+
+        .month-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
         }
 
         .message {
@@ -244,6 +315,10 @@
             .data-table {
                 font-size: 0.85em;
             }
+
+            .month-selector, .filter-section {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -257,6 +332,25 @@
         <div id="message" class="message"></div>
 
         <div class="upload-section">
+            <div class="month-selector">
+                <label for="monthSelect">📅 Select Month:</label>
+                <select id="monthSelect">
+                    <option value="">-- Select Month --</option>
+                    <option value="January">January</option>
+                    <option value="February">February</option>
+                    <option value="March">March</option>
+                    <option value="April">April</option>
+                    <option value="May">May</option>
+                    <option value="June">June</option>
+                    <option value="July">July</option>
+                    <option value="August">August</option>
+                    <option value="September">September</option>
+                    <option value="October">October</option>
+                    <option value="November">November</option>
+                    <option value="December">December</option>
+                </select>
+            </div>
+
             <input type="file" id="fileInput" accept=".xlsx, .xls" onchange="handleFileUpload(event)">
             <button class="upload-btn" onclick="document.getElementById('fileInput').click()" id="uploadBtn">
                 📁 Upload Excel File
@@ -268,12 +362,20 @@
             <div class="upload-info">
                 <strong>📋 Upload Instructions:</strong>
                 <ul>
+                    <li><strong>Select a month first</strong> before uploading</li>
                     <li>Column A should contain <strong>Name</strong></li>
                     <li>Column I should contain <strong>Full Day</strong> (bonus amount)</li>
-                    <li>Uploading a new file will replace all existing data</li>
+                    <li>Data will be tagged with the selected month</li>
                     <li>Only .xlsx and .xls files are supported</li>
                 </ul>
             </div>
+        </div>
+
+        <div id="filterSection" class="filter-section" style="display: none;">
+            <label for="filterMonth">🔍 Filter by Month:</label>
+            <select id="filterMonth" onchange="filterByMonth()">
+                <option value="all">All Months</option>
+            </select>
         </div>
 
         <div id="statsContainer" style="display: none;">
@@ -301,6 +403,7 @@
                     <tr>
                         <th>Name</th>
                         <th>Full Day Bonus</th>
+                        <th>Month</th>
                     </tr>
                 </thead>
                 <tbody id="dataBody">
@@ -329,6 +432,8 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        let allData = [];
+
         // Load existing data on page load
         loadData();
 
@@ -338,18 +443,20 @@
             try {
                 const querySnapshot = await getDocs(collection(db, "Average Bonuses"));
                 
-                const data = [];
+                allData = [];
                 querySnapshot.forEach((doc) => {
-                    data.push({
+                    allData.push({
                         id: doc.id,
                         ...doc.data()
                     });
                 });
 
-                if (data.length > 0) {
-                    displayData(data);
-                    updateStats(data);
+                if (allData.length > 0) {
+                    populateMonthFilter();
+                    displayData(allData);
+                    updateStats(allData);
                     document.getElementById('clearBtn').style.display = 'inline-block';
+                    document.getElementById('filterSection').style.display = 'flex';
                 } else {
                     document.getElementById('loadingDiv').style.display = 'none';
                 }
@@ -357,6 +464,34 @@
                 console.error("Error loading data:", error);
                 showMessage('Error loading data. Please check the console for details.', 'error');
                 document.getElementById('loadingDiv').style.display = 'none';
+            }
+        }
+
+        function populateMonthFilter() {
+            const filterSelect = document.getElementById('filterMonth');
+            const months = [...new Set(allData.map(item => item.month))].filter(m => m).sort();
+            
+            // Clear existing options except "All Months"
+            filterSelect.innerHTML = '<option value="all">All Months</option>';
+            
+            months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month;
+                option.textContent = month;
+                filterSelect.appendChild(option);
+            });
+        }
+
+        window.filterByMonth = function() {
+            const selectedMonth = document.getElementById('filterMonth').value;
+            
+            if (selectedMonth === 'all') {
+                displayData(allData);
+                updateStats(allData);
+            } else {
+                const filtered = allData.filter(item => item.month === selectedMonth);
+                displayData(filtered);
+                updateStats(filtered);
             }
         }
 
@@ -372,6 +507,7 @@
                 row.innerHTML = `
                     <td><strong>${item.name}</strong></td>
                     <td>£${parseFloat(item.fullDay).toFixed(2)}</td>
+                    <td><span class="month-badge">${item.month || 'N/A'}</span></td>
                 `;
             });
 
@@ -393,6 +529,13 @@
         window.handleFileUpload = async function(event) {
             const file = event.target.files[0];
             if (!file) return;
+
+            const selectedMonth = document.getElementById('monthSelect').value;
+            if (!selectedMonth) {
+                showMessage('Please select a month before uploading the file.', 'error');
+                event.target.value = '';
+                return;
+            }
 
             const uploadBtn = document.getElementById('uploadBtn');
             uploadBtn.disabled = true;
@@ -449,7 +592,8 @@
                     if (name && fullDay !== undefined && fullDay !== null && fullDay !== '') {
                         parsedData.push({
                             name: String(name).trim(),
-                            fullDay: parseFloat(fullDay) || 0
+                            fullDay: parseFloat(fullDay) || 0,
+                            month: selectedMonth
                         });
                     }
                 }
@@ -462,12 +606,8 @@
                     return;
                 }
 
-                // Delete all existing data
-                showMessage('Deleting existing data...', 'warning');
-                await deleteAllData();
-
-                // Add new data
-                showMessage('Uploading new data...', 'warning');
+                // Add new data (without deleting existing data)
+                showMessage(`Uploading ${parsedData.length} records for ${selectedMonth}...`, 'warning');
                 const batch = writeBatch(db);
                 const collectionRef = collection(db, "Average Bonuses");
 
@@ -478,13 +618,14 @@
 
                 await batch.commit();
 
-                showMessage(`Successfully uploaded ${parsedData.length} record(s)!`, 'success');
+                showMessage(`Successfully uploaded ${parsedData.length} record(s) for ${selectedMonth}!`, 'success');
                 
                 // Reload data
                 await loadData();
                 document.getElementById('clearBtn').style.display = 'inline-block';
 
-                // Clear file input
+                // Reset month selector and file input
+                document.getElementById('monthSelect').value = '';
                 event.target.value = '';
 
             } catch (error) {
@@ -528,7 +669,9 @@
                 // Clear display
                 document.getElementById('tableContainer').style.display = 'none';
                 document.getElementById('statsContainer').style.display = 'none';
+                document.getElementById('filterSection').style.display = 'none';
                 clearBtn.style.display = 'none';
+                allData = [];
                 
             } catch (error) {
                 console.error("Error clearing data:", error);
