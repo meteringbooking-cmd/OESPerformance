@@ -535,6 +535,11 @@
             transform: translateY(-2px);
         }
 
+        .daily-card.weekend {
+            border-left-color: #f59e0b;
+            background: linear-gradient(135deg, #fffbeb 0%, #fff 100%);
+        }
+
         .daily-card-header {
             margin-bottom: 20px;
             padding-bottom: 18px;
@@ -553,6 +558,21 @@
             font-size: 0.9em;
             margin-top: 4px;
             font-weight: 600;
+        }
+
+        .daily-weekday.weekend {
+            color: #f59e0b;
+        }
+
+        .weekend-notice {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            margin-top: 8px;
+            font-weight: 600;
+            border-left: 3px solid #f59e0b;
         }
 
         .daily-stats-grid {
@@ -1668,14 +1688,43 @@
             document.getElementById('mainFooter').style.display = 'none';
 
             try {
+                // First, load additional payments to see which weekend days need to be included
+                const paymentsQuery = query(
+                    collection(db, "additionalPayments"),
+                    where("engineerName", "==", currentEngineer)
+                );
+
+                const paymentsSnapshot = await getDocs(paymentsQuery);
+                additionalPayments = {};
+                const weekendDatesWithPayments = new Set();
+                
+                paymentsSnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const paymentDate = data.date;
+                    if (paymentDate >= startDate && paymentDate <= endDate) {
+                        additionalPayments[paymentDate] = data;
+                        
+                        // Check if this is a weekend date
+                        const dateObj = new Date(paymentDate + 'T00:00:00');
+                        const dayOfWeek = dateObj.getDay();
+                        if (dayOfWeek === 0 || dayOfWeek === 6) {
+                            weekendDatesWithPayments.add(paymentDate);
+                        }
+                    }
+                });
+
                 const start = new Date(startDate);
                 const end = new Date(endDate);
                 const allDates = [];
                 
+                // Include all weekdays plus weekend days with additional payments
                 for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    const dateStr = d.toISOString().split('T')[0];
                     const dayOfWeek = d.getDay();
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        allDates.push(d.toISOString().split('T')[0]);
+                    
+                    // Include weekdays OR weekend days that have additional payments
+                    if ((dayOfWeek !== 0 && dayOfWeek !== 6) || weekendDatesWithPayments.has(dateStr)) {
+                        allDates.push(dateStr);
                     }
                 }
 
@@ -1754,21 +1803,6 @@
                     console.error("Error loading jobs data:", jobsError);
                 }
 
-                const paymentsQuery = query(
-                    collection(db, "additionalPayments"),
-                    where("engineerName", "==", currentEngineer)
-                );
-
-                const paymentsSnapshot = await getDocs(paymentsQuery);
-                additionalPayments = {};
-                paymentsSnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const paymentDate = data.date;
-                    if (paymentDate >= startDate && paymentDate <= endDate) {
-                        additionalPayments[paymentDate] = data;
-                    }
-                });
-
                 let averageBonusAmount = 0;
                 try {
                     const avgBonusQuery = query(
@@ -1786,7 +1820,7 @@
                     console.error("Error loading average bonus:", avgBonusError);
                 }
 
-                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, jobsData, currentEngineer, startDate, endDate, averageBonusAmount);
+                displayDailyBreakdown(allDates, performanceData, attendanceData, bonusData, jobsData, currentEngineer, startDate, endDate, averageBonusAmount, weekendDatesWithPayments);
 
                 document.getElementById('loadingDiv').style.display = 'none';
                 document.getElementById('additionalPaymentBtn').style.display = 'block';
@@ -1801,12 +1835,12 @@
             }
         }
 
-        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, jobsData, engineerName, startDate, endDate, averageBonusAmount) {
+        function displayDailyBreakdown(dates, performanceData, attendanceData, bonusData, jobsData, engineerName, startDate, endDate, averageBonusAmount, weekendDatesWithPayments) {
             const container = document.getElementById('dailyBreakdownContent');
             container.innerHTML = '';
 
             if (dates.length === 0) {
-                document.getElementById('noDataDiv').textContent = 'No weekdays in selected date range.';
+                document.getElementById('noDataDiv').textContent = 'No data in selected date range.';
                 document.getElementById('noDataDiv').style.display = 'block';
                 return;
             }
@@ -1891,9 +1925,23 @@
                     year: 'numeric'
                 });
                 const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+                const dayOfWeek = dateObj.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                 const card = document.createElement('div');
                 card.className = 'daily-card';
+                if (isWeekend) {
+                    card.classList.add('weekend');
+                }
+
+                let weekendNoticeHTML = '';
+                if (isWeekend) {
+                    weekendNoticeHTML = `
+                        <div class="weekend-notice">
+                            📅 Weekend Day - Shown because additional payment submitted
+                        </div>
+                    `;
+                }
 
                 let absenceHTML = '';
                 const attendanceStatus = attendance.attendance;
@@ -1934,7 +1982,7 @@
                             ${holidayBonusHTML}
                         </div>
                     `;
-                } else if (attendanceStatus === 'X' || !attendanceStatus) {
+                } else if ((attendanceStatus === 'X' || !attendanceStatus) && !isWeekend) {
                     absenceHTML = `
                         <div class="absence-section present">
                             <div class="absence-title">
@@ -2202,7 +2250,8 @@
                     <div class="daily-card-header">
                         <div>
                             <div class="daily-date">${displayDate}</div>
-                            <div class="daily-weekday">${weekday}</div>
+                            <div class="daily-weekday ${isWeekend ? 'weekend' : ''}">${weekday}</div>
+                            ${weekendNoticeHTML}
                         </div>
                     </div>
                     
