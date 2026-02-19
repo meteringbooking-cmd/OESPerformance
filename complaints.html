@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complaints</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #005EB8;
+            --primary-dark: #003d7a;
+            --accent: #00A3E0;
+            --bg-dark: #0A1628;
+            --bg-card: #1a2942;
+            --text-light: #E8EDF2;
+            --text-muted: #8B9AAE;
+            --border: #2a3f5f;
+            --success: #10B981;
+            --amber: #F59E0B;
+            --error: #EF4444;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family:'Work Sans',sans-serif;
+            background:linear-gradient(135deg, var(--bg-dark) 0%, #0d1f3a 100%);
+            color:var(--text-light); min-height:100vh; padding:2rem;
+            position:relative; overflow-x:hidden;
+        }
+        body::before {
+            content:''; position:fixed; top:0; left:0; right:0; bottom:0;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(0,163,224,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(0,94,184,0.06) 0%, transparent 50%);
+            pointer-events:none; z-index:0;
+        }
+        .container { max-width:1400px; margin:0 auto; position:relative; z-index:1; }
+        header { margin-bottom:3rem; animation:slideDown 0.6s ease-out; }
+        @keyframes slideDown { from{opacity:0;transform:translateY(-20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeInUp  { from{opacity:0;transform:translateY(30px)}  to{opacity:1;transform:translateY(0)} }
+        @keyframes spin      { to{transform:rotate(360deg)} }
+
+        .header-content { display:flex; align-items:center; gap:1.5rem; margin-bottom:1rem; }
+        .back-btn {
+            width:48px; height:48px; background:var(--bg-card); border:1px solid var(--border);
+            border-radius:12px; display:flex; align-items:center; justify-content:center;
+            cursor:pointer; transition:all 0.3s; text-decoration:none; color:var(--text-light); font-size:1.25rem;
+        }
+        .back-btn:hover { background:var(--primary); border-color:var(--accent); transform:translateX(-4px); }
+        h1 {
+            font-size:2.25rem; font-weight:700; letter-spacing:-0.02em;
+            background:linear-gradient(135deg, var(--text-light) 0%, var(--accent) 100%);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+        }
+        .subtitle { font-family:'DM Mono',monospace; color:var(--text-muted); font-size:0.95rem; margin-left:64px; letter-spacing:0.05em; }
+
+        .card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:2.5rem; margin-bottom:2rem; animation:fadeInUp 0.6s ease-out; }
+        .card-title { font-size:1.4rem; font-weight:600; margin-bottom:1.5rem; display:flex; align-items:center; gap:0.75rem; }
+        .card-title::before { content:''; display:block; width:4px; height:24px; background:linear-gradient(to bottom, var(--accent), var(--primary)); border-radius:2px; }
+
+        .table-wrapper { overflow-x:auto; border-radius:12px; border:1px solid var(--border); }
+        table { width:100%; border-collapse:collapse; background:var(--bg-dark); }
+        thead { background:linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); }
+        th { padding:1rem; text-align:left; font-weight:600; font-size:0.85rem; letter-spacing:0.05em; text-transform:uppercase; white-space:nowrap; }
+        td { padding:1rem; border-bottom:1px solid var(--border); font-size:0.9rem; }
+        tbody tr { transition:background 0.2s; cursor:pointer; }
+        tbody tr:hover { background:rgba(0,163,224,0.07); }
+        tbody tr:last-child td { border-bottom:none; }
+        .empty-state { text-align:center; padding:3rem; color:var(--text-muted); font-style:italic; }
+        .row-amber td:first-child { border-left:3px solid var(--amber); }
+        .row-red   td:first-child { border-left:3px solid var(--error); }
+
+        .badge {
+            display:inline-flex; align-items:center; gap:0.4rem;
+            padding:0.35rem 0.85rem; border-radius:999px;
+            font-size:0.8rem; font-weight:600; font-family:'DM Mono',monospace; white-space:nowrap;
+        }
+        .badge-green { background:rgba(16,185,129,0.15); color:var(--success); border:1px solid rgba(16,185,129,0.3); }
+        .badge-amber { background:rgba(245,158,11,0.15);  color:var(--amber);   border:1px solid rgba(245,158,11,0.3); }
+        .badge-red   { background:rgba(239,68,68,0.15);   color:var(--error);   border:1px solid rgba(239,68,68,0.3); }
+        .badge-blue  { background:rgba(0,163,224,0.15);   color:var(--accent);  border:1px solid rgba(0,163,224,0.3); }
+
+        .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1.5rem; }
+        .form-group { margin-bottom:0; }
+        .form-group.full-width { grid-column:1/-1; }
+        label { display:block; margin-bottom:0.6rem; font-weight:600; color:var(--text-light); font-size:0.9rem; }
+        input[type="text"], input[type="date"], select {
+            width:100%; padding:0.85rem 1rem;
+            background:var(--bg-dark); border:2px solid var(--border); border-radius:10px;
+            color:var(--text-light); font-family:'Work Sans',sans-serif; font-size:0.95rem;
+            transition:all 0.3s; appearance:auto;
+        }
+        input:focus, select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 4px rgba(0,163,224,0.1); }
+        select option { background:var(--bg-card); }
+
+        /* File upload */
+        .file-upload-area {
+            border:2px dashed var(--border); border-radius:10px; padding:1.5rem;
+            text-align:center; cursor:pointer; transition:all 0.3s;
+            background:var(--bg-dark); position:relative;
+        }
+        .file-upload-area:hover { border-color:var(--accent); background:rgba(0,163,224,0.05); }
+        .file-upload-input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+        .file-upload-icon { font-size:2rem; margin-bottom:0.5rem; }
+        .file-upload-text { font-size:0.9rem; color:var(--text-muted); }
+        .file-upload-text strong { color:var(--accent); }
+
+        .uploaded-files { margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem; }
+        .uploaded-file {
+            background:var(--bg-card); border:1px solid var(--border); border-radius:8px;
+            padding:0.75rem 1rem; display:flex; align-items:center; gap:1rem;
+        }
+        .uploaded-file img { width:60px; height:60px; object-fit:cover; border-radius:6px; flex-shrink:0; }
+        .file-icon-big { font-size:2rem; flex-shrink:0; }
+        .file-details { flex:1; min-width:0; }
+        .file-name { font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .file-size { font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem; }
+        .remove-file-btn {
+            padding:0.4rem 0.8rem; background:rgba(239,68,68,0.15); color:var(--error);
+            border:1px solid rgba(239,68,68,0.3); border-radius:6px; cursor:pointer;
+            font-size:0.8rem; flex-shrink:0; transition:all 0.2s; font-family:'Work Sans',sans-serif;
+        }
+        .remove-file-btn:hover { background:rgba(239,68,68,0.3); }
+
+        /* Progress */
+        .progress-wrap { margin-top:1rem; display:none; }
+        .progress-wrap.show { display:block; }
+        .progress-bar-bg { background:var(--bg-dark); border-radius:999px; height:8px; overflow:hidden; border:1px solid var(--border); }
+        .progress-bar-fill { height:100%; background:linear-gradient(90deg, var(--primary), var(--accent)); border-radius:999px; transition:width 0.2s; width:0%; }
+        .progress-label { font-size:0.8rem; color:var(--text-muted); margin-top:0.5rem; font-family:'DM Mono',monospace; }
+
+        .btn { padding:0.9rem 2rem; border:none; border-radius:12px; font-weight:600; font-size:0.95rem; cursor:pointer; transition:all 0.3s; font-family:'Work Sans',sans-serif; }
+        .btn-primary { background:linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color:white; }
+        .btn-primary:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 12px 24px rgba(0,163,224,0.3); }
+        .btn-secondary { background:var(--bg-dark); color:var(--text-light); border:2px solid var(--border); }
+        .btn-secondary:hover { border-color:var(--accent); }
+        .btn:disabled { opacity:0.5; cursor:not-allowed; }
+        .btn-group { display:flex; gap:1rem; margin-top:2rem; flex-wrap:wrap; }
+
+        /* Modal */
+        .modal-overlay {
+            display:none; position:fixed; inset:0;
+            background:rgba(0,0,0,0.75); z-index:100;
+            align-items:center; justify-content:center;
+            padding:1rem; backdrop-filter:blur(4px);
+        }
+        .modal-overlay.show { display:flex; animation:fadeInUp 0.3s ease-out; }
+        .modal {
+            background:var(--bg-card); border:1px solid var(--border); border-radius:20px;
+            padding:2.5rem; max-width:700px; width:100%; max-height:90vh; overflow-y:auto;
+        }
+        .modal-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2rem; }
+        .modal-title { font-size:1.5rem; font-weight:700; }
+        .modal-close { background:none; border:none; color:var(--text-muted); font-size:1.5rem; cursor:pointer; line-height:1; }
+        .modal-close:hover { color:var(--text-light); }
+        .modal-section { margin-bottom:1.5rem; }
+        .modal-section-title { font-size:0.85rem; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:1rem; }
+        .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+        .detail-item label { font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem; }
+        .detail-item .value { font-size:0.95rem; font-family:'DM Mono',monospace; }
+        .upload-links { display:flex; flex-direction:column; gap:0.5rem; }
+        .upload-link {
+            display:flex; align-items:center; gap:0.75rem;
+            padding:0.75rem 1rem; background:var(--bg-dark); border:1px solid var(--border);
+            border-radius:8px; text-decoration:none; color:var(--text-light); font-size:0.9rem; transition:all 0.2s;
+        }
+        .upload-link:hover { border-color:var(--accent); color:var(--accent); }
+        .checkbox-row { display:flex; align-items:center; gap:1rem; padding:1rem; background:var(--bg-dark); border-radius:10px; border:1px solid var(--border); margin-bottom:1rem; }
+        .checkbox-row input[type="checkbox"] { width:20px; height:20px; cursor:pointer; accent-color:var(--accent); }
+        .checkbox-label { font-weight:600; cursor:pointer; }
+        .status-select-row { display:flex; align-items:center; gap:1rem; }
+        .status-select-row select { flex:1; }
+
+        .spinner { width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:1rem auto; }
+
+        .toast { position:fixed; bottom:2rem; right:2rem; padding:1rem 1.5rem; border-radius:12px; font-weight:600; z-index:200; display:none; }
+        .toast.show { display:block; animation:fadeInUp 0.4s ease-out; }
+        .toast-success { background:rgba(16,185,129,0.92); color:white; border:1px solid var(--success); }
+        .toast-error   { background:rgba(239,68,68,0.92);   color:white; border:1px solid var(--error); }
+
+        @media(max-width:768px) {
+            body { padding:1.5rem; }
+            .card { padding:1.5rem; }
+            h1 { font-size:1.75rem; }
+            .subtitle { margin-left:0; margin-top:0.5rem; }
+            .form-grid { grid-template-columns:1fr; }
+            .detail-grid { grid-template-columns:1fr; }
+            .btn-group { flex-direction:column; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div class="header-content">
+            <a href="index.html" class="back-btn">←</a>
+            <h1>Complaints Tracker</h1>
+        </div>
+        <p class="subtitle">MANAGE AND TRACK ENGINEER COMPLAINTS</p>
+    </header>
+
+    <main>
+        <!-- Active Complaints Table -->
+        <div class="card">
+            <div class="card-title">Active Complaints</div>
+            <div id="loadingSpinner" style="text-align:center;padding:2rem;display:none;"><div class="spinner"></div></div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date Received</th>
+                            <th>Job Ref</th>
+                            <th>Engineer</th>
+                            <th>FTL</th>
+                            <th>Target Date</th>
+                            <th>Status</th>
+                            <th>Urgency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="complaintsTableBody">
+                        <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Add Complaint Form -->
+        <div class="card">
+            <div class="card-title">Add New Complaint</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="dateReceived">Date Received *</label>
+                    <input type="date" id="dateReceived" required>
+                </div>
+                <div class="form-group">
+                    <label for="ftl">FTL *</label>
+                    <select id="ftl" required>
+                        <option value="">Select FTL</option>
+                        <option value="Richard Wiecko">Richard Wiecko</option>
+                        <option value="Scott Carson">Scott Carson</option>
+                        <option value="Stuart Whyte">Stuart Whyte</option>
+                        <option value="FTL 4">FTL 4</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="engineer">Engineer *</label>
+                    <select id="engineer" required>
+                        <option value="">Select Engineer</option>
+                        <option>Aaron Shepherd</option>
+                        <option>Alessandro Cilia</option>
+                        <option>Alex Duff</option>
+                        <option>Alistair Cavan</option>
+                        <option>Allan Grant</option>
+                        <option>Auther Bumhira</option>
+                        <option>Bilal Amin</option>
+                        <option>Billy McDonough</option>
+                        <option>Bryan McCabe</option>
+                        <option>Calum Ballingal</option>
+                        <option>Chanda Kasama</option>
+                        <option>Chris Stein</option>
+                        <option>Chris Timm</option>
+                        <option>Clayton Spinks</option>
+                        <option>Craig O'Sullivan</option>
+                        <option>Craig Steel</option>
+                        <option>Daniel Nally</option>
+                        <option>Daniel Sanders</option>
+                        <option>Dinis Cruz</option>
+                        <option>Geoff Pymm</option>
+                        <option>George Chapman</option>
+                        <option>Harris Saleem</option>
+                        <option>Herve Ntwali</option>
+                        <option>Ivan Rivers</option>
+                        <option>James Mclean</option>
+                        <option>Jamie Longland</option>
+                        <option>Johnson Allepot</option>
+                        <option>Jon Convery</option>
+                        <option>Jonathan Chyla</option>
+                        <option>Jonny Thompson</option>
+                        <option>Jordan Gray</option>
+                        <option>Jordan Morrison</option>
+                        <option>Kris Armstrong</option>
+                        <option>Lukasz Holysz</option>
+                        <option>Martin Bailes</option>
+                        <option>Matti Chalkowski</option>
+                        <option>Mehdi Khamseh</option>
+                        <option>Michael Douglass</option>
+                        <option>Michael Seaman</option>
+                        <option>Michael Timm</option>
+                        <option>Morris Dow</option>
+                        <option>Muhammad Shahroze</option>
+                        <option>Muhammad Zafar</option>
+                        <option>Neil Burns</option>
+                        <option>Nick Griffiths</option>
+                        <option>Owain Sigsworth</option>
+                        <option>Paul Davidson</option>
+                        <option>Richard Lang</option>
+                        <option>Ryan Beekawa</option>
+                        <option>Ryan Clark</option>
+                        <option>Samim Miah</option>
+                        <option>Scott Coyle</option>
+                        <option>Simon Morris</option>
+                        <option>Stephen Lawless</option>
+                        <option>Thomas Green</option>
+                        <option>Tomas Anderson</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="jobRef">Job Reference *</label>
+                    <input type="text" id="jobRef" placeholder="e.g. SP-12345" required>
+                </div>
+                <div class="form-group">
+                    <label for="targetDate">Target Completion Date *</label>
+                    <input type="date" id="targetDate" required>
+                </div>
+
+                <!-- Photos -->
+                <div class="form-group full-width">
+                    <label>Photos</label>
+                    <div class="file-upload-area">
+                        <input type="file" id="photosInput" class="file-upload-input" accept="image/*" multiple>
+                        <div class="file-upload-icon">📷</div>
+                        <div class="file-upload-text"><strong>Click to upload</strong> photos (multiple allowed)</div>
+                    </div>
+                    <div class="uploaded-files" id="photosUploaded"></div>
+                </div>
+
+                <!-- Complaints Card -->
+                <div class="form-group">
+                    <label>Complaints Card (Word Doc)</label>
+                    <div class="file-upload-area">
+                        <input type="file" id="complaintCardInput" class="file-upload-input" accept=".doc,.docx">
+                        <div class="file-upload-icon">📝</div>
+                        <div class="file-upload-text"><strong>Click to upload</strong> .doc / .docx</div>
+                    </div>
+                    <div class="uploaded-files" id="complaintCardUploaded"></div>
+                </div>
+
+                <!-- Job Card -->
+                <div class="form-group">
+                    <label>Job Card (PDF)</label>
+                    <div class="file-upload-area">
+                        <input type="file" id="jobCardInput" class="file-upload-input" accept=".pdf">
+                        <div class="file-upload-icon">📄</div>
+                        <div class="file-upload-text"><strong>Click to upload</strong> PDF</div>
+                    </div>
+                    <div class="uploaded-files" id="jobCardUploaded"></div>
+                </div>
+            </div>
+
+            <!-- Upload progress -->
+            <div class="progress-wrap" id="progressWrap">
+                <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+                <div class="progress-label" id="progressLabel"></div>
+            </div>
+
+            <div class="btn-group">
+                <button id="submitBtn" class="btn btn-primary">Submit Complaint</button>
+                <button id="resetBtn"  class="btn btn-secondary">Clear Form</button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="modalTitle">Complaint Details</div>
+                <div id="modalUrgencyBadge" style="margin-top:0.5rem;"></div>
+            </div>
+            <button class="modal-close" id="modalClose">✕</button>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title">Details</div>
+            <div class="detail-grid">
+                <div class="detail-item"><label>Date Received</label><div class="value" id="mdDateReceived">—</div></div>
+                <div class="detail-item"><label>Job Reference</label><div class="value" id="mdJobRef">—</div></div>
+                <div class="detail-item"><label>Engineer</label><div class="value" id="mdEngineer">—</div></div>
+                <div class="detail-item"><label>FTL</label><div class="value" id="mdFtl">—</div></div>
+                <div class="detail-item"><label>Target Completion</label><div class="value" id="mdTargetDate">—</div></div>
+                <div class="detail-item"><label>Days Remaining</label><div class="value" id="mdDaysLeft">—</div></div>
+            </div>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title">Uploaded Files</div>
+            <div class="upload-links" id="uploadLinks"><p style="color:var(--text-muted);font-size:0.9rem;">No files uploaded.</p></div>
+        </div>
+        <div class="modal-section">
+            <div class="modal-section-title">Actions</div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="engineerInformed">
+                <label class="checkbox-label" for="engineerInformed">Engineer has been informed</label>
+            </div>
+            <div class="status-select-row">
+                <label style="white-space:nowrap;margin-bottom:0;">Update Status:</label>
+                <select id="statusSelect">
+                    <option value="in-progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+                <button class="btn btn-primary" id="saveStatusBtn" style="white-space:nowrap;padding:0.75rem 1.25rem;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+    import { initializeApp }
+        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, query, orderBy }
+        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { getStorage, ref, uploadBytesResumable, getDownloadURL }
+        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+    // ── Firebase config (oesperformance) ──────────────────────────────────────
+    const app = initializeApp({
+        apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+        authDomain: "oesperformance-a54c0.firebaseapp.com",
+        projectId: "oesperformance-a54c0",
+        storageBucket: "oesperformance-a54c0.firebasestorage.app",
+        messagingSenderId: "484894102454",
+        appId: "1:484894102454:web:17535ee497eac2d90d6717"
+    });
+    const db      = getFirestore(app);
+    const storage = getStorage(app);
+
+    // ── In-memory file store ──────────────────────────────────────────────────
+    const fileStore = {
+        photosInput:        [],
+        complaintCardInput: [],
+        jobCardInput:       []
+    };
+
+    // ── Toast ─────────────────────────────────────────────────────────────────
+    function showToast(msg, type = 'success') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = `toast toast-${type} show`;
+        setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    // ── Date / badge helpers ──────────────────────────────────────────────────
+    function daysUntil(dateStr) {
+        const today  = new Date(); today.setHours(0,0,0,0);
+        const target = new Date(dateStr); target.setHours(0,0,0,0);
+        return Math.ceil((target - today) / 86400000);
+    }
+    function urgencyBadge(days) {
+        if (days <= 10) return `<span class="badge badge-red">🔴 ${days}d remaining</span>`;
+        if (days <= 21) return `<span class="badge badge-amber">🟠 ${days}d remaining</span>`;
+        return `<span class="badge badge-green">🟢 ${days}d remaining</span>`;
+    }
+    function formatDate(s) {
+        if (!s) return '—';
+        const [y,m,d] = s.split('-');
+        return `${d}/${m}/${y}`;
+    }
+    function fileTypeIcon(type) {
+        return type === 'photo' ? '🖼️' : type === 'pdf' ? '📄' : '📝';
+    }
+
+    // ── File preview helpers ──────────────────────────────────────────────────
+    function addFilePreview(file, storeKey, containerId, fileType) {
+        const container = document.getElementById(containerId);
+        const div = document.createElement('div');
+        div.className = 'uploaded-file';
+
+        const sizeStr = (file.size / 1048576).toFixed(2) + ' MB';
+        const detailsHtml = `
+            <div class="file-details">
+                <div class="file-name">${file.name}</div>
+                <div class="file-size">${sizeStr}</div>
+            </div>
+            <button type="button" class="remove-file-btn">Remove</button>`;
+
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                div.innerHTML = `<img src="${e.target.result}" alt="preview">${detailsHtml}`;
+                bindRemove(div, file, storeKey);
+                container.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            div.innerHTML = `<div class="file-icon-big">${fileTypeIcon(fileType)}</div>${detailsHtml}`;
+            bindRemove(div, file, storeKey);
+            container.appendChild(div);
+        }
+    }
+
+    function bindRemove(div, file, storeKey) {
+        div.querySelector('.remove-file-btn').addEventListener('click', () => {
+            fileStore[storeKey] = fileStore[storeKey].filter(f => f !== file);
+            div.remove();
+        });
+    }
+
+    function setupFileInput(inputId, containerId, fileType) {
+        document.getElementById(inputId).addEventListener('change', function(e) {
+            Array.from(e.target.files).forEach(file => {
+                fileStore[inputId].push(file);
+                addFilePreview(file, inputId, containerId, fileType);
+            });
+            e.target.value = '';
+        });
+    }
+
+    setupFileInput('photosInput',        'photosUploaded',        'photo');
+    setupFileInput('complaintCardInput', 'complaintCardUploaded', 'word');
+    setupFileInput('jobCardInput',       'jobCardUploaded',       'pdf');
+
+    // ── Upload a single file to Storage ──────────────────────────────────────
+    function uploadFile(file, path, fileType, onProgress) {
+        return new Promise((resolve, reject) => {
+            const storageRef = ref(storage, path);
+            const task = uploadBytesResumable(storageRef, file);
+            task.on('state_changed',
+                snap => onProgress && onProgress(snap.bytesTransferred / snap.totalBytes),
+                reject,
+                async () => {
+                    const url = await getDownloadURL(task.snapshot.ref);
+                    resolve({ name: file.name, url, type: fileType });
+                }
+            );
+        });
+    }
+
+    // ── Upload all queued files with total progress ───────────────────────────
+    async function uploadAllFiles(jobRef) {
+        const queue = [
+            ...fileStore.photosInput.map(f        => ({ file: f, type: 'photo' })),
+            ...fileStore.complaintCardInput.map(f => ({ file: f, type: 'word'  })),
+            ...fileStore.jobCardInput.map(f       => ({ file: f, type: 'pdf'   }))
+        ];
+        if (queue.length === 0) return [];
+
+        const wrap  = document.getElementById('progressWrap');
+        const fill  = document.getElementById('progressFill');
+        const label = document.getElementById('progressLabel');
+        wrap.classList.add('show');
+
+        const results = [];
+        for (let i = 0; i < queue.length; i++) {
+            const { file, type } = queue[i];
+            label.textContent = `Uploading ${i + 1} of ${queue.length}: ${file.name}`;
+            const path = `complaints/${jobRef}/${Date.now()}_${file.name}`;
+            const result = await uploadFile(file, path, type, pct => {
+                fill.style.width = (((i + pct) / queue.length) * 100).toFixed(0) + '%';
+            });
+            results.push(result);
+        }
+
+        fill.style.width  = '100%';
+        label.textContent = 'Upload complete ✓';
+        setTimeout(() => { wrap.classList.remove('show'); label.textContent = ''; fill.style.width = '0%'; }, 1800);
+        return results;
+    }
+
+    // ── Load & render complaints table ────────────────────────────────────────
+    let allComplaints      = [];
+    let currentComplaintId = null;
+
+    async function loadComplaints() {
+        document.getElementById('loadingSpinner').style.display = 'block';
+        try {
+            const snap = await getDocs(query(collection(db, 'Complaints'), orderBy('dateReceived', 'asc')));
+            allComplaints = [];
+            snap.forEach(d => allComplaints.push({ id: d.id, ...d.data() }));
+            renderTable();
+        } catch(e) {
+            console.error(e);
+            showToast('Error loading complaints: ' + e.message, 'error');
+        }
+        document.getElementById('loadingSpinner').style.display = 'none';
+    }
+
+    function renderTable() {
+        const tbody  = document.getElementById('complaintsTableBody');
+        const active = allComplaints.filter(c => c.status !== 'resolved');
+        tbody.innerHTML = '';
+        if (active.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No active complaints ✓</td></tr>';
+            return;
+        }
+        active.forEach(c => {
+            const days = daysUntil(c.targetDate);
+            const tr   = document.createElement('tr');
+            if      (days <= 10) tr.classList.add('row-red');
+            else if (days <= 21) tr.classList.add('row-amber');
+            tr.innerHTML = `
+                <td>${formatDate(c.dateReceived)}</td>
+                <td><span style="font-family:'DM Mono',monospace">${c.jobRef||'—'}</span></td>
+                <td>${c.engineer||'—'}</td>
+                <td>${c.ftl||'—'}</td>
+                <td>${formatDate(c.targetDate)}</td>
+                <td>${c.status === 'resolved'
+                    ? '<span class="badge badge-green">Resolved</span>'
+                    : '<span class="badge badge-blue">In Progress</span>'}</td>
+                <td>${urgencyBadge(days)}</td>`;
+            tr.addEventListener('click', () => openModal(c.id));
+            tbody.appendChild(tr);
+        });
+    }
+
+    // ── Detail modal ──────────────────────────────────────────────────────────
+    function openModal(id) {
+        currentComplaintId = id;
+        const c = allComplaints.find(x => x.id === id);
+        if (!c) return;
+        const days = daysUntil(c.targetDate);
+
+        document.getElementById('modalTitle').textContent     = `Job Ref: ${c.jobRef||'—'}`;
+        document.getElementById('modalUrgencyBadge').innerHTML = urgencyBadge(days);
+        document.getElementById('mdDateReceived').textContent  = formatDate(c.dateReceived);
+        document.getElementById('mdJobRef').textContent        = c.jobRef||'—';
+        document.getElementById('mdEngineer').textContent      = c.engineer||'—';
+        document.getElementById('mdFtl').textContent           = c.ftl||'—';
+        document.getElementById('mdTargetDate').textContent    = formatDate(c.targetDate);
+        document.getElementById('mdDaysLeft').textContent      = `${days} day${days!==1?'s':''}`;
+        document.getElementById('engineerInformed').checked    = c.engineerInformed||false;
+        document.getElementById('statusSelect').value          = c.status||'in-progress';
+
+        const linksDiv = document.getElementById('uploadLinks');
+        linksDiv.innerHTML = '';
+        const files = c.uploadedFiles||[];
+        if (!files.length) {
+            linksDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem;">No files uploaded.</p>';
+        } else {
+            files.forEach(f => {
+                const a = document.createElement('a');
+                a.className = 'upload-link';
+                a.href = f.url; a.target = '_blank'; a.rel = 'noopener';
+                a.innerHTML = `<span style="font-size:1.2rem">${fileTypeIcon(f.type)}</span> ${f.name}`;
+                linksDiv.appendChild(a);
+            });
+        }
+        document.getElementById('detailModal').classList.add('show');
+    }
+
+    document.getElementById('modalClose').addEventListener('click', () => {
+        document.getElementById('detailModal').classList.remove('show');
+        currentComplaintId = null;
+    });
+    document.getElementById('detailModal').addEventListener('click', e => {
+        if (e.target.id === 'detailModal') {
+            document.getElementById('detailModal').classList.remove('show');
+            currentComplaintId = null;
+        }
+    });
+
+    document.getElementById('saveStatusBtn').addEventListener('click', async () => {
+        if (!currentComplaintId) return;
+        const btn = document.getElementById('saveStatusBtn');
+        btn.disabled = true; btn.textContent = 'Saving...';
+        try {
+            const status           = document.getElementById('statusSelect').value;
+            const engineerInformed = document.getElementById('engineerInformed').checked;
+            await updateDoc(doc(db, 'Complaints', currentComplaintId), { status, engineerInformed });
+            const idx = allComplaints.findIndex(x => x.id === currentComplaintId);
+            if (idx !== -1) { allComplaints[idx].status = status; allComplaints[idx].engineerInformed = engineerInformed; }
+            renderTable();
+            document.getElementById('detailModal').classList.remove('show');
+            showToast(status === 'resolved' ? '✓ Complaint resolved and removed.' : '✓ Changes saved.');
+        } catch(e) { showToast('Error: ' + e.message, 'error'); }
+        btn.disabled = false; btn.textContent = 'Save Changes';
+    });
+
+    // ── Submit new complaint ──────────────────────────────────────────────────
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        const dateReceived = document.getElementById('dateReceived').value;
+        const engineer     = document.getElementById('engineer').value;
+        const ftl          = document.getElementById('ftl').value;
+        const jobRef       = document.getElementById('jobRef').value.trim();
+        const targetDate   = document.getElementById('targetDate').value;
+
+        if (!dateReceived || !engineer || !ftl || !jobRef || !targetDate) {
+            showToast('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true; btn.textContent = 'Submitting...';
+
+        try {
+            const uploadedFiles = await uploadAllFiles(jobRef);
+
+            await addDoc(collection(db, 'Complaints'), {
+                dateReceived,
+                engineer,
+                ftl,
+                jobRef,
+                targetDate,
+                status: 'in-progress',
+                engineerInformed: false,
+                uploadedFiles,
+                submittedAt: serverTimestamp()
+            });
+
+            showToast('✓ Complaint submitted successfully.');
+            resetForm();
+            await loadComplaints();
+        } catch(e) {
+            console.error(e);
+            showToast('Error: ' + e.message, 'error');
+        }
+        btn.disabled = false; btn.textContent = 'Submit Complaint';
+    });
+
+    function resetForm() {
+        document.getElementById('dateReceived').valueAsDate = new Date();
+        document.getElementById('ftl').value      = '';
+        document.getElementById('engineer').value = '';
+        document.getElementById('jobRef').value   = '';
+        document.getElementById('targetDate').value = '';
+        fileStore.photosInput        = [];
+        fileStore.complaintCardInput = [];
+        fileStore.jobCardInput       = [];
+        ['photosUploaded','complaintCardUploaded','jobCardUploaded'].forEach(id =>
+            document.getElementById(id).innerHTML = '');
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', resetForm);
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    document.getElementById('dateReceived').valueAsDate = new Date();
+    loadComplaints();
+</script>
+</body>
+</html>
