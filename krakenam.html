@@ -434,6 +434,16 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+
+        /* Highlight per-head cards with a slightly different accent */
+        .stat-card.per-head {
+            border-color: rgba(138, 43, 226, 0.3);
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.05) 0%, rgba(0, 212, 255, 0.05) 100%);
+        }
+        .stat-card.per-head::before {
+            background: linear-gradient(90deg, #8a2be2, #00d4ff, #8a2be2);
+        }
+
         .percentage-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -614,6 +624,14 @@
                         <h4>Engineers Available</h4>
                         <div class="value" id="engineersAvailable">-</div>
                     </div>
+                    <div class="stat-card per-head">
+                        <h4>Jobs Per Head</h4>
+                        <div class="value" id="jobsPerHead">-</div>
+                    </div>
+                    <div class="stat-card per-head">
+                        <h4>Meters Per Head</h4>
+                        <div class="value" id="metersPerHead">-</div>
+                    </div>
                 </div>
                 
                 <h3 style="margin-bottom: 15px; color: #333;">Job Type Distribution</h3>
@@ -776,6 +794,9 @@
         let uploadData = [];
         let allTeams = new Set();
 
+        // Store headcount fetched for the viewed range so we can use it in displayStatistics
+        let currentHeadcount = null;
+
         // Headcount form handling - Save headcount
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -789,14 +810,12 @@
             }
             
             try {
-                // Use the date as the document ID to ensure only one record per date
                 await setDoc(doc(db, "KrakenAM Headcount", date), {
                     date: date,
                     headcount: headcount,
                     updatedAt: serverTimestamp()
                 });
                 
-                // Display the saved value
                 document.getElementById('headcountValue').textContent = headcount;
                 document.getElementById('headcountDisplay').classList.add('show');
                 
@@ -866,7 +885,6 @@
                         return;
                     }
 
-                    // Process data starting from row 2 (skip header)
                     uploadData = [];
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
@@ -967,7 +985,6 @@
             const select = document.getElementById('teamFilter');
             const currentValue = select.value;
             
-            // Keep "All Teams" option and add unique teams
             select.innerHTML = '<option value="">All Teams</option>';
             Array.from(allTeams).sort().forEach(team => {
                 const option = document.createElement('option');
@@ -976,7 +993,6 @@
                 select.appendChild(option);
             });
             
-            // Restore previous selection if still valid
             if (currentValue && allTeams.has(currentValue)) {
                 select.value = currentValue;
             }
@@ -1023,7 +1039,6 @@
 
                 showMessage(`Successfully saved ${uploadData.length} records!`, 'success');
                 
-                // Reset form
                 document.getElementById('previewSection').style.display = 'none';
                 document.getElementById('uploadForm').reset();
                 document.getElementById('fileInfo').classList.remove('show');
@@ -1060,7 +1075,6 @@
                 
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    // Apply team filter if specified
                     if (!teamFilter || data.team === teamFilter) {
                         records.push(data);
                     }
@@ -1072,7 +1086,7 @@
                     return;
                 }
                 
-                // Fetch headcount data for the date range
+                // Fetch headcount first so displayStatistics can use it
                 await fetchHeadcountForRange(startDate, endDate);
                 
                 displayStatistics(records);
@@ -1097,7 +1111,6 @@
                 const querySnapshot = await getDocs(q);
                 
                 if (!querySnapshot.empty) {
-                    // Calculate average headcount across the date range
                     let totalHeadcount = 0;
                     let count = 0;
                     
@@ -1107,12 +1120,15 @@
                     });
                     
                     const avgHeadcount = count > 0 ? Math.round(totalHeadcount / count) : 0;
+                    currentHeadcount = avgHeadcount;
                     document.getElementById('engineersAvailable').textContent = avgHeadcount;
                 } else {
+                    currentHeadcount = null;
                     document.getElementById('engineersAvailable').textContent = '-';
                 }
             } catch (err) {
                 console.error('Error fetching headcount:', err);
+                currentHeadcount = null;
                 document.getElementById('engineersAvailable').textContent = '-';
             }
         }
@@ -1143,8 +1159,19 @@
             document.getElementById('totalComms').textContent = totals.comms;
             document.getElementById('totalRemoval').textContent = totals.removal;
             document.getElementById('totalMeters').textContent = Math.round(totals.meters);
+
+            // Jobs per head & Meters per head
+            if (currentHeadcount && currentHeadcount > 0) {
+                const jobsPerHead = (totals.jobs / currentHeadcount).toFixed(1);
+                const metersPerHead = (totals.meters / currentHeadcount).toFixed(1);
+                document.getElementById('jobsPerHead').textContent = jobsPerHead;
+                document.getElementById('metersPerHead').textContent = metersPerHead;
+            } else {
+                document.getElementById('jobsPerHead').textContent = '-';
+                document.getElementById('metersPerHead').textContent = '-';
+            }
             
-            // Calculate percentages (based on dual + single + comms + removal)
+            // Calculate percentages
             const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
             
             const dualPct = totalJobTypes > 0 ? (totals.dual / totalJobTypes * 100) : 0;
@@ -1162,7 +1189,6 @@
             const tbody = document.getElementById('dataTableBody');
             tbody.innerHTML = '';
             
-            // Group records by team
             const teamGroups = {};
             records.forEach(record => {
                 const team = record.team || 'Unknown';
@@ -1172,21 +1198,13 @@
                 teamGroups[team].push(record);
             });
             
-            // Sort teams alphabetically
             const sortedTeams = Object.keys(teamGroups).sort();
             
-            // Display each team group
             sortedTeams.forEach(team => {
                 const teamRecords = teamGroups[team];
                 
-                // Calculate team totals
                 const teamTotals = {
-                    jobs: 0,
-                    dual: 0,
-                    single: 0,
-                    comms: 0,
-                    removal: 0,
-                    meters: 0
+                    jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0
                 };
                 
                 teamRecords.forEach(record => {
@@ -1198,14 +1216,12 @@
                     teamTotals.meters += record.totalMeters || 0;
                 });
                 
-                // Calculate percentages for this team
                 const totalJobTypes = teamTotals.dual + teamTotals.single + teamTotals.comms + teamTotals.removal;
                 const dualPct = totalJobTypes > 0 ? (teamTotals.dual / totalJobTypes * 100).toFixed(1) : 0;
                 const singlePct = totalJobTypes > 0 ? (teamTotals.single / totalJobTypes * 100).toFixed(1) : 0;
                 const commsPct = totalJobTypes > 0 ? (teamTotals.comms / totalJobTypes * 100).toFixed(1) : 0;
                 const removalPct = totalJobTypes > 0 ? (teamTotals.removal / totalJobTypes * 100).toFixed(1) : 0;
                 
-                // Add team breakdown percentages row
                 const breakdownRow = document.createElement('tr');
                 breakdownRow.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.08) 0%, rgba(0, 212, 255, 0.08) 100%)';
                 breakdownRow.innerHTML = `
@@ -1219,7 +1235,6 @@
                 `;
                 tbody.appendChild(breakdownRow);
                 
-                // Add team header row with totals
                 const headerRow = document.createElement('tr');
                 headerRow.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(138, 43, 226, 0.15) 100%)';
                 headerRow.style.fontWeight = 'bold';
@@ -1230,7 +1245,6 @@
                 `;
                 tbody.appendChild(headerRow);
                 
-                // Add column headers for this team
                 const columnHeaderRow = document.createElement('tr');
                 columnHeaderRow.style.background = 'linear-gradient(135deg, #0099ff 0%, #8a2be2 100%)';
                 columnHeaderRow.style.color = 'white';
@@ -1248,7 +1262,6 @@
                 `;
                 tbody.appendChild(columnHeaderRow);
                 
-                // Group team records by date
                 const dateGroups = {};
                 teamRecords.forEach(record => {
                     const date = record.date || 'Unknown';
@@ -1258,21 +1271,13 @@
                     dateGroups[date].push(record);
                 });
                 
-                // Sort dates
-                const sortedDates = Object.keys(dateGroups).sort().reverse(); // Most recent first
+                const sortedDates = Object.keys(dateGroups).sort().reverse();
                 
-                // Display records grouped by date
                 sortedDates.forEach(date => {
                     const dateRecords = dateGroups[date];
                     
-                    // Calculate date subtotals
                     const dateSubtotals = {
-                        jobs: 0,
-                        dual: 0,
-                        single: 0,
-                        comms: 0,
-                        removal: 0,
-                        meters: 0
+                        jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0
                     };
                     
                     dateRecords.forEach(record => {
@@ -1284,7 +1289,6 @@
                         dateSubtotals.meters += record.totalMeters || 0;
                     });
                     
-                    // Add date subtotal row
                     const dateHeaderRow = document.createElement('tr');
                     dateHeaderRow.style.background = 'rgba(0, 153, 255, 0.08)';
                     dateHeaderRow.style.fontWeight = '600';
@@ -1299,7 +1303,6 @@
                     `;
                     tbody.appendChild(dateHeaderRow);
                     
-                    // Add individual engineer records for this date
                     dateRecords.forEach(record => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
@@ -1317,7 +1320,6 @@
                     });
                 });
                 
-                // Add spacing row between teams
                 const spacerRow = document.createElement('tr');
                 spacerRow.innerHTML = '<td colspan="9" style="height: 15px; background: transparent; border: none;"></td>';
                 tbody.appendChild(spacerRow);
