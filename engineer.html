@@ -816,7 +816,124 @@
             font-size: 0.9em;
         }
 
-        /* Additional Payments Modal */
+        /* Additional Payment Claim - supports multiple claims per day */
+        .additional-payment-section {
+            margin-top: 18px;
+            padding: 18px;
+            background: #f0fdf4;
+            border-radius: 12px;
+            border-left: 4px solid #10b981;
+        }
+
+        /* When multiple claims exist, add a separator between them */
+        .additional-payment-section + .additional-payment-section {
+            margin-top: 12px;
+            border-left-color: #0891b2;
+            background: #ecfeff;
+        }
+
+        /* Claim counter badge */
+        .claim-counter-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #10b981;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 0.75em;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .additional-payment-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.05em;
+            flex-wrap: wrap;
+        }
+
+        .payment-details {
+            background: white;
+            padding: 14px;
+            border-radius: 10px;
+            margin-top: 12px;
+            font-size: 0.85em;
+        }
+
+        .payment-details-item {
+            padding: 6px 0;
+            color: #475569;
+            word-break: break-word;
+        }
+
+        .pending-approval {
+            display: inline-block;
+            background: #fef3c7;
+            color: #78350f;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 0;
+            margin-top: 8px;
+            border: 1px solid #fbbf24;
+        }
+
+        .approved-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 0;
+            margin-top: 8px;
+        }
+
+        .rejected-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 0;
+            margin-top: 8px;
+        }
+
+        /* Multiple claims wrapper */
+        .multiple-claims-wrapper {
+            margin-top: 18px;
+        }
+
+        .multiple-claims-header {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 0.95em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .claims-count-badge {
+            background: #1e40af;
+            color: white;
+            border-radius: 20px;
+            padding: 2px 10px;
+            font-size: 0.8em;
+            font-weight: 700;
+        }
+
+        /* Additional Payment Modal */
         .modal {
             display: none;
             position: fixed;
@@ -979,76 +1096,6 @@
             color: #78350f;
             font-weight: 600;
             font-size: 0.9em;
-        }
-
-        .additional-payment-section {
-            margin-top: 18px;
-            padding: 18px;
-            background: #f0fdf4;
-            border-radius: 12px;
-            border-left: 4px solid #10b981;
-        }
-
-        .additional-payment-title {
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 1.05em;
-            flex-wrap: wrap;
-        }
-
-        .payment-details {
-            background: white;
-            padding: 14px;
-            border-radius: 10px;
-            margin-top: 12px;
-            font-size: 0.85em;
-        }
-
-        .payment-details-item {
-            padding: 6px 0;
-            color: #475569;
-            word-break: break-word;
-        }
-
-        .pending-approval {
-            display: inline-block;
-            background: #fef3c7;
-            color: #78350f;
-            padding: 5px 12px;
-            border-radius: 8px;
-            font-size: 0.8em;
-            font-weight: 600;
-            margin-left: 0;
-            margin-top: 8px;
-            border: 1px solid #fbbf24;
-        }
-
-        .approved-badge {
-            display: inline-block;
-            background: #10b981;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 8px;
-            font-size: 0.8em;
-            font-weight: 600;
-            margin-left: 0;
-            margin-top: 8px;
-        }
-
-        .rejected-badge {
-            display: inline-block;
-            background: #ef4444;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 8px;
-            font-size: 0.8em;
-            font-weight: 600;
-            margin-left: 0;
-            margin-top: 8px;
         }
 
         /* Footer */
@@ -1472,6 +1519,7 @@
         window.db = db;
 
         let currentEngineer = '';
+        // CHANGED: additionalPayments is now keyed by date -> array of payment objects
         let additionalPayments = {};
         let engineersWithPasswords = [];
 
@@ -1601,7 +1649,7 @@
             }
         });
 
-        // Helper function to calculate payment breakdown
+        // Helper function to calculate payment breakdown for a single payment object
         function calculateAdditionalPaymentBreakdown(payment, dateObj) {
             const dayOfWeek = dateObj.getDay();
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -1666,6 +1714,39 @@
             return breakdown;
         }
 
+        // Helper: calculate approved total for a single payment
+        function calcApprovedTotal(payment, dateObj) {
+            const breakdown = calculateAdditionalPaymentBreakdown(payment, dateObj);
+            let total = 0;
+
+            if (payment.status === 'approved') {
+                total = breakdown.standby.amount + breakdown.workingAway.amount +
+                        breakdown.overtime.amount + breakdown.jobs.amount;
+            } else if (payment.status === 'approved-with-changes') {
+                const amendments = payment.amendments || {};
+                if (payment.standby === 'yes' && amendments.standby !== false) total += breakdown.standby.amount;
+                if (payment.workingAway === 'yes' && amendments.workingAway !== false) total += breakdown.workingAway.amount;
+                if (payment.overtime === 'yes' && amendments.overtime !== false) {
+                    if (amendments.overtimeHours) {
+                        total += amendments.overtimeHours * breakdown.overtime.rate;
+                    } else {
+                        total += breakdown.overtime.amount;
+                    }
+                }
+                if (payment.hasJobs && payment.jobs) {
+                    const removedJobs = amendments.removeJobs || [];
+                    payment.jobs.forEach(job => {
+                        if (job.claimPricePerJob === 'yes' && !removedJobs.includes(job.jobNumber)) {
+                            if (job.jobType === 'Dual') total += 80;
+                            else if (job.jobType === 'Single') total += 50;
+                            else if (job.jobType === 'Comms') total += 25;
+                        }
+                    });
+                }
+            }
+            return total;
+        }
+
         window.loadDailyBreakdown = async function() {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -1688,13 +1769,14 @@
             document.getElementById('mainFooter').style.display = 'none';
 
             try {
-                // First, load additional payments to see which weekend days need to be included
+                // Load additional payments - now stored as arrays per date
                 const paymentsQuery = query(
                     collection(db, "additionalPayments"),
                     where("engineerName", "==", currentEngineer)
                 );
 
                 const paymentsSnapshot = await getDocs(paymentsQuery);
+                // CHANGED: additionalPayments is now date -> array of payment objects
                 additionalPayments = {};
                 const weekendDatesWithPayments = new Set();
                 
@@ -1702,7 +1784,11 @@
                     const data = doc.data();
                     const paymentDate = data.date;
                     if (paymentDate >= startDate && paymentDate <= endDate) {
-                        additionalPayments[paymentDate] = data;
+                        // Push into array for that date
+                        if (!additionalPayments[paymentDate]) {
+                            additionalPayments[paymentDate] = [];
+                        }
+                        additionalPayments[paymentDate].push(data);
                         
                         // Check if this is a weekend date
                         const dateObj = new Date(paymentDate + 'T00:00:00');
@@ -1717,12 +1803,9 @@
                 const end = new Date(endDate);
                 const allDates = [];
                 
-                // Include all weekdays plus weekend days with additional payments
                 for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                     const dateStr = d.toISOString().split('T')[0];
                     const dayOfWeek = d.getDay();
-                    
-                    // Include weekdays OR weekend days that have additional payments
                     if ((dayOfWeek !== 0 && dayOfWeek !== 6) || weekendDatesWithPayments.has(dateStr)) {
                         allDates.push(dateStr);
                     }
@@ -1732,7 +1815,6 @@
                     collection(db, "performance"),
                     where("engineerName", "==", currentEngineer)
                 );
-
                 const perfSnapshot = await getDocs(perfQuery);
                 const performanceData = {};
                 perfSnapshot.forEach((doc) => {
@@ -1746,7 +1828,6 @@
                     collection(db, "attendance"),
                     where("engineerName", "==", currentEngineer)
                 );
-
                 const attendanceSnapshot = await getDocs(attendanceQuery);
                 const attendanceData = {};
                 attendanceSnapshot.forEach((doc) => {
@@ -1762,9 +1843,7 @@
                         collection(db, "bonuses"),
                         where("engineerName", "==", currentEngineer)
                     );
-
                     const bonusSnapshot = await getDocs(bonusQuery);
-                    
                     bonusSnapshot.forEach((doc) => {
                         const data = doc.data();
                         if (data.dailyBonuses) {
@@ -1785,12 +1864,9 @@
                         collection(db, "jobsData"),
                         where("engineerName", "==", currentEngineer)
                     );
-
                     const jobsSnapshot = await getDocs(jobsQuery);
-                    
                     jobsSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        
                         if (data.dailyJobs) {
                             Object.keys(data.dailyJobs).forEach(date => {
                                 if (date >= startDate && date <= endDate) {
@@ -1856,47 +1932,19 @@
                 
                 totalBonus += bonus;
                 
-                // Add holiday bonus if applicable
                 if ((attendanceStatus === 'H' || attendanceStatus === 'H/H') && averageBonusAmount > 0) {
                     const holidayBonus = attendanceStatus === 'H/H' ? averageBonusAmount / 2 : averageBonusAmount;
                     totalBonus += holidayBonus;
                 }
 
-                // Calculate approved additional payments
-                const payment = additionalPayments[date];
-                if (payment && (payment.status === 'approved' || payment.status === 'approved-with-changes')) {
-                    const dateObj = new Date(date + 'T00:00:00');
-                    const breakdown = calculateAdditionalPaymentBreakdown(payment, dateObj);
-                    
-                    if (payment.status === 'approved') {
-                        totalApprovedPayments += breakdown.standby.amount + breakdown.workingAway.amount + 
-                                                breakdown.overtime.amount + breakdown.jobs.amount;
-                    } else if (payment.status === 'approved-with-changes') {
-                        if (payment.standby === 'yes' && payment.amendments?.standby !== false) {
-                            totalApprovedPayments += breakdown.standby.amount;
-                        }
-                        if (payment.workingAway === 'yes' && payment.amendments?.workingAway !== false) {
-                            totalApprovedPayments += breakdown.workingAway.amount;
-                        }
-                        if (payment.overtime === 'yes' && payment.amendments?.overtime !== false) {
-                            if (payment.amendments?.overtimeHours) {
-                                totalApprovedPayments += payment.amendments.overtimeHours * breakdown.overtime.rate;
-                            } else {
-                                totalApprovedPayments += breakdown.overtime.amount;
-                            }
-                        }
-                        if (payment.hasJobs && payment.jobs) {
-                            const removedJobs = payment.amendments?.removeJobs || [];
-                            payment.jobs.forEach(job => {
-                                if (job.claimPricePerJob === 'yes' && !removedJobs.includes(job.jobNumber)) {
-                                    if (job.jobType === 'Dual') totalApprovedPayments += 80;
-                                    else if (job.jobType === 'Single') totalApprovedPayments += 50;
-                                    else if (job.jobType === 'Comms') totalApprovedPayments += 25;
-                                }
-                            });
-                        }
+                // CHANGED: iterate over all payment claims for this date
+                const paymentsForDate = additionalPayments[date] || [];
+                paymentsForDate.forEach(payment => {
+                    if (payment.status === 'approved' || payment.status === 'approved-with-changes') {
+                        const dateObj = new Date(date + 'T00:00:00');
+                        totalApprovedPayments += calcApprovedTotal(payment, dateObj);
                     }
-                }
+                });
             });
 
             // Update summary cards
@@ -1916,7 +1964,8 @@
                 const attendance = attendanceData[date] || {};
                 const bonus = bonusData[date] || 0;
                 const jobs = jobsData[date] || [];
-                const additionalPayment = additionalPayments[date];
+                // CHANGED: get array of all payment claims for this date
+                const paymentsForDate = additionalPayments[date] || [];
 
                 const dateObj = new Date(date + 'T00:00:00');
                 const displayDate = dateObj.toLocaleDateString('en-GB', { 
@@ -2079,171 +2128,27 @@
                     `;
                 }
 
-                let additionalPaymentHTML = '';
-                if (additionalPayment) {
-                    const paymentBreakdown = calculateAdditionalPaymentBreakdown(additionalPayment, dateObj);
-                    
-                    let paymentDetails = [];
-                    const hasAmendments = additionalPayment.status === 'approved-with-changes' && additionalPayment.amendments;
-                    
-                    if (additionalPayment.standby === 'yes') {
-                        if (hasAmendments && additionalPayment.amendments.standby === false) {
-                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Standby Payment (${paymentBreakdown.standby.label}): £${paymentBreakdown.standby.amount.toFixed(2)}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
-                        } else {
-                            paymentDetails.push(`✓ Standby Payment (${paymentBreakdown.standby.label}): <strong>£${paymentBreakdown.standby.amount.toFixed(2)}</strong>`);
-                        }
-                    }
-                    
-                    if (additionalPayment.workingAway === 'yes') {
-                        if (hasAmendments && additionalPayment.amendments.workingAway === false) {
-                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Working Away Allowance: £${paymentBreakdown.workingAway.amount.toFixed(2)}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
-                        } else {
-                            paymentDetails.push(`✓ Working Away Allowance: <strong>£${paymentBreakdown.workingAway.amount.toFixed(2)}</strong>`);
-                        }
-                    }
-                    
-                    if (additionalPayment.overtime === 'yes') {
-                        const startTime = additionalPayment.overtimeStartTime || 'N/A';
-                        const endTime = additionalPayment.overtimeEndTime || 'N/A';
-                        
-                        if (hasAmendments && additionalPayment.amendments.overtime === false) {
-                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
-                        } else if (hasAmendments && additionalPayment.amendments.overtimeHours) {
-                            const newStartTime = additionalPayment.amendments.overtimeStartTime || startTime;
-                            const newEndTime = additionalPayment.amendments.overtimeEndTime || endTime;
-                            const newHours = additionalPayment.amendments.overtimeHours;
-                            let newRate = paymentBreakdown.overtime.rate;
-                            const newAmount = newHours * newRate;
-                            
-                            paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span>`);
-                            paymentDetails.push(`✓ Overtime (MODIFIED): ${newHours.toFixed(1)} hours (${newStartTime} - ${newEndTime})`);
-                            paymentDetails.push(`  Rate: £${newRate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
-                            paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
-                            paymentDetails.push(`  <strong>Overtime Total: £${newAmount.toFixed(2)}</strong>`);
-                        } else {
-                            paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})`);
-                            paymentDetails.push(`  Rate: £${paymentBreakdown.overtime.rate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
-                            paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
-                            paymentDetails.push(`  <strong>Overtime Total: £${paymentBreakdown.overtime.amount.toFixed(2)}</strong>`);
-                        }
-                    }
-                    
-                    if (additionalPayment.hasJobs && additionalPayment.jobs && additionalPayment.jobs.length > 0) {
-                        const removedJobs = hasAmendments && additionalPayment.amendments.removeJobs ? additionalPayment.amendments.removeJobs : [];
-                        
-                        paymentDetails.push(`✓ Additional Jobs (${additionalPayment.jobs.length}):`);
-                        
-                        let approvedJobsTotal = 0;
-                        additionalPayment.jobs.forEach((job, idx) => {
-                            let jobAmount = 0;
-                            if (job.jobType === 'Dual') jobAmount = 80;
-                            else if (job.jobType === 'Single') jobAmount = 50;
-                            else if (job.jobType === 'Comms') jobAmount = 25;
-                            
-                            const isRemoved = removedJobs.includes(job.jobNumber);
-                            const isClaimed = job.claimPricePerJob === 'yes';
-                            
-                            if (isRemoved) {
-                                paymentDetails.push(`  <span style="text-decoration: line-through; color: #999;">• Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - £${jobAmount}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
-                            } else if (isClaimed) {
-                                paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - <strong>£${jobAmount}</strong>`);
-                                approvedJobsTotal += jobAmount;
-                            } else {
-                                paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - Not claimed`);
-                            }
-                        });
-                        
-                        if (approvedJobsTotal > 0) {
-                            paymentDetails.push(`  <strong>Jobs Total: £${approvedJobsTotal.toFixed(2)}</strong>`);
-                        }
-                    }
-                    
-                    let finalTotal = 0;
-                    
-                    if (additionalPayment.status === 'approved') {
-                        finalTotal = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
-                                    paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
-                    } else if (additionalPayment.status === 'approved-with-changes' && hasAmendments) {
-                        if (additionalPayment.standby === 'yes' && additionalPayment.amendments.standby !== false) {
-                            finalTotal += paymentBreakdown.standby.amount;
-                        }
-                        if (additionalPayment.workingAway === 'yes' && additionalPayment.amendments.workingAway !== false) {
-                            finalTotal += paymentBreakdown.workingAway.amount;
-                        }
-                        if (additionalPayment.overtime === 'yes' && additionalPayment.amendments.overtime !== false) {
-                            if (additionalPayment.amendments.overtimeHours) {
-                                finalTotal += additionalPayment.amendments.overtimeHours * paymentBreakdown.overtime.rate;
-                            } else {
-                                finalTotal += paymentBreakdown.overtime.amount;
-                            }
-                        }
-                        if (additionalPayment.hasJobs && additionalPayment.jobs) {
-                            const removedJobs = additionalPayment.amendments.removeJobs || [];
-                            additionalPayment.jobs.forEach(job => {
-                                if (job.claimPricePerJob === 'yes' && !removedJobs.includes(job.jobNumber)) {
-                                    if (job.jobType === 'Dual') finalTotal += 80;
-                                    else if (job.jobType === 'Single') finalTotal += 50;
-                                    else if (job.jobType === 'Comms') finalTotal += 25;
-                                }
-                            });
-                        }
-                    } else if (additionalPayment.status === 'pending') {
-                        finalTotal = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
-                                    paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
-                    }
-                    
-                    if (finalTotal > 0 || additionalPayment.status !== 'rejected') {
-                        const totalLabel = additionalPayment.status === 'approved' ? 'APPROVED AMOUNT' : 
-                                          additionalPayment.status === 'approved-with-changes' ? 'APPROVED AMOUNT (WITH CHANGES)' : 
-                                          'TOTAL CLAIMED';
-                        paymentDetails.push(`<div style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #10b981;"><strong>${totalLabel}: £${finalTotal.toFixed(2)}</strong></div>`);
-                    }
-                    
-                    const statusBadge = additionalPayment.status === 'approved' ? 
-                        '<span class="approved-badge">✓ Approved</span>' : 
-                        additionalPayment.status === 'rejected' ? 
-                        '<span class="rejected-badge">✗ Rejected</span>' : 
-                        additionalPayment.status === 'approved-with-changes' ?
-                        '<span class="approved-badge" style="background: #0891b2;">✓ Approved with Changes</span>' :
-                        '<span class="pending-approval">⏳ Pending Approval</span>';
-                    
-                    const detailsHTML = paymentDetails.map(detail => 
-                        `<div class="payment-details-item">${detail}</div>`
-                    ).join('');
-                    
-                    let rejectionHTML = '';
-                    if (additionalPayment.status === 'rejected' && additionalPayment.rejectionComment) {
-                        rejectionHTML = `
-                            <div style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 12px; border-radius: 6px; margin-top: 10px;">
-                                <div style="color: #ef4444; font-weight: 600; margin-bottom: 5px;">Rejection Reason:</div>
-                                <div style="color: #991b1b; font-style: italic;">${additionalPayment.rejectionComment}</div>
+                // CHANGED: render all payment claims for this date
+                let allAdditionalPaymentsHTML = '';
+
+                if (paymentsForDate.length > 0) {
+                    const claimsHTML = paymentsForDate.map((additionalPayment, claimIndex) => {
+                        return buildSinglePaymentHTML(additionalPayment, dateObj, claimIndex, paymentsForDate.length);
+                    }).join('');
+
+                    if (paymentsForDate.length > 1) {
+                        allAdditionalPaymentsHTML = `
+                            <div class="multiple-claims-wrapper">
+                                <div class="multiple-claims-header">
+                                    💳 Additional Payment Claims
+                                    <span class="claims-count-badge">${paymentsForDate.length} claims</span>
+                                </div>
+                                ${claimsHTML}
                             </div>
                         `;
+                    } else {
+                        allAdditionalPaymentsHTML = claimsHTML;
                     }
-                    
-                    let changesHTML = '';
-                    if (additionalPayment.status === 'approved-with-changes' && additionalPayment.changesComment) {
-                        changesHTML = `
-                            <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 6px; margin-top: 10px;">
-                                <div style="color: #1e40af; font-weight: 600; margin-bottom: 5px;">Approval Comments:</div>
-                                <div style="color: #1e3a8a;">${additionalPayment.changesComment}</div>
-                            </div>
-                        `;
-                    }
-                    
-                    additionalPaymentHTML = `
-                        <div class="additional-payment-section">
-                            <div class="additional-payment-title">
-                                💳 Additional Payment Claim
-                                ${statusBadge}
-                            </div>
-                            <div class="payment-details">
-                                ${detailsHTML}
-                            </div>
-                            ${rejectionHTML}
-                            ${changesHTML}
-                        </div>
-                    `;
                 }
 
                 card.innerHTML = `
@@ -2277,13 +2182,159 @@
                     ${absenceHTML}
                     ${bonusHTML}
                     ${jobsHTML}
-                    ${additionalPaymentHTML}
+                    ${allAdditionalPaymentsHTML}
                 `;
 
                 container.appendChild(card);
             });
 
             document.getElementById('dailyBreakdownSection').style.display = 'block';
+        }
+
+        // NEW: builds the HTML for a single additional payment claim
+        function buildSinglePaymentHTML(additionalPayment, dateObj, claimIndex, totalClaims) {
+            const paymentBreakdown = calculateAdditionalPaymentBreakdown(additionalPayment, dateObj);
+            
+            let paymentDetails = [];
+            const hasAmendments = additionalPayment.status === 'approved-with-changes' && additionalPayment.amendments;
+            
+            if (additionalPayment.standby === 'yes') {
+                if (hasAmendments && additionalPayment.amendments.standby === false) {
+                    paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Standby Payment (${paymentBreakdown.standby.label}): £${paymentBreakdown.standby.amount.toFixed(2)}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
+                } else {
+                    paymentDetails.push(`✓ Standby Payment (${paymentBreakdown.standby.label}): <strong>£${paymentBreakdown.standby.amount.toFixed(2)}</strong>`);
+                }
+            }
+            
+            if (additionalPayment.workingAway === 'yes') {
+                if (hasAmendments && additionalPayment.amendments.workingAway === false) {
+                    paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Working Away Allowance: £${paymentBreakdown.workingAway.amount.toFixed(2)}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
+                } else {
+                    paymentDetails.push(`✓ Working Away Allowance: <strong>£${paymentBreakdown.workingAway.amount.toFixed(2)}</strong>`);
+                }
+            }
+            
+            if (additionalPayment.overtime === 'yes') {
+                const startTime = additionalPayment.overtimeStartTime || 'N/A';
+                const endTime = additionalPayment.overtimeEndTime || 'N/A';
+                
+                if (hasAmendments && additionalPayment.amendments.overtime === false) {
+                    paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
+                } else if (hasAmendments && additionalPayment.amendments.overtimeHours) {
+                    const newStartTime = additionalPayment.amendments.overtimeStartTime || startTime;
+                    const newEndTime = additionalPayment.amendments.overtimeEndTime || endTime;
+                    const newHours = additionalPayment.amendments.overtimeHours;
+                    let newRate = paymentBreakdown.overtime.rate;
+                    const newAmount = newHours * newRate;
+                    
+                    paymentDetails.push(`<span style="text-decoration: line-through; color: #999;">✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})</span>`);
+                    paymentDetails.push(`✓ Overtime (MODIFIED): ${newHours.toFixed(1)} hours (${newStartTime} - ${newEndTime})`);
+                    paymentDetails.push(`  Rate: £${newRate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
+                    paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
+                    paymentDetails.push(`  <strong>Overtime Total: £${newAmount.toFixed(2)}</strong>`);
+                } else {
+                    paymentDetails.push(`✓ Overtime: ${additionalPayment.overtimeHours.toFixed(1)} hours (${startTime} - ${endTime})`);
+                    paymentDetails.push(`  Rate: £${paymentBreakdown.overtime.rate.toFixed(2)}/hr (${paymentBreakdown.overtime.rateLabel})`);
+                    paymentDetails.push(`  Reason: ${additionalPayment.overtimeReason}`);
+                    paymentDetails.push(`  <strong>Overtime Total: £${paymentBreakdown.overtime.amount.toFixed(2)}</strong>`);
+                }
+            }
+            
+            if (additionalPayment.hasJobs && additionalPayment.jobs && additionalPayment.jobs.length > 0) {
+                const removedJobs = hasAmendments && additionalPayment.amendments.removeJobs ? additionalPayment.amendments.removeJobs : [];
+                
+                paymentDetails.push(`✓ Additional Jobs (${additionalPayment.jobs.length}):`);
+                
+                let approvedJobsTotal = 0;
+                additionalPayment.jobs.forEach((job, idx) => {
+                    let jobAmount = 0;
+                    if (job.jobType === 'Dual') jobAmount = 80;
+                    else if (job.jobType === 'Single') jobAmount = 50;
+                    else if (job.jobType === 'Comms') jobAmount = 25;
+                    
+                    const isRemoved = removedJobs.includes(job.jobNumber);
+                    const isClaimed = job.claimPricePerJob === 'yes';
+                    
+                    if (isRemoved) {
+                        paymentDetails.push(`  <span style="text-decoration: line-through; color: #999;">• Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - £${jobAmount}</span> <span style="color: #ef4444; font-weight: 600;">[REMOVED]</span>`);
+                    } else if (isClaimed) {
+                        paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - <strong>£${jobAmount}</strong>`);
+                        approvedJobsTotal += jobAmount;
+                    } else {
+                        paymentDetails.push(`  • Job ${idx + 1}: ${job.jobNumber} - ${job.jobType} (${job.postcode}) - Not claimed`);
+                    }
+                });
+                
+                if (approvedJobsTotal > 0) {
+                    paymentDetails.push(`  <strong>Jobs Total: £${approvedJobsTotal.toFixed(2)}</strong>`);
+                }
+            }
+            
+            let finalTotal = calcApprovedTotal(additionalPayment, dateObj);
+            
+            // For pending, show claimed total
+            if (additionalPayment.status === 'pending') {
+                finalTotal = paymentBreakdown.standby.amount + paymentBreakdown.workingAway.amount + 
+                            paymentBreakdown.overtime.amount + paymentBreakdown.jobs.amount;
+            }
+            
+            if (finalTotal > 0 || additionalPayment.status !== 'rejected') {
+                const totalLabel = additionalPayment.status === 'approved' ? 'APPROVED AMOUNT' : 
+                                  additionalPayment.status === 'approved-with-changes' ? 'APPROVED AMOUNT (WITH CHANGES)' : 
+                                  'TOTAL CLAIMED';
+                paymentDetails.push(`<div style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #10b981;"><strong>${totalLabel}: £${finalTotal.toFixed(2)}</strong></div>`);
+            }
+            
+            const statusBadge = additionalPayment.status === 'approved' ? 
+                '<span class="approved-badge">✓ Approved</span>' : 
+                additionalPayment.status === 'rejected' ? 
+                '<span class="rejected-badge">✗ Rejected</span>' : 
+                additionalPayment.status === 'approved-with-changes' ?
+                '<span class="approved-badge" style="background: #0891b2;">✓ Approved with Changes</span>' :
+                '<span class="pending-approval">⏳ Pending Approval</span>';
+            
+            const detailsHTML = paymentDetails.map(detail => 
+                `<div class="payment-details-item">${detail}</div>`
+            ).join('');
+            
+            let rejectionHTML = '';
+            if (additionalPayment.status === 'rejected' && additionalPayment.rejectionComment) {
+                rejectionHTML = `
+                    <div style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 12px; border-radius: 6px; margin-top: 10px;">
+                        <div style="color: #ef4444; font-weight: 600; margin-bottom: 5px;">Rejection Reason:</div>
+                        <div style="color: #991b1b; font-style: italic;">${additionalPayment.rejectionComment}</div>
+                    </div>
+                `;
+            }
+            
+            let changesHTML = '';
+            if (additionalPayment.status === 'approved-with-changes' && additionalPayment.changesComment) {
+                changesHTML = `
+                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 6px; margin-top: 10px;">
+                        <div style="color: #1e40af; font-weight: 600; margin-bottom: 5px;">Approval Comments:</div>
+                        <div style="color: #1e3a8a;">${additionalPayment.changesComment}</div>
+                    </div>
+                `;
+            }
+
+            // Title: if multiple claims, show claim number
+            const claimLabel = totalClaims > 1
+                ? `💳 Payment Claim ${claimIndex + 1} of ${totalClaims}`
+                : `💳 Additional Payment Claim`;
+            
+            return `
+                <div class="additional-payment-section">
+                    <div class="additional-payment-title">
+                        ${claimLabel}
+                        ${statusBadge}
+                    </div>
+                    <div class="payment-details">
+                        ${detailsHTML}
+                    </div>
+                    ${rejectionHTML}
+                    ${changesHTML}
+                </div>
+            `;
         }
 
         window.openAdditionalPaymentModal = function() {
@@ -2455,7 +2506,12 @@
 
             try {
                 await addDoc(collection(db, "additionalPayments"), paymentData);
-                additionalPayments[paymentDate] = paymentData;
+                
+                // CHANGED: push into the array for this date
+                if (!additionalPayments[paymentDate]) {
+                    additionalPayments[paymentDate] = [];
+                }
+                additionalPayments[paymentDate].push(paymentData);
                 
                 alert('Additional payment claim submitted successfully!\n\nAll submissions are subject to approval.');
                 closeAdditionalPaymentModal();
