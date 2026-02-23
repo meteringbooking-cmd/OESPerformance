@@ -169,7 +169,7 @@
   <h2>Time Period</h2>
   <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
   <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
-  <button class="period-btn" data-period="6months">6 months (line)</button>
+  <button class="period-btn" data-period="6months">6 months (by month)</button>
   <button class="period-btn" data-period="year">Year to date (line)</button>
 
   <h2>Team Leader</h2>
@@ -219,10 +219,10 @@
   let chart = null;
 
   const periods = {
-    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#10b981", type: "bar"  },
-    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#34d399", type: "bar"  },
-    "6months": { label: "Last 6 months",        daysBack: 180, color: "#6ee7b7", type: "line" },
-    "year":    { label: "Year to date",         daysBack: 365, color: "#a7f3d0", type: "line" },
+    "7days":   { label: "Last 7 days",    daysBack: 7,   color: "#10b981", type: "bar",  groupBy: "day"   },
+    "4weeks":  { label: "4 week rolling", daysBack: 28,  color: "#34d399", type: "bar",  groupBy: "day"   },
+    "6months": { label: "Last 6 months",  daysBack: 180, color: "#6ee7b7", type: "bar",  groupBy: "month" },
+    "year":    { label: "Year to date",   daysBack: 365, color: "#a7f3d0", type: "line", groupBy: "day"   },
   };
 
   let currentPeriod = "7days";
@@ -254,6 +254,39 @@
       }
     });
 
+    // --- Monthly grouping for 6-month view ---
+    if (cfg.groupBy === "month") {
+      // Build list of months in range (e.g. last 6 calendar months)
+      const monthsMap = {};
+      const monthLabels = [];
+
+      // Walk back 6 months from current month
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        monthsMap[key] = { completed: 0, jobs: 0, label };
+        monthLabels.push(key);
+      }
+
+      records.forEach(r => {
+        const monthKey = r.date.substring(0, 7); // "YYYY-MM"
+        if (monthsMap[monthKey]) {
+          monthsMap[monthKey].completed += Number(r.completed || 0);
+          monthsMap[monthKey].jobs      += Number(r.jobs || 0);
+        }
+      });
+
+      const labels = monthLabels.map(k => monthsMap[k].label);
+      const values = monthLabels.map(k => {
+        const { completed, jobs } = monthsMap[k];
+        return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0;
+      });
+
+      return { labels, values };
+    }
+
+    // --- Daily grouping (existing logic) ---
     const allWeekdayDates = [];
     const current = new Date(start);
     while (current <= today) {
@@ -286,13 +319,13 @@
       const ddmm  = `${day}/${month}`;
       const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
 
-      if (periods[periodKey].type === 'bar') {
+      if (cfg.type === 'bar') {
         return [ddmm, weekday];
       }
       return ddmm;
     });
 
-    return { labels, values, dates: allWeekdayDates };
+    return { labels, values };
   }
 
   function updateAverageDisplay(values) {
@@ -317,7 +350,6 @@
       const data = await fetchAndAggregateCompletion(currentPeriod, currentTeam);
       const cfg = periods[currentPeriod];
 
-      // Update average display
       updateAverageDisplay(data.values);
 
       container.innerHTML = '';
@@ -350,7 +382,9 @@
           plugins: {
             title: {
               display: true,
-              text: `${cfg.label} – Completion %`,
+              text: cfg.groupBy === 'month'
+                ? `${cfg.label} – Monthly Average Completion %`
+                : `${cfg.label} – Completion %`,
               color: '#e2e8f0',
               font: { size: 18, weight: '600' },
               padding: { bottom: 20 }
@@ -371,7 +405,7 @@
             x: {
               ticks: {
                 color: '#94a3b8',
-                font: { size: cfg.type === 'bar' ? 11 : 12 },
+                font: { size: cfg.groupBy === 'month' ? 13 : (cfg.type === 'bar' ? 11 : 12) },
                 padding: 8,
                 callback: function(value) {
                   return this.getLabelForValue(value);
