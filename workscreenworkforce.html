@@ -223,10 +223,6 @@
     return isNaN(date.getTime()) ? null : date;
   }
 
-  function getFirstDayOfMonth(date) {
-    return new Date(date.getFullYear(), date.getMonth(), 1);
-  }
-
   async function fetchAndAggregateWorkforce(periodKey, category, location, team) {
     const cfg = periods[periodKey];
     const today = new Date();
@@ -247,13 +243,7 @@
 
     const monthMap = {};
     allMonths.forEach(monthKey => {
-      monthMap[monthKey] = {
-        oes: 0,
-        scottishPower: 0,
-        edf: 0,
-        backOffice: 0,
-        total: 0
-      };
+      monthMap[monthKey] = { oes: 0, scottishPower: 0, edf: 0, backOffice: 0, total: 0 };
     });
 
     snapshot.forEach(doc => {
@@ -263,33 +253,23 @@
       const startDateStr = d.startDate || d['Start Date'];
       const leaveDateStr = d.leaveDate;
 
-      // Filter by category
       const isBackOffice = teamLeader === 'Back Office';
       if (category === 'engineers' && isBackOffice) return;
       if (category === 'backoffice' && !isBackOffice) return;
-
-      // Filter by location (only for engineers)
       if (category === 'engineers' && location !== 'all' && employeeLocation !== location) return;
-
-      // Filter by team
       if (team !== 'all' && teamLeader !== team) return;
 
       const startDate = parseDateDDMMYYYY(startDateStr);
       const leaveDate = leaveDateStr ? parseDateDDMMYYYY(leaveDateStr) : null;
 
-      // Count employee in each month they were active
       allMonths.forEach(monthKey => {
         const [year, month] = monthKey.split('-');
         const monthDate = new Date(year, parseInt(month) - 1, 1);
-        
-        // Check if employee was active during this month
-        const wasActive = startDate && startDate <= monthDate && 
-                         (!leaveDate || leaveDate > monthDate);
+        const wasActive = startDate && startDate <= monthDate && (!leaveDate || leaveDate > monthDate);
 
         if (wasActive) {
-          if (isBackOffice) {
-            monthMap[monthKey].backOffice++;
-          } else {
+          if (isBackOffice) monthMap[monthKey].backOffice++;
+          else {
             if (employeeLocation === 'OES') monthMap[monthKey].oes++;
             else if (employeeLocation === 'Scottish Power') monthMap[monthKey].scottishPower++;
             else if (employeeLocation === 'EDF') monthMap[monthKey].edf++;
@@ -322,13 +302,11 @@
       if (chart) chart.destroy();
 
       const categoryLabel = currentCategory === 'engineers' ? 'Engineers' : 'Back Office';
-      const locationLabel = currentLocation === 'all' ? 'All Locations' : currentLocation;
       const teamLabel = currentTeam === 'all' ? 'All Teams' : currentTeam;
 
       let datasets = [];
 
       if (currentCategory === 'engineers' && currentTeam !== 'all') {
-        // Show breakdown by location for specific team
         datasets = [
           {
             label: 'OES',
@@ -356,7 +334,6 @@
           }
         ];
       } else {
-        // Show total for selected filters
         datasets = [{
           label: `${categoryLabel} (${teamLabel})`,
           data: data.allMonths.map(m => data.monthMap[m].total),
@@ -369,10 +346,7 @@
 
       chart = new Chart(ctx, {
         type: cfg.type,
-        data: {
-          labels: data.labels,
-          datasets: datasets
-        },
+        data: { labels: data.labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -393,7 +367,7 @@
               align: 'top',
               offset: 4,
               color: '#e2e8f0',
-              font: { weight: 'bold', size: 12 },
+              font: { weight: 'bold', size: 16 },
               formatter: (value) => value > 0 ? value : '',
               textShadowColor: 'rgba(0,0,0,0.8)',
               textShadowBlur: 4
@@ -402,20 +376,13 @@
           scales: {
             x: {
               stacked: datasets.length > 1,
-              ticks: {
-                color: '#94a3b8',
-                font: { size: 11 },
-                padding: 8,
-              },
+              ticks: { color: '#94a3b8', font: { size: 11 }, padding: 8 },
               grid: { color: '#334155' }
             },
             y: {
               stacked: datasets.length > 1,
               beginAtZero: true,
-              ticks: { 
-                color: '#94a3b8', 
-                stepSize: 5
-              },
+              ticks: { color: '#94a3b8', stepSize: 5 },
               grid: { color: '#334155' }
             }
           }
