@@ -984,40 +984,79 @@
                     `;
                 }
 
-                // ── 2-Week Summary ──────────────────────────────────
-                // Fetch last 10 working days in parallel
-                const twoWeekDates = getPreviousWorkingDays(10).reverse(); // oldest → newest
-                const twoWeekResults = await Promise.all(twoWeekDates.map(async d => {
+                // ── 5-Day Summary with reason breakdown ─────────────
+                const fiveDayDates = getPreviousWorkingDays(5).reverse(); // oldest → newest
+                const fiveDayResults = await Promise.all(fiveDayDates.map(async d => {
                     const ds = formatDateForQuery(d);
                     const q2 = query(collection(performanceDb, "aborts"), where("date", "==", ds));
                     const snap2 = await getDocs(q2);
                     let dayTotal = 0;
+                    const reasonCounts = {}; // reason → count
                     snap2.forEach(doc => {
                         const data = doc.data();
-                        if (data.engineer && data.engineer !== '') {
-                            dayTotal += (data.total || 1);
-                        }
+                        if (!data.engineer || data.engineer === '') return;
+                        const qty = data.total || 1;
+                        const reason = (data.reason || 'Unknown').trim();
+                        dayTotal += qty;
+                        reasonCounts[reason] = (reasonCounts[reason] || 0) + qty;
                     });
-                    return { label: formatDate(d), total: dayTotal };
+                    return { label: formatDate(d), total: dayTotal, reasons: reasonCounts };
                 }));
 
-                const weekSummaryHtml = `
-                    <div style="margin-top: 30px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 20px; border: 2px solid rgba(0,210,255,0.2);">
-                        <div style="font-size: 0.85em; font-weight: 700; color: #00d2ff; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1.5px;">📅 2-Week Summary (Last 10 Working Days)</div>
-                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                // Collect all unique reason types across the 5 days, sorted by total desc
+                const allReasons = {};
+                fiveDayResults.forEach(r => {
+                    Object.entries(r.reasons).forEach(([reason, count]) => {
+                        allReasons[reason] = (allReasons[reason] || 0) + count;
+                    });
+                });
+                const sortedReasons = Object.keys(allReasons).sort((a, b) => allReasons[b] - allReasons[a]);
+
+                const thCellStyle = `style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.78em;letter-spacing:0.3px;white-space:nowrap;"`;
+                const reasonHeaders = sortedReasons.map(r => `<th ${thCellStyle}>${r}</th>`).join('');
+
+                const summaryRows = fiveDayResults.map(r => {
+                    const reasonCells = sortedReasons.map(reason => {
+                        const val = r.reasons[reason] || 0;
+                        return `<td style="padding:10px 8px;text-align:center;color:${val > 0 ? '#f59e0b' : 'rgba(255,255,255,0.2)'};font-weight:${val > 0 ? '700' : '400'};">${val > 0 ? val : '–'}</td>`;
+                    }).join('');
+                    return `
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                            <td style="padding:10px 14px;color:#e1e8ed;font-weight:600;white-space:nowrap;">${r.label}</td>
+                            <td style="padding:10px 14px;text-align:center;font-weight:800;font-size:1.1em;color:${r.total > 0 ? '#ef4444' : '#10b981'};">${r.total}</td>
+                            ${reasonCells}
+                        </tr>
+                    `;
+                }).join('');
+
+                // Totals row
+                const reasonTotals = sortedReasons.map(reason => {
+                    const t = allReasons[reason];
+                    return `<td style="padding:10px 8px;text-align:center;color:#f59e0b;font-weight:800;">${t}</td>`;
+                }).join('');
+                const grandTotalAll = fiveDayResults.reduce((s, r) => s + r.total, 0);
+                const totalsRow = `
+                    <tr style="background:rgba(0,210,255,0.08);border-top:2px solid rgba(0,210,255,0.3);">
+                        <td style="padding:10px 14px;color:#00d2ff;font-weight:800;text-transform:uppercase;font-size:0.85em;">Total</td>
+                        <td style="padding:10px 14px;text-align:center;font-weight:900;font-size:1.1em;color:#ef4444;">${grandTotalAll}</td>
+                        ${reasonTotals}
+                    </tr>
+                `;
+
+                const weekSummaryHtml = sortedReasons.length === 0 ? '' : `
+                    <div style="margin-top:30px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);overflow-x:auto;">
+                        <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 5-Day Summary — Aborts by Type</div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.88em;min-width:500px;">
                             <thead>
-                                <tr style="background: rgba(0,210,255,0.15);">
-                                    <th style="text-align: left; padding: 10px 14px; color: #00d2ff; text-transform: uppercase; font-size: 0.82em; letter-spacing: 0.5px;">Date</th>
-                                    <th style="text-align: right; padding: 10px 14px; color: #00d2ff; text-transform: uppercase; font-size: 0.82em; letter-spacing: 0.5px;">Total Aborts</th>
+                                <tr style="background:rgba(0,210,255,0.15);">
+                                    <th style="text-align:left;padding:10px 14px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Date</th>
+                                    <th style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Total</th>
+                                    ${reasonHeaders}
                                 </tr>
                             </thead>
                             <tbody>
-                                ${twoWeekResults.map(r => `
-                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                                        <td style="padding: 10px 14px; color: #e1e8ed; font-weight: 500;">${r.label}</td>
-                                        <td style="padding: 10px 14px; text-align: right; font-weight: 800; font-size: 1.1em; color: ${r.total > 0 ? '#ef4444' : '#10b981'};">${r.total}</td>
-                                    </tr>
-                                `).join('')}
+                                ${summaryRows}
+                                ${totalsRow}
                             </tbody>
                         </table>
                     </div>
