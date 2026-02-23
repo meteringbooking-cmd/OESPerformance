@@ -897,10 +897,13 @@
         // ────────────────────────────────────────────────
         window.loadDetailedAborts = async function() {
             try {
+                const container = document.getElementById('abortsDetailContainer');
+                container.innerHTML = `<div style="text-align:center;padding:40px;color:#a8dadc;"><div style="font-size:2em;">⏳</div><div>Loading abort data...</div></div>`;
+
                 const prevDay = getPreviousWorkingDay();
                 const dateStr = formatDateForQuery(prevDay);
                 
-                // Query aborts collection
+                // Query aborts collection for yesterday
                 const abortsQ = query(collection(performanceDb, "aborts"), where("date", "==", dateStr));
                 const abortsSnap = await getDocs(abortsQ);
                 
@@ -911,45 +914,31 @@
                 abortsSnap.forEach(doc => {
                     const data = doc.data();
                     const teamLeader = data.teamLeader || 'Unknown Team';
-                    const engineerName = data.engineer || 'Unknown Engineer';
+                    const engineerName = data.engineer || '';
                     const reason = data.reason || 'No reason specified';
                     const total = data.total || 1;
                     
-                    // Skip entries without engineer names
-                    if (!engineerName || engineerName === '' || engineerName === 'Unknown Engineer') {
-                        return;
-                    }
+                    if (!engineerName || engineerName === '') return;
                     
                     if (!teamData[teamLeader]) {
-                        teamData[teamLeader] = {
-                            total: 0,
-                            engineers: []
-                        };
+                        teamData[teamLeader] = { total: 0, engineers: [] };
                     }
                     
                     teamData[teamLeader].total += total;
-                    teamData[teamLeader].engineers.push({
-                        name: engineerName,
-                        aborts: total,
-                        reason: reason
-                    });
-                    
+                    teamData[teamLeader].engineers.push({ name: engineerName, aborts: total, reason });
                     grandTotal += total;
                 });
                 
                 // Sort teams by abort count (highest first)
-                const sortedTeams = Object.entries(teamData)
-                    .sort((a, b) => b[1].total - a[1].total);
-                
-                // Sort engineers alphabetically within each team
-                sortedTeams.forEach(([teamLeader, data]) => {
+                const sortedTeams = Object.entries(teamData).sort((a, b) => b[1].total - a[1].total);
+                sortedTeams.forEach(([, data]) => {
                     data.engineers.sort((a, b) => a.name.localeCompare(b.name));
                 });
                 
-                const container = document.getElementById('abortsDetailContainer');
-                
+                let mainHtml = '';
+
                 if (sortedTeams.length === 0) {
-                    container.innerHTML = `
+                    mainHtml = `
                         <div style="text-align: center; padding: 60px; color: #10b981; font-size: 1.5em;">
                             <div style="font-size: 4em; margin-bottom: 20px;">🎉</div>
                             <div style="font-weight: 700;">No Aborts Yesterday!</div>
@@ -957,54 +946,85 @@
                         </div>
                     `;
                 } else {
-                    let html = '';
-                    
                     sortedTeams.forEach(([teamLeader, data]) => {
-                        html += `
-                            <div style="margin-bottom: 30px; background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 20px; border: 2px solid rgba(239, 68, 68, 0.3);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid rgba(239, 68, 68, 0.2);">
+                        mainHtml += `
+                            <div style="margin-bottom: 30px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 20px; border: 2px solid rgba(239,68,68,0.3);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid rgba(239,68,68,0.2);">
                                     <div style="font-size: 1.2em; font-weight: 700; color: #00d2ff;">${teamLeader}</div>
                                     <div style="font-size: 1.5em; font-weight: 800; color: #ef4444;">${data.total} Abort${data.total > 1 ? 's' : ''}</div>
                                 </div>
                                 <table style="width: 100%; border-collapse: collapse;">
                                     <thead>
-                                        <tr style="background: rgba(0, 210, 255, 0.15);">
-                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Engineer</th>
-                                            <th style="text-align: center; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Quantity</th>
-                                            <th style="text-align: left; padding: 10px; color: #00d2ff; font-size: 0.85em; text-transform: uppercase;">Reason</th>
+                                        <tr style="background: rgba(0,210,255,0.15);">
+                                            <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
+                                            <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
+                                            <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                        `;
-                        
-                        data.engineers.forEach(eng => {
-                            html += `
-                                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
-                                    <td style="padding: 12px; color: #e1e8ed; font-weight: 600;">${eng.name}</td>
-                                    <td style="padding: 12px; text-align: center; color: #ef4444; font-weight: 700; font-size: 1.1em;">${eng.aborts}</td>
-                                    <td style="padding: 12px; color: #a8dadc; font-size: 0.9em;">${eng.reason}</td>
-                                </tr>
-                            `;
-                        });
-                        
-                        html += `
+                                        ${data.engineers.map(eng => `
+                                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                                <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
+                                                <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
+                                                <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
+                                            </tr>
+                                        `).join('')}
                                     </tbody>
                                 </table>
                             </div>
                         `;
                     });
-                    
-                    // Add grand total at the bottom
-                    html += `
-                        <div style="text-align: right; padding: 20px; background: rgba(239, 68, 68, 0.2); border-radius: 12px; border: 2px solid rgba(239, 68, 68, 0.4);">
+
+                    // Grand total
+                    mainHtml += `
+                        <div style="text-align: right; padding: 20px; background: rgba(239,68,68,0.2); border-radius: 12px; border: 2px solid rgba(239,68,68,0.4); margin-bottom: 0;">
                             <div style="font-size: 1.1em; color: #a8dadc; margin-bottom: 8px;">Total Aborts Yesterday</div>
                             <div style="font-size: 2.5em; font-weight: 900; color: #ef4444;">${grandTotal}</div>
                         </div>
                     `;
-                    
-                    container.innerHTML = html;
                 }
-                
+
+                // ── 2-Week Summary ──────────────────────────────────
+                // Fetch last 10 working days in parallel
+                const twoWeekDates = getPreviousWorkingDays(10).reverse(); // oldest → newest
+                const twoWeekResults = await Promise.all(twoWeekDates.map(async d => {
+                    const ds = formatDateForQuery(d);
+                    const q2 = query(collection(performanceDb, "aborts"), where("date", "==", ds));
+                    const snap2 = await getDocs(q2);
+                    let dayTotal = 0;
+                    snap2.forEach(doc => {
+                        const data = doc.data();
+                        if (data.engineer && data.engineer !== '') {
+                            dayTotal += (data.total || 1);
+                        }
+                    });
+                    return { label: formatDate(d), total: dayTotal };
+                }));
+
+                const weekSummaryHtml = `
+                    <div style="margin-top: 30px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 20px; border: 2px solid rgba(0,210,255,0.2);">
+                        <div style="font-size: 0.85em; font-weight: 700; color: #00d2ff; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1.5px;">📅 2-Week Summary (Last 10 Working Days)</div>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                            <thead>
+                                <tr style="background: rgba(0,210,255,0.15);">
+                                    <th style="text-align: left; padding: 10px 14px; color: #00d2ff; text-transform: uppercase; font-size: 0.82em; letter-spacing: 0.5px;">Date</th>
+                                    <th style="text-align: right; padding: 10px 14px; color: #00d2ff; text-transform: uppercase; font-size: 0.82em; letter-spacing: 0.5px;">Total Aborts</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${twoWeekResults.map(r => `
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                                        <td style="padding: 10px 14px; color: #e1e8ed; font-weight: 500;">${r.label}</td>
+                                        <td style="padding: 10px 14px; text-align: right; font-weight: 800; font-size: 1.1em; color: ${r.total > 0 ? '#ef4444' : '#10b981'};">${r.total}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                container.innerHTML = mainHtml + weekSummaryHtml;
+
             } catch (err) {
                 console.error("Error loading detailed aborts:", err);
                 document.getElementById('abortsDetailContainer').innerHTML = `
@@ -1262,14 +1282,14 @@
                 });
 
                 const metersTarget = Math.round(oes * 6 * 0.9);
-const metersRate = metersTarget ? (meters / metersTarget * 100).toFixed(1) : '0';
-const compRate = jobs ? (completed / jobs * 100).toFixed(1) : '0';
+                const metersRate = metersTarget ? (meters / metersTarget * 100).toFixed(1) : '0';
+                const compRate = jobs ? (completed / jobs * 100).toFixed(1) : '0';
 
-document.getElementById('metersActual').textContent = meters.toLocaleString();
-document.getElementById('metersProgressText').textContent = metersRate + '%';
-updateProgressBar('metersProgress', +metersRate);
+                document.getElementById('metersActual').textContent = meters.toLocaleString();
+                document.getElementById('metersProgressText').textContent = metersRate + '%';
+                updateProgressBar('metersProgress', +metersRate);
 
-document.getElementById('completionActual').textContent = compRate;
+                document.getElementById('completionActual').textContent = compRate;
                 document.getElementById('completionProgressText').textContent = `${completed.toLocaleString()} of ${jobs.toLocaleString()} jobs`;
                 updateProgressBar('completionProgress', +compRate);
                 updateStatusIndicator('completionStatus', +compRate);
@@ -1369,121 +1389,101 @@ document.getElementById('completionActual').textContent = compRate;
 
         // Helper function to get last 5 working days data
         async function getLast5DaysData(teamLeader = null) {
-    const dates = getPreviousWorkingDays(5).reverse();
-    const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
-    
-    for (const date of dates) {
-        const ds = formatDateForQuery(date);
-        
-        let perfQuery;
-        if (teamLeader === 'Richard Wiecko2') {
-            // Combine Richard Wiecko2 and Richard Wiecko2 data
-            perfQuery = query(
-                collection(performanceDb, "performance"), 
-                where("date", "==", ds),
-                where("teamLeader", "in", ["Richard Wiecko2", "Richard Wiecko2"])
-            );
-        } else if (teamLeader) {
-            perfQuery = query(
-                collection(performanceDb, "performance"), 
-                where("date", "==", ds),
-                where("teamLeader", "==", teamLeader)
-            );
-        } else {
-            perfQuery = query(
-                collection(performanceDb, "performance"), 
-                where("date", "==", ds)
-            );
+            const dates = getPreviousWorkingDays(5).reverse();
+            const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
+            
+            for (const date of dates) {
+                const ds = formatDateForQuery(date);
+                
+                let perfQuery;
+                if (teamLeader) {
+                    perfQuery = query(
+                        collection(performanceDb, "performance"), 
+                        where("date", "==", ds),
+                        where("teamLeader", "==", teamLeader)
+                    );
+                } else {
+                    perfQuery = query(
+                        collection(performanceDb, "performance"), 
+                        where("date", "==", ds)
+                    );
+                }
+                
+                const perfSnap = await getDocs(perfQuery);
+                
+                let m = 0, j = 0, c = 0;
+                perfSnap.forEach(doc => {
+                    const d = doc.data();
+                    m += d.meters || 0;
+                    j += d.jobs || 0;
+                    c += d.completed || 0;
+                });
+                
+                data.dates.push(formatDate(date));
+                data.meters.push(m);
+                data.jobs.push(j);
+                data.completed.push(c);
+                data.completion.push(j > 0 ? Math.round((c / j) * 100) : 0);
+            }
+            
+            return data;
         }
-        
-        const perfSnap = await getDocs(perfQuery);
-        
-        let m = 0, j = 0, c = 0;
-        perfSnap.forEach(doc => {
-            const d = doc.data();
-            m += d.meters || 0;
-            j += d.jobs || 0;
-            c += d.completed || 0;
-        });
-        
-        data.dates.push(formatDate(date));
-        data.meters.push(m);
-        data.jobs.push(j);
-        data.completed.push(c);
-        data.completion.push(j > 0 ? Math.round((c / j) * 100) : 0);
-    }
-    
-    return data;
-}
 
         // Helper function to get 5 months compliance data
-async function get5MonthsCompliance(teamLeader = null) {
-    const snap = await getDocs(collection(performanceDb, "compliance"));
-    const allDocs = [];
-    snap.forEach(doc => allDocs.push(doc.data()));
-    
-    const months = [];
-    const d = new Date();
-    for (let i = 0; i < 5; i++) {
-        months.push(new Date(d.getFullYear(), d.getMonth() - i, 1));
-    }
-    months.reverse();
-    
-    const data = { months: [], wipPass: [], postPass: [], overall: [] };
-    
-    for (const month of months) {
-        const start = new Date(month.getFullYear(), month.getMonth(), 1);
-        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
-        
-        const wipJobs = new Map();
-        const postJobs = new Map();
-        
-        allDocs.forEach(d => {
-            // Filter by team leader if specified
-            if (teamLeader) {
-                const docTeamLeader = d.teamLeader || d['Team Leader'] || '';
-                // Combine Richard Wiecko2 and Richard Wiecko2 data
-                if (teamLeader === 'Richard Wiecko2') {
-                    if (docTeamLeader !== 'Richard Wiecko2' && docTeamLeader !== 'Richard Wiecko2') return;
-                } else if (docTeamLeader !== teamLeader) {
-                    return;
-                }
+        async function get5MonthsCompliance(teamLeader = null) {
+            const snap = await getDocs(collection(performanceDb, "compliance"));
+            const allDocs = [];
+            snap.forEach(doc => allDocs.push(doc.data()));
+            
+            const months = [];
+            const d = new Date();
+            for (let i = 0; i < 5; i++) {
+                months.push(new Date(d.getFullYear(), d.getMonth() - i, 1));
+            }
+            months.reverse();
+            
+            const data = { months: [], wipPass: [], postPass: [], overall: [] };
+            
+            for (const month of months) {
+                const start = new Date(month.getFullYear(), month.getMonth(), 1);
+                const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
+                
+                const wipJobs = new Map();
+                const postJobs = new Map();
+                
+                allDocs.forEach(d => {
+                    if (teamLeader) {
+                        const docTeamLeader = d.teamLeader || d['Team Leader'] || '';
+                        if (docTeamLeader !== teamLeader) return;
+                    }
+                    
+                    const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
+                    const submittedDate = parseDateSubmitted(dateSubmittedStr);
+                    if (!submittedDate || submittedDate < start || submittedDate > end) return;
+                    
+                    const ref = d.jobReference || d['Job Reference'] || '';
+                    if (!ref) return;
+                    
+                    const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
+                    const passed = outcome.includes('pass') || outcome === 'p';
+                    
+                    const type = (d.type || '').toLowerCase();
+                    if (type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
+                    if (type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
+                });
+                
+                const wt = wipJobs.size, wp = [...wipJobs.values()].filter(v => v).length;
+                const pt = postJobs.size, pp = [...postJobs.values()].filter(v => v).length;
+                const ot = wt + pt, op = wp + pp;
+                
+                data.months.push(formatMonth(month));
+                data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
+                data.postPass.push(pt > 0 ? Math.round((pp / pt) * 100) : 0);
+                data.overall.push(ot > 0 ? Math.round((op / ot) * 100) : 0);
             }
             
-            const dateSubmittedStr = d["Date Submitted"] || d.dateSubmitted || "";
-            const submittedDate = parseDateSubmitted(dateSubmittedStr);
-            if (!submittedDate || submittedDate < start || submittedDate > end) return;
-            
-            const ref = d.jobReference || d['Job Reference'] || '';
-            if (!ref) return;
-            
-            const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
-            const passed = outcome.includes('pass') || outcome === 'p';
-            
-            const type = (d.type || '').toLowerCase();
-            if (type === 'wip' && !wipJobs.has(ref)) {
-                wipJobs.set(ref, passed);
-            }
-            if (type === 'post_completion' && !postJobs.has(ref)) {
-                postJobs.set(ref, passed);
-            }
-        });
-        
-        const wt = wipJobs.size;
-        const wp = [...wipJobs.values()].filter(v => v).length;
-        const pt = postJobs.size;
-        const pp = [...postJobs.values()].filter(v => v).length;
-        const ot = wt + pt;
-        const op = wp + pp;
-        
-        data.months.push(formatMonth(month));
-        data.wipPass.push(wt > 0 ? Math.round((wp / wt) * 100) : 0);
-        data.postPass.push(pt > 0 ? Math.round((pp / pt) * 100) : 0);
-        data.overall.push(ot > 0 ? Math.round((op / ot) * 100) : 0);
-    }
-    
-    return data;
-}
+            return data;
+        }
 
         // Export to PowerPoint functionality
         window.exportToPowerPoint = async function() {
@@ -1500,15 +1500,12 @@ async function get5MonthsCompliance(teamLeader = null) {
                 
                 const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Stuart Whyte', 'FTL 4'];
                 
-                // Page 1: Overall Meters Chart
                 btn.textContent = '⏳ Creating Page 1...';
                 await createMetersSlide(pptx, null, 'Overall Performance - Last 5 Days');
                 
-                // Page 2: Overview slide
                 btn.textContent = '⏳ Creating Page 2...';
                 await createOverviewSlide(pptx);
                 
-                // Pages 3-9: Team leader slides
                 for (let i = 0; i < teamLeaders.length; i++) {
                     btn.textContent = `⏳ Creating Page ${i + 3}...`;
                     await createTeamLeaderSlide(pptx, teamLeaders[i]);
@@ -1537,20 +1534,16 @@ async function get5MonthsCompliance(teamLeader = null) {
             slide.background = { color: '1A1A2E' };
             const data = await getLast5DaysData(teamLeader);
             
-            // Title
             slide.addText(title, {
                 x: 0.5, y: 0.4, w: '90%', h: 0.7,
                 fontSize: 32, bold: true, color: '00D2FF', align: 'center'
             });
             
-            // Meters chart with better styling
-            const chartData = [{
+            slide.addChart(pptx.ChartType.bar, [{
                 name: 'Meters Installed',
                 labels: data.dates,
                 values: data.meters
-            }];
-            
-            slide.addChart(pptx.ChartType.bar, chartData, {
+            }], {
                 x: 1.5, y: 1.5, w: 7.0, h: 4.0,
                 chartColors: ['00D2FF'],
                 showTitle: false,
@@ -1573,15 +1566,13 @@ async function get5MonthsCompliance(teamLeader = null) {
             const slide = pptx.addSlide();
             slide.background = { color: '1A1A2E' };
             const metersData = await getLast5DaysData();
-            const complianceData = await get5MonthsCompliance();
+            const compData = await get5MonthsCompliance();
             
-            // Title
             slide.addText('Performance Overview - Last 5 Days', {
                 x: 0.5, y: 0.3, w: '90%', h: 0.6,
                 fontSize: 28, bold: true, color: '00D2FF', align: 'center'
             });
             
-            // Meters chart
             slide.addChart(pptx.ChartType.bar, [{
                 name: 'Meters',
                 labels: metersData.dates,
@@ -1589,23 +1580,13 @@ async function get5MonthsCompliance(teamLeader = null) {
             }], {
                 x: 0.5, y: 1.2, w: 4.5, h: 2.3,
                 chartColors: ['00D2FF'],
-                showTitle: true,
-                title: 'Meters Installed',
-                titleFontSize: 16,
-                titleColor: '00D2FF',
-                titleBold: true,
-                showLegend: false,
-                catAxisLabelFontSize: 11,
-                valAxisLabelFontSize: 11,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                showValue: true,
-                dataLabelFontSize: 10,
-                dataLabelColor: 'FFFFFF',
-                fill: '2D3748'
+                showTitle: true, title: 'Meters Installed', titleFontSize: 16,
+                titleColor: '00D2FF', titleBold: true, showLegend: false,
+                catAxisLabelFontSize: 11, valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                showValue: true, dataLabelFontSize: 10, dataLabelColor: 'FFFFFF', fill: '2D3748'
             });
             
-            // Completion % chart
             slide.addChart(pptx.ChartType.bar, [{
                 name: 'Completion %',
                 labels: metersData.dates,
@@ -1613,24 +1594,13 @@ async function get5MonthsCompliance(teamLeader = null) {
             }], {
                 x: 5.5, y: 1.2, w: 4.0, h: 2.3,
                 chartColors: ['10B981'],
-                showTitle: true,
-                title: 'Completion Rate %',
-                titleFontSize: 16,
-                titleColor: '10B981',
-                titleBold: true,
-                showLegend: false,
-                valAxisMaxVal: 100,
-                catAxisLabelFontSize: 11,
-                valAxisLabelFontSize: 11,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                showValue: true,
-                dataLabelFontSize: 10,
-                dataLabelColor: 'FFFFFF',
-                fill: '2D3748'
+                showTitle: true, title: 'Completion Rate %', titleFontSize: 16,
+                titleColor: '10B981', titleBold: true, showLegend: false,
+                valAxisMaxVal: 100, catAxisLabelFontSize: 11, valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                showValue: true, dataLabelFontSize: 10, dataLabelColor: 'FFFFFF', fill: '2D3748'
             });
             
-            // Attendance data
             const prevDay = getPreviousWorkingDay();
             const dateStr = formatDateForQuery(prevDay);
             const gsQ = query(collection(performanceDb, "garethstats"), where("date", "==", dateStr));
@@ -1644,64 +1614,25 @@ async function get5MonthsCompliance(teamLeader = null) {
                 aaup = d.aaupPercent || 0;
             });
             
-            slide.addText('Attendance (Yesterday)', {
-                x: 0.5, y: 3.7, w: 4.5, h: 0.4,
-                fontSize: 16, bold: true, color: '00D2FF'
-            });
+            slide.addText('Attendance (Yesterday)', { x: 0.5, y: 3.7, w: 4.5, h: 0.4, fontSize: 16, bold: true, color: '00D2FF' });
+            slide.addText(`At Work: ${aw.toFixed(1)}%`, { x: 0.5, y: 4.2, w: 2.0, h: 0.5, fontSize: 14, color: 'FFFFFF', bold: true });
+            slide.addText(`Holiday: ${hol.toFixed(1)}%`, { x: 2.7, y: 4.2, w: 2.0, h: 0.5, fontSize: 14, color: 'FFFFFF', bold: true });
+            slide.addText(`Sick: ${sick.toFixed(1)}%`, { x: 0.5, y: 4.8, w: 2.0, h: 0.5, fontSize: 14, color: 'FFFFFF', bold: true });
+            slide.addText(`AAUP: ${aaup.toFixed(1)}%`, { x: 2.7, y: 4.8, w: 2.0, h: 0.5, fontSize: 14, color: 'FFFFFF', bold: true });
             
-            slide.addText(`At Work: ${aw.toFixed(1)}%`, {
-                x: 0.5, y: 4.2, w: 2.0, h: 0.5,
-                fontSize: 14, color: 'FFFFFF', bold: true
-            });
-            slide.addText(`Holiday: ${hol.toFixed(1)}%`, {
-                x: 2.7, y: 4.2, w: 2.0, h: 0.5,
-                fontSize: 14, color: 'FFFFFF', bold: true
-            });
-            slide.addText(`Sick: ${sick.toFixed(1)}%`, {
-                x: 0.5, y: 4.8, w: 2.0, h: 0.5,
-                fontSize: 14, color: 'FFFFFF', bold: true
-            });
-            slide.addText(`AAUP: ${aaup.toFixed(1)}%`, {
-                x: 2.7, y: 4.8, w: 2.0, h: 0.5,
-                fontSize: 14, color: 'FFFFFF', bold: true
-            });
-            
-            // Compliance chart
             slide.addChart(pptx.ChartType.line, [
-                {
-                    name: 'WIP',
-                    labels: complianceData.months,
-                    values: complianceData.wipPass
-                },
-                {
-                    name: 'Post Comp',
-                    labels: complianceData.months,
-                    values: complianceData.postPass
-                },
-                {
-                    name: 'Overall',
-                    labels: complianceData.months,
-                    values: complianceData.overall
-                }
+                { name: 'WIP', labels: compData.months, values: compData.wipPass },
+                { name: 'Post Comp', labels: compData.months, values: compData.postPass },
+                { name: 'Overall', labels: compData.months, values: compData.overall }
             ], {
                 x: 5.5, y: 3.7, w: 4.0, h: 1.9,
                 chartColors: ['F59E0B', '3B82F6', 'A78BFA'],
-                showTitle: true,
-                title: 'Compliance - Last 5 Months',
-                titleFontSize: 16,
-                titleColor: 'A78BFA',
-                titleBold: true,
-                showLegend: true,
-                legendPos: 'b',
-                legendFontSize: 10,
-                legendColor: 'FFFFFF',
-                valAxisMaxVal: 100,
-                catAxisLabelFontSize: 10,
-                valAxisLabelFontSize: 10,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                fill: '2D3748',
-                lineSize: 3
+                showTitle: true, title: 'Compliance - Last 5 Months', titleFontSize: 16,
+                titleColor: 'A78BFA', titleBold: true,
+                showLegend: true, legendPos: 'b', legendFontSize: 10, legendColor: 'FFFFFF',
+                valAxisMaxVal: 100, catAxisLabelFontSize: 10, valAxisLabelFontSize: 10,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                fill: '2D3748', lineSize: 3
             });
         }
 
@@ -1709,99 +1640,50 @@ async function get5MonthsCompliance(teamLeader = null) {
             const slide = pptx.addSlide();
             slide.background = { color: '1A1A2E' };
             const metersData = await getLast5DaysData(teamLeader);
-            const complianceData = await get5MonthsCompliance(teamLeader);
+            const compData = await get5MonthsCompliance(teamLeader);
             
-            // Title
             slide.addText(`${teamLeader} - Performance Report`, {
                 x: 0.5, y: 0.3, w: '90%', h: 0.6,
                 fontSize: 28, bold: true, color: '00D2FF', align: 'center'
             });
             
-            // Meters chart
             slide.addChart(pptx.ChartType.bar, [{
-                name: 'Meters',
-                labels: metersData.dates,
-                values: metersData.meters
+                name: 'Meters', labels: metersData.dates, values: metersData.meters
             }], {
                 x: 0.5, y: 1.2, w: 4.5, h: 2.5,
                 chartColors: ['00D2FF'],
-                showTitle: true,
-                title: 'Meters Installed - Last 5 Days',
-                titleFontSize: 16,
-                titleColor: '00D2FF',
-                titleBold: true,
-                showLegend: false,
-                catAxisLabelFontSize: 12,
-                valAxisLabelFontSize: 12,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                showValue: true,
-                dataLabelFontSize: 11,
-                dataLabelColor: 'FFFFFF',
-                fill: '2D3748'
+                showTitle: true, title: 'Meters Installed - Last 5 Days', titleFontSize: 16,
+                titleColor: '00D2FF', titleBold: true, showLegend: false,
+                catAxisLabelFontSize: 12, valAxisLabelFontSize: 12,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', fill: '2D3748'
             });
             
-            // Completion % chart
             slide.addChart(pptx.ChartType.bar, [{
-                name: 'Completion %',
-                labels: metersData.dates,
-                values: metersData.completion
+                name: 'Completion %', labels: metersData.dates, values: metersData.completion
             }], {
                 x: 5.5, y: 1.2, w: 4.0, h: 2.5,
                 chartColors: ['10B981'],
-                showTitle: true,
-                title: 'Completion Rate % - Last 5 Days',
-                titleFontSize: 16,
-                titleColor: '10B981',
-                titleBold: true,
-                showLegend: false,
-                valAxisMaxVal: 100,
-                catAxisLabelFontSize: 12,
-                valAxisLabelFontSize: 12,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                showValue: true,
-                dataLabelFontSize: 11,
-                dataLabelColor: 'FFFFFF',
-                fill: '2D3748'
+                showTitle: true, title: 'Completion Rate % - Last 5 Days', titleFontSize: 16,
+                titleColor: '10B981', titleBold: true, showLegend: false,
+                valAxisMaxVal: 100, catAxisLabelFontSize: 12, valAxisLabelFontSize: 12,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', fill: '2D3748'
             });
             
-            // Compliance chart with all three lines
             slide.addChart(pptx.ChartType.line, [
-                {
-                    name: 'WIP',
-                    labels: complianceData.months,
-                    values: complianceData.wipPass
-                },
-                {
-                    name: 'Post Comp',
-                    labels: complianceData.months,
-                    values: complianceData.postPass
-                },
-                {
-                    name: 'Overall',
-                    labels: complianceData.months,
-                    values: complianceData.overall
-                }
+                { name: 'WIP', labels: compData.months, values: compData.wipPass },
+                { name: 'Post Comp', labels: compData.months, values: compData.postPass },
+                { name: 'Overall', labels: compData.months, values: compData.overall }
             ], {
                 x: 2.0, y: 4.0, w: 6.0, h: 2.0,
                 chartColors: ['F59E0B', '3B82F6', 'A78BFA'],
-                showTitle: true,
-                title: 'Compliance Pass Rate - Last 5 Months',
-                titleFontSize: 16,
-                titleColor: 'A78BFA',
-                titleBold: true,
-                showLegend: true,
-                legendPos: 'b',
-                legendFontSize: 11,
-                legendColor: 'FFFFFF',
-                valAxisMaxVal: 100,
-                catAxisLabelFontSize: 11,
-                valAxisLabelFontSize: 11,
-                catAxisLabelColor: 'FFFFFF',
-                valAxisLabelColor: 'FFFFFF',
-                fill: '2D3748',
-                lineSize: 3
+                showTitle: true, title: 'Compliance Pass Rate - Last 5 Months', titleFontSize: 16,
+                titleColor: 'A78BFA', titleBold: true,
+                showLegend: true, legendPos: 'b', legendFontSize: 11, legendColor: 'FFFFFF',
+                valAxisMaxVal: 100, catAxisLabelFontSize: 11, valAxisLabelFontSize: 11,
+                catAxisLabelColor: 'FFFFFF', valAxisLabelColor: 'FFFFFF',
+                fill: '2D3748', lineSize: 3
             });
         }
     </script>
