@@ -371,6 +371,38 @@
 
         td.meter-col.zero { color: var(--text-dim); }
 
+        td.meter-col.sick {
+            color: var(--warning);
+            font-style: italic;
+        }
+
+        td.meter-col.aaup {
+            color: var(--error);
+            font-style: italic;
+        }
+        td.meter-col.sick {
+            color: var(--warning);
+            font-size: 0.75em;
+            letter-spacing: 0.05em;
+        }
+        td.meter-col.aaup {
+            color: var(--accent2);
+            font-size: 0.75em;
+            letter-spacing: 0.05em;
+        }
+
+        td.meter-col.sick {
+            color: var(--warning);
+            font-size: 0.8em;
+            letter-spacing: 0.05em;
+        }
+
+        td.meter-col.aaup {
+            color: var(--accent2);
+            font-size: 0.8em;
+            letter-spacing: 0.05em;
+        }
+
         tr:hover td { background: rgba(124, 106, 247, 0.04); }
 
         /* SUBMIT */
@@ -713,10 +745,20 @@
                 if (meterCells.length !== selectedDates.length) {
                     warnings.push(`Row ${ri + 1} (${name}): expected ${selectedDates.length} meter value(s), got ${meterCells.length}.`);
                 }
-                const dates = selectedDates.map((d, i) => ({
-                    date: formatDate(d),
-                    meters: parseFloat((meterCells[i] || '0').replace(/,/g, '')) || 0
-                }));
+                const dates = selectedDates.map((d, i) => {
+                    const raw = (meterCells[i] || '').trim();
+                    const upper = raw.toUpperCase();
+                    let meters = 0;
+                    let status = null;
+                    if (upper === 'SICK') {
+                        status = 'SICK';
+                    } else if (upper === 'AAUP') {
+                        status = 'AAUP';
+                    } else {
+                        meters = parseFloat(raw.replace(/,/g, '')) || 0;
+                    }
+                    return { date: formatDate(d), meters, status };
+                });
                 parsedData.push({ engineerName: name, dates });
             });
 
@@ -773,12 +815,28 @@
                 tr.appendChild(td0);
 
                 let total = 0;
-                eng.dates.forEach(({ meters }) => {
+                eng.dates.forEach(({ meters, status }) => {
                     const td = document.createElement('td');
-                    td.className = 'meter-col' + (meters === 0 ? ' zero' : '');
-                    td.textContent = meters === 0 ? '—' : meters.toFixed(1);
+                    if (status === 'SICK') {
+                        td.className = 'meter-col';
+                        td.textContent = 'SICK';
+                        td.style.color = 'var(--warning)';
+                        td.style.fontSize = '0.78em';
+                        td.style.letterSpacing = '0.06em';
+                        td.style.fontStyle = 'italic';
+                    } else if (status === 'AAUP') {
+                        td.className = 'meter-col';
+                        td.textContent = 'AAUP';
+                        td.style.color = 'var(--accent2)';
+                        td.style.fontSize = '0.78em';
+                        td.style.letterSpacing = '0.06em';
+                        td.style.fontStyle = 'italic';
+                    } else {
+                        td.className = 'meter-col' + (meters === 0 ? ' zero' : '');
+                        td.textContent = meters === 0 ? '—' : meters.toFixed(1);
+                        total += meters;
+                    }
                     tr.appendChild(td);
-                    total += meters;
                 });
 
                 const tdTotal = document.createElement('td');
@@ -823,7 +881,7 @@
                         monthName: monthNames[month],
                         year: year,
                         submittedAt: serverTimestamp(),
-                        entries: eng.dates.map(({ date, meters }) => ({ date, meters })),
+                        entries: eng.dates.map(({ date, meters, status }) => ({ date, meters, ...(status ? { status } : {}) })),
                         totalMeters: eng.dates.reduce((s, e) => s + e.meters, 0)
                     };
                     promises.push(addDoc(collection(db, 'Quarterly Figures'), docData));
