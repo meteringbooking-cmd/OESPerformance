@@ -860,12 +860,14 @@
                     const [docYear, docMonth] = (d.month || '').split('-').map(Number);
                     if (docYear === year && monthData[docMonth] !== undefined) {
                         (d.entries || []).forEach(e => {
-                            // Skip entries with an absence status (SICK, AAUP, etc.)
-                            if (e.status) return;
+                            // Always count the day — SICK/AAUP entries have meters:0
+                            // which still contributes to the day tally (as 0 metres)
                             const m = parseFloat(e.meters) || 0;
-                            if (m > 0) {
-                                monthData[docMonth][e.date] = (monthData[docMonth][e.date] || 0) + m;
+                            // Use null-coalescing so a day already set to 0 isn't overwritten
+                            if (!(e.date in monthData[docMonth])) {
+                                monthData[docMonth][e.date] = 0;
                             }
+                            monthData[docMonth][e.date] += m;
                         });
                     }
                 });
@@ -961,7 +963,7 @@
                             ? `No Q1 ${year} data found for your account yet. Data is uploaded by your manager.`
                             : `Based on ${grandDays} working day${grandDays!==1?'s':''} with meter entries across Q1 ${year}.`
                         }<br>
-                        Sick days and AAUP absences are excluded from calculations.
+                        Sick days and AAUP absences count as working days with 0 metres.
                     </div>
                 `;
             } catch (err) {
