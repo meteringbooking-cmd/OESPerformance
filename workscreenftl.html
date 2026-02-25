@@ -406,17 +406,16 @@
         }
 
         // ── Abort reason parser ───────────────────────────────────
-        // Handles all combinations of the known abort reason list.
+        // Handles ANY number of comma-separated reasons from the known list.
         //
         // Examples:
-        //   "No Accessx2"                        → [{ reason: "No Access", qty: 2 }]
-        //   "No Access, DNO Issue"  (qty 2)       → [{ reason: "No Access", qty: 1 }, { reason: "DNO Issue", qty: 1 }]
-        //   "Tech Abort, H&S Issue" (qty 2)       → two rows, qty 1 each
-        //   "No Accessx2, DNO Issue" (qty 3)      → No Access×2, DNO Issue×1
-        //   "h&s issue"                           → canonicalised to "H&S Issue"
-        //   "work not required"                   → "Work Not Required"
+        //   "No Accessx2"                                   → [{ reason:"No Access", qty:2 }]
+        //   "No Access, DNO Issue"              (qty 2)     → one row each, qty 1
+        //   "No Access, DNO Issue, Stock Issue" (qty 3)     → one row each, qty 1
+        //   "No Accessx2, DNO Issue, Stock Issue" (qty 4)   → No Access×2, others×1 each
+        //   "h&s issue"                                     → canonicalised to "H&S Issue"
+        //   "work not required"                             → "Work Not Required"
 
-        // ── All known canonical abort reason names ────────────────
         const KNOWN_REASONS = [
             'Tech Abort', 'No Access', 'Refused Access', 'Higher Skill Set Required',
             'Work Not Required', 'DNO Issue', 'Stock Issue', 'Wrong Details',
@@ -424,14 +423,12 @@
         ];
         const KNOWN_REASONS_LOWER = KNOWN_REASONS.map(r => r.toLowerCase());
 
-        // Exact case-insensitive match against known reasons
         function matchKnownReason(fragment) {
             const f = fragment.trim().toLowerCase().replace(/\s+/g, ' ');
             const idx = KNOWN_REASONS_LOWER.indexOf(f);
             return idx !== -1 ? KNOWN_REASONS[idx] : null;
         }
 
-        // Title-case fallback for any unrecognised reason text
         function titleCase(str) {
             return str.trim().split(' ').map((w, i) => {
                 if (['&','and','or','of','the'].includes(w.toLowerCase()) && i > 0) return w.toLowerCase();
@@ -439,8 +436,8 @@
             }).join(' ');
         }
 
-        // Greedy tokeniser: tries combining 1–3 adjacent comma-parts into a known reason
-        // Uses EXACT matching so it won't greedily over-consume fragments
+        // Greedy tokeniser: tries combining up to 3 adjacent comma-fragments into a
+        // single known reason (handles multi-word names like "Higher Skill Set Required")
         function tokeniseReasons(rawParts) {
             const results = [];
             let i = 0;
@@ -460,9 +457,9 @@
             if (!rawReason || typeof rawReason !== 'string') return [{ reason: 'Unknown', qty: totalQty || 1 }];
             const trimmed = rawReason.trim();
 
-            // 1. Whole-string "xN" multiplier: "No Accessx2" or "No Access x2"
+            // 1. Whole-string xN multiplier with no comma: "No Accessx2", "No Access x2"
             const multMatch = trimmed.match(/^(.+?)\s*[xX]\s*(\d+)$/);
-            if (multMatch) {
+            if (multMatch && !multMatch[1].includes(',')) {
                 const base = multMatch[1].trim();
                 return [{ reason: matchKnownReason(base) || titleCase(base), qty: parseInt(multMatch[2], 10) }];
             }
@@ -472,20 +469,26 @@
                 return [{ reason: matchKnownReason(trimmed) || titleCase(trimmed), qty: totalQty || 1 }];
             }
 
-            // 3. Has commas — split, detect per-fragment xN multipliers, then tokenise remainder
+            // 3. One or more commas — split ALL, detect per-fragment xN, tokenise remainder
             const rawParts = trimmed.split(/\s*,\s*/);
-            const fixedItems = []; // parts that already have an explicit xN qty
-            const plainParts = []; // parts without xN
+            const fixedItems = []; // { reason, qty } — fragments with explicit xN
+            const plainParts = []; // fragments without xN
 
             for (const part of rawParts) {
                 const pm = part.match(/^(.+?)\s*[xX]\s*(\d+)$/);
-                if (pm) fixedItems.push({ reason: matchKnownReason(pm[1].trim()) || titleCase(pm[1].trim()), qty: parseInt(pm[2], 10) });
-                else plainParts.push(part);
+                if (pm) {
+                    fixedItems.push({
+                        reason: matchKnownReason(pm[1].trim()) || titleCase(pm[1].trim()),
+                        qty: parseInt(pm[2], 10)
+                    });
+                } else {
+                    plainParts.push(part);
+                }
             }
 
             const tokenised = tokeniseReasons(plainParts);
 
-            // Distribute remaining qty evenly across plain tokens
+            // Distribute remaining qty evenly across plain tokens (remainder into first)
             const fixedQty  = fixedItems.reduce((s, p) => s + p.qty, 0);
             const remaining = Math.max(tokenised.length, (totalQty || 1) - fixedQty);
             const count     = tokenised.length;
@@ -493,7 +496,9 @@
             const firstQty  = count > 0 ? remaining - perPart * (count - 1) : 0;
 
             const output = [...fixedItems];
-            tokenised.forEach((reason, idx) => output.push({ reason, qty: Math.max(1, idx === 0 ? firstQty : perPart) }));
+            tokenised.forEach((reason, idx) => {
+                output.push({ reason, qty: Math.max(1, idx === 0 ? firstQty : perPart) });
+            });
             return output;
         }
 
@@ -512,20 +517,30 @@
 
                 abortsSnap.forEach(doc => {
                     const data = doc.data();
-                    const teamLeader  = data.teamLeader || 'Unknown Team';
+                    const teamLeader   = data.teamLeader || 'Unknown Team';
                     const engineerName = data.engineer || '';
                     if (!engineerName) return;
 
-                    const rawQty = data.total || 1;
-                    const parsed = parseAbortReasons(data.reason || '', rawQty);
-                    const docTotal = parsed.reduce((s, r) => s + r.qty, 0);
+                    const rawQty    = data.total || 1;
+                    const rawReason = data.reason || '';
+                    const parsed    = parseAbortReasons(rawReason, rawQty);
+                    const docTotal  = parsed.reduce((s, r) => s + r.qty, 0);
 
                     if (!teamData[teamLeader]) teamData[teamLeader] = { total: 0, engineers: [] };
                     teamData[teamLeader].total += docTotal;
                     grandTotal += docTotal;
 
-                    parsed.forEach(({ reason, qty }) => {
-                        teamData[teamLeader].engineers.push({ name: engineerName, aborts: qty, reason });
+                    // One row per parsed reason — engineer name repeats on each row.
+                    // Continuation rows (2nd reason onwards) are visually indented so it's
+                    // clear they belong to the same engineer entry.
+                    const isMulti = parsed.length > 1;
+                    parsed.forEach(({ reason, qty }, idx) => {
+                        teamData[teamLeader].engineers.push({
+                            name: engineerName,
+                            aborts: qty,
+                            reason,
+                            isContinuation: isMulti && idx > 0,
+                        });
                     });
                 });
 
@@ -550,8 +565,10 @@
                                     <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
                                 </tr></thead>
                                 <tbody>${data.engineers.map(eng => `
-                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                        <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
+                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);${eng.isContinuation ? 'background:rgba(0,0,0,0.15);' : ''}">
+                                        <td style="padding:${eng.isContinuation ? '6px 12px 6px 28px' : '12px'};color:${eng.isContinuation ? 'rgba(225,232,237,0.45)' : '#e1e8ed'};font-weight:600;font-size:${eng.isContinuation ? '0.88em' : '1em'};">
+                                            ${eng.isContinuation ? '↳' : ''} ${eng.name}
+                                        </td>
                                         <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
                                         <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
                                     </tr>`).join('')}
