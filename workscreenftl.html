@@ -406,68 +406,94 @@
         }
 
         // ── Abort reason parser ───────────────────────────────────
-        // Handles:
-        //   "No Accessx2"          → { reason: "No Access", qty: 2 }
-        //   "No Access x 2"        → { reason: "No Access", qty: 2 }
-        //   "No Access, DNO Issue" → kept as a single combined reason (known compound)
-        //   "No Access, Wrong Meter" → two separate reasons, qty split from total
+        // Handles all combinations of the known abort reason list.
+        //
+        // Examples:
+        //   "No Accessx2"                        → [{ reason: "No Access", qty: 2 }]
+        //   "No Access, DNO Issue"  (qty 2)       → [{ reason: "No Access", qty: 1 }, { reason: "DNO Issue", qty: 1 }]
+        //   "Tech Abort, H&S Issue" (qty 2)       → two rows, qty 1 each
+        //   "No Accessx2, DNO Issue" (qty 3)      → No Access×2, DNO Issue×1
+        //   "h&s issue"                           → canonicalised to "H&S Issue"
+        //   "work not required"                   → "Work Not Required"
 
-        const COMPOUND_REASONS = ['no access, dno issue', 'no access, dno'];
+        // ── All known canonical abort reason names ────────────────
+        const KNOWN_REASONS = [
+            'Tech Abort', 'No Access', 'Refused Access', 'Higher Skill Set Required',
+            'Work Not Required', 'DNO Issue', 'Stock Issue', 'Wrong Details',
+            'H&S Issue', 'No Abort Code', 'Customer Cancellation', 'Left Open',
+        ];
+        const KNOWN_REASONS_LOWER = KNOWN_REASONS.map(r => r.toLowerCase());
 
-        function normaliseReason(str) {
-            if (!str) return 'Unknown';
-            return str.trim().split(' ').map(w => {
-                if (['DNO','AAUP','GAS','ID'].includes(w.toUpperCase())) return w.toUpperCase();
+        // Exact case-insensitive match against known reasons
+        function matchKnownReason(fragment) {
+            const f = fragment.trim().toLowerCase().replace(/\s+/g, ' ');
+            const idx = KNOWN_REASONS_LOWER.indexOf(f);
+            return idx !== -1 ? KNOWN_REASONS[idx] : null;
+        }
+
+        // Title-case fallback for any unrecognised reason text
+        function titleCase(str) {
+            return str.trim().split(' ').map((w, i) => {
+                if (['&','and','or','of','the'].includes(w.toLowerCase()) && i > 0) return w.toLowerCase();
                 return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
             }).join(' ');
+        }
+
+        // Greedy tokeniser: tries combining 1–3 adjacent comma-parts into a known reason
+        // Uses EXACT matching so it won't greedily over-consume fragments
+        function tokeniseReasons(rawParts) {
+            const results = [];
+            let i = 0;
+            while (i < rawParts.length) {
+                let matched = false;
+                for (let w = Math.min(rawParts.length - i, 3); w >= 1; w--) {
+                    const candidate = rawParts.slice(i, i + w).join(', ');
+                    const canon = matchKnownReason(candidate);
+                    if (canon) { results.push(canon); i += w; matched = true; break; }
+                }
+                if (!matched) { results.push(titleCase(rawParts[i])); i++; }
+            }
+            return results;
         }
 
         function parseAbortReasons(rawReason, totalQty) {
             if (!rawReason || typeof rawReason !== 'string') return [{ reason: 'Unknown', qty: totalQty || 1 }];
             const trimmed = rawReason.trim();
 
-            // 1. Whole-string "xN" multiplier: e.g. "No Accessx2" or "No Access x2"
+            // 1. Whole-string "xN" multiplier: "No Accessx2" or "No Access x2"
             const multMatch = trimmed.match(/^(.+?)\s*[xX]\s*(\d+)$/);
-            if (multMatch) return [{ reason: normaliseReason(multMatch[1].trim()), qty: parseInt(multMatch[2], 10) }];
+            if (multMatch) {
+                const base = multMatch[1].trim();
+                return [{ reason: matchKnownReason(base) || titleCase(base), qty: parseInt(multMatch[2], 10) }];
+            }
 
-            // 2. Known compound phrase (contains comma but must NOT be split)
-            if (COMPOUND_REASONS.includes(trimmed.toLowerCase())) return [{ reason: normaliseReason(trimmed), qty: totalQty || 1 }];
+            // 2. No comma — single reason
+            if (!trimmed.includes(',')) {
+                return [{ reason: matchKnownReason(trimmed) || titleCase(trimmed), qty: totalQty || 1 }];
+            }
 
-            // 3. No comma — single reason
-            if (!trimmed.includes(',')) return [{ reason: normaliseReason(trimmed), qty: totalQty || 1 }];
-
-            // 4. Comma-split — protect compound phrases across adjacent fragments
+            // 3. Has commas — split, detect per-fragment xN multipliers, then tokenise remainder
             const rawParts = trimmed.split(/\s*,\s*/);
-            const resolved = []; // array of string | {reason, qty}
-            let i = 0;
-            while (i < rawParts.length) {
-                // Try to merge with next part into a known compound
-                if (i + 1 < rawParts.length) {
-                    const compound = (rawParts[i] + ', ' + rawParts[i+1]).toLowerCase();
-                    if (COMPOUND_REASONS.includes(compound)) {
-                        resolved.push(normaliseReason(rawParts[i] + ', ' + rawParts[i+1]));
-                        i += 2; continue;
-                    }
-                }
-                // Check individual part for its own xN multiplier
-                const pm = rawParts[i].match(/^(.+?)\s*[xX]\s*(\d+)$/);
-                if (pm) { resolved.push({ reason: normaliseReason(pm[1].trim()), qty: parseInt(pm[2], 10) }); i++; continue; }
-                resolved.push(normaliseReason(rawParts[i]));
-                i++;
+            const fixedItems = []; // parts that already have an explicit xN qty
+            const plainParts = []; // parts without xN
+
+            for (const part of rawParts) {
+                const pm = part.match(/^(.+?)\s*[xX]\s*(\d+)$/);
+                if (pm) fixedItems.push({ reason: matchKnownReason(pm[1].trim()) || titleCase(pm[1].trim()), qty: parseInt(pm[2], 10) });
+                else plainParts.push(part);
             }
 
-            // Distribute totalQty among plain-string parts
-            const plainParts = resolved.filter(r => typeof r === 'string');
-            const fixedQty   = resolved.filter(r => typeof r === 'object').reduce((s, r) => s + r.qty, 0);
-            const remaining  = Math.max(0, (totalQty || 1) - fixedQty);
-            const perPart    = plainParts.length > 0 ? Math.max(1, Math.floor(remaining / plainParts.length)) : 0;
-            const remainder  = plainParts.length > 0 ? remaining - perPart * (plainParts.length - 1) : 0;
+            const tokenised = tokeniseReasons(plainParts);
 
-            const output = []; let plainIdx = 0;
-            for (const item of resolved) {
-                if (typeof item === 'object') { output.push(item); }
-                else { output.push({ reason: item, qty: plainIdx === 0 ? Math.max(1, remainder) : Math.max(1, perPart) }); plainIdx++; }
-            }
+            // Distribute remaining qty evenly across plain tokens
+            const fixedQty  = fixedItems.reduce((s, p) => s + p.qty, 0);
+            const remaining = Math.max(tokenised.length, (totalQty || 1) - fixedQty);
+            const count     = tokenised.length;
+            const perPart   = count > 0 ? Math.floor(remaining / count) : 0;
+            const firstQty  = count > 0 ? remaining - perPart * (count - 1) : 0;
+
+            const output = [...fixedItems];
+            tokenised.forEach((reason, idx) => output.push({ reason, qty: Math.max(1, idx === 0 ? firstQty : perPart) }));
             return output;
         }
 
