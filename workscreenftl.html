@@ -839,105 +839,297 @@
         setInterval(loadDashboard, 300000);
 
         // ── PowerPoint helpers ────────────────────────────────────
-        async function getLast5DaysData(teamLeader = null) {
+
+
+        // ── Shared chart style helpers ────────────────────────────
+        const C = {
+            BG:      '1A1A2E',
+            PANEL:   '0D1B2A',
+            CYAN:    '00D2FF',
+            GREEN:   '10B981',
+            AMBER:   'F59E0B',
+            RED:     'EF4444',
+            PURPLE:  'A78BFA',
+            BLUE:    '3B82F6',
+            WHITE:   'FFFFFF',
+            DGREY:   '2D3748',
+            LGREY:   'A8DADC',
+        };
+
+        // Shared bar chart options
+        function barOpts(color, maxVal, extra = {}) {
+            return {
+                chartColors: [color],
+                showLegend: false,
+                showTitle: false,
+                catAxisLabelFontSize: 11, valAxisLabelFontSize: 10,
+                catAxisLabelColor: C.WHITE, valAxisLabelColor: C.LGREY,
+                catAxisLineShow: false,
+                valAxisMajorGridLineColor: '1E2D3D',
+                showValue: true, dataLabelFontSize: 11, dataLabelColor: C.WHITE,
+                fill: C.DGREY,
+                valAxisMaxVal: maxVal || undefined,
+                ...extra,
+            };
+        }
+
+        // Add a titled panel box behind a chart area
+        function addPanelTitle(slide, title, color, x, y, w) {
+            slide.addText(title, {
+                x, y, w, h: 0.38,
+                fontSize: 12, bold: true, color,
+                align: 'left',
+                fontFace: 'Calibri',
+            });
+        }
+
+        // Thin coloured accent line under a title
+        function addAccentLine(slide, color, x, y, w) {
+            slide.addShape('rect', { x, y, w, h: 0.03, fill: { color }, line: { color } });
+        }
+
+        // ── Data helpers ──────────────────────────────────────────
+
+        // Returns { dates, meters, completion, aborts } for last 5 working days
+        async function getLast5DaysAllData(teamLeader = null) {
             const dates = getPreviousWorkingDays(5).reverse();
-            const data = { dates: [], meters: [], completion: [], jobs: [], completed: [] };
+            const result = { dates: [], meters: [], completion: [], aborts: [] };
+
             for (const date of dates) {
                 const ds = formatDateForQuery(date);
+                result.dates.push(formatDate(date));
+
+                // Performance (meters + completion)
                 const perfQ = teamLeader
                     ? query(collection(performanceDb, "performance"), where("date","==",ds), where("teamLeader","==",teamLeader))
                     : query(collection(performanceDb, "performance"), where("date","==",ds));
                 const perfSnap = await getDocs(perfQ);
                 let m=0, j=0, c=0;
                 perfSnap.forEach(doc => { const d=doc.data(); m+=d.meters||0; j+=d.jobs||0; c+=d.completed||0; });
-                data.dates.push(formatDate(date)); data.meters.push(m); data.jobs.push(j); data.completed.push(c);
-                data.completion.push(j>0 ? Math.round((c/j)*100) : 0);
-            }
-            return data;
-        }
+                result.meters.push(m);
+                result.completion.push(j > 0 ? Math.round((c/j)*100) : 0);
 
-        async function get5MonthsCompliance(teamLeader = null) {
-            const snap = await getDocs(collection(performanceDb, "compliance"));
-            const allDocs = []; snap.forEach(doc => allDocs.push(doc.data()));
-            const months = []; const d = new Date();
-            for (let i=0; i<5; i++) months.push(new Date(d.getFullYear(), d.getMonth()-i, 1));
-            months.reverse();
-            const data = { months: [], wipPass: [], postPass: [], overall: [] };
-            for (const month of months) {
-                const start = new Date(month.getFullYear(), month.getMonth(), 1);
-                const end   = new Date(month.getFullYear(), month.getMonth()+1, 0, 23, 59, 59, 999);
-                const wipJobs = new Map(), postJobs = new Map();
-                allDocs.forEach(d => {
-                    if (teamLeader && (d.teamLeader || d['Team Leader'] || '') !== teamLeader) return;
-                    const submitted = parseDateSubmitted(d["Date Submitted"] || d.dateSubmitted || "");
-                    if (!submitted || submitted < start || submitted > end) return;
-                    const ref = d.jobReference || d['Job Reference'] || ''; if (!ref) return;
-                    const outcome = (d.auditOutcome || d['Audit Outcome'] || '').toLowerCase();
-                    const passed = outcome.includes('pass') || outcome === 'p';
-                    const type = (d.type || '').toLowerCase();
-                    if (type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
-                    if (type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
+                // Aborts
+                const abortQ = teamLeader
+                    ? query(collection(performanceDb, "aborts"), where("date","==",ds), where("teamLeader","==",teamLeader))
+                    : query(collection(performanceDb, "aborts"), where("date","==",ds));
+                const abortSnap = await getDocs(abortQ);
+                let abortTotal = 0;
+                abortSnap.forEach(doc => {
+                    const d = doc.data();
+                    if (!d.engineer || d.engineer === '') return;
+                    // Use parseAbortReasons to get correct expanded total
+                    const parsed = parseAbortReasons(d.reason || '', d.total || 1);
+                    abortTotal += parsed.reduce((s, r) => s + r.qty, 0);
                 });
-                const wt=wipJobs.size, wp=[...wipJobs.values()].filter(v=>v).length;
-                const pt=postJobs.size, pp=[...postJobs.values()].filter(v=>v).length;
-                const ot=wt+pt, op=wp+pp;
-                data.months.push(formatMonth(month));
-                data.wipPass.push(wt>0 ? Math.round((wp/wt)*100) : 0);
-                data.postPass.push(pt>0 ? Math.round((pp/pt)*100) : 0);
-                data.overall.push(ot>0 ? Math.round((op/ot)*100) : 0);
+                result.aborts.push(abortTotal);
             }
-            return data;
+            return result;
         }
 
+        // Returns { dates, atWork } attendance % for last 5 working days
+        async function getLast5DaysAttendance() {
+            const dates = getPreviousWorkingDays(5).reverse();
+            const result = { dates: [], atWork: [], holiday: [], sick: [], aaup: [] };
+            for (const date of dates) {
+                const ds = formatDateForQuery(date);
+                result.dates.push(formatDate(date));
+                const gsSnap = await getDocs(query(collection(performanceDb, "garethstats"), where("date","==",ds)));
+                let aw=0, hol=0, sick=0, aaup=0;
+                gsSnap.forEach(doc => { const d=doc.data(); aw=d.atWorkPercent||0; hol=d.holidayPercent||0; sick=d.sickPercent||0; aaup=d.aaupPercent||0; });
+                result.atWork.push(Math.round(aw));
+                result.holiday.push(Math.round(hol));
+                result.sick.push(Math.round(sick));
+                result.aaup.push(Math.round(aaup));
+            }
+            return result;
+        }
+
+        // ── Export orchestrator ───────────────────────────────────
         window.exportToPowerPoint = async function() {
             const btn = document.getElementById('exportPptxBtn');
             btn.disabled = true; btn.textContent = '⏳ Fetching data...';
             try {
                 const pptx = new PptxGenJS();
-                pptx.layout = 'LAYOUT_16x9'; pptx.author = 'OES Performance System'; pptx.company = 'NGU'; pptx.title = 'Weekly Performance Report';
-                const teamLeaders = ['Richard Wiecko','Scott Carson','Scott Carson - Scot','Stuart Whyte','FTL 4'];
-                btn.textContent = '⏳ Creating Page 1...'; await createMetersSlide(pptx, null, 'Overall Performance - Last 5 Days');
-                btn.textContent = '⏳ Creating Page 2...'; await createOverviewSlide(pptx);
-                for (let i=0; i<teamLeaders.length; i++) { btn.textContent = `⏳ Creating Page ${i+3}...`; await createTeamLeaderSlide(pptx, teamLeaders[i]); }
-                btn.textContent = '⏳ Saving file...';
-                await pptx.writeFile({ fileName: `OES_Performance_Report_${new Date().toISOString().split('T')[0]}.pptx` });
-                btn.textContent = '✅ Complete!';
-                setTimeout(() => { btn.textContent = '📊 Export PowerPoint'; btn.disabled = false; }, 2000);
-            } catch (err) { console.error('Export error:', err); alert('Error generating PowerPoint: ' + err.message); btn.textContent = '📊 Export PowerPoint'; btn.disabled = false; }
+                pptx.layout = 'LAYOUT_16x9';
+                pptx.author = 'OES Performance System';
+                pptx.company = 'NGU';
+                pptx.title = 'OES Weekly Performance Report';
+
+                const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
+
+                btn.textContent = '⏳ Overall slide...';
+                await createOverallSlide(pptx);
+
+                for (let i = 0; i < teamLeaders.length; i++) {
+                    btn.textContent = `⏳ ${teamLeaders[i]}...`;
+                    await createTeamSlide(pptx, teamLeaders[i]);
+                }
+
+                btn.textContent = '⏳ Saving...';
+                await pptx.writeFile({ fileName: `OES_Performance_${new Date().toISOString().split('T')[0]}.pptx` });
+                btn.textContent = '✅ Done!';
+                setTimeout(() => { btn.textContent = '📊 Export PowerPoint'; btn.disabled = false; }, 2500);
+            } catch (err) {
+                console.error('Export error:', err);
+                alert('Error generating PowerPoint: ' + err.message);
+                btn.textContent = '📊 Export PowerPoint';
+                btn.disabled = false;
+            }
         };
 
-        async function createMetersSlide(pptx, teamLeader, title) {
-            const slide = pptx.addSlide(); slide.background = { color: '1A1A2E' };
-            const data = await getLast5DaysData(teamLeader);
-            slide.addText(title, { x:0.5, y:0.4, w:'90%', h:0.7, fontSize:32, bold:true, color:'00D2FF', align:'center' });
-            slide.addChart(pptx.ChartType.bar, [{ name:'Meters Installed', labels:data.dates, values:data.meters }], { x:1.5,y:1.5,w:7.0,h:4.0, chartColors:['00D2FF'], showTitle:false, showLegend:false, valAxisMaxVal:Math.max(...data.meters)*1.15, catAxisLabelFontSize:14, valAxisLabelFontSize:14, catAxisLabelColor:'FFFFFF', valAxisLabelColor:'FFFFFF', showValue:true, dataLabelFontSize:12, dataLabelColor:'FFFFFF', dataLabelPosition:'outEnd', fill:'2D3748', border:{pt:1,color:'00D2FF'} });
+        // ── Overall slide: 2×2 grid ───────────────────────────────
+        // Top-left: Meters   Top-right: Completion %
+        // Bot-left: Aborts   Bot-right: Attendance (stacked)
+        async function createOverallSlide(pptx) {
+            const slide = pptx.addSlide();
+            slide.background = { color: C.BG };
+
+            // Fetch all data in parallel
+            const [perf, att] = await Promise.all([
+                getLast5DaysAllData(),
+                getLast5DaysAttendance(),
+            ]);
+
+            const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+
+            // ── Header ──────────────────────────────────────────
+            slide.addText('OES Overall Performance', {
+                x: 0.3, y: 0.08, w: 7.5, h: 0.5,
+                fontSize: 22, bold: true, color: C.CYAN, fontFace: 'Calibri',
+            });
+            slide.addText(`Last 5 Working Days  ·  Generated ${today}`, {
+                x: 0.3, y: 0.52, w: 7.5, h: 0.28,
+                fontSize: 10, color: C.LGREY, fontFace: 'Calibri',
+            });
+            // NGU label top-right
+            slide.addText('NGU', {
+                x: 8.5, y: 0.08, w: 1.2, h: 0.4,
+                fontSize: 18, bold: true, color: C.CYAN, align: 'right', fontFace: 'Calibri',
+            });
+            // Header divider
+            slide.addShape('rect', { x: 0.3, y: 0.82, w: 9.4, h: 0.03, fill: { color: C.CYAN }, line: { color: C.CYAN } });
+
+            // ── Grid layout constants ───────────────────────────
+            const col1x = 0.3, col2x = 5.1;
+            const row1y = 1.0, row2y = 4.0;
+            const cw = 4.55, ch = 2.65;
+
+            // Helper: add chart cell with title + accent line + chart
+            function addCell(titleText, titleColor, chartFn, cx, cy) {
+                addPanelTitle(slide, titleText, titleColor, cx, cy, cw);
+                addAccentLine(slide, titleColor, cx, cy + 0.38, cw);
+                chartFn(cx, cy + 0.45, cw, ch - 0.45);
+            }
+
+            // ── TOP LEFT: Meters Installed ──────────────────────
+            addCell('Meters Installed', C.CYAN, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Meters', labels: perf.dates, values: perf.meters }],
+                    { x, y, w, h, ...barOpts(C.CYAN, Math.max(...perf.meters) * 1.2) }
+                );
+            }, col1x, row1y);
+
+            // ── TOP RIGHT: Completion Rate ──────────────────────
+            addCell('Completion Rate %', C.GREEN, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Completion %', labels: perf.dates, values: perf.completion }],
+                    { x, y, w, h, ...barOpts(C.GREEN, 100) }
+                );
+            }, col2x, row1y);
+
+            // ── BOTTOM LEFT: Aborts ─────────────────────────────
+            addCell('Aborts', C.RED, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Aborts', labels: perf.dates, values: perf.aborts }],
+                    { x, y, w, h, ...barOpts(C.RED, Math.max(...perf.aborts, 1) * 1.3) }
+                );
+            }, col1x, row2y);
+
+            // ── BOTTOM RIGHT: Attendance (stacked bar) ──────────
+            addCell('Attendance %', C.AMBER, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.barStacked,
+                    [
+                        { name: 'At Work',  labels: att.dates, values: att.atWork  },
+                        { name: 'Holiday',  labels: att.dates, values: att.holiday  },
+                        { name: 'Sick',     labels: att.dates, values: att.sick     },
+                        { name: 'AAUP',     labels: att.dates, values: att.aaup     },
+                    ],
+                    {
+                        x, y, w, h,
+                        chartColors: [C.GREEN, C.CYAN, C.RED, C.AMBER],
+                        showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: C.WHITE,
+                        showTitle: false,
+                        catAxisLabelFontSize: 11, valAxisLabelFontSize: 10,
+                        catAxisLabelColor: C.WHITE, valAxisLabelColor: C.LGREY,
+                        valAxisMaxVal: 100,
+                        fill: C.DGREY,
+                        showValue: false,
+                        dataLabelColor: C.WHITE,
+                    }
+                );
+            }, col2x, row2y);
         }
 
-        async function createOverviewSlide(pptx) {
-            const slide = pptx.addSlide(); slide.background = { color: '1A1A2E' };
-            const metersData = await getLast5DaysData(), compData = await get5MonthsCompliance();
-            slide.addText('Performance Overview - Last 5 Days', { x:0.5,y:0.3,w:'90%',h:0.6, fontSize:28,bold:true,color:'00D2FF',align:'center' });
-            slide.addChart(pptx.ChartType.bar, [{ name:'Meters', labels:metersData.dates, values:metersData.meters }], { x:0.5,y:1.2,w:4.5,h:2.3, chartColors:['00D2FF'], showTitle:true,title:'Meters Installed',titleFontSize:16,titleColor:'00D2FF',titleBold:true,showLegend:false, catAxisLabelFontSize:11,valAxisLabelFontSize:11,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', showValue:true,dataLabelFontSize:10,dataLabelColor:'FFFFFF',fill:'2D3748' });
-            slide.addChart(pptx.ChartType.bar, [{ name:'Completion %', labels:metersData.dates, values:metersData.completion }], { x:5.5,y:1.2,w:4.0,h:2.3, chartColors:['10B981'], showTitle:true,title:'Completion Rate %',titleFontSize:16,titleColor:'10B981',titleBold:true,showLegend:false, valAxisMaxVal:100,catAxisLabelFontSize:11,valAxisLabelFontSize:11,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', showValue:true,dataLabelFontSize:10,dataLabelColor:'FFFFFF',fill:'2D3748' });
-            const prevDay = getPreviousWorkingDay(), dateStr = formatDateForQuery(prevDay);
-            const gsSnap = await getDocs(query(collection(performanceDb, "garethstats"), where("date","==",dateStr)));
-            let aw=0,hol=0,sick=0,aaup=0;
-            gsSnap.forEach(doc => { const d=doc.data(); aw=d.atWorkPercent||0; hol=d.holidayPercent||0; sick=d.sickPercent||0; aaup=d.aaupPercent||0; });
-            slide.addText('Attendance (Yesterday)',{x:0.5,y:3.7,w:4.5,h:0.4,fontSize:16,bold:true,color:'00D2FF'});
-            slide.addText(`At Work: ${aw.toFixed(1)}%`,{x:0.5,y:4.2,w:2.0,h:0.5,fontSize:14,color:'FFFFFF',bold:true});
-            slide.addText(`Holiday: ${hol.toFixed(1)}%`,{x:2.7,y:4.2,w:2.0,h:0.5,fontSize:14,color:'FFFFFF',bold:true});
-            slide.addText(`Sick: ${sick.toFixed(1)}%`,{x:0.5,y:4.8,w:2.0,h:0.5,fontSize:14,color:'FFFFFF',bold:true});
-            slide.addText(`AAUP: ${aaup.toFixed(1)}%`,{x:2.7,y:4.8,w:2.0,h:0.5,fontSize:14,color:'FFFFFF',bold:true});
-            slide.addChart(pptx.ChartType.line, [{name:'WIP',labels:compData.months,values:compData.wipPass},{name:'Post Comp',labels:compData.months,values:compData.postPass},{name:'Overall',labels:compData.months,values:compData.overall}], { x:5.5,y:3.7,w:4.0,h:1.9, chartColors:['F59E0B','3B82F6','A78BFA'], showTitle:true,title:'Compliance - Last 5 Months',titleFontSize:16,titleColor:'A78BFA',titleBold:true, showLegend:true,legendPos:'b',legendFontSize:10,legendColor:'FFFFFF', valAxisMaxVal:100,catAxisLabelFontSize:10,valAxisLabelFontSize:10,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', fill:'2D3748',lineSize:3 });
-        }
+        // ── Team slide: 3-column row ──────────────────────────────
+        // Left: Meters   Centre: Completion %   Right: Aborts
+        async function createTeamSlide(pptx, teamLeader) {
+            const slide = pptx.addSlide();
+            slide.background = { color: C.BG };
 
-        async function createTeamLeaderSlide(pptx, teamLeader) {
-            const slide = pptx.addSlide(); slide.background = { color: '1A1A2E' };
-            const metersData = await getLast5DaysData(teamLeader), compData = await get5MonthsCompliance(teamLeader);
-            slide.addText(`${teamLeader} - Performance Report`, { x:0.5,y:0.3,w:'90%',h:0.6, fontSize:28,bold:true,color:'00D2FF',align:'center' });
-            slide.addChart(pptx.ChartType.bar, [{name:'Meters',labels:metersData.dates,values:metersData.meters}], { x:0.5,y:1.2,w:4.5,h:2.5, chartColors:['00D2FF'], showTitle:true,title:'Meters Installed - Last 5 Days',titleFontSize:16,titleColor:'00D2FF',titleBold:true,showLegend:false, catAxisLabelFontSize:12,valAxisLabelFontSize:12,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',fill:'2D3748' });
-            slide.addChart(pptx.ChartType.bar, [{name:'Completion %',labels:metersData.dates,values:metersData.completion}], { x:5.5,y:1.2,w:4.0,h:2.5, chartColors:['10B981'], showTitle:true,title:'Completion Rate % - Last 5 Days',titleFontSize:16,titleColor:'10B981',titleBold:true,showLegend:false, valAxisMaxVal:100,catAxisLabelFontSize:12,valAxisLabelFontSize:12,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',fill:'2D3748' });
-            slide.addChart(pptx.ChartType.line, [{name:'WIP',labels:compData.months,values:compData.wipPass},{name:'Post Comp',labels:compData.months,values:compData.postPass},{name:'Overall',labels:compData.months,values:compData.overall}], { x:2.0,y:4.0,w:6.0,h:2.0, chartColors:['F59E0B','3B82F6','A78BFA'], showTitle:true,title:'Compliance Pass Rate - Last 5 Months',titleFontSize:16,titleColor:'A78BFA',titleBold:true, showLegend:true,legendPos:'b',legendFontSize:11,legendColor:'FFFFFF', valAxisMaxVal:100,catAxisLabelFontSize:11,valAxisLabelFontSize:11,catAxisLabelColor:'FFFFFF',valAxisLabelColor:'FFFFFF', fill:'2D3748',lineSize:3 });
+            const perf = await getLast5DaysAllData(teamLeader);
+
+            const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+
+            // ── Header ──────────────────────────────────────────
+            slide.addText(teamLeader, {
+                x: 0.3, y: 0.08, w: 7.5, h: 0.5,
+                fontSize: 22, bold: true, color: C.CYAN, fontFace: 'Calibri',
+            });
+            slide.addText(`Last 5 Working Days  ·  Generated ${today}`, {
+                x: 0.3, y: 0.52, w: 7.5, h: 0.28,
+                fontSize: 10, color: C.LGREY, fontFace: 'Calibri',
+            });
+            slide.addText('NGU', {
+                x: 8.5, y: 0.08, w: 1.2, h: 0.4,
+                fontSize: 18, bold: true, color: C.CYAN, align: 'right', fontFace: 'Calibri',
+            });
+            slide.addShape('rect', { x: 0.3, y: 0.82, w: 9.4, h: 0.03, fill: { color: C.CYAN }, line: { color: C.CYAN } });
+
+            // ── 3-column layout ─────────────────────────────────
+            const cy = 1.0, ch = 5.2;
+            const cw = 2.95;
+            const cols = [0.3, 3.43, 6.55];
+
+            function addCol(titleText, titleColor, chartFn, cx) {
+                addPanelTitle(slide, titleText, titleColor, cx, cy, cw);
+                addAccentLine(slide, titleColor, cx, cy + 0.38, cw);
+                chartFn(cx, cy + 0.45, cw, ch - 0.45);
+            }
+
+            // Meters
+            addCol('Meters Installed', C.CYAN, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Meters', labels: perf.dates, values: perf.meters }],
+                    { x, y, w, h, ...barOpts(C.CYAN, Math.max(...perf.meters, 1) * 1.2) }
+                );
+            }, cols[0]);
+
+            // Completion %
+            addCol('Completion Rate %', C.GREEN, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Completion %', labels: perf.dates, values: perf.completion }],
+                    { x, y, w, h, ...barOpts(C.GREEN, 100) }
+                );
+            }, cols[1]);
+
+            // Aborts
+            addCol('Aborts', C.RED, (x, y, w, h) => {
+                slide.addChart(pptx.ChartType.bar,
+                    [{ name: 'Aborts', labels: perf.dates, values: perf.aborts }],
+                    { x, y, w, h, ...barOpts(C.RED, Math.max(...perf.aborts, 1) * 1.3) }
+                );
+            }, cols[2]);
         }
     </script>
 </body>
