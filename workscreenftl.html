@@ -889,6 +889,48 @@
             return result;
         }
 
+        // Round up to a clean axis ceiling (nice round number slightly above max)
+        function niceMax(val) {
+            if (val <= 0) return 10;
+            const mag = Math.pow(10, Math.floor(Math.log10(val)));
+            const step = mag >= 100 ? 50 : mag >= 10 ? 5 : 1;
+            return Math.ceil((val * 1.15) / step) * step;
+        }
+
+        // Average of an array, rounded to 1dp
+        function avg(arr) {
+            const valid = arr.filter(v => v > 0);
+            if (!valid.length) return 0;
+            return Math.round((valid.reduce((a,b)=>a+b,0) / valid.length) * 10) / 10;
+        }
+
+        // ── Shared slide elements ─────────────────────────────────
+
+        function addHeader(pptx, slide, title, subtitle) {
+            slide.addShape(pptx.shapes.RECTANGLE, { x:0, y:0, w:10, h:0.75, fill:{ color:'0A1628' }, line:{ color:'0A1628' } });
+            slide.addText(title,    { x:0.3, y:0.07, w:8.2, h:0.38, fontSize:20, bold:true,  color:'00D2FF', fontFace:'Calibri', margin:0 });
+            slide.addText(subtitle, { x:0.3, y:0.45, w:8.2, h:0.24, fontSize:9,  bold:false, color:'8EAEC9', fontFace:'Calibri', margin:0 });
+            slide.addText('NGU',    { x:8.8,  y:0.15, w:0.9, h:0.35, fontSize:14, bold:true,  color:'00D2FF', fontFace:'Calibri', align:'right', margin:0 });
+        }
+
+        // Stat pill: label on top, value below — compact 3-up strip above a chart
+        function addStatStrip(slide, stats, x, y, w) {
+            // stats = [{label, value, color}]  — up to 3
+            const colW = w / stats.length;
+            stats.forEach((s, i) => {
+                const cx = x + i * colW;
+                slide.addText(s.label, { x:cx, y:y,       w:colW, h:0.2,  fontSize:8,  bold:false, color:'8EAEC9', fontFace:'Calibri', align:'center', margin:0 });
+                slide.addText(s.value, { x:cx, y:y+0.19,  w:colW, h:0.28, fontSize:14, bold:true,  color:s.color || 'FFFFFF', fontFace:'Calibri', align:'center', margin:0 });
+            });
+        }
+
+        // Commentary box — clearly labelled, white border, placeholder text
+        function addCommentaryBox(pptx, slide, x, y, w, h) {
+            slide.addShape(pptx.shapes.RECTANGLE, { x, y, w, h, fill:{ color:'0D1B2A' }, line:{ color:'2A4A6A', width:1 } });
+            slide.addText('Commentary', { x:x+0.12, y:y+0.1, w:w-0.24, h:0.25, fontSize:9, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
+            slide.addText('[ Enter commentary here ]', { x:x+0.12, y:y+0.38, w:w-0.24, h:h-0.5, fontSize:10, color:'4A6A8A', fontFace:'Calibri', italic:true, valign:'top', margin:0 });
+        }
+
         // ── Export orchestrator ───────────────────────────────────
         window.exportToPowerPoint = async function() {
             const btn = document.getElementById('exportPptxBtn');
@@ -902,8 +944,9 @@
 
                 const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
 
-                btn.textContent = '⏳ Overall slide...';
-                await createOverallSlide(pptx);
+                btn.textContent = '⏳ Overall slides...';
+                await createOverallSlide1(pptx);
+                await createOverallSlide2(pptx);
 
                 for (let i = 0; i < teamLeaders.length; i++) {
                     btn.textContent = `⏳ ${teamLeaders[i]}...`;
@@ -922,64 +965,117 @@
             }
         };
 
-        // ── Overall slide — 2x2 grid ──────────────────────────────
-        async function createOverallSlide(pptx) {
+        // ── Overall Slide 1 — Meters + Completion % ───────────────
+        async function createOverallSlide1(pptx) {
             const slide = pptx.addSlide();
-            slide.background = { color: '1A1A2E' };
-
+            slide.background = { color:'131F2E' };
             const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Meters & Completion', 'Last 5 Working Days  ·  ' + today);
 
-            // Header bar
-            slide.addShape(pptx.shapes.RECTANGLE, { x:0, y:0, w:10, h:0.85, fill:{ color:'0D1B2A' }, line:{ color:'0D1B2A' } });
-            slide.addText('OES Overall Performance', { x:0.35, y:0.08, w:8, h:0.42, fontSize:22, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
-            slide.addText('Last 5 Working Days  ·  Generated ' + today, { x:0.35, y:0.5, w:8, h:0.28, fontSize:10, color:'A8DADC', fontFace:'Calibri', margin:0 });
-            slide.addText('NGU', { x:8.8, y:0.18, w:0.9, h:0.35, fontSize:15, bold:true, color:'00D2FF', align:'right', fontFace:'Calibri', margin:0 });
+            const perf = await getLast5DaysAllData(null);
+            const dailyTarget = Math.round(oesEngineerCount * 6 * 0.9);
+            const weekTarget  = dailyTarget * 5;
+            const totalMeters = perf.meters.reduce((a,b)=>a+b,0);
+            const dailyAvg    = Math.round(totalMeters / 5);
+            const vsTarget    = dailyTarget > 0 ? (dailyAvg >= dailyTarget ? '+' : '') + (dailyAvg - dailyTarget) : 'N/A';
+            const vsColor     = dailyTarget > 0 && dailyAvg >= dailyTarget ? '10B981' : 'EF4444';
+            const avgComp     = avg(perf.completion);
 
-            const [perf, att] = await Promise.all([getLast5DaysAllData(null), getLast5DaysAttendance()]);
+            // — Left chart: Meters —
+            const metersMax = niceMax(Math.max(...perf.meters));
+            const mX = 0.3, mY = 0.85, mW = 4.5;
 
-            const col1 = 0.25, col2 = 5.15, row1 = 1.0, row2 = 3.35;
-            const cw = 4.6, ch = 2.1;
+            addStatStrip(slide, [
+                { label:'5-Day Total', value: totalMeters.toLocaleString(), color:'FFFFFF' },
+                { label:'Daily Avg',   value: dailyAvg.toLocaleString(),    color:'FFFFFF' },
+                { label:'Avg vs Target', value: (vsTarget === 'N/A' ? 'N/A' : vsTarget + '/day'), color: vsColor },
+            ], mX, mY, mW);
 
-            // Section labels
-            slide.addText('Meters Installed',  { x:col1, y:row1, w:cw, h:0.28, fontSize:11, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
-            slide.addText('Completion Rate %', { x:col2, y:row1, w:cw, h:0.28, fontSize:11, bold:true, color:'10B981', fontFace:'Calibri', margin:0 });
-            slide.addText('Aborts',            { x:col1, y:row2, w:cw, h:0.28, fontSize:11, bold:true, color:'EF4444', fontFace:'Calibri', margin:0 });
-            slide.addText('Attendance %',      { x:col2, y:row2, w:cw, h:0.28, fontSize:11, bold:true, color:'F59E0B', fontFace:'Calibri', margin:0 });
-
-            // Meters
+            slide.addText('Meters Installed', { x:mX, y:mY+0.52, w:mW, h:0.22, fontSize:10, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Meters', labels:perf.dates, values:perf.meters }],
-                { x:col1, y:row1+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['00D2FF'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:mX, y:mY+0.76, w:mW, h:2.55, barDir:'col',
+                  chartColors:['1D6FA4'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
-                  showValue:true, dataLabelFontSize:10, dataLabelColor:'FFFFFF',
-                  valAxisMaxVal: Math.max(...perf.meters, 1) * 1.25 }
+                  showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
+                  valAxisMaxVal: metersMax }
             );
 
-            // Completion %
+            // Daily target reference line annotation
+            if (dailyTarget > 0) {
+                slide.addText('Target: ' + dailyTarget.toLocaleString() + '/day', {
+                    x:mX, y:mY+3.36, w:mW, h:0.2, fontSize:8, color:'F59E0B', fontFace:'Calibri', italic:true, margin:0
+                });
+            }
+
+            // — Right chart: Completion % —
+            const cX = 5.2, cY = 0.85, cW = 4.5;
+
+            addStatStrip(slide, [
+                { label:'5-Day Average', value: avgComp + '%', color: avgComp >= 90 ? '10B981' : avgComp >= 80 ? 'F59E0B' : 'EF4444' },
+                { label:'Best Day',  value: Math.max(...perf.completion) + '%', color:'FFFFFF' },
+                { label:'Worst Day', value: Math.min(...perf.completion) + '%', color:'FFFFFF' },
+            ], cX, cY, cW);
+
+            slide.addText('Completion Rate %', { x:cX, y:cY+0.52, w:cW, h:0.22, fontSize:10, bold:true, color:'10B981', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Completion %', labels:perf.dates, values:perf.completion }],
-                { x:col2, y:row1+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['10B981'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:cX, y:cY+0.76, w:cW, h:2.55, barDir:'col',
+                  chartColors:['0E7C5B'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
-                  showValue:true, dataLabelFontSize:10, dataLabelColor:'FFFFFF',
+                  showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
                   valAxisMaxVal:100 }
             );
 
-            // Aborts
+            // — Commentary box —
+            addCommentaryBox(pptx, slide, 0.3, 4.17, 9.4, 1.18);
+        }
+
+        // ── Overall Slide 2 — Aborts + Attendance ────────────────
+        async function createOverallSlide2(pptx) {
+            const slide = pptx.addSlide();
+            slide.background = { color:'131F2E' };
+            const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Aborts & Attendance', 'Last 5 Working Days  ·  ' + today);
+
+            const [perf, att] = await Promise.all([getLast5DaysAllData(null), getLast5DaysAttendance()]);
+            const totalAborts = perf.aborts.reduce((a,b)=>a+b,0);
+            const avgAborts   = Math.round(totalAborts / 5);
+            const avgAtWork   = avg(att.atWork);
+
+            // — Left chart: Aborts —
+            const aX = 0.3, aY = 0.85, aW = 4.5;
+            const abortsMax = niceMax(Math.max(...perf.aborts));
+
+            addStatStrip(slide, [
+                { label:'5-Day Total', value: totalAborts.toString(), color:'FFFFFF' },
+                { label:'Daily Avg',   value: avgAborts.toString(),   color:'FFFFFF' },
+                { label:'Highest Day', value: Math.max(...perf.aborts).toString(), color:'EF4444' },
+            ], aX, aY, aW);
+
+            slide.addText('Aborts', { x:aX, y:aY+0.52, w:aW, h:0.22, fontSize:10, bold:true, color:'EF4444', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Aborts', labels:perf.dates, values:perf.aborts }],
-                { x:col1, y:row2+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['EF4444'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:aX, y:aY+0.76, w:aW, h:2.55, barDir:'col',
+                  chartColors:['9B2335'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
-                  showValue:true, dataLabelFontSize:10, dataLabelColor:'FFFFFF',
-                  valAxisMaxVal: Math.max(...perf.aborts, 1) * 1.35 }
+                  showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
+                  valAxisMaxVal: abortsMax }
             );
 
-            // Attendance — stacked bar
+            // — Right chart: Attendance —
+            const attX = 5.2, attY = 0.85, attW = 4.5;
+
+            addStatStrip(slide, [
+                { label:'Avg At Work', value: avgAtWork + '%', color: avgAtWork >= 90 ? '10B981' : avgAtWork >= 80 ? 'F59E0B' : 'EF4444' },
+                { label:'Avg Holiday', value: avg(att.holiday) + '%', color:'8EAEC9' },
+                { label:'Avg Sick',    value: avg(att.sick)    + '%', color:'8EAEC9' },
+            ], attX, attY, attW);
+
+            slide.addText('Attendance %', { x:attX, y:attY+0.52, w:attW, h:0.22, fontSize:10, bold:true, color:'F59E0B', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [
                     { name:'At Work',  labels:att.dates, values:att.atWork  },
@@ -987,71 +1083,94 @@
                     { name:'Sick',     labels:att.dates, values:att.sick     },
                     { name:'AAUP',     labels:att.dates, values:att.aaup     },
                 ],
-                { x:col2, y:row2+0.3, w:cw, h:ch, barDir:'col', barGrouping:'stacked',
-                  chartColors:['10B981','00D2FF','EF4444','F59E0B'],
-                  showLegend:true, legendPos:'b', legendFontSize:9, legendColor:'FFFFFF',
+                { x:attX, y:attY+0.76, w:attW, h:2.55, barDir:'col', barGrouping:'stacked',
+                  chartColors:['1D6FA4','10B981','9B2335','D97706'],
+                  showLegend:true, legendPos:'b', legendFontSize:9, legendColor:'CCCCCC',
                   showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
                   showValue:false, valAxisMaxVal:100 }
             );
+
+            // — Commentary box —
+            addCommentaryBox(pptx, slide, 0.3, 4.17, 9.4, 1.18);
         }
 
-        // ── Team slide — 3-column row ─────────────────────────────
+        // ── Team slide ────────────────────────────────────────────
+        // Three charts across: Meters | Completion % | Aborts
+        // Commentary box at bottom
         async function createTeamSlide(pptx, teamLeader) {
             const slide = pptx.addSlide();
-            slide.background = { color:'1A1A2E' };
-
+            slide.background = { color:'131F2E' };
             const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-
-            // Header bar
-            slide.addShape(pptx.shapes.RECTANGLE, { x:0, y:0, w:10, h:0.85, fill:{ color:'0D1B2A' }, line:{ color:'0D1B2A' } });
-            slide.addText(teamLeader, { x:0.35, y:0.08, w:8, h:0.42, fontSize:22, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
-            slide.addText('Last 5 Working Days  ·  Generated ' + today, { x:0.35, y:0.5, w:8, h:0.28, fontSize:10, color:'A8DADC', fontFace:'Calibri', margin:0 });
-            slide.addText('NGU', { x:8.8, y:0.18, w:0.9, h:0.35, fontSize:15, bold:true, color:'00D2FF', align:'right', fontFace:'Calibri', margin:0 });
+            addHeader(pptx, slide, teamLeader, 'Last 5 Working Days  ·  ' + today);
 
             const perf = await getLast5DaysAllData(teamLeader);
+            const totalMeters = perf.meters.reduce((a,b)=>a+b,0);
+            const dailyAvg    = Math.round(totalMeters / 5);
+            const avgComp     = avg(perf.completion);
+            const totalAborts = perf.aborts.reduce((a,b)=>a+b,0);
+            const metersMax   = niceMax(Math.max(...perf.meters));
+            const abortsMax   = niceMax(Math.max(...perf.aborts));
 
-            const col1 = 0.25, col2 = 3.45, col3 = 6.65;
-            const cw = 3.0, cy = 1.0, ch = 4.3;
+            // 3-column layout
+            const cols = [0.25, 3.45, 6.65];
+            const cw   = 3.0;
+            const statY = 0.83;
+            const labelY = statY + 0.52;
+            const chartY = labelY + 0.24;
+            const chartH = 2.85;
 
-            // Section labels
-            slide.addText('Meters Installed',  { x:col1, y:cy, w:cw, h:0.28, fontSize:11, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
-            slide.addText('Completion Rate %', { x:col2, y:cy, w:cw, h:0.28, fontSize:11, bold:true, color:'10B981', fontFace:'Calibri', margin:0 });
-            slide.addText('Aborts',            { x:col3, y:cy, w:cw, h:0.28, fontSize:11, bold:true, color:'EF4444', fontFace:'Calibri', margin:0 });
-
-            // Meters
+            // — Meters —
+            addStatStrip(slide, [
+                { label:'Total',     value: totalMeters.toLocaleString(), color:'FFFFFF' },
+                { label:'Daily Avg', value: dailyAvg.toLocaleString(),    color:'FFFFFF' },
+            ], cols[0], statY, cw);
+            slide.addText('Meters Installed', { x:cols[0], y:labelY, w:cw, h:0.22, fontSize:10, bold:true, color:'00D2FF', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Meters', labels:perf.dates, values:perf.meters }],
-                { x:col1, y:cy+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['00D2FF'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:cols[0], y:chartY, w:cw, h:chartH, barDir:'col',
+                  chartColors:['1D6FA4'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
                   showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
-                  valAxisMaxVal: Math.max(...perf.meters, 1) * 1.25 }
+                  valAxisMaxVal: metersMax }
             );
 
-            // Completion %
+            // — Completion % —
+            addStatStrip(slide, [
+                { label:'5-Day Avg', value: avgComp + '%', color: avgComp >= 90 ? '10B981' : avgComp >= 80 ? 'F59E0B' : 'EF4444' },
+                { label:'Best Day',  value: Math.max(...perf.completion) + '%', color:'FFFFFF' },
+            ], cols[1], statY, cw);
+            slide.addText('Completion Rate %', { x:cols[1], y:labelY, w:cw, h:0.22, fontSize:10, bold:true, color:'10B981', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Completion %', labels:perf.dates, values:perf.completion }],
-                { x:col2, y:cy+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['10B981'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:cols[1], y:chartY, w:cw, h:chartH, barDir:'col',
+                  chartColors:['0E7C5B'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
                   showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
                   valAxisMaxVal:100 }
             );
 
-            // Aborts
+            // — Aborts —
+            addStatStrip(slide, [
+                { label:'Total',       value: totalAborts.toString(), color: totalAborts === 0 ? '10B981' : 'EF4444' },
+                { label:'Highest Day', value: Math.max(...perf.aborts).toString(), color:'FFFFFF' },
+            ], cols[2], statY, cw);
+            slide.addText('Aborts', { x:cols[2], y:labelY, w:cw, h:0.22, fontSize:10, bold:true, color:'EF4444', fontFace:'Calibri', margin:0 });
             slide.addChart(pptx.charts.BAR,
                 [{ name:'Aborts', labels:perf.dates, values:perf.aborts }],
-                { x:col3, y:cy+0.3, w:cw, h:ch, barDir:'col',
-                  chartColors:['EF4444'], showLegend:false, showTitle:false,
-                  catAxisLabelColor:'CCCCCC', valAxisLabelColor:'CCCCCC',
+                { x:cols[2], y:chartY, w:cw, h:chartH, barDir:'col',
+                  chartColors:['9B2335'], showLegend:false, showTitle:false,
+                  catAxisLabelColor:'8EAEC9', valAxisLabelColor:'8EAEC9',
                   catAxisLabelFontSize:10, valAxisLabelFontSize:9,
                   showValue:true, dataLabelFontSize:11, dataLabelColor:'FFFFFF',
-                  valAxisMaxVal: Math.max(...perf.aborts, 1) * 1.35 }
+                  valAxisMaxVal: abortsMax }
             );
+
+            // — Commentary box at bottom —
+            addCommentaryBox(pptx, slide, 0.25, 4.17, 9.5, 1.18);
         }
 
     </script>
