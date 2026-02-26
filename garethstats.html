@@ -258,6 +258,36 @@
         #abortsTable tbody tr:hover {
             background-color: #f8f9ff;
         }
+
+        /* Miles table styles */
+        #milesTable {
+            font-size: 0.9em;
+        }
+        #milesTable th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        #milesTable td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        #milesTable input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        #milesTable input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        #milesTable tbody tr:hover {
+            background-color: #f8f9ff;
+        }
+
         .btn-group {
             display: flex;
             gap: 10px;
@@ -271,6 +301,8 @@
             .percentage-grid { grid-template-columns: 1fr; }
             #abortsTable { font-size: 0.8em; }
             #abortsTable th, #abortsTable td { padding: 8px 4px; }
+            #milesTable { font-size: 0.8em; }
+            #milesTable th, #milesTable td { padding: 8px 4px; }
         }
     </style>
 </head>
@@ -424,10 +456,57 @@
             </form>
         </div>
 
+        <div class="section-divider"></div>
+
+        <div class="form-section">
+            <h2 class="section-title">🚗 Miles per Meter Upload</h2>
+           
+            <div class="info-box">
+                <h3>Upload Miles per Meter Data</h3>
+                <p><strong>Excel Format (.xlsx):</strong> Column B (Engineer Name), Column E (Miles per Meter Average)</p>
+                <p>Upload your Excel file, preview the data, make any edits needed, then save to the database.</p>
+            </div>
+            <form id="milesForm">
+                <div class="form-group">
+                    <label for="milesDate">Select Date for Miles per Meter Data</label>
+                    <input type="date" id="milesDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Upload Excel File (.xlsx)</label>
+                    <div class="file-upload-area" id="milesUploadArea">
+                        <div class="upload-icon">📊</div>
+                        <p><strong>Click to browse</strong> or drag and drop your Excel file here</p>
+                        <input type="file" id="milesFile" accept=".xlsx,.xls" style="display: none;" required>
+                    </div>
+                    <div class="file-info" id="milesFileInfo"></div>
+                </div>
+
+                <div id="milesPreview" style="display: none; margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #333;">Preview & Edit Data</h3>
+                    <div style="overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <table id="milesTable" style="width: 100%; border-collapse: collapse; background: white;">
+                            <thead style="background: #667eea; color: white;">
+                                <tr>
+                                    <th style="padding: 12px 8px; text-align: left; font-weight: 600;">Engineer</th>
+                                    <th style="padding: 12px 8px; text-align: left; font-weight: 600;">Miles per Meter</th>
+                                </tr>
+                            </thead>
+                            <tbody id="milesTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn" id="saveMilesBtn">Save Miles per Meter Data</button>
+                        <button type="button" class="btn" id="cancelMilesBtn" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">Cancel</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -451,6 +530,7 @@
         yesterday.setDate(yesterday.getDate() - 1);
         document.getElementById('dataDate').valueAsDate = yesterday;
         document.getElementById('abortsDate').valueAsDate = yesterday;
+        document.getElementById('milesDate').valueAsDate = yesterday;
 
         // Real-time At Work % calculation
         function updateAtWorkPercent() {
@@ -633,11 +713,10 @@
             document.getElementById('csvForm').reset();
         }
 
-        // ========== ABORTS UPLOAD FUNCTIONALITY (NEW FORMAT) ==========
+        // ========== ABORTS UPLOAD FUNCTIONALITY ==========
         
         let abortsData = [];
 
-        // Aborts file upload handling
         const abortsArea = document.getElementById('abortsUploadArea');
         const abortsInput = document.getElementById('abortsFile');
 
@@ -667,12 +746,10 @@
                         return;
                     }
 
-                    // Process data starting from row 2 (index 1) - skip header row
-                    // Format: Column A (Team Leader), Column B (Engineer), Column C (Reason), Column D (Total)
                     abortsData = [];
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
-                        if (row.length >= 4) { // Ensure we have all 4 columns
+                        if (row.length >= 4) {
                             const record = {
                                 teamLeader: row[0]?.trim() || '',
                                 engineer: row[1]?.trim() || '',
@@ -702,11 +779,9 @@
             const headerRow = document.getElementById('abortsTableHeader');
             const tbody = document.getElementById('abortsTableBody');
 
-            // Clear existing content
             headerRow.innerHTML = '';
             tbody.innerHTML = '';
 
-            // Create header
             const headers = ['Team Leader', 'Engineer', 'Reason', 'Total'];
             headers.forEach(header => {
                 const th = document.createElement('th');
@@ -714,26 +789,21 @@
                 headerRow.appendChild(th);
             });
 
-            // Create rows
             abortsData.forEach((record, rowIdx) => {
                 const tr = document.createElement('tr');
 
-                // Team Leader cell
                 const tdTeam = document.createElement('td');
                 tdTeam.innerHTML = `<input type="text" value="${record.teamLeader}" data-row="${rowIdx}" data-field="teamLeader">`;
                 tr.appendChild(tdTeam);
 
-                // Engineer cell
                 const tdEng = document.createElement('td');
                 tdEng.innerHTML = `<input type="text" value="${record.engineer}" data-row="${rowIdx}" data-field="engineer">`;
                 tr.appendChild(tdEng);
 
-                // Reason cell
                 const tdReason = document.createElement('td');
                 tdReason.innerHTML = `<input type="text" value="${record.reason}" data-row="${rowIdx}" data-field="reason">`;
                 tr.appendChild(tdReason);
 
-                // Total cell
                 const tdTotal = document.createElement('td');
                 tdTotal.innerHTML = `<input type="number" min="0" value="${record.total}" data-row="${rowIdx}" data-field="total">`;
                 tr.appendChild(tdTotal);
@@ -741,28 +811,20 @@
                 tbody.appendChild(tr);
             });
 
-            // Add event listeners for editing
             tbody.querySelectorAll('input').forEach(input => {
                 input.addEventListener('change', (e) => {
                     const rowIdx = parseInt(e.target.dataset.row);
                     const field = e.target.dataset.field;
-
-                    if (field === 'teamLeader') {
-                        abortsData[rowIdx].teamLeader = e.target.value;
-                    } else if (field === 'engineer') {
-                        abortsData[rowIdx].engineer = e.target.value;
-                    } else if (field === 'reason') {
-                        abortsData[rowIdx].reason = e.target.value;
-                    } else if (field === 'total') {
-                        abortsData[rowIdx].total = parseInt(e.target.value) || 0;
-                    }
+                    if (field === 'teamLeader') abortsData[rowIdx].teamLeader = e.target.value;
+                    else if (field === 'engineer') abortsData[rowIdx].engineer = e.target.value;
+                    else if (field === 'reason') abortsData[rowIdx].reason = e.target.value;
+                    else if (field === 'total') abortsData[rowIdx].total = parseInt(e.target.value) || 0;
                 });
             });
 
             preview.style.display = 'block';
         }
 
-        // Cancel aborts preview
         document.getElementById('cancelAbortsBtn').addEventListener('click', () => {
             document.getElementById('abortsPreview').style.display = 'none';
             document.getElementById('abortsForm').reset();
@@ -771,7 +833,6 @@
             abortsData = [];
         });
 
-        // Save aborts data
         document.getElementById('abortsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -794,7 +855,6 @@
 
                 showMessage(`Successfully saved ${abortsData.length} abort records!`, 'success');
                 
-                // Reset form
                 document.getElementById('abortsPreview').style.display = 'none';
                 document.getElementById('abortsForm').reset();
                 document.getElementById('abortsFileInfo').classList.remove('show');
@@ -809,6 +869,165 @@
             }
         });
 
+        // ========== MILES PER METER UPLOAD FUNCTIONALITY ==========
+
+        let milesData = [];
+
+        const milesArea = document.getElementById('milesUploadArea');
+        const milesInput = document.getElementById('milesFile');
+
+        milesArea.addEventListener('click', () => milesInput.click());
+        milesInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                displayMilesFileInfo(e.target.files[0]);
+                parseMilesExcel(e.target.files[0]);
+            }
+        });
+
+        // Drag and drop support for miles upload area
+        milesArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            milesArea.classList.add('dragover');
+        });
+        milesArea.addEventListener('dragleave', () => milesArea.classList.remove('dragover'));
+        milesArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            milesArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                milesInput.files = e.dataTransfer.files;
+                displayMilesFileInfo(file);
+                parseMilesExcel(file);
+            } else {
+                showMessage('Please drop a valid Excel file (.xlsx or .xls)', 'error');
+            }
+        });
+
+        function displayMilesFileInfo(file) {
+            const info = document.getElementById('milesFileInfo');
+            info.innerHTML = `<strong>Selected:</strong> ${file.name}`;
+            info.classList.add('show');
+        }
+
+        function parseMilesExcel(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Use the first sheet
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+
+                    // Convert to array of arrays (raw values, no header)
+                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    if (rows.length < 2) {
+                        showMessage('Excel file appears to be empty or has no data rows', 'error');
+                        return;
+                    }
+
+                    milesData = [];
+                    // Start from row index 1 to skip the header row
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        const engineer = (row[1] !== undefined && row[1] !== '') ? String(row[1]).trim() : ''; // Column B (index 1)
+                        const milesPerMeter = (row[4] !== undefined && row[4] !== '') ? parseFloat(row[4]) : null; // Column E (index 4)
+
+                        // Only add rows where both fields have meaningful values
+                        if (engineer && milesPerMeter !== null && !isNaN(milesPerMeter)) {
+                            milesData.push({ engineer, milesPerMeter });
+                        }
+                    }
+
+                    if (milesData.length === 0) {
+                        showMessage('No valid miles per meter data found. Check that Column B has engineer names and Column E has numeric values.', 'error');
+                        return;
+                    }
+
+                    displayMilesPreview();
+                } catch (err) {
+                    console.error('Error parsing Excel file:', err);
+                    showMessage('Error reading Excel file: ' + err.message, 'error');
+                }
+            };
+            reader.onerror = () => showMessage('Failed to read file', 'error');
+            reader.readAsArrayBuffer(file);
+        }
+
+        function displayMilesPreview() {
+            const tbody = document.getElementById('milesTableBody');
+            tbody.innerHTML = '';
+
+            milesData.forEach((record, rowIdx) => {
+                const tr = document.createElement('tr');
+
+                const tdEng = document.createElement('td');
+                tdEng.innerHTML = `<input type="text" value="${record.engineer}" data-row="${rowIdx}" data-field="engineer">`;
+                tr.appendChild(tdEng);
+
+                const tdMiles = document.createElement('td');
+                tdMiles.innerHTML = `<input type="number" step="0.01" min="0" value="${record.milesPerMeter}" data-row="${rowIdx}" data-field="milesPerMeter">`;
+                tr.appendChild(tdMiles);
+
+                tbody.appendChild(tr);
+            });
+
+            tbody.querySelectorAll('input').forEach(inp => {
+                inp.addEventListener('change', (e) => {
+                    const rowIdx = parseInt(e.target.dataset.row);
+                    const field = e.target.dataset.field;
+                    if (field === 'engineer') milesData[rowIdx].engineer = e.target.value;
+                    else if (field === 'milesPerMeter') milesData[rowIdx].milesPerMeter = parseFloat(e.target.value) || 0;
+                });
+            });
+
+            document.getElementById('milesPreview').style.display = 'block';
+        }
+
+        document.getElementById('cancelMilesBtn').addEventListener('click', () => {
+            document.getElementById('milesPreview').style.display = 'none';
+            document.getElementById('milesForm').reset();
+            document.getElementById('milesFileInfo').classList.remove('show');
+            document.getElementById('milesDate').valueAsDate = yesterday;
+            milesData = [];
+        });
+
+        document.getElementById('milesForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const date = document.getElementById('milesDate').value;
+            const btn = document.getElementById('saveMilesBtn');
+            btn.disabled = true;
+
+            try {
+                for (let i = 0; i < milesData.length; i++) {
+                    const record = milesData[i];
+                    await addDoc(collection(db, "Miles to Meter"), {
+                        date,
+                        engineer: record.engineer,
+                        milesPerMeter: record.milesPerMeter,
+                        submittedAt: serverTimestamp()
+                    });
+                }
+
+                showMessage(`Successfully saved ${milesData.length} miles per meter records!`, 'success');
+
+                document.getElementById('milesPreview').style.display = 'none';
+                document.getElementById('milesForm').reset();
+                document.getElementById('milesFileInfo').classList.remove('show');
+                document.getElementById('milesDate').valueAsDate = yesterday;
+                milesData = [];
+
+            } catch (err) {
+                console.error('Error saving miles data:', err);
+                showMessage('Error saving miles per meter data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
         // ========== UTILITY FUNCTIONS ==========
 
         function showMessage(text, type) {
@@ -816,8 +1035,6 @@
             m.textContent = text;
             m.className = `message ${type} show`;
             setTimeout(() => m.classList.remove('show'), 5000);
-            
-            // Scroll to top to show message
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     </script>
