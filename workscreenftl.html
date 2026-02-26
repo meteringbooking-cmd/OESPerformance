@@ -106,6 +106,14 @@
         .attendance-item:hover { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.4); transform: translateY(-2px); }
         .attendance-item-label { font-size: 0.7em; color: #a8dadc; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .attendance-item-value { font-size: 1.2em; font-weight: 800; color: #ffffff; }
+
+        /* Miles per Meter team grid — matches attendance-grid style */
+        .miles-team-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; }
+        .miles-team-item { text-align: center; padding: 12px 8px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(0,210,255,0.2); transition: all 0.3s ease; }
+        .miles-team-item:hover { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.4); transform: translateY(-2px); }
+        .miles-team-label { font-size: 0.68em; color: #a8dadc; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .miles-team-value { font-size: 1.2em; font-weight: 800; color: #ffffff; }
+
         .historical-data { max-height: 0; overflow: hidden; margin-top: 0; padding-top: 0; border-top: none; transition: max-height 0.5s cubic-bezier(0.4,0,0.2,1), margin-top 0.5s ease, padding-top 0.5s ease, border-top 0.5s ease; }
         .kpi-card.expanded .historical-data { max-height: 2000px; margin-top: 24px; padding-top: 20px; border-top: 2px solid rgba(0,210,255,0.3); }
         .historical-title { font-size: 0.8em; font-weight: 700; color: #00d2ff; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1.5px; }
@@ -289,6 +297,56 @@
                     </div>
                 </div>
 
+                <!-- ══ Miles per Meter ══ -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this)">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">Miles per Meter</span>
+                        <span class="kpi-icon">🚗</span>
+                    </div>
+                    <!-- Overall average – big headline number -->
+                    <div class="kpi-value" id="milesOverallAvg">—</div>
+                    <div class="kpi-target">Overall Average (Previous Working Day)</div>
+
+                    <!-- Team breakdown mini-tiles -->
+                    <div class="miles-team-grid">
+                        <div class="miles-team-item">
+                            <div class="miles-team-label">Richard Wiecko</div>
+                            <div class="miles-team-value" id="milesTeam_richard">—</div>
+                        </div>
+                        <div class="miles-team-item">
+                            <div class="miles-team-label">Scott Carson</div>
+                            <div class="miles-team-value" id="milesTeam_scott">—</div>
+                        </div>
+                        <div class="miles-team-item">
+                            <div class="miles-team-label">Scott Carson – Scot</div>
+                            <div class="miles-team-value" id="milesTeam_scottScot">—</div>
+                        </div>
+                        <div class="miles-team-item">
+                            <div class="miles-team-label">Stuart Whyte</div>
+                            <div class="miles-team-value" id="milesTeam_stuart">—</div>
+                        </div>
+                        <div class="miles-team-item">
+                            <div class="miles-team-label">FTL 4</div>
+                            <div class="miles-team-value" id="milesTeam_ftl4">—</div>
+                        </div>
+                    </div>
+
+                    <!-- Expandable: individual engineers for yesterday -->
+                    <div class="historical-data">
+                        <div class="historical-title">Individual Engineers — Previous Working Day</div>
+                        <table class="historical-table">
+                            <thead>
+                                <tr>
+                                    <th>Engineer</th>
+                                    <th style="text-align:right;">Miles / Meter</th>
+                                </tr>
+                            </thead>
+                            <tbody id="milesEngineerBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- Attendance (OES) -->
                 <div class="kpi-card expandable" onclick="toggleExpand(this)">
                     <span class="expand-indicator">▼</span>
@@ -425,9 +483,7 @@
                     <button class="cognito-tab" onclick="switchCognitoForm(this, 42)">✅ Daily Vehicle Check</button>
                     <button class="cognito-tab" onclick="switchCognitoForm(this, 70)">⚠️ Accident / Incident Record</button>
                 </div>
-                <div class="cognito-frame-wrapper" id="cognitoFrameWrapper">
-                    <!-- iframe injected by JS -->
-                </div>
+                <div class="cognito-frame-wrapper" id="cognitoFrameWrapper"></div>
             </div>
         </div>
     </div>
@@ -448,7 +504,6 @@
                     </div>
                     <span class="sp-link-arrow">↗</span>
                 </a>
-                <!-- Add more SharePoint links below as needed -->
             </div>
         </div>
     </div>
@@ -491,7 +546,6 @@
 
         window.openCognitoPopup = function(event) {
             if (event) event.stopPropagation();
-            // Load default form (24) on first open
             const wrapper = document.getElementById('cognitoFrameWrapper');
             if (!wrapper.innerHTML.trim()) {
                 wrapper.innerHTML = buildCognitoIframe(cognitoCurrentForm);
@@ -504,10 +558,8 @@
         };
         window.switchCognitoForm = function(tabEl, formId) {
             cognitoCurrentForm = formId;
-            // Update active tab
             document.querySelectorAll('.cognito-tab').forEach(t => t.classList.remove('active'));
             tabEl.classList.add('active');
-            // Reload iframe
             document.getElementById('cognitoFrameWrapper').innerHTML = buildCognitoIframe(formId);
         };
 
@@ -574,6 +626,102 @@
             if (!match) return null;
             const [_, dd, mm, yyyy, hh, min, sec='0'] = match;
             return new Date(+yyyy, +mm-1, +dd, +hh, +min, +sec);
+        }
+
+        // ── Team leader → canonical key mapping ───────────────────
+        const TEAM_KEY_MAP = {
+            'Richard Wiecko':      'richard',
+            'Scott Carson':        'scott',
+            'Scott Carson - Scot': 'scottScot',
+            'Stuart Whyte':        'stuart',
+            'FTL 4':               'ftl4',
+        };
+
+        // ── Miles per Meter ───────────────────────────────────────
+        async function loadMilesPerMeter(dateStr) {
+            try {
+                const snap = await getDocs(
+                    query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))
+                );
+
+                if (snap.empty) {
+                    document.getElementById('milesOverallAvg').textContent = 'N/A';
+                    return;
+                }
+
+                // Collect all records with engineer + milesPerMeter + teamLeader
+                const allRecords = [];
+                // Team buckets: key → array of values
+                const teamBuckets = { richard: [], scott: [], scottScot: [], stuart: [], ftl4: [] };
+
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const val = parseFloat(d.milesPerMeter);
+                    if (isNaN(val)) return;
+
+                    // Try to match engineer name to a team via staffDb lookup is async —
+                    // instead we store by teamLeader field if it exists, otherwise "Unknown"
+                    const tl = d.teamLeader || '';
+                    const key = TEAM_KEY_MAP[tl] || null;
+                    if (key) teamBuckets[key].push({ engineer: d.engineer || '—', value: val });
+
+                    allRecords.push({ engineer: d.engineer || '—', teamLeader: tl, value: val });
+                });
+
+                // ── Overall average ───────────────────────────────
+                const allVals = allRecords.map(r => r.value);
+                const overallAvg = allVals.length
+                    ? (allVals.reduce((a, b) => a + b, 0) / allVals.length).toFixed(2)
+                    : '—';
+                document.getElementById('milesOverallAvg').textContent = overallAvg;
+
+                // ── Team averages ─────────────────────────────────
+                function teamAvg(key) {
+                    const vals = teamBuckets[key].map(r => r.value);
+                    if (!vals.length) return '—';
+                    return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+                }
+                document.getElementById('milesTeam_richard').textContent  = teamAvg('richard');
+                document.getElementById('milesTeam_scott').textContent     = teamAvg('scott');
+                document.getElementById('milesTeam_scottScot').textContent = teamAvg('scottScot');
+                document.getElementById('milesTeam_stuart').textContent    = teamAvg('stuart');
+                document.getElementById('milesTeam_ftl4').textContent      = teamAvg('ftl4');
+
+                // ── Engineer table (for expand) ───────────────────
+                // Sort by team leader then engineer name — mirrors workscreenmetersgraph team order
+                const teamOrder = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
+                allRecords.sort((a, b) => {
+                    const ta = teamOrder.indexOf(a.teamLeader), tb = teamOrder.indexOf(b.teamLeader);
+                    if (ta !== tb) return (ta === -1 ? 99 : ta) - (tb === -1 ? 99 : tb);
+                    return a.engineer.localeCompare(b.engineer);
+                });
+
+                let lastTeam = null;
+                const tbody = document.getElementById('milesEngineerBody');
+                tbody.innerHTML = allRecords.map(r => {
+                    let groupRow = '';
+                    if (r.teamLeader !== lastTeam) {
+                        lastTeam = r.teamLeader;
+                        groupRow = `<tr>
+                            <td colspan="2" style="background:rgba(0,210,255,0.12);color:#00d2ff;font-weight:700;font-size:0.8em;padding:8px 10px;text-transform:uppercase;letter-spacing:1px;">
+                                ${r.teamLeader || 'Unknown Team'}
+                            </td>
+                        </tr>`;
+                    }
+                    return `${groupRow}<tr>
+                        <td style="padding-left:18px;">${r.engineer}</td>
+                        <td style="text-align:right;font-weight:700;">${r.value.toFixed(2)}</td>
+                    </tr>`;
+                }).join('');
+
+                if (!allRecords.length) {
+                    tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;color:#a8dadc;padding:20px;">No data for this date</td></tr>`;
+                }
+
+            } catch (err) {
+                console.error('Miles per meter load error:', err);
+                document.getElementById('milesOverallAvg').textContent = 'Error';
+            }
         }
 
         // ── Abort reason parser ───────────────────────────────────
@@ -931,6 +1079,9 @@
                 document.getElementById('holPercent').textContent = hol.toFixed(1) + '%';
                 document.getElementById('sickPercent').textContent = sick.toFixed(1) + '%';
                 document.getElementById('aaupPercent').textContent = aaup.toFixed(1) + '%';
+
+                // ── Miles per Meter ───────────────────────────────
+                await loadMilesPerMeter(dateStr);
 
                 await loadComplianceData();
                 await loadHistoricalData();
