@@ -298,10 +298,12 @@
                 </div>
 
                 <!-- ══ Miles per Meter ══ -->
-                <div class="kpi-card expandable" onclick="toggleExpand(this)">
-                    <span class="expand-indicator">▼</span>
+                <div class="kpi-card">
                     <div class="kpi-header">
-                        <span class="kpi-title">Miles per Meter</span>
+                        <span class="kpi-title">
+                            Miles per Meter
+                            <button class="graph-button" onclick="openMilesBreakdownPopup(event)">👥 Team Breakdown</button>
+                        </span>
                         <span class="kpi-icon">🚗</span>
                     </div>
                     <!-- Overall average – big headline number -->
@@ -330,20 +332,6 @@
                             <div class="miles-team-label">FTL 4</div>
                             <div class="miles-team-value" id="milesTeam_ftl4">—</div>
                         </div>
-                    </div>
-
-                    <!-- Expandable: individual engineers for yesterday -->
-                    <div class="historical-data">
-                        <div class="historical-title">Individual Engineers — Previous Working Day</div>
-                        <table class="historical-table">
-                            <thead>
-                                <tr>
-                                    <th>Engineer</th>
-                                    <th style="text-align:right;">Miles / Meter</th>
-                                </tr>
-                            </thead>
-                            <tbody id="milesEngineerBody"></tbody>
-                        </table>
                     </div>
                 </div>
 
@@ -469,6 +457,19 @@
         </div>
     </div>
 
+    <!-- ── Miles per Meter Breakdown Popup ── -->
+    <div class="popup-overlay" id="milesBreakdownPopup" onclick="closeMilesBreakdownPopup(event)">
+        <div class="popup-content" onclick="event.stopPropagation()" style="height: 85%;">
+            <div class="popup-header">
+                <div class="popup-title">🚗 Miles per Meter — Individual Engineer Breakdown</div>
+                <button class="popup-close" onclick="closeMilesBreakdownPopup()">✕</button>
+            </div>
+            <div id="milesBreakdownContainer" style="flex: 1; overflow-y: auto; padding: 30px;">
+                <div style="text-align: center; padding: 60px; color: #a8dadc;"><div style="font-size: 2em;">⏳</div><div>Loading data...</div></div>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Cognito Forms Popup ── -->
     <div class="popup-overlay" id="cognitoPopup" onclick="closeCognitoPopup(event)">
         <div class="cognito-popup-content" onclick="event.stopPropagation()">
@@ -577,6 +578,7 @@
             if (e.key === 'Escape') {
                 closeGraphPopup();
                 closeAbortsPopup();
+                closeMilesBreakdownPopup();
                 closeCognitoPopup();
                 closeSharepointPopup();
             }
@@ -636,37 +638,66 @@
             'Stuart Whyte':        'stuart',
             'FTL 4':               'ftl4',
         };
+        const TEAM_ORDER = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
+
+        // Cached: engineerName → teamLeader (from staffDb engineers collection)
+        let engineerTeamMap = null;
+
+        async function buildEngineerTeamMap() {
+            if (engineerTeamMap) return engineerTeamMap;
+            engineerTeamMap = {};
+            try {
+                const snap = await getDocs(collection(staffDb, "engineers"));
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const name = (d.engineerName || '').trim();
+                    const tl   = (d.teamLeader   || '').trim();
+                    if (name) engineerTeamMap[name] = tl;
+                });
+            } catch (err) {
+                console.error('Error building engineer team map:', err);
+            }
+            return engineerTeamMap;
+        }
+
+        // Cached miles data for the popup
+        let cachedMilesRecords = [];
 
         // ── Miles per Meter ───────────────────────────────────────
         async function loadMilesPerMeter(dateStr) {
             try {
-                const snap = await getDocs(
-                    query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))
-                );
+                const [milesSnap, teamMap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))),
+                    buildEngineerTeamMap()
+                ]);
 
-                if (snap.empty) {
+                if (milesSnap.empty) {
                     document.getElementById('milesOverallAvg').textContent = 'N/A';
+                    ['richard','scott','scottScot','stuart','ftl4'].forEach(k =>
+                        document.getElementById(`milesTeam_${k}`).textContent = 'N/A'
+                    );
+                    cachedMilesRecords = [];
                     return;
                 }
 
-                // Collect all records with engineer + milesPerMeter + teamLeader
                 const allRecords = [];
-                // Team buckets: key → array of values
                 const teamBuckets = { richard: [], scott: [], scottScot: [], stuart: [], ftl4: [] };
 
-                snap.forEach(doc => {
+                milesSnap.forEach(doc => {
                     const d = doc.data();
-                    const val = parseFloat(d.milesPerMeter);
+                    const val  = parseFloat(d.milesPerMeter);
                     if (isNaN(val)) return;
 
-                    // Try to match engineer name to a team via staffDb lookup is async —
-                    // instead we store by teamLeader field if it exists, otherwise "Unknown"
-                    const tl = d.teamLeader || '';
+                    const engineerName = (d.engineer || '').trim();
+                    // Look up team leader from the engineers collection
+                    const tl  = teamMap[engineerName] || '';
                     const key = TEAM_KEY_MAP[tl] || null;
-                    if (key) teamBuckets[key].push({ engineer: d.engineer || '—', value: val });
 
-                    allRecords.push({ engineer: d.engineer || '—', teamLeader: tl, value: val });
+                    if (key) teamBuckets[key].push({ engineer: engineerName, value: val });
+                    allRecords.push({ engineer: engineerName, teamLeader: tl, value: val });
                 });
+
+                cachedMilesRecords = allRecords;
 
                 // ── Overall average ───────────────────────────────
                 const allVals = allRecords.map(r => r.value);
@@ -687,41 +718,103 @@
                 document.getElementById('milesTeam_stuart').textContent    = teamAvg('stuart');
                 document.getElementById('milesTeam_ftl4').textContent      = teamAvg('ftl4');
 
-                // ── Engineer table (for expand) ───────────────────
-                // Sort by team leader then engineer name — mirrors workscreenmetersgraph team order
-                const teamOrder = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
-                allRecords.sort((a, b) => {
-                    const ta = teamOrder.indexOf(a.teamLeader), tb = teamOrder.indexOf(b.teamLeader);
-                    if (ta !== tb) return (ta === -1 ? 99 : ta) - (tb === -1 ? 99 : tb);
-                    return a.engineer.localeCompare(b.engineer);
-                });
-
-                let lastTeam = null;
-                const tbody = document.getElementById('milesEngineerBody');
-                tbody.innerHTML = allRecords.map(r => {
-                    let groupRow = '';
-                    if (r.teamLeader !== lastTeam) {
-                        lastTeam = r.teamLeader;
-                        groupRow = `<tr>
-                            <td colspan="2" style="background:rgba(0,210,255,0.12);color:#00d2ff;font-weight:700;font-size:0.8em;padding:8px 10px;text-transform:uppercase;letter-spacing:1px;">
-                                ${r.teamLeader || 'Unknown Team'}
-                            </td>
-                        </tr>`;
-                    }
-                    return `${groupRow}<tr>
-                        <td style="padding-left:18px;">${r.engineer}</td>
-                        <td style="text-align:right;font-weight:700;">${r.value.toFixed(2)}</td>
-                    </tr>`;
-                }).join('');
-
-                if (!allRecords.length) {
-                    tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;color:#a8dadc;padding:20px;">No data for this date</td></tr>`;
-                }
-
             } catch (err) {
                 console.error('Miles per meter load error:', err);
                 document.getElementById('milesOverallAvg').textContent = 'Error';
             }
+        }
+
+        // ── Miles breakdown popup ─────────────────────────────────
+        window.openMilesBreakdownPopup = function(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('milesBreakdownPopup').classList.add('active');
+            renderMilesBreakdown();
+        };
+        window.closeMilesBreakdownPopup = function(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('milesBreakdownPopup').classList.remove('active');
+        };
+
+        function renderMilesBreakdown() {
+            const container = document.getElementById('milesBreakdownContainer');
+            const records   = cachedMilesRecords;
+
+            if (!records.length) {
+                container.innerHTML = `<div style="text-align:center;padding:60px;color:#a8dadc;"><div style="font-size:2em;">📭</div><div>No miles per meter data for this date</div></div>`;
+                return;
+            }
+
+            // Group by team in defined order
+            const grouped = {};
+            TEAM_ORDER.forEach(tl => grouped[tl] = []);
+            grouped['Unknown'] = [];
+
+            records.forEach(r => {
+                const grp = TEAM_ORDER.includes(r.teamLeader) ? r.teamLeader : 'Unknown';
+                grouped[grp].push(r);
+            });
+
+            // Sort engineers within each team by name
+            Object.values(grouped).forEach(arr => arr.sort((a, b) => a.engineer.localeCompare(b.engineer)));
+
+            let html = '';
+            const allTeams = [...TEAM_ORDER, 'Unknown'];
+
+            allTeams.forEach(teamLeader => {
+                const engineers = grouped[teamLeader];
+                if (!engineers.length) return;
+
+                const teamVals  = engineers.map(e => e.value);
+                const teamAvg   = (teamVals.reduce((a, b) => a + b, 0) / teamVals.length).toFixed(2);
+                const teamMin   = Math.min(...teamVals).toFixed(2);
+                const teamMax   = Math.max(...teamVals).toFixed(2);
+
+                html += `
+                <div style="margin-bottom:28px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid rgba(0,210,255,0.2);">
+                        <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${teamLeader}</div>
+                        <div style="display:flex;gap:20px;align-items:center;">
+                            <div style="text-align:center;">
+                                <div style="font-size:0.65em;color:#a8dadc;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Min</div>
+                                <div style="font-size:1em;font-weight:700;color:#e1e8ed;">${teamMin}</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div style="font-size:0.65em;color:#a8dadc;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Avg</div>
+                                <div style="font-size:1.4em;font-weight:800;color:#00d2ff;">${teamAvg}</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div style="font-size:0.65em;color:#a8dadc;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Max</div>
+                                <div style="font-size:1em;font-weight:700;color:#e1e8ed;">${teamMax}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead><tr style="background:rgba(0,210,255,0.1);">
+                            <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.82em;text-transform:uppercase;">Engineer</th>
+                            <th style="text-align:right;padding:10px;color:#00d2ff;font-size:0.82em;text-transform:uppercase;">Miles / Meter</th>
+                        </tr></thead>
+                        <tbody>
+                            ${engineers.map(eng => `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+                                <td style="padding:11px 10px;color:#e1e8ed;font-weight:500;">${eng.engineer}</td>
+                                <td style="padding:11px 10px;text-align:right;font-weight:700;font-size:1.05em;color:#ffffff;">${eng.value.toFixed(2)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            });
+
+            // Grand total summary bar
+            const allVals   = records.map(r => r.value);
+            const grandAvg  = (allVals.reduce((a, b) => a + b, 0) / allVals.length).toFixed(2);
+            html += `
+            <div style="text-align:right;padding:20px;background:rgba(0,210,255,0.1);border-radius:12px;border:2px solid rgba(0,210,255,0.35);margin-bottom:0;">
+                <div style="font-size:1em;color:#a8dadc;margin-bottom:6px;">Overall Average (all engineers)</div>
+                <div style="font-size:2.5em;font-weight:900;color:#00d2ff;">${grandAvg}</div>
+                <div style="font-size:0.8em;color:#a8dadc;margin-top:4px;">${records.length} engineer${records.length !== 1 ? 's' : ''}</div>
+            </div>`;
+
+            container.innerHTML = html;
         }
 
         // ── Abort reason parser ───────────────────────────────────
