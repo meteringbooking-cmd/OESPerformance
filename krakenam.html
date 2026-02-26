@@ -250,9 +250,30 @@
         weekAgo.setDate(weekAgo.getDate() - 7);
         
         document.getElementById('uploadDate').valueAsDate = yesterday;
-        document.getElementById('startDate').valueAsDate = weekAgo;
-        document.getElementById('endDate').valueAsDate = yesterday;
+        document.getElementById('startDate').valueAsDate = today;
+        document.getElementById('endDate').valueAsDate = today;
         document.getElementById('headcountDate').valueAsDate = yesterday;
+
+        // Auto-load today's data on page open
+        (async () => {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            try {
+                let q = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "desc"));
+                const querySnapshot = await getDocs(q);
+                const records = [];
+                querySnapshot.forEach((doc) => { records.push(doc.data()); });
+                if (records.length > 0) {
+                    await fetchHeadcountForRange(startDate, endDate);
+                    displayStatistics(records);
+                    displayDataTable(records);
+                    document.getElementById('statsContainer').classList.add('show');
+                    // Populate team filter from loaded records
+                    records.forEach(r => { if (r.team) allTeams.add(r.team); });
+                    updateTeamFilter();
+                }
+            } catch (err) { console.error('Auto-load error:', err); }
+        })();
 
         let uploadData = [];
         let allTeams = new Set();
