@@ -54,7 +54,7 @@
       letter-spacing: 0.5px;
       font-weight: 600;
     }
-    .period-btn, .team-btn {
+    .period-btn, .team-btn, .month-btn {
       display: block;
       width: 100%;
       padding: 0.95rem 1.2rem;
@@ -68,7 +68,7 @@
       transition: all 0.18s ease;
       font-size: 0.97rem;
     }
-    .period-btn:hover, .team-btn:hover {
+    .period-btn:hover, .team-btn:hover, .month-btn:hover {
       background: rgba(99,102,241,0.08);
       border-color: var(--accent);
     }
@@ -83,6 +83,31 @@
       color: white;
       font-weight: 600;
       border-color: var(--accent);
+    }
+    .month-btn {
+      padding: 0.65rem 1rem;
+      font-size: 0.88rem;
+    }
+    .month-btn.active {
+      background: rgba(16,185,129,0.25);
+      color: white;
+      font-weight: 600;
+      border-color: var(--success);
+    }
+    .month-btn:hover {
+      background: rgba(16,185,129,0.08);
+      border-color: var(--success);
+    }
+    .months-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+    }
+    .months-grid .month-btn {
+      margin: 0;
+      text-align: center;
+      padding: 0.55rem 0.4rem;
+      font-size: 0.82rem;
     }
     main {
       padding: 2.5rem 3rem;
@@ -205,11 +230,27 @@
   <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot</button>  
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte</button>
   <button class="team-btn" data-team="FTL 4">FTL 4</button>
+
+  <h2>2026 Monthly View</h2>
+  <div class="months-grid">
+    <button class="month-btn" data-month="2026-01">Jan</button>
+    <button class="month-btn" data-month="2026-02">Feb</button>
+    <button class="month-btn" data-month="2026-03">Mar</button>
+    <button class="month-btn" data-month="2026-04">Apr</button>
+    <button class="month-btn" data-month="2026-05">May</button>
+    <button class="month-btn" data-month="2026-06">Jun</button>
+    <button class="month-btn" data-month="2026-07">Jul</button>
+    <button class="month-btn" data-month="2026-08">Aug</button>
+    <button class="month-btn" data-month="2026-09">Sep</button>
+    <button class="month-btn" data-month="2026-10">Oct</button>
+    <button class="month-btn" data-month="2026-11">Nov</button>
+    <button class="month-btn" data-month="2026-12">Dec</button>
+  </div>
 </aside>
 
 <main>
   <header>
-    <h1>Meters Installed</h1>
+    <h1 id="pageTitle">Meters Installed</h1>
     <div class="stats-container">
       <div class="stats-box">
         <div class="stats-label">Total</div>
@@ -219,9 +260,13 @@
         <div class="stats-label">Daily Avg</div>
         <div class="stats-value" id="avgValue">—</div>
       </div>
-      <div class="stats-box">
+      <div class="stats-box" id="targetBox">
         <div class="stats-label">vs Target</div>
         <div class="stats-value" id="targetValue">—</div>
+      </div>
+      <div class="stats-box" id="completionBox" style="display:none;">
+        <div class="stats-label">Avg Completion</div>
+        <div class="stats-value success" id="completionValue">—</div>
       </div>
     </div>
   </header>
@@ -255,14 +300,93 @@
   let chart = null;
 
   const periods = {
-    "7days":   { label: "Last 7 days",          daysBack: 7,   color: "#6366f1", type: "bar"  },
-    "4weeks":  { label: "4 week rolling",       daysBack: 28,  color: "#8b5cf6", type: "bar"  },
-    "6months": { label: "Last 6 months",        daysBack: 180, color: "#a78bfa", type: "line" },
-    "year":    { label: "Year to date",         daysBack: 365, color: "#c084fc", type: "line" },
+    "7days":   { label: "Last 7 days",    daysBack: 7,   color: "#6366f1", type: "bar"  },
+    "4weeks":  { label: "4 week rolling", daysBack: 28,  color: "#8b5cf6", type: "bar"  },
+    "6months": { label: "Last 6 months",  daysBack: 180, color: "#a78bfa", type: "line" },
+    "year":    { label: "Year to date",   daysBack: 365, color: "#c084fc", type: "line" },
   };
+
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   let currentPeriod = "7days";
   let currentTeam   = "all";
+  let currentMonth  = null; // "2026-01" format or null
+
+  // ── Fetch helpers ────────────────────────────────────────────────────────────
+
+  async function fetchRecordsForRange(startDate, endDate, team) {
+    const q = query(
+      collection(db, "performance"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc")
+    );
+    const snapshot = await getDocs(q);
+    const records = [];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      if (team === "all" || d.teamLeader === team) records.push(d);
+    });
+    return records;
+  }
+
+  function getWeekdayDates(start, end) {
+    const dates = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) dates.push(cur.toISOString().split('T')[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }
+
+  function formatDayLabel(dateStr, multiLine) {
+    const d = new Date(dateStr);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const ddmm = `${dd}/${mm}`;
+    const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' });
+    return multiLine ? [ddmm, weekday] : ddmm;
+  }
+
+  // ── Monthly dual-axis fetch ───────────────────────────────────────────────────
+
+  async function fetchMonthData(monthKey, team) {
+    const [year, mon] = monthKey.split('-').map(Number);
+    const startOfMonth = new Date(year, mon - 1, 1);
+    const endOfMonth   = new Date(year, mon, 0); // last day of month
+    const today = new Date();
+    const effectiveEnd = endOfMonth < today ? endOfMonth : today;
+
+    const startDate = startOfMonth.toISOString().split('T')[0];
+    const endDate   = effectiveEnd.toISOString().split('T')[0];
+
+    const records = await fetchRecordsForRange(startDate, endDate, team);
+    const weekdays = getWeekdayDates(startOfMonth, effectiveEnd);
+
+    const dateMap = {};
+    weekdays.forEach(d => dateMap[d] = { meters: 0, completed: 0, jobs: 0 });
+
+    records.forEach(r => {
+      if (dateMap[r.date] !== undefined) {
+        dateMap[r.date].meters    += Number(r.meters    || 0);
+        dateMap[r.date].completed += Number(r.completed || 0);
+        dateMap[r.date].jobs      += Number(r.jobs      || 0);
+      }
+    });
+
+    const labels       = weekdays.map(d => formatDayLabel(d, true));
+    const metersValues = weekdays.map(d => Math.round(dateMap[d].meters));
+    const completionValues = weekdays.map(d => {
+      const { completed, jobs } = dateMap[d];
+      return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : null;
+    });
+
+    return { labels, metersValues, completionValues };
+  }
+
+  // ── Standard period fetch ─────────────────────────────────────────────────────
 
   async function fetchAndAggregateMeters(periodKey, team) {
     const cfg = periods[periodKey];
@@ -273,223 +397,311 @@
     const startDate = start.toISOString().split('T')[0];
     const endDate   = today.toISOString().split('T')[0];
 
-    const q = query(
-      collection(db, "performance"),
-      where("date", ">=", startDate),
-      where("date", "<=", endDate),
-      orderBy("date", "asc")
-    );
-
-    const snapshot = await getDocs(q);
-    let records = [];
-
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      if (team === "all" || d.teamLeader === team) {
-        records.push(d);
-      }
-    });
-
-    const allWeekdayDates = [];
-    const current = new Date(start);
-    while (current <= today) {
-      const dayOfWeek = current.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        allWeekdayDates.push(current.toISOString().split('T')[0]);
-      }
-      current.setDate(current.getDate() + 1);
-    }
+    const records = await fetchRecordsForRange(startDate, endDate, team);
+    const weekdays = getWeekdayDates(start, today);
 
     const dateMap = {};
-    allWeekdayDates.forEach(date => dateMap[date] = 0);
-
+    weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => {
-      if (dateMap[r.date] !== undefined) {
-        dateMap[r.date] += Number(r.meters || 0);
-      }
+      if (dateMap[r.date] !== undefined) dateMap[r.date] += Number(r.meters || 0);
     });
 
-    // UK format dd/mm + weekday
-    const labels = allWeekdayDates.map(dateStr => {
-      const dateObj = new Date(dateStr);
-      const day   = String(dateObj.getDate()).padStart(2, '0');
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const ddmm  = `${day}/${month}`;
-      const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
-
-      if (periods[periodKey].type === 'bar') {
-        return [ddmm, weekday]; // two lines for bar charts
-      }
-      return ddmm; // single line for line charts
-    });
-
+    const isBar = cfg.type === 'bar';
     return {
-      labels,
-      values: allWeekdayDates.map(d => Math.round(dateMap[d] || 0)),
-      dates: allWeekdayDates,
-      workingDays: allWeekdayDates.length
+      labels:      weekdays.map(d => formatDayLabel(d, isBar)),
+      values:      weekdays.map(d => Math.round(dateMap[d] || 0)),
+      workingDays: weekdays.length
     };
   }
 
+  // ── Stats display ─────────────────────────────────────────────────────────────
+
   function updateStatsDisplay(values, workingDays, team, periodKey) {
-    const totalElement = document.getElementById('totalValue');
-    const avgElement = document.getElementById('avgValue');
-    const targetElement = document.getElementById('targetValue');
-    const targetBox = targetElement.closest('.stats-box');
+    const totalEl  = document.getElementById('totalValue');
+    const avgEl    = document.getElementById('avgValue');
+    const targetEl = document.getElementById('targetValue');
+    const targetBox = document.getElementById('targetBox');
+    const completionBox = document.getElementById('completionBox');
 
-    // Calculate total
-    const total = values.reduce((sum, val) => sum + val, 0);
-    totalElement.textContent = total.toLocaleString();
+    completionBox.style.display = 'none';
 
-    // Calculate average per day - only count days with data
-    const populatedDays = values.filter(val => val > 0).length;
-    const average = populatedDays > 0 ? total / populatedDays : 0;
-    avgElement.textContent = average.toFixed(1);
+    const total = values.reduce((sum, v) => sum + v, 0);
+    totalEl.textContent = total.toLocaleString();
 
-    // Only show vs Target for 7-day period
+    const populated = values.filter(v => v > 0).length;
+    const avg = populated > 0 ? total / populated : 0;
+    avgEl.textContent = avg.toFixed(1);
+
     if (periodKey === '7days') {
       targetBox.style.display = 'block';
-      
-      // Get the last 5 populated days (days with data > 0)
-      const populatedValues = values.filter(val => val > 0);
-      const last5Populated = populatedValues.slice(-5);
-      
-      // Calculate total meters for last 5 populated days
-      const last5Total = last5Populated.reduce((sum, val) => sum + val, 0);
-      
-      // Engineer headcount per team
-     const engineerHeadcount = {
-        "all": 42,
-        "Richard Wiecko": 9,
-        "Scott Carson": 13,
-        "Stuart Whyte": 7,
-        "FTL 4": 13
-      };        
-      
-      // Calculate target: headcount × 6 × 0.9 × number of populated days
+      const last5 = values.filter(v => v > 0).slice(-5);
+      const last5Total = last5.reduce((s, v) => s + v, 0);
+      const engineerHeadcount = {
+        "all": 42, "Richard Wiecko": 9, "Scott Carson": 13,
+        "Stuart Whyte": 7, "FTL 4": 13
+      };
       const headcount = engineerHeadcount[team] || 42;
-      const target = headcount * 6 * 0.9 * last5Populated.length;
-      
-      // Calculate percentage: total meters / target
-      const targetPercentage = (last5Total / target) * 100;
-      
-      targetElement.textContent = `${targetPercentage.toFixed(1)}%`;
-      
-      // Color code the target percentage
-      targetElement.classList.remove('success', 'warning', 'error');
-      if (targetPercentage >= 100) {
-        targetElement.classList.add('success');
-      } else if (targetPercentage >= 80) {
-        targetElement.classList.add('warning');
-      } else {
-        targetElement.classList.add('error');
-      }
+      const target = headcount * 6 * 0.9 * last5.length;
+      const pct = (last5Total / target) * 100;
+      targetEl.textContent = `${pct.toFixed(1)}%`;
+      targetEl.classList.remove('success', 'warning', 'error');
+      if (pct >= 100) targetEl.classList.add('success');
+      else if (pct >= 80) targetEl.classList.add('warning');
+      else targetEl.classList.add('error');
     } else {
       targetBox.style.display = 'none';
     }
   }
 
+  function updateMonthStats(metersValues, completionValues) {
+    const totalEl  = document.getElementById('totalValue');
+    const avgEl    = document.getElementById('avgValue');
+    const targetBox = document.getElementById('targetBox');
+    const completionBox = document.getElementById('completionBox');
+    const completionEl  = document.getElementById('completionValue');
+
+    targetBox.style.display = 'none';
+    completionBox.style.display = 'block';
+
+    const total = metersValues.reduce((s, v) => s + v, 0);
+    totalEl.textContent = total.toLocaleString();
+
+    const populated = metersValues.filter(v => v > 0).length;
+    avgEl.textContent = populated > 0 ? (total / populated).toFixed(1) : '—';
+
+    const validComp = completionValues.filter(v => v !== null && v > 0);
+    if (validComp.length > 0) {
+      const avgComp = validComp.reduce((s, v) => s + v, 0) / validComp.length;
+      completionEl.textContent = `${avgComp.toFixed(1)}%`;
+    } else {
+      completionEl.textContent = '—';
+    }
+  }
+
+  // ── Chart rendering ───────────────────────────────────────────────────────────
+
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading performance data…</div>';
-    
-    // Reset stats
     document.getElementById('totalValue').textContent = '—';
     document.getElementById('avgValue').textContent = '—';
     document.getElementById('targetValue').textContent = '—';
     document.getElementById('targetValue').classList.remove('success', 'warning', 'error');
 
     try {
-      const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
-      const cfg = periods[currentPeriod];
+      if (currentMonth) {
+        // ── Monthly dual-axis chart ──────────────────────────────────────────
+        const [year, mon] = currentMonth.split('-').map(Number);
+        const label = `${monthNames[mon - 1]} ${year}`;
+        document.getElementById('pageTitle').textContent = `Meters — ${label}`;
 
-      // Update stats display
-      updateStatsDisplay(data.values, data.workingDays, currentTeam, currentPeriod);
+        const data = await fetchMonthData(currentMonth, currentTeam);
+        updateMonthStats(data.metersValues, data.completionValues);
 
-      container.innerHTML = '';
-      container.appendChild(ctx);
+        container.innerHTML = '';
+        container.appendChild(ctx);
+        if (chart) chart.destroy();
 
-      if (chart) chart.destroy();
-
-      chart = new Chart(ctx, {
-        type: cfg.type,
-        data: {
-          labels: data.labels,
-          datasets: [{
-            label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
-            data: data.values,
-            backgroundColor: cfg.type === 'bar' 
-              ? 'rgba(99,102,241,0.75)' 
-              : 'rgba(99,102,241,0.12)',
-            borderColor: cfg.color,
-            borderWidth: cfg.type === 'bar' ? 1 : 3,
-            borderRadius: cfg.type === 'bar' ? 6 : 0,
-            tension: cfg.type === 'line' ? 0.35 : 0,
-            fill: cfg.type === 'line',
-            pointRadius: cfg.type === 'bar' ? 0 : 3,
-            pointHoverRadius: 7,
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            title: {
-              display: true,
-              text: `${cfg.label} – Meters Installed`,
-              color: '#e2e8f0',
-              font: { size: 18, weight: '600' },
-              padding: { bottom: 20 }
-            },
-            legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
-            datalabels: cfg.type === 'bar' ? {
-              anchor: 'end',
-              align: 'top',
-              offset: 4,
-              color: '#e2e8f0',
-              font: { weight: 'bold', size: 12 },
-              formatter: (value) => value > 0 ? value : '',
-              textShadowColor: 'rgba(0,0,0,0.8)',
-              textShadowBlur: 4
-            } : false
-          },
-          scales: {
-            x: {
-              ticks: {
-                color: '#94a3b8',
-                font: { size: cfg.type === 'bar' ? 11 : 12 },
-                padding: 8,
-                callback: function(value, index) {
-                  return this.getLabelForValue(value);
+        chart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: data.labels,
+            datasets: [
+              {
+                type: 'bar',
+                label: 'Meters Installed',
+                data: data.metersValues,
+                backgroundColor: 'rgba(99,102,241,0.75)',
+                borderColor: '#6366f1',
+                borderWidth: 1,
+                borderRadius: 6,
+                yAxisID: 'yMeters',
+                datalabels: {
+                  anchor: 'end',
+                  align: 'top',
+                  offset: 2,
+                  color: '#e2e8f0',
+                  font: { weight: 'bold', size: 11 },
+                  formatter: v => v > 0 ? v : '',
+                  textShadowColor: 'rgba(0,0,0,0.8)',
+                  textShadowBlur: 4
                 }
               },
-              grid: { color: '#334155' }
+              {
+                type: 'line',
+                label: 'Completion %',
+                data: data.completionValues,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16,185,129,0.12)',
+                borderWidth: 3,
+                tension: 0.35,
+                fill: false,
+                pointRadius: 5,
+                pointHoverRadius: 8,
+                pointBackgroundColor: '#10b981',
+                yAxisID: 'yCompletion',
+                spanGaps: true,
+                datalabels: {
+                  anchor: 'top',
+                  align: 'top',
+                  offset: 6,
+                  color: '#34d399',
+                  font: { weight: 'bold', size: 10 },
+                  formatter: v => v !== null && v > 0 ? `${v}%` : '',
+                  textShadowColor: 'rgba(0,0,0,0.8)',
+                  textShadowBlur: 4
+                }
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              title: {
+                display: true,
+                text: `${label} – Meters Installed & Completion % (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
+                color: '#e2e8f0',
+                font: { size: 17, weight: '600' },
+                padding: { bottom: 20 }
+              },
+              legend: {
+                labels: {
+                  color: '#cbd5e1',
+                  font: { size: 13 },
+                  usePointStyle: true
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: ctx => {
+                    if (ctx.dataset.label === 'Completion %') {
+                      return ctx.raw !== null ? ` Completion: ${ctx.raw}%` : ' Completion: No data';
+                    }
+                    return ` Meters: ${ctx.raw}`;
+                  }
+                }
+              }
             },
-            y: {
-              beginAtZero: true,
-              ticks: { color: '#94a3b8', stepSize: 50 },
-              grid: { color: '#334155' }
+            scales: {
+              x: {
+                ticks: { color: '#94a3b8', font: { size: 10 }, padding: 8 },
+                grid: { color: '#334155' }
+              },
+              yMeters: {
+                type: 'linear',
+                position: 'left',
+                beginAtZero: true,
+                ticks: { color: '#94a3b8', stepSize: 50 },
+                grid: { color: '#334155' },
+                title: { display: true, text: 'Meters Installed', color: '#6366f1', font: { size: 12, weight: '600' } }
+              },
+              yCompletion: {
+                type: 'linear',
+                position: 'right',
+                beginAtZero: true,
+                max: 100,
+                ticks: { color: '#10b981', callback: v => `${v}%` },
+                grid: { drawOnChartArea: false },
+                title: { display: true, text: 'Completion %', color: '#10b981', font: { size: 12, weight: '600' } }
+              }
             }
-          }
-        },
-        plugins: [ChartDataLabels]
-      });
+          },
+          plugins: [ChartDataLabels]
+        });
+
+      } else {
+        // ── Standard period chart ────────────────────────────────────────────
+        document.getElementById('pageTitle').textContent = 'Meters Installed';
+        const data = await fetchAndAggregateMeters(currentPeriod, currentTeam);
+        const cfg = periods[currentPeriod];
+
+        updateStatsDisplay(data.values, data.workingDays, currentTeam, currentPeriod);
+
+        container.innerHTML = '';
+        container.appendChild(ctx);
+        if (chart) chart.destroy();
+
+        chart = new Chart(ctx, {
+          type: cfg.type,
+          data: {
+            labels: data.labels,
+            datasets: [{
+              label: `Meters (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
+              data: data.values,
+              backgroundColor: cfg.type === 'bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.12)',
+              borderColor: cfg.color,
+              borderWidth: cfg.type === 'bar' ? 1 : 3,
+              borderRadius: cfg.type === 'bar' ? 6 : 0,
+              tension: cfg.type === 'line' ? 0.35 : 0,
+              fill: cfg.type === 'line',
+              pointRadius: cfg.type === 'bar' ? 0 : 3,
+              pointHoverRadius: 7,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `${cfg.label} – Meters Installed`,
+                color: '#e2e8f0',
+                font: { size: 18, weight: '600' },
+                padding: { bottom: 20 }
+              },
+              legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
+              datalabels: cfg.type === 'bar' ? {
+                anchor: 'end',
+                align: 'top',
+                offset: 4,
+                color: '#e2e8f0',
+                font: { weight: 'bold', size: 12 },
+                formatter: v => v > 0 ? v : '',
+                textShadowColor: 'rgba(0,0,0,0.8)',
+                textShadowBlur: 4
+              } : false
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: '#94a3b8',
+                  font: { size: cfg.type === 'bar' ? 11 : 12 },
+                  padding: 8,
+                  callback: function(value) { return this.getLabelForValue(value); }
+                },
+                grid: { color: '#334155' }
+              },
+              y: {
+                beginAtZero: true,
+                ticks: { color: '#94a3b8', stepSize: 50 },
+                grid: { color: '#334155' }
+              }
+            }
+          },
+          plugins: [ChartDataLabels]
+        });
+      }
     } catch (err) {
       console.error("Error:", err);
-      let msg = err.message || "Unknown error";
       container.innerHTML = `
         <div class="error-msg">
-          ${msg}<br><br>
+          ${err.message || 'Unknown error'}<br><br>
           <small>Press F12 → Console for details</small>
         </div>`;
     }
   }
 
+  // ── Event listeners ───────────────────────────────────────────────────────────
+
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentPeriod = btn.dataset.period;
+      currentMonth  = null;
       updateChart();
     });
   });
@@ -499,6 +711,17 @@
       document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentTeam = btn.dataset.team;
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('.month-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentMonth  = btn.dataset.month;
+      currentPeriod = null;
       updateChart();
     });
   });
