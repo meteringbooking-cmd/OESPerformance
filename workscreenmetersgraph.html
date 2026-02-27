@@ -253,84 +253,7 @@
       color: var(--text-dim);
       font-weight: 600;
     }
-    .abort-search {
-      flex: 1;
-      min-width: 180px;
-      padding: 0.55rem 1rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 0.9rem;
-    }
-    .abort-search:focus { outline: none; border-color: var(--orange); }
-    .abort-sort-btn {
-      padding: 0.55rem 1rem;
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text-dim);
-      font-size: 0.85rem;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .abort-sort-btn:hover, .abort-sort-btn.active {
-      border-color: var(--orange);
-      color: var(--orange);
-    }
-    .abort-table-wrap { overflow-x: auto; }
-    .abort-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-    .abort-table thead tr {
-      background: rgba(249,115,22,0.15);
-      border-bottom: 2px solid var(--orange);
-    }
-    .abort-table th {
-      padding: 0.9rem 1rem;
-      text-align: left;
-      color: var(--orange);
-      font-weight: 700;
-      font-size: 0.82rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      cursor: pointer;
-      white-space: nowrap;
-      user-select: none;
-    }
-    .abort-table th:hover { color: #fb923c; }
-    .abort-table th .sort-icon { margin-left: 4px; opacity: 0.5; }
-    .abort-table th.sorted .sort-icon { opacity: 1; }
-    .abort-table tbody tr {
-      border-bottom: 1px solid var(--border);
-      transition: background 0.15s;
-    }
-    .abort-table tbody tr:hover { background: rgba(249,115,22,0.05); }
-    .abort-table td { padding: 0.8rem 1rem; color: var(--text); }
-    .abort-table td.team { color: var(--text-dim); font-size: 0.85rem; }
-    .abort-table td.total {
-      font-weight: 700;
-      color: var(--orange);
-      font-size: 1.05rem;
-    }
-    .abort-table tbody tr:last-child { border-bottom: none; }
-    .reason-badge {
-      display: inline-block;
-      padding: 0.2rem 0.6rem;
-      background: rgba(249,115,22,0.1);
-      border: 1px solid rgba(249,115,22,0.3);
-      border-radius: 20px;
-      font-size: 0.8rem;
-      color: #fb923c;
-    }
-    .no-data {
-      text-align: center;
-      padding: 3rem;
-      color: var(--text-dim);
-      font-size: 1rem;
-    }
+
     .abort-date-range {
       display: flex;
       gap: 0.75rem;
@@ -446,7 +369,7 @@
       <div class="loading">Loading performance data…</div>
     </div>
 
-    <!-- Aborts table view -->
+    <!-- Aborts chart view -->
     <div id="abortsContainer">
       <div class="abort-filters">
         <span class="abort-filter-label">Date range:</span>
@@ -456,22 +379,9 @@
           <input type="date" class="abort-date-input" id="abortTo">
         </div>
         <button class="abort-load-btn" id="abortLoadBtn">Load</button>
-        <input type="text" class="abort-search" id="abortSearch" placeholder="Search engineer, reason…">
       </div>
-      <div class="abort-table-wrap">
-        <table class="abort-table">
-          <thead>
-            <tr>
-              <th data-col="teamLeader">Team Leader <span class="sort-icon">↕</span></th>
-              <th data-col="engineer">Engineer <span class="sort-icon">↕</span></th>
-              <th data-col="reason">Reason <span class="sort-icon">↕</span></th>
-              <th data-col="total">Total <span class="sort-icon">↕</span></th>
-            </tr>
-          </thead>
-          <tbody id="abortsTableBody">
-            <tr><td colspan="4" class="no-data">Select a date range and click Load.</td></tr>
-          </tbody>
-        </table>
+      <div id="abortsChartContainer" style="height:480px;position:relative;margin-top:1rem;">
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">Select a date range and click Load.</div>
       </div>
     </div>
   </div>
@@ -512,10 +422,8 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
-  // ── Abort table state ────────────────────────────────────────────────────────
-  let allAborts = [];
-  let abortSortCol = "total";
-  let abortSortDir = -1; // -1 = desc
+  // ── Abort chart state ────────────────────────────────────────────────────────
+  let abortChart = null;
 
   // Set default abort date range (last 7 days)
   const today = new Date();
@@ -765,7 +673,8 @@
       isBar      = cfg.type === 'bar';
     }
 
-    const records = await fetchRecordsForRange(startDate, endDate, team);
+    // Install types always show all teams (company-wide view)
+    const records = await fetchRecordsForRange(startDate, endDate, "all");
     const dateMap = {};
     weekdays.forEach(d => dateMap[d] = { duals:0, singles:0, comms:0 });
     records.forEach(r => {
@@ -857,7 +766,7 @@
         plugins: {
           title: {
             display: true,
-            text: `${data.label} – Install Types (${currentTeam==='all'?'All Teams':currentTeam})`,
+            text: `${data.label} – Install Types (All Teams)`,
             color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20}
           },
           legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
@@ -872,101 +781,161 @@
     });
   }
 
-  // ── VIEW: Aborts ─────────────────────────────────────────────────────────────
+  // ── VIEW: Aborts chart by reason ─────────────────────────────────────────────
+
+  // Palette for team leader bars
+  const teamColors = [
+    { bg: 'rgba(99,102,241,0.8)',  border: '#6366f1' },
+    { bg: 'rgba(16,185,129,0.8)',  border: '#10b981' },
+    { bg: 'rgba(249,115,22,0.8)',  border: '#f97316' },
+    { bg: 'rgba(239,68,68,0.8)',   border: '#ef4444' },
+    { bg: 'rgba(168,85,247,0.8)',  border: '#a855f7' },
+    { bg: 'rgba(234,179,8,0.8)',   border: '#eab308' },
+  ];
 
   async function loadAborts() {
     const fromDate = document.getElementById('abortFrom').value;
     const toDate   = document.getElementById('abortTo').value;
     if (!fromDate || !toDate) return;
 
-    const tbody = document.getElementById('abortsTableBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="no-data">Loading…</td></tr>';
+    const abortsChartEl = document.getElementById('abortsChartContainer');
+    abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">Loading…</div>';
 
     try {
-      let q;
-      if (currentTeam === 'all') {
-        q = query(
-          collection(db, "aborts"),
-          where("date", ">=", fromDate),
-          where("date", "<=", toDate),
-          orderBy("date", "asc")
-        );
-      } else {
-        q = query(
-          collection(db, "aborts"),
-          where("date", ">=", fromDate),
-          where("date", "<=", toDate),
-          where("teamLeader", "==", currentTeam),
-          orderBy("date", "asc")
-        );
-      }
-
-      const snap = await getDocs(q);
-      allAborts = [];
-      snap.forEach(doc => allAborts.push(doc.data()));
-
-      // Stats
-      const totalAborts = allAborts.reduce((s,r) => s + (Number(r.total)||0), 0);
-      const uniqueEng   = new Set(allAborts.map(r => r.engineer)).size;
-      const topReason   = (() => {
-        const counts = {};
-        allAborts.forEach(r => { const k = r.reason||'Unknown'; counts[k] = (counts[k]||0)+(Number(r.total)||0); });
-        return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
-      })();
-
-      setStats(
-        `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${totalAborts}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Engineers</div><div class="stats-value">${uniqueEng}</div></div>` +
-        `<div class="stats-box" style="min-width:180px"><div class="stats-label">Top Reason</div><div class="stats-value" style="font-size:0.95rem;padding-top:4px">${topReason}</div></div>`
+      // Always fetch all teams for the aborts chart — team filter just highlights
+      const q = query(
+        collection(db, "aborts"),
+        where("date", ">=", fromDate),
+        where("date", "<=", toDate),
+        orderBy("date", "asc")
       );
 
-      renderAbortsTable();
+      const snap = await getDocs(q);
+      const allAborts = [];
+      snap.forEach(doc => allAborts.push(doc.data()));
+
+      // Filter to selected team if not "all"
+      const filtered = currentTeam === 'all'
+        ? allAborts
+        : allAborts.filter(r => r.teamLeader === currentTeam);
+
+      if (filtered.length === 0) {
+        abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">No abort records found for this period.</div>';
+        setStats(`<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">0</div></div>`);
+        return;
+      }
+
+      // Aggregate: by reason × by teamLeader
+      const reasonTotals = {}; // reason → total
+      const teamReasonMap = {}; // teamLeader → { reason → total }
+
+      filtered.forEach(r => {
+        const reason = (r.reason || 'Unknown').trim();
+        const team   = r.teamLeader || 'Unknown';
+        const total  = Number(r.total) || 0;
+
+        reasonTotals[reason] = (reasonTotals[reason] || 0) + total;
+        if (!teamReasonMap[team]) teamReasonMap[team] = {};
+        teamReasonMap[team][reason] = (teamReasonMap[team][reason] || 0) + total;
+      });
+
+      // Sort reasons by total descending
+      const reasons = Object.entries(reasonTotals)
+        .sort((a,b) => b[1] - a[1])
+        .map(([r]) => r);
+
+      const teams = Object.keys(teamReasonMap).sort();
+      const grandTotal = Object.values(reasonTotals).reduce((s,v) => s+v, 0);
+      const topReason  = reasons[0] || '—';
+
+      // Stats
+      const uniqueEng = new Set(filtered.map(r => r.engineer)).size;
+      setStats(
+        `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Engineers</div><div class="stats-value">${uniqueEng}</div></div>` +
+        `<div class="stats-box" style="min-width:200px"><div class="stats-label">Top Reason</div><div class="stats-value orange-grad" style="font-size:1rem;line-height:1.3;padding-top:2px">${topReason}</div></div>`
+      );
+
+      // Build chart
+      abortsChartEl.innerHTML = '';
+      const abortCtx = document.createElement('canvas');
+      abortsChartEl.appendChild(abortCtx);
+
+      if (abortChart) abortChart.destroy();
+
+      const datasets = (currentTeam === 'all' ? teams : [currentTeam]).map((team, i) => {
+        const col = teamColors[i % teamColors.length];
+        return {
+          label: team,
+          data: reasons.map(r => teamReasonMap[team]?.[r] || 0),
+          backgroundColor: col.bg,
+          borderColor: col.border,
+          borderWidth: 1,
+          borderRadius: 5,
+          datalabels: {
+            anchor: 'end', align: 'top', offset: 2,
+            color: '#e2e8f0', font: { weight: 'bold', size: 10 },
+            formatter: v => v > 0 ? v : '',
+            textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+          }
+        };
+      });
+
+      // Wrap long reason labels
+      const wrappedReasons = reasons.map(r => {
+        if (r.length <= 20) return r;
+        const words = r.split(' ');
+        const lines = [];
+        let line = '';
+        words.forEach(w => {
+          if ((line + ' ' + w).trim().length > 20) { lines.push(line.trim()); line = w; }
+          else line = (line + ' ' + w).trim();
+        });
+        if (line) lines.push(line);
+        return lines;
+      });
+
+      abortChart = new Chart(abortCtx, {
+        type: 'bar',
+        data: { labels: wrappedReasons, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: `Aborts by Reason${currentTeam !== 'all' ? ' — ' + currentTeam : ' — All Teams'} (${fromDate} → ${toDate})`,
+              color: '#e2e8f0', font: { size: 16, weight: '600' }, padding: { bottom: 20 }
+            },
+            legend: { labels: { color: '#cbd5e1', font: { size: 13 } } },
+            tooltip: {
+              callbacks: {
+                title: items => Array.isArray(items[0].label) ? items[0].label.join(' ') : items[0].label,
+                label: c => ` ${c.dataset.label}: ${c.raw}`
+              }
+            },
+            datalabels: {}
+          },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', font: { size: 10 }, padding: 6, maxRotation: 30 },
+              grid: { color: '#334155' }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#94a3b8', stepSize: 1, precision: 0 },
+              grid: { color: '#334155' }
+            }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+
     } catch (err) {
       console.error(err);
-      tbody.innerHTML = `<tr><td colspan="4" class="no-data" style="color:var(--error)">${err.message}</td></tr>`;
+      document.getElementById('abortsChartContainer').innerHTML =
+        `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);font-size:1rem">${err.message}</div>`;
     }
-  }
-
-  function renderAbortsTable() {
-    const search  = document.getElementById('abortSearch').value.toLowerCase();
-    const tbody   = document.getElementById('abortsTableBody');
-    tbody.innerHTML = '';
-
-    let rows = allAborts.filter(r =>
-      !search ||
-      (r.engineer||'').toLowerCase().includes(search) ||
-      (r.reason||'').toLowerCase().includes(search) ||
-      (r.teamLeader||'').toLowerCase().includes(search)
-    );
-
-    rows.sort((a,b) => {
-      const av = abortSortCol === 'total' ? (Number(a[abortSortCol])||0) : (a[abortSortCol]||'');
-      const bv = abortSortCol === 'total' ? (Number(b[abortSortCol])||0) : (b[abortSortCol]||'');
-      return abortSortDir * (av > bv ? 1 : av < bv ? -1 : 0);
-    });
-
-    if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="no-data">No abort records found.</td></tr>';
-      return;
-    }
-
-    rows.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="team">${r.teamLeader||'—'}</td>
-        <td>${r.engineer||'—'}</td>
-        <td><span class="reason-badge">${r.reason||'—'}</span></td>
-        <td class="total">${r.total||0}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-
-    // Update sort icon highlights
-    document.querySelectorAll('.abort-table th').forEach(th => {
-      th.classList.toggle('sorted', th.dataset.col === abortSortCol);
-      const icon = th.querySelector('.sort-icon');
-      if (icon) icon.textContent = th.dataset.col === abortSortCol ? (abortSortDir===1?'↑':'↓') : '↕';
-    });
   }
 
   // ── Dual-axis chart options ───────────────────────────────────────────────────
@@ -1077,17 +1046,6 @@
   });
 
   document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
-
-  document.getElementById('abortSearch').addEventListener('input', renderAbortsTable);
-
-  document.querySelectorAll('.abort-table th').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = th.dataset.col;
-      if (abortSortCol === col) abortSortDir *= -1;
-      else { abortSortCol = col; abortSortDir = col === 'total' ? -1 : 1; }
-      renderAbortsTable();
-    });
-  });
 
   // Initial render
   updateView();
