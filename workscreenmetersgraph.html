@@ -783,15 +783,92 @@
 
   // ── VIEW: Aborts chart by reason ─────────────────────────────────────────────
 
-  // Palette for team leader bars
-  const teamColors = [
-    { bg: 'rgba(99,102,241,0.8)',  border: '#6366f1' },
-    { bg: 'rgba(16,185,129,0.8)',  border: '#10b981' },
-    { bg: 'rgba(249,115,22,0.8)',  border: '#f97316' },
-    { bg: 'rgba(239,68,68,0.8)',   border: '#ef4444' },
-    { bg: 'rgba(168,85,247,0.8)',  border: '#a855f7' },
-    { bg: 'rgba(234,179,8,0.8)',   border: '#eab308' },
+
+  // ── Canonical abort reasons (fixed order) ───────────────────────────────────
+  const ABORT_REASONS = [
+    'Tech abort',
+    'No access',
+    'Refused access',
+    'Higher skill set required',
+    'Work not required',
+    'DNO Issue',
+    'Stock issue',
+    'Wrong details',
+    'H&S issue',
+    'No abort code',
+    'Customer Cancellation',
+    'Left open',
   ];
+
+  // Normalise a raw reason string → canonical label(s)
+  // Handles: "x2" multipliers, comma-separated lists, fuzzy matching
+  function normaliseReason(raw) {
+    if (!raw) return ['No abort code'];
+    const str = raw.trim();
+
+    // Check for x2 / x3 etc multiplier at end, e.g. "No access x2"
+    const multMatch = str.match(/^(.+?)\s*[xX×](\d+)\s*$/);
+    let baseStr = str;
+    let multiplier = 1;
+    if (multMatch) {
+      baseStr   = multMatch[1].trim();
+      multiplier = parseInt(multMatch[2]) || 1;
+    }
+
+    // Split on comma to handle "No access, Refused access"
+    const parts = baseStr.split(',').map(p => p.trim()).filter(Boolean);
+
+    const results = [];
+    parts.forEach(part => {
+      const matched = fuzzyMatchReason(part);
+      for (let i = 0; i < multiplier; i++) results.push(matched);
+    });
+    return results;
+  }
+
+  function fuzzyMatchReason(str) {
+    const s = str.toLowerCase().replace(/[^a-z0-9 &]/g, '').trim();
+    // Direct / close matches
+    const map = {
+      'tech abort':                  'Tech abort',
+      'technical abort':             'Tech abort',
+      'no access':                   'No access',
+      'refused access':              'Refused access',
+      'refused':                     'Refused access',
+      'higher skill set required':   'Higher skill set required',
+      'higher skill':                'Higher skill set required',
+      'skill set':                   'Higher skill set required',
+      'work not required':           'Work not required',
+      'not required':                'Work not required',
+      'dno issue':                   'DNO Issue',
+      'dno':                         'DNO Issue',
+      'stock issue':                 'Stock issue',
+      'stock':                       'Stock issue',
+      'wrong details':               'Wrong details',
+      'wrong detail':                'Wrong details',
+      'hs issue':                    'H&S issue',
+      'h&s issue':                   'H&S issue',
+      'h&s':                         'H&S issue',
+      'health and safety':           'H&S issue',
+      'no abort code':               'No abort code',
+      'no code':                     'No abort code',
+      'customer cancellation':       'Customer Cancellation',
+      'customer cancel':             'Customer Cancellation',
+      'cancellation':                'Customer Cancellation',
+      'left open':                   'Left open',
+    };
+    // Try exact map first
+    if (map[s]) return map[s];
+    // Try partial match against map keys
+    for (const [key, val] of Object.entries(map)) {
+      if (s.includes(key) || key.includes(s)) return val;
+    }
+    // Try partial match against canonical names
+    for (const canon of ABORT_REASONS) {
+      if (s.includes(canon.toLowerCase()) || canon.toLowerCase().includes(s)) return canon;
+    }
+    return 'No abort code'; // fallback
+  }
 
   async function loadAborts() {
     const fromDate = document.getElementById('abortFrom').value;
@@ -802,7 +879,6 @@
     abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">Loading…</div>';
 
     try {
-      // Always fetch all teams for the aborts chart — team filter just highlights
       const q = query(
         collection(db, "aborts"),
         where("date", ">=", fromDate),
@@ -825,31 +901,31 @@
         return;
       }
 
-      // Aggregate: by reason × by teamLeader
-      const reasonTotals = {}; // reason → total
-      const teamReasonMap = {}; // teamLeader → { reason → total }
+      // Build reason totals using canonical reasons + normalisation
+      const reasonTotals = {};
+      ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
 
-      filtered.forEach(r => {
-        const reason = (r.reason || 'Unknown').trim();
-        const team   = r.teamLeader || 'Unknown';
-        const total  = Number(r.total) || 0;
+      filtered.forEach(row => {
+        const rawTotal  = Number(row.total) || 1;
+        const rawReason = row.reason || '';
 
-        reasonTotals[reason] = (reasonTotals[reason] || 0) + total;
-        if (!teamReasonMap[team]) teamReasonMap[team] = {};
-        teamReasonMap[team][reason] = (teamReasonMap[team][reason] || 0) + total;
+        // normaliseReason returns an array (handles x2 and commas)
+        const resolved = normaliseReason(rawReason);
+
+        // Divide the total evenly across resolved reasons
+        const share = rawTotal / resolved.length;
+        resolved.forEach(canon => {
+          reasonTotals[canon] = (reasonTotals[canon] || 0) + share;
+        });
       });
 
-      // Sort reasons by total descending
-      const reasons = Object.entries(reasonTotals)
-        .sort((a,b) => b[1] - a[1])
-        .map(([r]) => r);
+      // Round all totals
+      ABORT_REASONS.forEach(r => { reasonTotals[r] = Math.round(reasonTotals[r]); });
 
-      const teams = Object.keys(teamReasonMap).sort();
-      const grandTotal = Object.values(reasonTotals).reduce((s,v) => s+v, 0);
-      const topReason  = reasons[0] || '—';
+      const grandTotal = ABORT_REASONS.reduce((s,r) => s + reasonTotals[r], 0);
+      const topReason  = ABORT_REASONS.slice().sort((a,b) => reasonTotals[b] - reasonTotals[a])[0];
+      const uniqueEng  = new Set(filtered.map(r => r.engineer)).size;
 
-      // Stats
-      const uniqueEng = new Set(filtered.map(r => r.engineer)).size;
       setStats(
         `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Engineers</div><div class="stats-value">${uniqueEng}</div></div>` +
@@ -860,54 +936,46 @@
       abortsChartEl.innerHTML = '';
       const abortCtx = document.createElement('canvas');
       abortsChartEl.appendChild(abortCtx);
-
       if (abortChart) abortChart.destroy();
 
-      const datasets = [{
-        label: 'Aborts',
-        data: reasons.map(r => reasonTotals[r] || 0),
-        backgroundColor: 'rgba(249,115,22,0.75)',
-        borderColor: '#f97316',
-        borderWidth: 1,
-        borderRadius: 5,
-        datalabels: {
-          anchor: 'end', align: 'top', offset: 2,
-          color: '#e2e8f0', font: { weight: 'bold', size: 11 },
-          formatter: v => v > 0 ? v : '',
-          textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
-        }
-      }];
-
-      // Wrap long reason labels
-      const wrappedReasons = reasons.map(r => {
-        if (r.length <= 20) return r;
-        const words = r.split(' ');
-        const lines = [];
-        let line = '';
-        words.forEach(w => {
-          if ((line + ' ' + w).trim().length > 20) { lines.push(line.trim()); line = w; }
-          else line = (line + ' ' + w).trim();
-        });
-        if (line) lines.push(line);
-        return lines;
-      });
+      const chartData = ABORT_REASONS.map(r => reasonTotals[r]);
 
       abortChart = new Chart(abortCtx, {
         type: 'bar',
-        data: { labels: wrappedReasons, datasets },
+        data: {
+          labels: ABORT_REASONS,
+          datasets: [{
+            label: 'Aborts',
+            data: chartData,
+            backgroundColor: chartData.map(v =>
+              v === Math.max(...chartData) ? 'rgba(239,68,68,0.8)' : 'rgba(249,115,22,0.75)'
+            ),
+            borderColor: chartData.map(v =>
+              v === Math.max(...chartData) ? '#ef4444' : '#f97316'
+            ),
+            borderWidth: 1,
+            borderRadius: 5,
+            datalabels: {
+              anchor: 'end', align: 'top', offset: 2,
+              color: '#e2e8f0', font: { weight: 'bold', size: 12 },
+              formatter: v => v > 0 ? v : '',
+              textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+            }
+          }]
+        },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          layout: { padding: { top: 24 } },
           plugins: {
             title: {
               display: true,
-              text: `Aborts by Reason — All Teams (${fromDate} → ${toDate})`,
+              text: `Aborts by Reason — ${currentTeam === 'all' ? 'All Teams' : currentTeam} (${fromDate} → ${toDate})`,
               color: '#e2e8f0', font: { size: 16, weight: '600' }, padding: { bottom: 20 }
             },
             legend: { display: false },
             tooltip: {
               callbacks: {
-                title: items => Array.isArray(items[0].label) ? items[0].label.join(' ') : items[0].label,
                 label: c => ` Total: ${c.raw}`
               }
             },
@@ -915,12 +983,19 @@
           },
           scales: {
             x: {
-              ticks: { color: '#94a3b8', font: { size: 10 }, padding: 6, maxRotation: 30 },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 11 },
+                padding: 4,
+                maxRotation: 90,
+                minRotation: 90,
+                autoSkip: false,
+              },
               grid: { color: '#334155' }
             },
             y: {
               beginAtZero: true,
-              ticks: { color: '#94a3b8', stepSize: 1, precision: 0 },
+              ticks: { color: '#94a3b8', precision: 0 },
               grid: { color: '#334155' }
             }
           }
