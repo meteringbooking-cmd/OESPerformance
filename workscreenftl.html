@@ -246,7 +246,7 @@
                 <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openGraphPopup(event, 'SP - Additional Payments', 'https://sp-performance.vercel.app/additionalpayments.html')">💷 SP Additional Payments</button>
                 <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openGraphPopup(event, 'Engineer Complaints', 'https://pingu-blue.vercel.app/meteringcomplaints.html')">📋 Engineer Complaints</button>
                 <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openGraphPopup(event, 'Compliance Tracker', 'https://oes-performance.vercel.app/compliancetracker.html')">✅ Compliance Tracker</button>
-                <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openGraphPopup(event, 'Stock Take Tracker', 'https://oes-performance.vercel.app/stocktaketimelosstracker.html')">📦 Stock Take Time Loss</button>
+                <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openGraphPopup(event, 'Stock Take Tracker', 'https://oes-performance.vercel.app/stocktaketracker.html')">📦 Stock Take Tracker</button>
                 <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openCognitoPopup(event)">📝 Cognito Forms</button>
                 <button class="graph-button" style="padding: 12px 24px; font-size: 0.9em;" onclick="openSharepointPopup(event)">🗂️ SharePoint</button>
             </div>
@@ -449,12 +449,26 @@
 
     <!-- Aborts Popup -->
     <div class="popup-overlay" id="abortsPopup" onclick="closeAbortsPopup(event)">
-        <div class="popup-content" onclick="event.stopPropagation()" style="height: 85%;">
-            <div class="popup-header">
-                <div class="popup-title">📊 Yesterday's Aborts - Detailed Breakdown</div>
-                <button class="popup-close" onclick="closeAbortsPopup()">✕</button>
+        <div class="popup-content" onclick="event.stopPropagation()" style="height: 90%;">
+            <div class="popup-header" style="flex-direction:column;gap:14px;align-items:stretch;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div class="popup-title">📊 Aborts — Detailed Breakdown</div>
+                    <div style="display:flex;align-items:center;gap:14px;">
+                        <!-- Chart / Table toggle -->
+                        <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);border-radius:8px;padding:6px 12px;">
+                            <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Table</span>
+                            <div id="abortViewToggle" onclick="toggleAbortView()" style="width:42px;height:22px;background:rgba(0,210,255,0.2);border:1px solid rgba(0,210,255,0.4);border-radius:11px;cursor:pointer;position:relative;transition:background 0.3s;">
+                                <div id="abortToggleKnob" style="width:16px;height:16px;background:#00d2ff;border-radius:50%;position:absolute;top:2px;left:2px;transition:left 0.3s;box-shadow:0 0 6px rgba(0,210,255,0.8);"></div>
+                            </div>
+                            <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Chart</span>
+                        </div>
+                        <button class="popup-close" onclick="closeAbortsPopup()">✕</button>
+                    </div>
+                </div>
+                <!-- Day tabs -->
+                <div id="abortDayTabs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
             </div>
-            <div id="abortsDetailContainer" style="flex: 1; overflow-y: auto; padding: 30px;">
+            <div id="abortsDetailContainer" style="flex: 1; overflow-y: auto; padding: 24px 30px;">
                 <div style="text-align: center; padding: 60px; color: #a8dadc;"><div style="font-size: 2em;">⏳</div><div>Loading abort data...</div></div>
             </div>
         </div>
@@ -514,6 +528,7 @@
 
     <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()"></button>
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -889,131 +904,168 @@
             return output;
         }
 
-        // ── Abort detail popup ────────────────────────────────────
+        // ── Abort popup state ─────────────────────────────────────
+        let abortAllDaysData = [];
+        let abortSelectedDayIdx = 0;
+        let abortChartMode = false;
+        let abortChartInstance = null;
+
+        window.toggleAbortView = function() {
+            abortChartMode = !abortChartMode;
+            const knob = document.getElementById('abortToggleKnob');
+            const track = document.getElementById('abortViewToggle');
+            if (abortChartMode) { knob.style.left = '22px'; track.style.background = 'rgba(0,210,255,0.4)'; }
+            else                { knob.style.left = '2px';  track.style.background = 'rgba(0,210,255,0.2)'; }
+            renderAbortDay();
+        };
+
+        window.selectAbortDay = function(idx) {
+            abortSelectedDayIdx = idx;
+            document.querySelectorAll('.abort-day-tab').forEach((t, i) => {
+                t.style.background  = i === idx ? 'rgba(239,68,68,0.35)' : 'rgba(0,0,0,0.3)';
+                t.style.borderColor = i === idx ? 'rgba(239,68,68,0.7)'  : 'rgba(0,210,255,0.2)';
+                t.style.color       = i === idx ? '#ffffff' : '#a8dadc';
+            });
+            renderAbortDay();
+        };
+
+        function renderAbortDay() {
+            const container = document.getElementById('abortsDetailContainer');
+            if (!abortAllDaysData.length) return;
+            if (abortChartMode) renderAbortChart(container, abortAllDaysData[abortSelectedDayIdx]);
+            else                renderAbortTable(container, abortAllDaysData[abortSelectedDayIdx]);
+        }
+
+        function renderAbortTable(container, dayData) {
+            if (abortChartInstance) { abortChartInstance.destroy(); abortChartInstance = null; }
+            const { teamData, total: grandTotal, label } = dayData;
+            const sortedTeams = Object.entries(teamData).sort((a, b) => b[1].total - a[1].total);
+            if (sortedTeams.length === 0) {
+                container.innerHTML = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div><div style="font-size:0.8em;margin-top:10px;opacity:0.8;">All jobs completed successfully</div></div>`;
+                return;
+            }
+            let html = '';
+            sortedTeams.forEach(([teamLeader, data]) => {
+                html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(239,68,68,0.3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,0.2);">
+                        <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${teamLeader}</div>
+                        <div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total > 1 ? 's' : ''}</div>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead><tr style="background:rgba(0,210,255,0.15);">
+                            <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
+                            <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
+                            <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
+                        </tr></thead>
+                        <tbody>${data.engineers.map(eng => `<tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
+                            <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
+                            <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
+                        </tr>`).join('')}</tbody>
+                    </table></div>`;
+            });
+            // Reason summary tiles
+            const allReasons = {};
+            sortedTeams.forEach(([, d]) => d.engineers.forEach(e => e.parsedReasons.forEach(({reason, qty}) => { allReasons[reason] = (allReasons[reason]||0)+qty; })));
+            const sortedR = Object.entries(allReasons).sort((a,b) => b[1]-a[1]);
+            if (sortedR.length > 1) {
+                html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);">
+                    <div style="font-size:0.82em;font-weight:700;color:#00d2ff;margin-bottom:14px;text-transform:uppercase;letter-spacing:1.5px;">Abort Reasons Breakdown</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+                    ${sortedR.map(([r,q]) => `<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;"><span style="color:#a8dadc;font-size:0.85em;">${r}</span><span style="color:#ef4444;font-weight:800;font-size:1.1em;margin-left:8px;">${q}</span></div>`).join('')}
+                    </div></div>`;
+            }
+            html += `<div style="text-align:right;padding:20px;background:rgba(239,68,68,0.2);border-radius:12px;border:2px solid rgba(239,68,68,0.4);">
+                <div style="font-size:1em;color:#a8dadc;margin-bottom:6px;">Total Aborts — ${label}</div>
+                <div style="font-size:2.5em;font-weight:900;color:#ef4444;">${grandTotal}</div></div>`;
+            container.innerHTML = html;
+        }
+
+        function renderAbortChart(container, dayData) {
+            const { reasons: reasonCounts, label, total: grandTotal } = dayData;
+            const sortedR = Object.entries(reasonCounts).sort((a,b) => b[1]-a[1]);
+            if (sortedR.length === 0) {
+                container.innerHTML = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div></div>`;
+                return;
+            }
+            container.innerHTML = `
+            <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:1em;color:#a8dadc;">Abort reasons for <strong style="color:#00d2ff;">${label}</strong></div>
+                <div style="font-size:1.8em;font-weight:800;color:#ef4444;">${grandTotal} Total</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,210,255,0.2);border-radius:12px;padding:20px;">
+                    <div style="font-size:0.8em;color:#a8dadc;margin-bottom:12px;text-transform:uppercase;font-weight:700;">By Reason (Bar)</div>
+                    <canvas id="abortBarChart"></canvas>
+                </div>
+                <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,210,255,0.2);border-radius:12px;padding:20px;">
+                    <div style="font-size:0.8em;color:#a8dadc;margin-bottom:12px;text-transform:uppercase;font-weight:700;">Distribution</div>
+                    <canvas id="abortDoughnut"></canvas>
+                </div>
+            </div>`;
+            setTimeout(() => {
+                const COLORS = ['#ef4444','#f59e0b','#3b82f6','#10b981','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#a78bfa'];
+                if (abortChartInstance) abortChartInstance.destroy();
+                const barCtx = document.getElementById('abortBarChart');
+                if (barCtx) abortChartInstance = new Chart(barCtx.getContext('2d'), {
+                    type: 'bar',
+                    data: { labels: sortedR.map(([r])=>r), datasets: [{ label:'Aborts', data: sortedR.map(([,q])=>q), backgroundColor: sortedR.map((_,i)=>COLORS[i%COLORS.length]+'CC'), borderColor: sortedR.map((_,i)=>COLORS[i%COLORS.length]), borderWidth:2, borderRadius:6 }] },
+                    options: { responsive:true, plugins:{ legend:{display:false} }, scales:{ x:{ticks:{color:'#a8dadc',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}}, y:{ticks:{color:'#a8dadc',stepSize:1},grid:{color:'rgba(255,255,255,0.08)'},beginAtZero:true} } }
+                });
+                const dCtx = document.getElementById('abortDoughnut');
+                if (dCtx) new Chart(dCtx.getContext('2d'), {
+                    type: 'doughnut',
+                    data: { labels: sortedR.map(([r])=>r), datasets: [{ data: sortedR.map(([,q])=>q), backgroundColor: sortedR.map((_,i)=>COLORS[i%COLORS.length]+'BB'), borderColor: sortedR.map((_,i)=>COLORS[i%COLORS.length]), borderWidth:2 }] },
+                    options: { responsive:true, plugins:{ legend:{position:'bottom',labels:{color:'#a8dadc',font:{size:11},padding:10}}, tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed/grandTotal*100)}%)`}} } }
+                });
+            }, 60);
+        }
+
         window.loadDetailedAborts = async function() {
             try {
                 const container = document.getElementById('abortsDetailContainer');
                 container.innerHTML = `<div style="text-align:center;padding:40px;color:#a8dadc;"><div style="font-size:2em;">⏳</div><div>Loading abort data...</div></div>`;
+                abortChartMode = false;
+                document.getElementById('abortToggleKnob').style.left = '2px';
+                document.getElementById('abortViewToggle').style.background = 'rgba(0,210,255,0.2)';
 
-                const prevDay = getPreviousWorkingDay();
-                const dateStr = formatDateForQuery(prevDay);
-                const abortsSnap = await getDocs(query(collection(performanceDb, "aborts"), where("date", "==", dateStr)));
-
-                const teamData = {};
-                let grandTotal = 0;
-
-                abortsSnap.forEach(doc => {
-                    const data = doc.data();
-                    const teamLeader   = data.teamLeader || 'Unknown Team';
-                    const engineerName = data.engineer || '';
-                    if (!engineerName) return;
-                    const rawQty    = data.total || 1;
-                    const rawReason = data.reason || '';
-                    const parsed    = parseAbortReasons(rawReason, rawQty);
-                    const docTotal  = parsed.reduce((s, r) => s + r.qty, 0);
-                    if (!teamData[teamLeader]) teamData[teamLeader] = { total: 0, engineers: [] };
-                    teamData[teamLeader].total += docTotal;
-                    grandTotal += docTotal;
-                    const reasonCounts = {};
-                    parsed.forEach(({ reason, qty }) => { reasonCounts[reason] = (reasonCounts[reason] || 0) + qty; });
-                    const combinedReason = Object.entries(reasonCounts)
-                        .map(([reason, qty]) => qty > 1 ? `${reason} (x${qty})` : reason)
-                        .join(' - ');
-                    teamData[teamLeader].engineers.push({ name: engineerName, aborts: docTotal, reason: combinedReason });
-                });
-
-                const sortedTeams = Object.entries(teamData).sort((a, b) => b[1].total - a[1].total);
-                sortedTeams.forEach(([, d]) => d.engineers.sort((a, b) => a.name.localeCompare(b.name)));
-
-                let mainHtml = '';
-                if (sortedTeams.length === 0) {
-                    mainHtml = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts Yesterday!</div><div style="font-size:0.8em;margin-top:10px;opacity:0.8;">All jobs completed successfully</div></div>`;
-                } else {
-                    sortedTeams.forEach(([teamLeader, data]) => {
-                        mainHtml += `
-                        <div style="margin-bottom:30px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(239,68,68,0.3);">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,0.2);">
-                                <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${teamLeader}</div>
-                                <div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total > 1 ? 's' : ''}</div>
-                            </div>
-                            <table style="width:100%;border-collapse:collapse;">
-                                <thead><tr style="background:rgba(0,210,255,0.15);">
-                                    <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
-                                    <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
-                                    <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
-                                </tr></thead>
-                                <tbody>${data.engineers.map(eng => `
-                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                        <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
-                                        <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
-                                        <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
-                                    </tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>`;
-                    });
-                    mainHtml += `<div style="text-align:right;padding:20px;background:rgba(239,68,68,0.2);border-radius:12px;border:2px solid rgba(239,68,68,0.4);margin-bottom:0;">
-                        <div style="font-size:1.1em;color:#a8dadc;margin-bottom:8px;">Total Aborts Yesterday</div>
-                        <div style="font-size:2.5em;font-weight:900;color:#ef4444;">${grandTotal}</div>
-                    </div>`;
-                }
-
-                const fiveDayDates = getPreviousWorkingDays(5).reverse();
-                const fiveDayResults = await Promise.all(fiveDayDates.map(async d => {
+                const fiveDays = getPreviousWorkingDays(5).reverse();
+                const rawDays = await Promise.all(fiveDays.map(async (d) => {
                     const ds = formatDateForQuery(d);
-                    const snap2 = await getDocs(query(collection(performanceDb, "aborts"), where("date", "==", ds)));
-                    let dayTotal = 0; const reasonCounts = {};
-                    snap2.forEach(doc => {
+                    const snap = await getDocs(query(collection(performanceDb, "aborts"), where("date", "==", ds)));
+                    const teamData = {}; let total = 0; const reasons = {};
+                    snap.forEach(doc => {
                         const data = doc.data();
-                        if (!data.engineer || data.engineer === '') return;
+                        const tl = data.teamLeader || 'Unknown Team', eng = data.engineer || '';
+                        if (!eng) return;
                         const parsed = parseAbortReasons(data.reason || '', data.total || 1);
-                        parsed.forEach(({ reason, qty }) => { dayTotal += qty; reasonCounts[reason] = (reasonCounts[reason] || 0) + qty; });
+                        const docTotal = parsed.reduce((s,r)=>s+r.qty,0);
+                        total += docTotal;
+                        if (!teamData[tl]) teamData[tl] = { total:0, engineers:[] };
+                        teamData[tl].total += docTotal;
+                        const rc = {};
+                        parsed.forEach(({reason,qty}) => { rc[reason]=(rc[reason]||0)+qty; reasons[reason]=(reasons[reason]||0)+qty; });
+                        const combinedReason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
+                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed });
                     });
-                    return { label: formatDate(d), total: dayTotal, reasons: reasonCounts };
+                    Object.values(teamData).forEach(t => t.engineers.sort((a,b)=>a.name.localeCompare(b.name)));
+                    return { date:d, label:formatDate(d), total, teamData, reasons };
                 }));
 
-                const allReasons = {};
-                fiveDayResults.forEach(r => Object.entries(r.reasons).forEach(([reason, count]) => { allReasons[reason] = (allReasons[reason] || 0) + count; }));
-                const sortedReasons = Object.keys(allReasons).sort((a, b) => allReasons[b] - allReasons[a]);
+                abortAllDaysData = rawDays.reverse(); // index 0 = most recent
+                abortSelectedDayIdx = 0;
 
-                const thStyle = `style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.78em;letter-spacing:0.3px;white-space:nowrap;"`;
-                const reasonHeaders = sortedReasons.map(r => `<th ${thStyle}>${r}</th>`).join('');
-                const summaryRows = fiveDayResults.map(r => {
-                    const cells = sortedReasons.map(reason => {
-                        const val = r.reasons[reason] || 0;
-                        return `<td style="padding:10px 8px;text-align:center;color:${val > 0 ? '#f59e0b' : 'rgba(255,255,255,0.2)'};font-weight:${val > 0 ? '700' : '400'};">${val > 0 ? val : '–'}</td>`;
-                    }).join('');
-                    return `<tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
-                        <td style="padding:10px 14px;color:#e1e8ed;font-weight:600;white-space:nowrap;">${r.label}</td>
-                        <td style="padding:10px 14px;text-align:center;font-weight:800;font-size:1.1em;color:${r.total > 0 ? '#ef4444' : '#10b981'};">${r.total}</td>
-                        ${cells}
-                    </tr>`;
-                }).join('');
-                const grandTotalAll = fiveDayResults.reduce((s, r) => s + r.total, 0);
-                const totalsRow = `<tr style="background:rgba(0,210,255,0.08);border-top:2px solid rgba(0,210,255,0.3);">
-                    <td style="padding:10px 14px;color:#00d2ff;font-weight:800;text-transform:uppercase;font-size:0.85em;">Total</td>
-                    <td style="padding:10px 14px;text-align:center;font-weight:900;font-size:1.1em;color:#ef4444;">${grandTotalAll}</td>
-                    ${sortedReasons.map(r => `<td style="padding:10px 8px;text-align:center;color:#f59e0b;font-weight:800;">${allReasons[r]}</td>`).join('')}
-                </tr>`;
+                const tabsEl = document.getElementById('abortDayTabs');
+                tabsEl.innerHTML = abortAllDaysData.map((day, i) => `
+                    <button class="abort-day-tab" onclick="selectAbortDay(${i})" style="padding:8px 18px;border-radius:8px;font-size:0.82em;font-weight:700;cursor:pointer;transition:all 0.2s;white-space:nowrap;border:1px solid ${i===0?'rgba(239,68,68,0.7)':'rgba(0,210,255,0.2)'};background:${i===0?'rgba(239,68,68,0.35)':'rgba(0,0,0,0.3)'};color:${i===0?'#ffffff':'#a8dadc'};letter-spacing:0.5px;">
+                        ${i===0?'📅 ':''}${day.label}
+                        <span style="margin-left:6px;background:${day.total>0?'rgba(239,68,68,0.4)':'rgba(16,185,129,0.3)'};color:${day.total>0?'#fca5a5':'#6ee7b7'};border-radius:10px;padding:1px 7px;font-size:0.9em;">${day.total}</span>
+                    </button>`).join('');
 
-                const weekSummaryHtml = sortedReasons.length === 0 ? '' : `
-                <div style="margin-top:30px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);overflow-x:auto;">
-                    <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 5-Day Summary — Aborts by Type</div>
-                    <table style="width:100%;border-collapse:collapse;font-size:0.88em;min-width:500px;">
-                        <thead><tr style="background:rgba(0,210,255,0.15);">
-                            <th style="text-align:left;padding:10px 14px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Date</th>
-                            <th style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Total</th>
-                            ${reasonHeaders}
-                        </tr></thead>
-                        <tbody>${summaryRows}${totalsRow}</tbody>
-                    </table>
-                </div>`;
-
-                container.innerHTML = mainHtml + weekSummaryHtml;
-
+                renderAbortDay();
             } catch (err) {
                 console.error("Error loading detailed aborts:", err);
-                document.getElementById('abortsDetailContainer').innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;"><div style="font-size:2em;margin-bottom:20px;">⚠️</div><div>Error loading abort data</div><div style="font-size:0.8em;margin-top:10px;opacity:0.7;">Please check console for details</div></div>`;
+                document.getElementById('abortsDetailContainer').innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;"><div style="font-size:2em;margin-bottom:20px;">⚠️</div><div>Error loading abort data</div></div>`;
             }
         };
 
