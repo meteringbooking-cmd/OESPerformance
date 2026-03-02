@@ -1,1 +1,901 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OES League Table</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #080c14;
+      --surface: #0e1520;
+      --card: #121a28;
+      --border: #1e2d42;
+      --gold:   #f5c542;
+      --silver: #b0bec5;
+      --bronze: #cd7f32;
+      --blue:   #3b82f6;
+      --green:  #10b981;
+      --red:    #ef4444;
+      --amber:  #f59e0b;
+      --text:   #e2e8f0;
+      --dim:    #64748b;
+      --accent: #3b82f6;
+    }
+
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Scanline overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(255,255,255,0.012) 3px,
+        rgba(255,255,255,0.012) 4px
+      );
+      pointer-events: none;
+    }
+
+    .wrapper { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    /* ── Header ── */
+    .page-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .title-block {}
+
+    .eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 3px;
+      color: var(--blue);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(3rem, 7vw, 5.5rem);
+      letter-spacing: 2px;
+      line-height: 0.95;
+      background: linear-gradient(160deg, #fff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .period-pills {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .pill {
+      padding: 0.55rem 1.2rem;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--dim);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.3px;
+    }
+    .pill:hover { border-color: var(--blue); color: var(--text); }
+    .pill.active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+      box-shadow: 0 0 20px rgba(59,130,246,0.4);
+    }
+
+    /* ── Sort bar ── */
+    .sort-bar {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .sort-label {
+      font-size: 0.75rem;
+      color: var(--dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-right: 0.3rem;
+    }
+    .sort-btn {
+      padding: 0.4rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sort-btn:hover { border-color: var(--accent); color: var(--text); }
+    .sort-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.1); }
+
+    /* ── Team filter ── */
+    .team-filter {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .team-btn {
+      padding: 0.4rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .team-btn:hover { border-color: #8b5cf6; color: var(--text); }
+    .team-btn.active { border-color: #8b5cf6; color: #a78bfa; background: rgba(139,92,246,0.1); }
+
+    /* ── Loading / Error ── */
+    .state-box {
+      text-align: center;
+      padding: 5rem 2rem;
+      color: var(--dim);
+    }
+    .state-box .icon { font-size: 3rem; margin-bottom: 1rem; }
+    .state-box.error { color: var(--red); }
+
+    /* ── Podium ── */
+    .podium-section { margin-bottom: 3rem; }
+    .section-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 3px;
+      color: var(--dim);
+      text-transform: uppercase;
+      margin-bottom: 1.2rem;
+    }
+
+    .podium {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr 1fr;
+      gap: 1rem;
+      align-items: end;
+      max-width: 700px;
+    }
+
+    .podium-card {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      padding: 1.5rem 1rem 1.2rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    .podium-card:hover { transform: translateY(-4px); }
+
+    .podium-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .podium-card:hover::before { opacity: 1; }
+
+    .podium-card.rank-1 { border-color: rgba(245,197,66,0.4); background: linear-gradient(160deg, #1a1600 0%, #121a28 60%); }
+    .podium-card.rank-1::before { background: radial-gradient(circle at 50% 0%, rgba(245,197,66,0.12), transparent 70%); }
+    .podium-card.rank-2 { border-color: rgba(176,190,197,0.3); }
+    .podium-card.rank-3 { border-color: rgba(205,127,50,0.3); }
+
+    .medal {
+      font-size: 2.2rem;
+      display: block;
+      margin-bottom: 0.6rem;
+    }
+
+    .podium-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text);
+      margin-bottom: 0.15rem;
+      line-height: 1.2;
+    }
+    .podium-team {
+      font-size: 0.72rem;
+      color: var(--dim);
+      margin-bottom: 0.8rem;
+    }
+    .podium-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.2rem;
+      letter-spacing: 1px;
+      line-height: 1;
+    }
+    .podium-card.rank-1 .podium-value { color: var(--gold); }
+    .podium-card.rank-2 .podium-value { color: var(--silver); }
+    .podium-card.rank-3 .podium-value { color: var(--bronze); }
+    .podium-metric { font-size: 0.7rem; color: var(--dim); margin-top: 0.3rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ── Main table ── */
+    .table-wrap {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      background: var(--card);
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead tr {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      padding: 1rem 1.2rem;
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--dim);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.15s;
+    }
+    th:hover { color: var(--text); }
+    th.sorted { color: var(--blue); }
+    th .sort-arrow { margin-left: 4px; opacity: 0.5; font-size: 0.7em; }
+    th.sorted .sort-arrow { opacity: 1; }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(30,45,66,0.7);
+      transition: background 0.15s;
+      animation: rowIn 0.4s ease both;
+    }
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    tbody tr:hover { background: rgba(59,130,246,0.05); }
+    tbody tr:last-child { border-bottom: none; }
+
+    td { padding: 0.9rem 1.2rem; font-size: 0.9rem; vertical-align: middle; }
+
+    /* Rank col */
+    .col-rank { width: 60px; }
+    .rank-badge {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+      background: var(--surface);
+      color: var(--dim);
+      border: 1px solid var(--border);
+    }
+    .rank-badge.gold   { background: rgba(245,197,66,0.15); color: var(--gold);   border-color: rgba(245,197,66,0.4); }
+    .rank-badge.silver { background: rgba(176,190,197,0.15); color: var(--silver); border-color: rgba(176,190,197,0.4); }
+    .rank-badge.bronze { background: rgba(205,127,50,0.15); color: var(--bronze); border-color: rgba(205,127,50,0.4); }
+
+    /* Engineer name */
+    .eng-name { font-weight: 600; color: var(--text); }
+    .eng-team { font-size: 0.72rem; color: var(--dim); margin-top: 2px; }
+
+    /* Meters */
+    .val-meters {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #60a5fa;
+    }
+
+    /* Completion bar */
+    .comp-wrap { min-width: 120px; }
+    .comp-bar-bg {
+      height: 6px; border-radius: 3px;
+      background: var(--surface);
+      margin-top: 4px;
+      overflow: hidden;
+    }
+    .comp-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+    .comp-value { font-weight: 700; font-size: 0.88rem; }
+
+    /* Aborts */
+    .abort-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid;
+    }
+    .abort-0  { background: rgba(16,185,129,0.1); color: var(--green);  border-color: rgba(16,185,129,0.3); }
+    .abort-lo { background: rgba(245,158,11,0.1); color: var(--amber);  border-color: rgba(245,158,11,0.3); }
+    .abort-hi { background: rgba(239,68,68,0.1);  color: var(--red);    border-color: rgba(239,68,68,0.3); }
+
+    /* Attendance */
+    .att-chip {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      border: 1px solid;
+    }
+    .att-in    { background: rgba(16,185,129,0.1); color: var(--green); border-color: rgba(16,185,129,0.3); }
+    .att-hol   { background: rgba(59,130,246,0.1); color: #93c5fd;      border-color: rgba(59,130,246,0.3); }
+    .att-sick  { background: rgba(239,68,68,0.1);  color: var(--red);   border-color: rgba(239,68,68,0.3); }
+    .att-abs   { background: rgba(100,116,139,0.1); color: var(--dim);  border-color: rgba(100,116,139,0.3); }
+
+    /* Days active */
+    .days-count {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--dim);
+    }
+
+    /* Avg per day */
+    .val-avg {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem;
+      color: #a78bfa;
+      font-weight: 700;
+    }
+
+    /* Summary bar */
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.2rem 1.4rem;
+    }
+    .summary-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--dim);
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .summary-val {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2rem;
+      letter-spacing: 1px;
+      line-height: 1;
+    }
+    .summary-sub {
+      font-size: 0.72rem;
+      color: var(--dim);
+      margin-top: 0.2rem;
+    }
+
+    .glow-blue  { color: #60a5fa; }
+    .glow-green { color: var(--green); }
+    .glow-red   { color: var(--red); }
+    .glow-purple { color: #a78bfa; }
+
+    @media (max-width: 900px) {
+      .podium { grid-template-columns: 1fr 1fr 1fr; }
+      table { font-size: 0.82rem; }
+      th, td { padding: 0.7rem 0.8rem; }
+      .comp-wrap { min-width: 80px; }
+    }
+
+    @media (max-width: 600px) {
+      .podium { display: none; }
+      th:nth-child(n+7) { display: none; }
+      td:nth-child(n+7) { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="title-block">
+      <div class="eyebrow">OES Performance System</div>
+      <h1>League<br>Table</h1>
+    </div>
+    <div class="period-pills">
+      <button class="pill" data-period="curr-week">This Week</button>
+      <button class="pill" data-period="prev-week">Last Week</button>
+      <button class="pill active" data-period="curr-month">This Month</button>
+      <button class="pill" data-period="prev-month">Last Month</button>
+    </div>
+  </div>
+
+  <!-- Sort + Team filter -->
+  <div class="sort-bar">
+    <span class="sort-label">Rank by:</span>
+    <button class="sort-btn active" data-sort="meters">Meters</button>
+    <button class="sort-btn" data-sort="completion">Completion %</button>
+    <button class="sort-btn" data-sort="aborts">Fewest Aborts</button>
+    <button class="sort-btn" data-sort="avgDay">Avg / Day</button>
+  </div>
+
+  <div class="team-filter" id="teamFilter">
+    <button class="team-btn active" data-team="all">All Teams</button>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="summary-strip" id="summaryStrip">
+    <div class="summary-card"><div class="summary-label">Total Meters</div><div class="summary-val glow-blue" id="sumMeters">—</div><div class="summary-sub" id="sumPeriod"></div></div>
+    <div class="summary-card"><div class="summary-label">Avg Completion</div><div class="summary-val glow-green" id="sumComp">—</div><div class="summary-sub">across active engineers</div></div>
+    <div class="summary-card"><div class="summary-label">Total Aborts</div><div class="summary-val glow-red" id="sumAborts">—</div><div class="summary-sub" id="sumAbortSub"></div></div>
+    <div class="summary-card"><div class="summary-label">Engineers Active</div><div class="summary-val glow-purple" id="sumEng">—</div><div class="summary-sub">with recorded data</div></div>
+  </div>
+
+  <!-- Podium -->
+  <div class="podium-section">
+    <div class="section-title">Top 3 — <span id="podiumMetricLabel">Meters Installed</span></div>
+    <div class="podium" id="podium"></div>
+  </div>
+
+  <!-- State box (loading / error) -->
+  <div id="stateBox" class="state-box">
+    <div class="icon">⏳</div>
+    <div>Loading data…</div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap" id="tableWrap" style="display:none;">
+    <table id="leagueTable">
+      <thead>
+        <tr>
+          <th class="col-rank">#</th>
+          <th data-col="name">Engineer <span class="sort-arrow"></span></th>
+          <th data-col="meters" class="sorted">Meters <span class="sort-arrow">↓</span></th>
+          <th data-col="avgDay">Avg/Day <span class="sort-arrow"></span></th>
+          <th data-col="completion">Completion <span class="sort-arrow"></span></th>
+          <th data-col="aborts">Aborts <span class="sort-arrow"></span></th>
+          <th data-col="daysActive">Days Active <span class="sort-arrow"></span></th>
+          <th data-col="attendance">Attendance <span class="sort-arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script type="module">
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  // ── Firebase ──────────────────────────────────────────────────────────────
+  const perfConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717"
+  };
+  const app = getApps().find(a=>a.name==='perf-lt') || initializeApp(perfConfig, 'perf-lt');
+  const db  = getFirestore(app);
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let currentPeriod = 'curr-month';
+  let currentSort   = 'meters';
+  let sortDir       = 'desc';
+  let currentTeam   = 'all';
+  let allRows       = [];
+  let teams         = new Set();
+
+  // ── Date helpers ──────────────────────────────────────────────────────────
+  function fmt(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function startOfWeek(d) {
+    const day = d.getDay(); // 0=Sun
+    const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+    return new Date(d.getFullYear(), d.getMonth(), diff);
+  }
+  function addDays(d, n) {
+    const r = new Date(d); r.setDate(r.getDate() + n); return r;
+  }
+  function getWeekdays(start, end) {
+    const days = []; let d = new Date(start);
+    while (d <= end) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) days.push(fmt(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  }
+
+  function getDateRange(period) {
+    const today = new Date();
+    let start, end;
+    if (period === 'curr-week') {
+      start = startOfWeek(today);
+      end   = today;
+    } else if (period === 'prev-week') {
+      const ws = startOfWeek(today);
+      start = addDays(ws, -7);
+      end   = addDays(ws, -1);
+      // End on Friday
+      if (end.getDay() === 6) end = addDays(end, -1);
+      if (end.getDay() === 0) end = addDays(end, -2);
+    } else if (period === 'curr-month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+      end   = today;
+    } else {
+      start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      end   = new Date(today.getFullYear(), today.getMonth(), 0);
+    }
+    return { start: fmt(start), end: fmt(end), weekdays: getWeekdays(start, end) };
+  }
+
+  // ── Fetch data ────────────────────────────────────────────────────────────
+  async function fetchData(period) {
+    const { start, end, weekdays } = getDateRange(period);
+    const weekdaySet = new Set(weekdays);
+
+    // Performance records
+    const perfSnap = await getDocs(query(
+      collection(db, 'performance'),
+      where('date', '>=', start),
+      where('date', '<=', end),
+      orderBy('date', 'asc')
+    ));
+
+    // Attendance records
+    const attSnap = await getDocs(query(
+      collection(db, 'attendance'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    ));
+
+    // Aborts records
+    const abortSnap = await getDocs(query(
+      collection(db, 'aborts'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    ));
+
+    // Build engineer map from performance
+    const engMap = {};
+    perfSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.engineerName || !weekdaySet.has(d.date)) return;
+      const key = d.engineerName.trim();
+      if (!engMap[key]) {
+        engMap[key] = {
+          name: key,
+          team: d.teamLeader || 'Unknown',
+          meters: 0, jobs: 0, completed: 0,
+          aborts: 0, duals: 0, singles: 0, comms: 0,
+          activeDays: new Set(),
+          attendanceCodes: {}
+        };
+      }
+      const r = engMap[key];
+      r.meters    += Number(d.meters    || 0);
+      r.jobs      += Number(d.jobs      || 0);
+      r.completed += Number(d.completed || 0);
+      r.duals     += Number(d.duals     || 0);
+      r.singles   += Number(d.singles   || 0);
+      r.comms     += Number(d.comms     || 0);
+      if (d.date) r.activeDays.add(d.date);
+      if (d.teamLeader) teams.add(d.teamLeader);
+    });
+
+    // Add aborts by engineer
+    abortSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.engineer || !weekdaySet.has(d.date)) return;
+      const key = d.engineer.trim();
+      // parse abort total from the record; fall back to 1
+      let qty = 1;
+      if (d.total) qty = Number(d.total) || 1;
+      if (engMap[key]) engMap[key].aborts += qty;
+      // also track team
+      if (d.teamLeader) teams.add(d.teamLeader);
+    });
+
+    // Attendance
+    attSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.engineerName || !weekdaySet.has(d.date)) return;
+      const key = d.engineerName.trim();
+      if (!engMap[key]) return;
+      const code = (d.attendance || 'X').toUpperCase();
+      engMap[key].attendanceCodes[code] = (engMap[key].attendanceCodes[code] || 0) + 1;
+    });
+
+    // Convert to array
+    allRows = Object.values(engMap).map(r => {
+      const daysActive  = r.activeDays.size;
+      const totalWd     = weekdays.length;
+      const completion  = r.jobs > 0 ? +((r.completed / r.jobs) * 100).toFixed(1) : 0;
+      const avgDay      = daysActive > 0 ? +(r.meters / daysActive).toFixed(1) : 0;
+      const attCodes    = r.attendanceCodes;
+      const daysIn      = attCodes['X'] || 0;
+      const daysHol     = (attCodes['H'] || 0) + (attCodes['H/H'] || 0);
+      const daysSick    = attCodes['SICK'] || 0;
+      const daysAbs     = (attCodes['AAUP'] || 0) + (attCodes['AAP'] || 0) + (attCodes['TOFD'] || 0);
+      return { ...r, daysActive, totalWd, completion, avgDay, daysIn, daysHol, daysSick, daysAbs };
+    }).filter(r => r.meters > 0 || r.jobs > 0);
+
+    return { start, end, weekdays };
+  }
+
+  // ── Sort ──────────────────────────────────────────────────────────────────
+  function getSortedRows() {
+    let rows = currentTeam === 'all'
+      ? [...allRows]
+      : allRows.filter(r => r.team === currentTeam);
+
+    const dir = sortDir === 'desc' ? -1 : 1;
+    rows.sort((a, b) => {
+      let va, vb;
+      if (currentSort === 'meters')     { va = a.meters;     vb = b.meters;     }
+      else if (currentSort === 'completion') { va = a.completion; vb = b.completion; }
+      else if (currentSort === 'aborts')     { va = -a.aborts;    vb = -b.aborts;    } // fewer = better
+      else if (currentSort === 'avgDay')     { va = a.avgDay;     vb = b.avgDay;     }
+      else { va = a.meters; vb = b.meters; }
+      return (vb - va) * dir;
+    });
+    return rows;
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  function compColor(pct) {
+    if (pct >= 90) return '#10b981';
+    if (pct >= 75) return '#f59e0b';
+    return '#ef4444';
+  }
+  function abortClass(n) {
+    if (n === 0) return 'abort-0';
+    if (n <= 2)  return 'abort-lo';
+    return 'abort-hi';
+  }
+  function rankClass(i) {
+    if (i === 0) return 'gold';
+    if (i === 1) return 'silver';
+    if (i === 2) return 'bronze';
+    return '';
+  }
+  function medal(i) {
+    if (i === 0) return '🥇';
+    if (i === 1) return '🥈';
+    if (i === 2) return '🥉';
+    return '';
+  }
+  function attSummary(r) {
+    const parts = [];
+    if (r.daysIn)   parts.push(`<span class="att-chip att-in">${r.daysIn}d in</span>`);
+    if (r.daysHol)  parts.push(`<span class="att-chip att-hol">${r.daysHol}d hol</span>`);
+    if (r.daysSick) parts.push(`<span class="att-chip att-sick">${r.daysSick}d sick</span>`);
+    if (r.daysAbs)  parts.push(`<span class="att-chip att-abs">${r.daysAbs}d abs</span>`);
+    return parts.join(' ') || '<span style="color:var(--dim);font-size:0.78rem;">—</span>';
+  }
+
+  // ── Render table ──────────────────────────────────────────────────────────
+  function renderTable() {
+    const rows   = getSortedRows();
+    const tbody  = document.getElementById('tableBody');
+    const stateBox = document.getElementById('stateBox');
+    const tableWrap = document.getElementById('tableWrap');
+    const podiumEl = document.getElementById('podium');
+
+    if (rows.length === 0) {
+      stateBox.innerHTML = '<div class="icon">📭</div><div>No data found for this period.</div>';
+      stateBox.style.display = 'block';
+      tableWrap.style.display = 'none';
+      podiumEl.innerHTML = '';
+      return;
+    }
+
+    stateBox.style.display = 'none';
+    tableWrap.style.display = 'block';
+
+    // Podium
+    const top3 = rows.slice(0, 3);
+    const podiumMetricFn = r => {
+      if (currentSort === 'meters')     return r.meters;
+      if (currentSort === 'completion') return r.completion + '%';
+      if (currentSort === 'aborts')     return r.aborts;
+      if (currentSort === 'avgDay')     return r.avgDay;
+    };
+    // Reorder: 2nd, 1st, 3rd
+    const podiumOrder = top3.length >= 3 ? [top3[1], top3[0], top3[2]] :
+                        top3.length === 2 ? [null, top3[0], top3[1]]   : [null, top3[0], null];
+    const podiumRanks = top3.length >= 3 ? [1,0,2] : top3.length===2 ? [null,0,1] : [null,0,null];
+
+    podiumEl.innerHTML = podiumOrder.map((r, pi) => {
+      if (!r) return `<div></div>`;
+      const ri = podiumRanks[pi];
+      const val = podiumMetricFn(r);
+      return `<div class="podium-card rank-${ri+1}" style="${pi===1?'':''}">
+        <span class="medal">${medal(ri)}</span>
+        <div class="podium-name">${r.name}</div>
+        <div class="podium-team">${r.team}</div>
+        <div class="podium-value">${val}</div>
+        <div class="podium-metric">${currentSort === 'meters' ? 'meters' : currentSort === 'completion' ? 'completion' : currentSort === 'aborts' ? 'aborts' : 'avg/day'}</div>
+      </div>`;
+    }).join('');
+
+    // Summary
+    const totalMeters = rows.reduce((s,r) => s+r.meters, 0);
+    const avgComp = rows.length ? (rows.reduce((s,r)=>s+r.completion,0)/rows.length).toFixed(1) : '—';
+    const totalAborts = rows.reduce((s,r)=>s+r.aborts,0);
+    document.getElementById('sumMeters').textContent  = totalMeters.toLocaleString();
+    document.getElementById('sumComp').textContent    = avgComp + '%';
+    document.getElementById('sumAborts').textContent  = totalAborts;
+    document.getElementById('sumEng').textContent     = rows.length;
+
+    // Table
+    tbody.innerHTML = rows.map((r, i) => {
+      const delay = Math.min(i * 30, 500);
+      return `<tr style="animation-delay:${delay}ms">
+        <td class="col-rank"><div class="rank-badge ${rankClass(i)}">${i+1}</div></td>
+        <td>
+          <div class="eng-name">${r.name}</div>
+          <div class="eng-team">${r.team}</div>
+        </td>
+        <td><span class="val-meters">${r.meters.toLocaleString()}</span></td>
+        <td><span class="val-avg">${r.avgDay}</span></td>
+        <td>
+          <div class="comp-wrap">
+            <span class="comp-value" style="color:${compColor(r.completion)}">${r.completion}%</span>
+            <div class="comp-bar-bg">
+              <div class="comp-bar-fill" style="width:${Math.min(r.completion,100)}%;background:${compColor(r.completion)}"></div>
+            </div>
+          </div>
+        </td>
+        <td><span class="abort-pill ${abortClass(r.aborts)}">${r.aborts === 0 ? '✓ 0' : r.aborts}</span></td>
+        <td><span class="days-count">${r.daysActive} / ${r.totalWd}</span></td>
+        <td style="font-size:0.8rem;">${attSummary(r)}</td>
+      </tr>`;
+    }).join('');
+
+    // Th sort highlights
+    document.querySelectorAll('thead th[data-col]').forEach(th => {
+      th.classList.remove('sorted');
+      th.querySelector('.sort-arrow').textContent = '';
+    });
+    const colMap = { meters:'meters', completion:'completion', aborts:'aborts', avgDay:'avgDay' };
+    const activeCol = colMap[currentSort];
+    const activeTh = document.querySelector(`thead th[data-col="${activeCol}"]`);
+    if (activeTh) {
+      activeTh.classList.add('sorted');
+      activeTh.querySelector('.sort-arrow').textContent = sortDir === 'desc' ? '↓' : '↑';
+    }
+  }
+
+  // ── Build team filter ──────────────────────────────────────────────────────
+  function buildTeamFilter() {
+    const bar = document.getElementById('teamFilter');
+    const sorted = [...teams].sort();
+    bar.innerHTML = `<button class="team-btn ${currentTeam==='all'?'active':''}" data-team="all">All Teams</button>`;
+    sorted.forEach(t => {
+      bar.innerHTML += `<button class="team-btn ${currentTeam===t?'active':''}" data-team="${t}">${t}</button>`;
+    });
+    bar.querySelectorAll('.team-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentTeam = btn.dataset.team;
+        bar.querySelectorAll('.team-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTable();
+      });
+    });
+  }
+
+  // ── Main load ──────────────────────────────────────────────────────────────
+  async function load() {
+    const stateBox = document.getElementById('stateBox');
+    stateBox.innerHTML = '<div class="icon">⏳</div><div>Loading data…</div>';
+    stateBox.className = 'state-box';
+    stateBox.style.display = 'block';
+    document.getElementById('tableWrap').style.display = 'none';
+    document.getElementById('podium').innerHTML = '';
+    teams.clear();
+
+    try {
+      const { start, end, weekdays } = await fetchData(currentPeriod);
+      const p = currentPeriod;
+      const pLabel = p==='curr-week'?'This Week': p==='prev-week'?'Last Week': p==='curr-month'?'This Month':'Last Month';
+      document.getElementById('sumPeriod').textContent = `${start} → ${end}`;
+      document.getElementById('sumAbortSub').textContent = `${weekdays.length} working days`;
+      buildTeamFilter();
+      renderTable();
+    } catch (err) {
+      console.error(err);
+      stateBox.className = 'state-box error';
+      stateBox.innerHTML = `<div class="icon">⚠️</div><div>Error loading data:<br><small>${err.message}</small></div>`;
+      stateBox.style.display = 'block';
+    }
+  }
+
+  // ── Event listeners ────────────────────────────────────────────────────────
+  document.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pill').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      load();
+    });
+  });
+
+  document.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.sort;
+      if (currentSort === s) {
+        sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        currentSort = s;
+        sortDir = s === 'aborts' ? 'asc' : 'desc'; // fewest aborts = asc
+      }
+      document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Update podium label
+      const labels = { meters:'Meters Installed', completion:'Completion Rate', aborts:'Fewest Aborts', avgDay:'Avg Meters / Day' };
+      document.getElementById('podiumMetricLabel').textContent = labels[currentSort] || '';
+      renderTable();
+    });
+  });
+
+  // Column header click sort
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      const sortMap = { meters:'meters', completion:'completion', aborts:'aborts', avgDay:'avgDay' };
+      const s = sortMap[col];
+      if (!s) return;
+      if (currentSort === s) sortDir = sortDir==='desc'?'asc':'desc';
+      else { currentSort = s; sortDir = s==='aborts'?'asc':'desc'; }
+      document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
+      const matchBtn = document.querySelector(`.sort-btn[data-sort="${s}"]`);
+      if (matchBtn) matchBtn.classList.add('active');
+      renderTable();
+    });
+  });
+
+  // Initial load
+  load();
+</script>
+</body>
+</html>
