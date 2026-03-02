@@ -20,6 +20,7 @@
             --warning: #f59e0b;
             --danger: #ef4444;
             --shadow: rgba(0, 212, 255, 0.1);
+            --six-weeks: #00ffcc;
         }
         * {
             margin: 0;
@@ -217,6 +218,54 @@
         .day-card:hover {
             transform: translateY(-4px);
         }
+
+        /* ── Next-6-weeks highlight ── */
+        .day-card.next-six-weeks {
+            border-color: rgba(0, 255, 204, 0.45);
+            box-shadow: 0 0 14px rgba(0, 255, 204, 0.18), inset 0 0 18px rgba(0, 255, 204, 0.04);
+            background: linear-gradient(145deg, #1a2235 70%, rgba(0,255,204,0.06) 100%);
+        }
+        .day-card.next-six-weeks::before {
+            background: linear-gradient(90deg, var(--six-weeks), #00d4ff);
+        }
+        .six-weeks-badge {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: rgba(0, 255, 204, 0.15);
+            border: 1px solid rgba(0, 255, 204, 0.4);
+            color: var(--six-weeks);
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.15rem 0.4rem;
+            border-radius: 6px;
+            line-height: 1.4;
+        }
+
+        /* Legend pill */
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid rgba(0,255,204,0.3);
+            border-radius: 12px;
+            font-size: 0.82rem;
+            color: var(--six-weeks);
+            font-weight: 500;
+        }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--six-weeks);
+            box-shadow: 0 0 6px rgba(0,255,204,0.6);
+            flex-shrink: 0;
+        }
+
         .day-name {
             font-size: 0.75rem;
             text-transform: uppercase;
@@ -620,6 +669,11 @@
                     <option value="OES">OES</option>
                 </select>
             </div>
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-dot"></div>
+                Within next 6 weeks
+            </div>
             <div class="action-buttons">
                 <button class="btn" onclick="openModal('holidayModal')">+ Holiday</button>
                 <button class="btn" onclick="openModal('headcountModal')">Update Headcount</button>
@@ -771,6 +825,24 @@ const db = getFirestore(getApps()[0]);
     function compareDate(str) {
         return new Date(str + "T00:00:00Z"); // UTC for range checks
     }
+
+    // ── Six-week window helpers ──────────────────────────────────────────────
+    // Returns { start, end } as UTC midnight Date objects
+    function getSixWeekWindow() {
+        const today = new Date();
+        // Strip time: use UTC midnight of today
+        const start = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+        const end   = new Date(start);
+        end.setUTCDate(end.getUTCDate() + 42); // 6 weeks = 42 days
+        return { start, end };
+    }
+
+    function isWithinSixWeeks(dateStr) {
+        const { start, end } = getSixWeekWindow();
+        const d = compareDate(dateStr); // UTC midnight
+        return d >= start && d <= end;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Global state
     let currentDate = new Date();
@@ -1000,11 +1072,13 @@ const db = getFirestore(getApps()[0]);
         for (let day = 1; day <= lastDay.getDate(); day++) {
             const d = new Date(year, month, day);
             const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-            // Create date string without timezone conversion
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const currentComp = compareDate(dateStr);
+
+            // ── Six-week check ──
+            const inSixWeeks = !isWeekend && isWithinSixWeeks(dateStr);
 
             const onHolidayCount = holidays.reduce((count, h) => {
                 const start = compareDate(h.startDate);
@@ -1019,32 +1093,45 @@ const db = getFirestore(getApps()[0]);
             dayCard.className = 'day-card';
 
             let capacityClass = '';
-            let cardStyle = '';
-            
-            // Style weekends differently
+            let inlineStyle = '';
+
             if (isWeekend) {
-                cardStyle = 'background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); cursor: default;';
+                inlineStyle = 'background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); cursor: default;';
             } else {
                 if (availablePercentage < 85) {
                     capacityClass = 'high';
-                    cardStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
+                    inlineStyle = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
                 } else if (availablePercentage < 90) {
                     capacityClass = 'medium';
-                    cardStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
+                    inlineStyle = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
                 }
             }
-            
-            dayCard.setAttribute('style', cardStyle);
+
+            dayCard.setAttribute('style', inlineStyle);
+
+            // Add six-weeks CSS class (only for weekdays — let capacity border win if set, they layer nicely)
+            if (inSixWeeks) {
+                dayCard.classList.add('next-six-weeks');
+                // If a capacity border was already set via inline style, keep it but still add the class glow
+                if (capacityClass) {
+                    // Merge: keep the red/amber border but also add the teal glow via box-shadow
+                    const glowColor = 'rgba(0,255,204,0.25)';
+                    const existingColor = capacityClass === 'high' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)';
+                    dayCard.setAttribute('style', inlineStyle.replace(
+                        /box-shadow:[^;]+/,
+                        `box-shadow: 0 0 20px ${existingColor}, 0 0 12px ${glowColor}`
+                    ));
+                }
+            }
 
             if (isWeekend) {
-                // Weekend card - no capacity info
                 dayCard.innerHTML = `
                     <div class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     <div class="day-number">${d.getDate()}</div>
                 `;
             } else {
-                // Weekday card - with capacity info
                 dayCard.innerHTML = `
+                    ${inSixWeeks ? '<span class="six-weeks-badge">6 wks</span>' : ''}
                     <div class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     <div class="day-number">${d.getDate()}</div>
                     <div class="capacity-info">
@@ -1056,7 +1143,7 @@ const db = getFirestore(getApps()[0]);
                 `;
                 dayCard.addEventListener('click', () => showDayDetails(dateStr, filteredEngineers));
             }
-            
+
             grid.appendChild(dayCard);
         }
     }
@@ -1083,13 +1170,11 @@ const db = getFirestore(getApps()[0]);
 
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
-        const firstDay = new Date(year, month, 1);
         const lastDay = new Date(year, month + 1, 0);
 
         let totalCapacity = 0;
         let workingDays = 0;
 
-        // Loop through each day of the month for stats calculation
         for (let day = 1; day <= lastDay.getDate(); day++) {
             const d = new Date(year, month, day);
             const dayOfWeek = d.getDay();
