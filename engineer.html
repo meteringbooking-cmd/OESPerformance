@@ -240,6 +240,7 @@
         .qb-weekly-unit { font-size: 0.85em; color: #7c3aed; font-weight: 600; }
         .qb-weekly-sub { font-size: 0.75em; color: #94a3b8; margin-top: 4px; }
 
+        /* Tier ladder */
         .qb-tiers-label { font-size: 0.75em; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
         .qb-tier-row {
             display: flex; align-items: center; justify-content: space-between;
@@ -256,6 +257,7 @@
         .qb-tier-row.above .qb-tier-amount { color: #059669; }
         .qb-tier-you { font-size: 0.75em; color: #7c3aed; white-space: nowrap; font-weight: 700; }
 
+        /* Big result card */
         .qb-result-card {
             border-radius: 16px; padding: 26px; text-align: center; color: white; margin: 18px 0 10px;
             background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #a78bfa 100%);
@@ -269,6 +271,7 @@
 
         .qb-note { font-size: 0.74em; color: #94a3b8; text-align: center; line-height: 1.6; margin-top: 12px; }
 
+        /* responsive */
         @media (max-width: 380px) {
             .qb-month-grid { grid-template-columns: 1fr 1fr; }
             .qb-month-card:nth-child(3) { grid-column: 1 / -1; }
@@ -617,33 +620,6 @@
             return total;
         }
 
-        // ── Average Bonus helpers ─────────────────────────────────────────────────
-        // Fetches all "Average Bonuses" docs for this engineer.
-        // Each doc has: name, month ("YYYY-MM"), fullDay
-        // Returns a map: { "YYYY-MM": fullDayAmount }
-        async function loadMonthlyAvgBonuses(engineerName) {
-            const monthlyMap = {};
-            try {
-                const snap = await getDocs(query(
-                    collection(db, "Average Bonuses"),
-                    where("name", "==", engineerName)
-                ));
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.month && d.fullDay !== undefined) {
-                        monthlyMap[d.month] = parseFloat(d.fullDay) || 0;
-                    }
-                });
-            } catch(e) { console.error("Error loading monthly avg bonuses:", e); }
-            return monthlyMap;
-        }
-
-        // Given a date string "YYYY-MM-DD", return the avg bonus for that month.
-        // Falls back to 0 if no entry exists for that month.
-        function getAvgBonusForDate(monthlyAvgMap, dateStr) {
-            return monthlyAvgMap[dateStr.substring(0, 7)] || 0;
-        }
-
         window.loadDailyBreakdown = async function() {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -684,14 +660,12 @@
                 perfSnap.forEach(doc=>{const d=doc.data();if(d.date>=startDate&&d.date<=endDate)perfData[d.date]=d;});
                 attSnap.forEach(doc=>{const d=doc.data();if(d.date>=startDate&&d.date<=endDate)attData[d.date]=d;});
 
-                let bonusData={}, jobsData={};
+                let bonusData={}, jobsData={}, avgBonus=0;
                 try { const bSnap=await getDocs(query(collection(db,"bonuses"),where("engineerName","==",currentEngineer))); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){}
                 try { const jSnap=await getDocs(query(collection(db,"jobsData"),where("engineerName","==",currentEngineer))); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){}
+                try { const avgSnap=await getDocs(query(collection(db,"Average Bonuses"),where("name","==",currentEngineer))); if(!avgSnap.empty)avgSnap.forEach(doc=>{avgBonus=parseFloat(doc.data().fullDay)||0;}); } catch(e){}
 
-                // Load month-keyed average bonuses (one entry per YYYY-MM per engineer)
-                const monthlyAvgMap = await loadMonthlyAvgBonuses(currentEngineer);
-
-                displayDailyBreakdown(allDates,perfData,attData,bonusData,jobsData,startDate,endDate,monthlyAvgMap);
+                displayDailyBreakdown(allDates,perfData,attData,bonusData,jobsData,startDate,endDate,avgBonus);
                 document.getElementById('loadingDiv').style.display='none';
                 ['additionalPaymentBtn','bonusPolicyBtn','quarterlyBonusBtn','mainFooter'].forEach(id=>document.getElementById(id).style.display='block');
             } catch(err) {
@@ -702,7 +676,7 @@
             }
         }
 
-        function displayDailyBreakdown(dates,perfData,attData,bonusData,jobsData,startDate,endDate,monthlyAvgMap) {
+        function displayDailyBreakdown(dates,perfData,attData,bonusData,jobsData,startDate,endDate,avgBonus) {
             const container=document.getElementById('dailyBreakdownContent');
             container.innerHTML='';
             if(dates.length===0){document.getElementById('noDataDiv').textContent='No data in selected date range.';document.getElementById('noDataDiv').style.display='block';return;}
@@ -711,11 +685,10 @@
             dates.forEach(date=>{
                 totalBonus+=(bonusData[date]||0);
                 const att=(attData[date]||{}).attendance;
-                // Use the avg bonus for the specific month of each date
-                const avgForDate = getAvgBonusForDate(monthlyAvgMap, date);
-                if(att==='H'        && avgForDate>0) totalBonus += avgForDate;
-                if(att==='H/H'      && avgForDate>0) totalBonus += avgForDate / 2;
-                if(att==='Training' && avgForDate>0) totalBonus += avgForDate;
+                // Holiday, Half Day Holiday, and Training all receive average bonus
+                if(att==='H'&&avgBonus>0) totalBonus+=avgBonus;
+                if(att==='H/H'&&avgBonus>0) totalBonus+=(avgBonus/2);
+                if(att==='Training'&&avgBonus>0) totalBonus+=avgBonus;
                 (additionalPayments[date]||[]).forEach(p=>{ if(p.status==='approved'||p.status==='approved-with-changes') totalApproved+=calcApprovedTotal(p,new Date(date+'T00:00:00')); });
             });
 
@@ -733,9 +706,6 @@
                 const weekday=dateObj.toLocaleDateString('en-GB',{weekday:'long'});
                 const dow=dateObj.getDay(), isWknd=dow===0||dow===6;
 
-                // Avg bonus for THIS date's specific month
-                const avgBonus = getAvgBonusForDate(monthlyAvgMap, date);
-
                 const card=document.createElement('div');
                 card.className='daily-card'+(isWknd?' weekend':'');
 
@@ -751,22 +721,24 @@
                 };
                 let absenceHTML='';
                 if(attSt&&attSt!=='X'){
+                    // Determine badge colour class
                     let cls = attSt==='H'||attSt==='H/H' ? 'holiday'
                              : attSt==='Sick'            ? 'sick'
                              : attSt==='Training'        ? 'training'
                              : 'other';
 
+                    // Section colour class
                     let sectionCls = attSt==='Training' ? 'training' : '';
 
-                    // Average bonus display — uses this date's month figure
+                    // Average bonus display for Holiday, Half Day Holiday, and Training
                     let hbHTML='';
                     if(avgBonus>0){
                         if(attSt==='H'){
-                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus (${dateObj.toLocaleDateString('en-GB',{month:'long'})}): £${avgBonus.toFixed(2)}</span></div>`;
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus: £${avgBonus.toFixed(2)}</span></div>`;
                         } else if(attSt==='H/H'){
-                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus – Half Day (${dateObj.toLocaleDateString('en-GB',{month:'long'})}): £${(avgBonus/2).toFixed(2)}</span></div>`;
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus (Half Day): £${(avgBonus/2).toFixed(2)}</span></div>`;
                         } else if(attSt==='Training'){
-                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus (${dateObj.toLocaleDateString('en-GB',{month:'long'})}): £${avgBonus.toFixed(2)}</span></div>`;
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus: £${avgBonus.toFixed(2)}</span></div>`;
                         }
                     }
 
