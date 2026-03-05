@@ -219,6 +219,19 @@
             background: #f8f9fa;
         }
 
+        .avg-bonus-badge {
+            display: inline-block;
+            background: #e9f7ef;
+            color: #1a7a4a;
+            border: 1px solid #a3d9b7;
+            border-radius: 5px;
+            font-size: 0.8em;
+            padding: 2px 7px;
+            margin-left: 6px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
@@ -289,7 +302,7 @@
 
         <div class="export-section">
             <div class="info-box">
-                ℹ️ Select a date range to export payment summaries. This will include totals for additional payments and bonuses per engineer.
+                ℹ️ Select a date range to export payment summaries. Bonus totals include performance bonuses plus average bonus for Holiday, Half Day Holiday, and Training days.
             </div>
 
             <div class="form-grid">
@@ -378,52 +391,103 @@
             document.getElementById('noDataDiv').style.display = 'none';
 
             try {
-                // Load additional payments
+                // ── 1. Additional payments ──────────────────────────────────
                 const paymentsSnapshot = await getDocs(collection(db, "additionalPayments"));
                 const paymentsMap = {};
 
                 paymentsSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const paymentDate = data.date;
-                    
-                    if (paymentDate >= startDate && paymentDate <= endDate && 
+
+                    if (paymentDate >= startDate && paymentDate <= endDate &&
                         (data.status === 'approved' || data.status === 'approved-with-changes')) {
-                        
-                        if (!paymentsMap[data.engineerName]) {
-                            paymentsMap[data.engineerName] = 0;
-                        }
-                        
+
+                        if (!paymentsMap[data.engineerName]) paymentsMap[data.engineerName] = 0;
+
                         const dateObj = new Date(data.date + 'T00:00:00');
-                        const total = calculatePaymentTotal(data, dateObj);
-                        paymentsMap[data.engineerName] += total;
+                        paymentsMap[data.engineerName] += calculatePaymentTotal(data, dateObj);
                     }
                 });
 
-                // Load bonuses
+                // ── 2. Performance bonuses ──────────────────────────────────
                 const bonusSnapshot = await getDocs(collection(db, "bonuses"));
+                // bonusMap value: { perfTotal, avgBonusTotal, avgBonusDays }
                 const bonusMap = {};
 
                 bonusSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const weekStartDate = data.weekStartDate;
-                    
-                    // Check if the week start date falls within our date range
+
                     if (weekStartDate >= startDate && weekStartDate <= endDate) {
                         if (!bonusMap[data.engineerName]) {
-                            bonusMap[data.engineerName] = 0;
+                            bonusMap[data.engineerName] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
                         }
-                        // Add the week total to the engineer's bonus
-                        bonusMap[data.engineerName] += parseFloat(data.weekTotal || 0);
+                        bonusMap[data.engineerName].perfTotal += parseFloat(data.weekTotal || 0);
                     }
                 });
 
-                // Convert to arrays and sort
+                // ── 3. Average bonuses per engineer ─────────────────────────
+                const avgBonusMap = {}; // engineerName -> fullDay average bonus amount
+                const avgBonusSnapshot = await getDocs(collection(db, "Average Bonuses"));
+                avgBonusSnapshot.forEach((doc) => {
+                    const d = doc.data();
+                    if (d.name) avgBonusMap[d.name] = parseFloat(d.fullDay) || 0;
+                });
+
+                // ── 4. Attendance — find H, H/H, Training days ──────────────
+                const attendanceSnapshot = await getDocs(collection(db, "attendance"));
+                // attendanceMap: engineerName -> array of { date, attendance }
+                const attendanceMap = {};
+
+                attendanceSnapshot.forEach((doc) => {
+                    const d = doc.data();
+                    if (!d.date || d.date < startDate || d.date > endDate) return;
+                    if (!['H', 'H/H', 'Training'].includes(d.attendance)) return;
+
+                    if (!attendanceMap[d.engineerName]) attendanceMap[d.engineerName] = [];
+                    attendanceMap[d.engineerName].push({ date: d.date, attendance: d.attendance });
+                });
+
+                // ── 5. Merge average bonus into bonusMap ─────────────────────
+                // Also capture engineers who only have avg-bonus days (no perf bonus entry)
+                const allBonusEngineers = new Set([
+                    ...Object.keys(bonusMap),
+                    ...Object.keys(attendanceMap)
+                ]);
+
+                allBonusEngineers.forEach(name => {
+                    if (!bonusMap[name]) bonusMap[name] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
+
+                    const avg = avgBonusMap[name] || 0;
+                    const days = attendanceMap[name] || [];
+
+                    days.forEach(({ date, attendance }) => {
+                        let amount = 0;
+                        if (attendance === 'H') amount = avg;
+                        else if (attendance === 'H/H') amount = avg / 2;
+                        else if (attendance === 'Training') amount = avg;
+
+                        if (amount > 0) {
+                            bonusMap[name].avgBonusTotal += amount;
+                            bonusMap[name].avgBonusDays.push({ date, attendance, amount });
+                        }
+                    });
+                });
+
+                // ── 6. Build summary arrays ──────────────────────────────────
                 paymentsSummary = Object.entries(paymentsMap)
                     .map(([name, total]) => ({ engineerName: name, totalAmount: total }))
                     .sort((a, b) => a.engineerName.localeCompare(b.engineerName));
 
                 bonusSummary = Object.entries(bonusMap)
-                    .map(([name, total]) => ({ engineerName: name, totalBonus: total }))
+                    .map(([name, data]) => ({
+                        engineerName: name,
+                        perfTotal: data.perfTotal,
+                        avgBonusTotal: data.avgBonusTotal,
+                        avgBonusDays: data.avgBonusDays,
+                        totalBonus: data.perfTotal + data.avgBonusTotal
+                    }))
+                    .filter(e => e.totalBonus > 0)
                     .sort((a, b) => a.engineerName.localeCompare(b.engineerName));
 
                 document.getElementById('loadingDiv').style.display = 'none';
@@ -445,13 +509,11 @@
 
         function calculatePaymentTotal(payment, dateObj) {
             const breakdown = calculatePaymentBreakdown(payment, dateObj);
-            
             let total = 0;
             if (payment.standby === 'yes') total += breakdown.standby.amount;
             if (payment.workingAway === 'yes') total += breakdown.workingAway.amount;
             if (payment.overtime === 'yes') total += breakdown.overtime.amount;
             if (payment.hasJobs) total += breakdown.jobs.amount;
-            
             return total;
         }
 
@@ -463,10 +525,7 @@
 
             const month = dateObj.getMonth() + 1;
             const day = dateObj.getDate();
-            const isChristmas = month === 12 && day === 25;
-            const isBoxingDay = month === 12 && day === 26;
-            const isNewYear = month === 1 && day === 1;
-            const isSpecialHoliday = isChristmas || isBoxingDay || isNewYear;
+            const isSpecialHoliday = (month === 12 && day === 25) || (month === 12 && day === 26) || (month === 1 && day === 1);
 
             let breakdown = {
                 standby: { amount: 0, label: '' },
@@ -476,29 +535,15 @@
             };
 
             if (payment.standby === 'yes') {
-                if (isSpecialHoliday) {
-                    breakdown.standby.amount = 100;
-                    breakdown.standby.label = 'Special Holiday';
-                } else if (isWeekend) {
-                    breakdown.standby.amount = 50;
-                    breakdown.standby.label = isSaturday ? 'Saturday' : 'Sunday';
-                } else {
-                    breakdown.standby.amount = 20;
-                    breakdown.standby.label = 'Weekday';
-                }
+                if (isSpecialHoliday) { breakdown.standby.amount = 100; breakdown.standby.label = 'Special Holiday'; }
+                else if (isWeekend) { breakdown.standby.amount = 50; breakdown.standby.label = isSaturday ? 'Saturday' : 'Sunday'; }
+                else { breakdown.standby.amount = 20; breakdown.standby.label = 'Weekday'; }
             }
 
             if (payment.overtime === 'yes' && payment.overtimeHours > 0) {
-                if (isSunday || payment.isBankHoliday) {
-                    breakdown.overtime.rate = 37.50;
-                    breakdown.overtime.rateLabel = isSunday ? 'Sunday' : 'Bank Holiday';
-                } else if (isSaturday) {
-                    breakdown.overtime.rate = 28.13;
-                    breakdown.overtime.rateLabel = 'Saturday';
-                } else {
-                    breakdown.overtime.rate = 24.94;
-                    breakdown.overtime.rateLabel = 'Weekday';
-                }
+                if (isSunday || payment.isBankHoliday) { breakdown.overtime.rate = 37.50; breakdown.overtime.rateLabel = isSunday ? 'Sunday' : 'Bank Holiday'; }
+                else if (isSaturday) { breakdown.overtime.rate = 28.13; breakdown.overtime.rateLabel = 'Saturday'; }
+                else { breakdown.overtime.rate = 24.94; breakdown.overtime.rateLabel = 'Weekday'; }
                 breakdown.overtime.amount = payment.overtimeHours * breakdown.overtime.rate;
             }
 
@@ -545,73 +590,61 @@
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+            const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
 
-            // Display payments table
+            // Payments table
             const paymentsTable = document.getElementById('paymentsTable');
-            let paymentsHTML = `
-                <thead>
-                    <tr>
-                        <th>Engineer Name</th>
-                        <th>Date Range</th>
-                        <th>Total Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-            `;
+            let paymentsHTML = `<thead><tr><th>Engineer Name</th><th>Date Range</th><th>Total Amount</th></tr></thead><tbody>`;
 
             if (paymentsSummary.length === 0) {
-                paymentsHTML += `
-                    <tr>
-                        <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
-                            No additional payments found for this period
-                        </td>
-                    </tr>
-                `;
+                paymentsHTML += `<tr><td colspan="3" style="text-align:center;padding:20px;color:#666;">No additional payments found for this period</td></tr>`;
             } else {
-                paymentsSummary.forEach(payment => {
-                    paymentsHTML += `
-                        <tr>
-                            <td>${payment.engineerName}</td>
-                            <td>${dateRange}</td>
-                            <td>£${payment.totalAmount.toFixed(2)}</td>
-                        </tr>
-                    `;
+                paymentsSummary.forEach(p => {
+                    paymentsHTML += `<tr><td>${p.engineerName}</td><td>${dateRange}</td><td>£${p.totalAmount.toFixed(2)}</td></tr>`;
                 });
             }
             paymentsHTML += '</tbody>';
             paymentsTable.innerHTML = paymentsHTML;
 
-            // Display bonus table
+            // Bonus table — now with breakdown columns
             const bonusTable = document.getElementById('bonusTable');
             let bonusHTML = `
                 <thead>
                     <tr>
                         <th>Engineer Name</th>
                         <th>Date Range</th>
+                        <th>Performance Bonus</th>
+                        <th>Holiday / Training Avg Bonus</th>
                         <th>Total Bonus</th>
                     </tr>
                 </thead>
-                <tbody>
-            `;
+                <tbody>`;
 
             if (bonusSummary.length === 0) {
-                bonusHTML += `
-                    <tr>
-                        <td colspan="3" style="text-align: center; padding: 20px; color: #666;">
-                            No bonuses found for this period
-                        </td>
-                    </tr>
-                `;
+                bonusHTML += `<tr><td colspan="5" style="text-align:center;padding:20px;color:#666;">No bonuses found for this period</td></tr>`;
             } else {
-                bonusSummary.forEach(bonus => {
+                bonusSummary.forEach(b => {
+                    // Build a tooltip-style breakdown of avg bonus days
+                    let avgBadge = '';
+                    if (b.avgBonusTotal > 0 && b.avgBonusDays.length > 0) {
+                        const breakdown = b.avgBonusDays
+                            .sort((a, c) => a.date.localeCompare(c.date))
+                            .map(d => {
+                                const label = d.attendance === 'H/H' ? 'Half Holiday' : d.attendance;
+                                const dateStr = new Date(d.date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                                return `${dateStr} (${label}): £${d.amount.toFixed(2)}`;
+                            }).join(' | ');
+                        avgBadge = `<span class="avg-bonus-badge" title="${breakdown}">${b.avgBonusDays.length} day${b.avgBonusDays.length !== 1 ? 's' : ''}</span>`;
+                    }
+
                     bonusHTML += `
                         <tr>
-                            <td>${bonus.engineerName}</td>
+                            <td>${b.engineerName}</td>
                             <td>${dateRange}</td>
-                            <td>£${bonus.totalBonus.toFixed(2)}</td>
-                        </tr>
-                    `;
+                            <td>£${b.perfTotal.toFixed(2)}</td>
+                            <td>£${b.avgBonusTotal.toFixed(2)} ${avgBadge}</td>
+                            <td><strong>£${b.totalBonus.toFixed(2)}</strong></td>
+                        </tr>`;
                 });
             }
             bonusHTML += '</tbody>';
@@ -619,50 +652,30 @@
         }
 
         window.exportPaymentsToCSV = function() {
-            if (paymentsSummary.length === 0) {
-                alert('No additional payments data to export');
-                return;
-            }
+            if (paymentsSummary.length === 0) { alert('No additional payments data to export'); return; }
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+            const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
 
-            const headers = ['Engineer Name', 'Date Range', 'Total Amount'];
-            let csv = headers.join(',') + '\n';
-
-            paymentsSummary.forEach(payment => {
-                const row = [
-                    escapeCSV(payment.engineerName),
-                    escapeCSV(dateRange),
-                    payment.totalAmount.toFixed(2)
-                ];
-                csv += row.join(',') + '\n';
+            let csv = 'Engineer Name,Date Range,Total Amount\n';
+            paymentsSummary.forEach(p => {
+                csv += `${escapeCSV(p.engineerName)},${escapeCSV(dateRange)},${p.totalAmount.toFixed(2)}\n`;
             });
 
             downloadCSV(csv, `additional_payments_summary_${startDate}_to_${endDate}.csv`);
         }
 
         window.exportBonusToCSV = function() {
-            if (bonusSummary.length === 0) {
-                alert('No bonus data to export');
-                return;
-            }
+            if (bonusSummary.length === 0) { alert('No bonus data to export'); return; }
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const dateRange = `${new Date(startDate).toLocaleDateString('en-GB')} - ${new Date(endDate).toLocaleDateString('en-GB')}`;
+            const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
 
-            const headers = ['Engineer Name', 'Date Range', 'Total Bonus'];
-            let csv = headers.join(',') + '\n';
-
-            bonusSummary.forEach(bonus => {
-                const row = [
-                    escapeCSV(bonus.engineerName),
-                    escapeCSV(dateRange),
-                    bonus.totalBonus.toFixed(2)
-                ];
-                csv += row.join(',') + '\n';
+            let csv = 'Engineer Name,Date Range,Performance Bonus,Holiday/Training Avg Bonus,Total Bonus\n';
+            bonusSummary.forEach(b => {
+                csv += `${escapeCSV(b.engineerName)},${escapeCSV(dateRange)},${b.perfTotal.toFixed(2)},${b.avgBonusTotal.toFixed(2)},${b.totalBonus.toFixed(2)}\n`;
             });
 
             downloadCSV(csv, `bonus_summary_${startDate}_to_${endDate}.csv`);
@@ -685,12 +698,10 @@
             return str;
         }
 
-        // Set default dates (last 30 days)
         window.addEventListener('load', () => {
             const today = new Date();
             const thirtyDaysAgo = new Date(today);
             thirtyDaysAgo.setDate(today.getDate() - 30);
-
             document.getElementById('endDate').value = today.toISOString().split('T')[0];
             document.getElementById('startDate').value = thirtyDaysAgo.toISOString().split('T')[0];
         });
