@@ -121,10 +121,12 @@
 
         .absence-section { margin-top: 18px; padding: 16px; background: #fef3c7; border-radius: 12px; border-left: 4px solid #f59e0b; }
         .absence-section.present { background: #d1fae5; border-left-color: #10b981; }
+        .absence-section.training { background: #eff6ff; border-left-color: #3b82f6; }
         .absence-title { font-weight: 600; color: #1f2937; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .absence-type { display: inline-block; padding: 6px 14px; background: #fbbf24; color: #78350f; border-radius: 8px; font-size: 0.85em; font-weight: 600; }
         .absence-type.holiday { background: #3b82f6; color: white; }
         .absence-type.sick { background: #ef4444; color: white; }
+        .absence-type.training { background: #1e40af; color: white; }
         .present-badge { display: inline-block; padding: 6px 14px; background: #10b981; color: white; border-radius: 8px; font-size: 0.85em; font-weight: 600; }
         .holiday-bonus-display { margin-top: 10px; padding: 12px; background: #d1fae5; border-radius: 10px; border: 2px solid #6ee7b7; }
         .holiday-bonus-display span { color: #065f46; font-weight: 700; font-size: 1em; }
@@ -683,7 +685,10 @@
             dates.forEach(date=>{
                 totalBonus+=(bonusData[date]||0);
                 const att=(attData[date]||{}).attendance;
-                if((att==='H'||att==='H/H')&&avgBonus>0) totalBonus+=(att==='H/H'?avgBonus/2:avgBonus);
+                // Holiday, Half Day Holiday, and Training all receive average bonus
+                if(att==='H'&&avgBonus>0) totalBonus+=avgBonus;
+                if(att==='H/H'&&avgBonus>0) totalBonus+=(avgBonus/2);
+                if(att==='Training'&&avgBonus>0) totalBonus+=avgBonus;
                 (additionalPayments[date]||[]).forEach(p=>{ if(p.status==='approved'||p.status==='approved-with-changes') totalApproved+=calcApprovedTotal(p,new Date(date+'T00:00:00')); });
             });
 
@@ -705,13 +710,40 @@
                 card.className='daily-card'+(isWknd?' weekend':'');
 
                 const attSt=att.attendance;
-                const absenceLabels={'H':'Holiday','H/H':'Half Day Holiday','Sick':'Sick Leave','AAUP':'Authorised Absence Unpaid','TOFD':'Time Off For Dependants','AAP':'Authorised Absence Paid'};
+                const absenceLabels={
+                    'H':'Holiday',
+                    'H/H':'Half Day Holiday',
+                    'Sick':'Sick Leave',
+                    'AAUP':'Authorised Absence Unpaid',
+                    'TOFD':'Time Off For Dependants',
+                    'AAP':'Authorised Absence Paid',
+                    'Training':'Training'
+                };
                 let absenceHTML='';
                 if(attSt&&attSt!=='X'){
-                    let cls=attSt==='H'||attSt==='H/H'?'holiday':attSt==='Sick'?'sick':'other';
+                    // Determine badge colour class
+                    let cls = attSt==='H'||attSt==='H/H' ? 'holiday'
+                             : attSt==='Sick'            ? 'sick'
+                             : attSt==='Training'        ? 'training'
+                             : 'other';
+
+                    // Section colour class
+                    let sectionCls = attSt==='Training' ? 'training' : '';
+
+                    // Average bonus display for Holiday, Half Day Holiday, and Training
                     let hbHTML='';
-                    if((attSt==='H'||attSt==='H/H')&&avgBonus>0) hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus: £${(attSt==='H/H'?avgBonus/2:avgBonus).toFixed(2)}</span></div>`;
-                    absenceHTML=`<div class="absence-section"><div class="absence-title">🚫 Absence: <span class="absence-type ${cls}">${absenceLabels[attSt]||attSt}</span></div>${hbHTML}</div>`;
+                    if(avgBonus>0){
+                        if(attSt==='H'){
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus: £${avgBonus.toFixed(2)}</span></div>`;
+                        } else if(attSt==='H/H'){
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus (Half Day): £${(avgBonus/2).toFixed(2)}</span></div>`;
+                        } else if(attSt==='Training'){
+                            hbHTML=`<div class="holiday-bonus-display"><span>Average Bonus: £${avgBonus.toFixed(2)}</span></div>`;
+                        }
+                    }
+
+                    const icon = attSt==='Training' ? '📚' : '🚫';
+                    absenceHTML=`<div class="absence-section ${sectionCls}"><div class="absence-title">${icon} ${attSt==='Training'?'On Training:':'Absence:'} <span class="absence-type ${cls}">${absenceLabels[attSt]||attSt}</span></div>${hbHTML}</div>`;
                 } else if(!isWknd) {
                     absenceHTML=`<div class="absence-section present"><div class="absence-title">✅ <span class="present-badge">Present</span></div></div>`;
                 }
@@ -851,8 +883,7 @@
                     where('engineerName', '==', currentEngineer)
                 ));
 
-                // Aggregate meter entries by month (Jan=1, Feb=2, Mar=3)
-                const monthData = { 1: {}, 2: {}, 3: {} }; // month -> { date: totalMeters }
+                const monthData = { 1: {}, 2: {}, 3: {} };
                 const MNAMES = { 1: 'January', 2: 'February', 3: 'March' };
 
                 snap.forEach(doc => {
@@ -860,10 +891,7 @@
                     const [docYear, docMonth] = (d.month || '').split('-').map(Number);
                     if (docYear === year && monthData[docMonth] !== undefined) {
                         (d.entries || []).forEach(e => {
-                            // Always count the day — SICK/AAUP entries have meters:0
-                            // which still contributes to the day tally (as 0 meters)
                             const m = parseFloat(e.meters) || 0;
-                            // Use null-coalescing so a day already set to 0 isn't overwritten
                             if (!(e.date in monthData[docMonth])) {
                                 monthData[docMonth][e.date] = 0;
                             }
@@ -887,7 +915,6 @@
                 const mpw  = mpd * 5;
                 const tier = getTier(mpw);
 
-                // Build month cards
                 const monthCardsHTML = [1, 2, 3].map(m => {
                     const s = mStats[m];
                     return `
@@ -899,7 +926,6 @@
                         </div>`;
                 }).join('');
 
-                // Build tier ladder (show highest to lowest)
                 const tiersHTML = BONUS_TIERS.map(t => {
                     const isActive = t === tier;
                     const cls = isActive ? 'active' : t.bonus > tier.bonus ? 'above' : 'below';
