@@ -250,7 +250,7 @@
                         <span class="kpi-title">
                             Meters Installed
                             <button class="graph-button" onclick="openGraphPopup(event, 'Meters Graphs', 'https://oes-performance.vercel.app/workscreenmetersgraph.html')">📊 Graphs</button>
-                            <button class="graph-button" onclick="openGraphPopup(event, 'Daily Stats - Previous Working Day', 'https://oes-performance.vercel.app/workscreendailystats.html?showPrevious=true')">📅 Daily</button>
+                           <button class="graph-button" onclick="openDailyPopup(event, 0)">📅 Daily</button>
                         </span>
                         <span class="kpi-icon">🪛</span>
                     </div>
@@ -410,10 +410,16 @@
     </div>
 
     <!-- Graph Popup -->
+    <!-- Graph Popup -->
     <div class="popup-overlay" id="graphPopup" onclick="closeGraphPopup(event)">
         <div class="popup-content" onclick="event.stopPropagation()">
             <div class="popup-header">
                 <div class="popup-title" id="popupTitle">📊 Performance Graphs</div>
+                <div id="dailyNavControls" style="display:none; display:none; align-items:center; gap:8px;">
+                    <button id="dailyNavPrev" onclick="navigateDailyOffset(1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">◀ Older</button>
+                    <span id="dailyNavLabel" style="font-size:0.8em; color:#a8dadc; font-weight:600; min-width:80px; text-align:center;"></span>
+                    <button id="dailyNavNext" onclick="navigateDailyOffset(-1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">Newer ▶</button>
+                </div>
                 <button class="popup-close" onclick="closeGraphPopup()">✕</button>
             </div>
             <iframe class="popup-iframe" id="graphIframe" src=""></iframe>
@@ -512,16 +518,69 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // ── Daily Stats navigation ──────────────────────────────
+        let _dailyOffset = 0;
+
+        function getPrevWorkingDayByOffset(offset) {
+            let d = new Date();
+            let count = 0;
+            while (count <= offset) {
+                d.setDate(d.getDate() - 1);
+                if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+            }
+            return d;
+        }
+
+        function buildDailyUrl(offset) {
+            const d = getPrevWorkingDayByOffset(offset);
+            const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return `https://oes-performance.vercel.app/workscreendailystats.html?showPrevious=true&date=${ds}`;
+        }
+
+        function updateDailyNavLabel(offset) {
+            const d = getPrevWorkingDayByOffset(offset);
+            const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+            document.getElementById('dailyNavLabel').textContent = label;
+            // Disable "Newer" button when already at most recent working day (offset 0)
+            document.getElementById('dailyNavNext').style.opacity = offset === 0 ? '0.3' : '1';
+            document.getElementById('dailyNavNext').style.pointerEvents = offset === 0 ? 'none' : 'auto';
+            // Disable "Older" button at max (4 = 5th working day back)
+            document.getElementById('dailyNavPrev').style.opacity = offset >= 4 ? '0.3' : '1';
+            document.getElementById('dailyNavPrev').style.pointerEvents = offset >= 4 ? 'none' : 'auto';
+        }
+
+        window.openDailyPopup = function(event, offset = 0) {
+            if (event) event.stopPropagation();
+            _dailyOffset = offset;
+            document.getElementById('popupTitle').textContent = '📅 Daily Stats';
+            document.getElementById('graphIframe').src = buildDailyUrl(offset);
+            // Show nav controls
+            const nav = document.getElementById('dailyNavControls');
+            nav.style.display = 'flex';
+            updateDailyNavLabel(offset);
+            document.getElementById('graphPopup').classList.add('active');
+        };
+
+        window.navigateDailyOffset = function(delta) {
+            _dailyOffset = Math.max(0, Math.min(4, _dailyOffset + delta));
+            document.getElementById('graphIframe').src = buildDailyUrl(_dailyOffset);
+            updateDailyNavLabel(_dailyOffset);
+        };
+        
         window.openGraphPopup = function(event, title = 'Performance Graphs', url) {
             event.stopPropagation();
             document.getElementById('popupTitle').textContent = `📊 ${title}`;
             document.getElementById('graphIframe').src = url;
             document.getElementById('graphPopup').classList.add('active');
         };
-        window.closeGraphPopup = function(event) {
+       window.closeGraphPopup = function(event) {
             if (event) event.stopPropagation();
             document.getElementById('graphPopup').classList.remove('active');
-            setTimeout(() => { document.getElementById('graphIframe').src = ''; document.getElementById('popupTitle').textContent = '📊 Performance Graphs'; }, 300);
+            setTimeout(() => {
+                document.getElementById('graphIframe').src = '';
+                document.getElementById('popupTitle').textContent = '📊 Performance Graphs';
+                document.getElementById('dailyNavControls').style.display = 'none';
+            }, 300);
         };
         window.toggleAborts = async function(event) {
             event.stopPropagation();
