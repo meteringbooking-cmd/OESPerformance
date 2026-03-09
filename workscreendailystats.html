@@ -40,7 +40,7 @@
       text-align: center;
       color: var(--text-dim);
       font-size: 1.1rem;
-      margin-bottom: 2rem;
+      margin-bottom: 1.2rem;
     }
     .summary-stats {
       display: grid;
@@ -174,7 +174,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>Previous Working Day Performance</h1>
+    <h1>Daily Performance</h1>
     <div class="date-subtitle" id="dateDisplay">Loading...</div>
     
     <div id="summaryStats"></div>
@@ -201,12 +201,13 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Get previous working day (skip weekends)
-    function getPreviousWorkingDay() {
+    // Returns the Nth previous working day (n=1 = yesterday, n=2 = day before, etc.)
+    function getNthPreviousWorkingDay(n) {
       let d = new Date();
-      d.setDate(d.getDate() - 1);
-      while (d.getDay() === 0 || d.getDay() === 6) {
+      let count = 0;
+      while (count < n) {
         d.setDate(d.getDate() - 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) count++;
       }
       return d;
     }
@@ -217,21 +218,30 @@
       return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
     }
 
-    async function loadYesterdayData() {
+    // Read ?dayOffset=N from URL (1=yesterday default, 2=two days ago, etc.)
+    function getDayOffsetFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      const offset = parseInt(params.get('dayOffset'), 10);
+      return (!isNaN(offset) && offset >= 1 && offset <= 5) ? offset : 1;
+    }
+
+    async function loadData(dayOffset) {
       const container = document.getElementById('dataContainer');
       const dateDisplay = document.getElementById('dateDisplay');
-      
+      const summaryStats = document.getElementById('summaryStats');
+
+      container.innerHTML = '<div class="loading">Loading data…</div>';
+      summaryStats.innerHTML = '';
+
       try {
-        // Get previous working day
-        const targetDate = getPreviousWorkingDay();
-        const yestDate = targetDate.toISOString().split('T')[0];
-        
-        // Update date display
+        const targetDate = getNthPreviousWorkingDay(dayOffset);
+        const dateStr = targetDate.toISOString().split('T')[0];
+
         dateDisplay.textContent = formatDateForDisplay(targetDate);
 
         const q = query(
           collection(db, "performance"),
-          where("date", "==", yestDate)
+          where("date", "==", dateStr)
         );
 
         const snapshot = await getDocs(q);
@@ -277,7 +287,6 @@
 
           teamMap[team].engineers[eng] = engData;
 
-          // Add to team totals
           teamMap[team].totals.jobs += Number(d.jobs || 0);
           teamMap[team].totals.completed += Number(d.completed || 0);
           teamMap[team].totals.aborts += Number(d.aborted || 0);
@@ -335,7 +344,6 @@
               </tr>`;
           });
 
-          // Team total row
           const teamCompPerc = data.totals.jobs > 0 ? ((data.totals.completed / data.totals.jobs) * 100).toFixed(1) : '0.0';
           const teamAbortPerc = data.totals.jobs > 0 ? ((data.totals.aborts / data.totals.jobs) * 100).toFixed(1) : '0.0';
           html += `
@@ -358,17 +366,13 @@
         </div>`;
         });
 
-        // Grand total
         let grand = { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0 };
         Object.values(teamMap).forEach(t => {
           Object.keys(grand).forEach(k => grand[k] += t.totals[k]);
         });
 
         const grandCompPerc = grand.jobs > 0 ? ((grand.completed / grand.jobs) * 100).toFixed(1) : '0.0';
-        const grandAbortPerc = grand.jobs > 0 ? ((grand.aborts / grand.jobs) * 100).toFixed(1) : '0.0';
 
-        // Create summary stats at the top
-        const summaryStats = document.getElementById('summaryStats');
         summaryStats.innerHTML = `
           <div class="summary-stats">
             <div class="stat-card">
@@ -414,8 +418,15 @@
       }
     }
 
-    // Load on page open
-    loadYesterdayData();
+    // Initial load based on URL param
+    loadData(getDayOffsetFromURL());
+
+    // Listen for messages from parent (work screen) to reload with a new offset
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SET_DAY_OFFSET') {
+        loadData(event.data.dayOffset);
+      }
+    });
   </script>
 </body>
 </html>
