@@ -40,8 +40,41 @@
       text-align: center;
       color: var(--text-dim);
       font-size: 1.1rem;
-      margin-bottom: 1.2rem;
+      margin-bottom: 1rem;
     }
+
+    /* ── Day navigation pills ── */
+    .day-nav {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+    .day-pill {
+      padding: 7px 18px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .day-pill:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(99,102,241,0.15);
+    }
+    .day-pill.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 12px rgba(99,102,241,0.5);
+    }
+
     .summary-stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -176,9 +209,11 @@
   <div class="container">
     <h1>Daily Performance</h1>
     <div class="date-subtitle" id="dateDisplay">Loading...</div>
-    
+
+    <!-- 5-day navigation pills -->
+    <div class="day-nav" id="dayNav"></div>
+
     <div id="summaryStats"></div>
-    
     <div id="dataContainer">
       <div class="loading">Loading data…</div>
     </div>
@@ -201,7 +236,9 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Returns the Nth previous working day (n=1 = yesterday, n=2 = day before, etc.)
+    // ── Date helpers ──────────────────────────────────────────────────────────
+
+    /** Returns the Nth previous working day (1 = yesterday, 2 = day before, etc.) */
     function getNthPreviousWorkingDay(n) {
       let d = new Date();
       let count = 0;
@@ -212,42 +249,77 @@
       return d;
     }
 
-    function formatDateForDisplay(d) {
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    function formatISO(d) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    function formatShort(d) {
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+    }
+
+    function formatLong(d) {
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
     }
 
-    // Read ?dayOffset=N from URL (1=yesterday default, 2=two days ago, etc.)
-    function getDayOffsetFromURL() {
-      const params = new URLSearchParams(window.location.search);
-      const offset = parseInt(params.get('dayOffset'), 10);
-      return (!isNaN(offset) && offset >= 1 && offset <= 5) ? offset : 1;
+    // ── Build the 5-day pill navigation ──────────────────────────────────────
+
+    // Build array of last 5 working days: index 0 = most recent
+    const workingDays = Array.from({ length: 5 }, (_, i) => getNthPreviousWorkingDay(i + 1));
+
+    // Determine which day to show: prefer ?date=YYYY-MM-DD param, else index 0
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramDate = urlParams.get('date'); // e.g. "2026-03-07"
+
+    let activeDayIndex = 0;
+    if (paramDate) {
+      const found = workingDays.findIndex(d => formatISO(d) === paramDate);
+      if (found !== -1) activeDayIndex = found;
     }
 
-    async function loadData(dayOffset) {
+    function buildNav() {
+      const nav = document.getElementById('dayNav');
+      nav.innerHTML = workingDays.map((d, i) => `
+        <button class="day-pill${i === activeDayIndex ? ' active' : ''}"
+                id="pill-${i}"
+                onclick="switchDay(${i})">
+          ${i === 0 ? '⬅ ' : ''}${formatShort(d)}${i === 0 ? ' (latest)' : ''}
+        </button>
+      `).join('');
+    }
+
+    window.switchDay = function(index) {
+      activeDayIndex = index;
+      // Update pill styles
+      workingDays.forEach((_, i) => {
+        const pill = document.getElementById(`pill-${i}`);
+        pill.classList.toggle('active', i === index);
+      });
+      loadDayData(workingDays[index]);
+    };
+
+    // ── Data loading ──────────────────────────────────────────────────────────
+
+    async function loadDayData(targetDate) {
       const container = document.getElementById('dataContainer');
-      const dateDisplay = document.getElementById('dateDisplay');
       const summaryStats = document.getElementById('summaryStats');
+      const dateDisplay = document.getElementById('dateDisplay');
 
       container.innerHTML = '<div class="loading">Loading data…</div>';
       summaryStats.innerHTML = '';
+      dateDisplay.textContent = formatLong(targetDate);
+
+      const dateStr = formatISO(targetDate);
 
       try {
-        const targetDate = getNthPreviousWorkingDay(dayOffset);
-        const dateStr = targetDate.toISOString().split('T')[0];
-
-        dateDisplay.textContent = formatDateForDisplay(targetDate);
-
-        const q = query(
-          collection(db, "performance"),
-          where("date", "==", dateStr)
-        );
-
+        const q = query(collection(db, "performance"), where("date", "==", dateStr));
         const snapshot = await getDocs(q);
 
         if (snapshot.empty) {
-          container.innerHTML = `<div class="error-msg">No data found for ${formatDateForDisplay(targetDate)}.</div>`;
+          container.innerHTML = `<div class="error-msg">No data found for ${formatLong(targetDate)}.</div>`;
           return;
         }
 
@@ -256,49 +328,44 @@
         snapshot.forEach(doc => {
           const d = doc.data();
           const team = d.teamLeader || "Unknown Team";
-          const eng = d.engineerName || "Unknown Engineer";
+          const eng  = d.engineerName || "Unknown Engineer";
 
           if (!teamMap[team]) {
             teamMap[team] = {
               engineers: {},
-              totals: {
-                jobs: 0, completed: 0, aborts: 0, meters: 0,
-                duals: 0, singles: 0, commsSiteVisits: 0,
-                dualRemoval: 0, singleRemoval: 0
-              }
+              totals: { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0 }
             };
           }
 
           const engData = teamMap[team].engineers[eng] || {
-            jobs: 0, completed: 0, aborts: 0, meters: 0,
-            duals: 0, singles: 0, commsSiteVisits: 0,
-            dualRemoval: 0, singleRemoval: 0
+            jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0
           };
 
-          engData.jobs += Number(d.jobs || 0);
-          engData.completed += Number(d.completed || 0);
-          engData.aborts += Number(d.aborted || 0);
-          engData.meters += Number(d.meters || 0);
-          engData.duals += Number(d.duals || 0);
-          engData.singles += Number(d.singles || 0);
-          engData.commsSiteVisits += Number(d.comms || 0);
-          engData.dualRemoval += Number(d.dualRemoval || 0);
-          engData.singleRemoval += Number(d.singleRemoval || 0);
+          engData.jobs            += Number(d.jobs         || 0);
+          engData.completed       += Number(d.completed    || 0);
+          engData.aborts          += Number(d.aborted      || 0);
+          engData.meters          += Number(d.meters       || 0);
+          engData.duals           += Number(d.duals        || 0);
+          engData.singles         += Number(d.singles      || 0);
+          engData.commsSiteVisits += Number(d.comms        || 0);
+          engData.dualRemoval     += Number(d.dualRemoval  || 0);
+          engData.singleRemoval   += Number(d.singleRemoval|| 0);
 
           teamMap[team].engineers[eng] = engData;
 
-          teamMap[team].totals.jobs += Number(d.jobs || 0);
-          teamMap[team].totals.completed += Number(d.completed || 0);
-          teamMap[team].totals.aborts += Number(d.aborted || 0);
-          teamMap[team].totals.meters += Number(d.meters || 0);
-          teamMap[team].totals.duals += Number(d.duals || 0);
-          teamMap[team].totals.singles += Number(d.singles || 0);
-          teamMap[team].totals.commsSiteVisits += Number(d.comms || 0);
-          teamMap[team].totals.dualRemoval += Number(d.dualRemoval || 0);
-          teamMap[team].totals.singleRemoval += Number(d.singleRemoval || 0);
+          const t = teamMap[team].totals;
+          t.jobs            += Number(d.jobs         || 0);
+          t.completed       += Number(d.completed    || 0);
+          t.aborts          += Number(d.aborted      || 0);
+          t.meters          += Number(d.meters       || 0);
+          t.duals           += Number(d.duals        || 0);
+          t.singles         += Number(d.singles      || 0);
+          t.commsSiteVisits += Number(d.comms        || 0);
+          t.dualRemoval     += Number(d.dualRemoval  || 0);
+          t.singleRemoval   += Number(d.singleRemoval|| 0);
         });
 
-        // Build HTML
+        // ── Build team tables ──
         let html = '';
         Object.keys(teamMap).sort().forEach(team => {
           const data = teamMap[team];
@@ -307,108 +374,55 @@
             <table>
               <thead>
                 <tr>
-                  <th>Engineer</th>
-                  <th>Jobs</th>
-                  <th>Completed</th>
-                  <th>Comp%</th>
-                  <th>Aborts</th>
-                  <th>Abort%</th>
-                  <th>Meters</th>
-                  <th>Duals</th>
-                  <th>Singles</th>
-                  <th>Comms/Site Visits</th>
-                  <th>Dual Removal</th>
-                  <th>Single Removal</th>
+                  <th>Engineer</th><th>Jobs</th><th>Completed</th><th>Comp%</th>
+                  <th>Aborts</th><th>Abort%</th><th>Meters</th><th>Duals</th>
+                  <th>Singles</th><th>Comms/Site Visits</th><th>Dual Removal</th><th>Single Removal</th>
                 </tr>
               </thead>
               <tbody>`;
 
           Object.keys(data.engineers).sort().forEach(eng => {
             const row = data.engineers[eng];
-            const compPerc = row.jobs > 0 ? ((row.completed / row.jobs) * 100).toFixed(1) : '0.0';
-            const abortPerc = row.jobs > 0 ? ((row.aborts / row.jobs) * 100).toFixed(1) : '0.0';
-            html += `
-              <tr class="engineer-row">
-                <td>${eng}</td>
-                <td>${row.jobs}</td>
-                <td>${row.completed}</td>
-                <td>${compPerc}%</td>
-                <td>${row.aborts}</td>
-                <td>${abortPerc}%</td>
-                <td class="meters-col">${row.meters}</td>
-                <td>${row.duals}</td>
-                <td>${row.singles}</td>
-                <td>${row.commsSiteVisits}</td>
-                <td>${row.dualRemoval}</td>
-                <td>${row.singleRemoval}</td>
-              </tr>`;
+            const compPerc  = row.jobs > 0 ? ((row.completed / row.jobs) * 100).toFixed(1) : '0.0';
+            const abortPerc = row.jobs > 0 ? ((row.aborts    / row.jobs) * 100).toFixed(1) : '0.0';
+            html += `<tr class="engineer-row">
+              <td>${eng}</td><td>${row.jobs}</td><td>${row.completed}</td><td>${compPerc}%</td>
+              <td>${row.aborts}</td><td>${abortPerc}%</td>
+              <td class="meters-col">${row.meters}</td>
+              <td>${row.duals}</td><td>${row.singles}</td>
+              <td>${row.commsSiteVisits}</td><td>${row.dualRemoval}</td><td>${row.singleRemoval}</td>
+            </tr>`;
           });
 
-          const teamCompPerc = data.totals.jobs > 0 ? ((data.totals.completed / data.totals.jobs) * 100).toFixed(1) : '0.0';
-          const teamAbortPerc = data.totals.jobs > 0 ? ((data.totals.aborts / data.totals.jobs) * 100).toFixed(1) : '0.0';
-          html += `
-              <tr class="total-row">
-                <td>Team Total</td>
-                <td>${data.totals.jobs}</td>
-                <td>${data.totals.completed}</td>
-                <td>${teamCompPerc}%</td>
-                <td>${data.totals.aborts}</td>
-                <td>${teamAbortPerc}%</td>
-                <td class="meters-col">${data.totals.meters}</td>
-                <td>${data.totals.duals}</td>
-                <td>${data.totals.singles}</td>
-                <td>${data.totals.commsSiteVisits}</td>
-                <td>${data.totals.dualRemoval}</td>
-                <td>${data.totals.singleRemoval}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>`;
+          const tt = data.totals;
+          const teamCompPerc  = tt.jobs > 0 ? ((tt.completed / tt.jobs) * 100).toFixed(1) : '0.0';
+          const teamAbortPerc = tt.jobs > 0 ? ((tt.aborts    / tt.jobs) * 100).toFixed(1) : '0.0';
+          html += `<tr class="total-row">
+            <td>Team Total</td><td>${tt.jobs}</td><td>${tt.completed}</td><td>${teamCompPerc}%</td>
+            <td>${tt.aborts}</td><td>${teamAbortPerc}%</td>
+            <td class="meters-col">${tt.meters}</td>
+            <td>${tt.duals}</td><td>${tt.singles}</td>
+            <td>${tt.commsSiteVisits}</td><td>${tt.dualRemoval}</td><td>${tt.singleRemoval}</td>
+          </tr></tbody></table></div>`;
         });
 
-        let grand = { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0 };
-        Object.values(teamMap).forEach(t => {
-          Object.keys(grand).forEach(k => grand[k] += t.totals[k]);
-        });
+        // ── Grand totals + summary cards ──
+        const grand = { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, commsSiteVisits:0, dualRemoval:0, singleRemoval:0 };
+        Object.values(teamMap).forEach(t => { Object.keys(grand).forEach(k => grand[k] += t.totals[k]); });
 
-        const grandCompPerc = grand.jobs > 0 ? ((grand.completed / grand.jobs) * 100).toFixed(1) : '0.0';
+        const grandCompPerc  = grand.jobs > 0 ? ((grand.completed / grand.jobs) * 100).toFixed(1) : '0.0';
 
         summaryStats.innerHTML = `
           <div class="summary-stats">
-            <div class="stat-card">
-              <div class="stat-label">Total Meters</div>
-              <div class="stat-value highlight">${grand.meters}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Total Jobs</div>
-              <div class="stat-value">${grand.jobs}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Completed</div>
-              <div class="stat-value">${grand.completed}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Completion %</div>
-              <div class="stat-value">${grandCompPerc}%</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Aborts</div>
-              <div class="stat-value">${grand.aborts}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Duals</div>
-              <div class="stat-value">${grand.duals}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Singles</div>
-              <div class="stat-value">${grand.singles}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Comms/Site Visits</div>
-              <div class="stat-value">${grand.commsSiteVisits}</div>
-            </div>
-          </div>
-        `;
+            <div class="stat-card"><div class="stat-label">Total Meters</div><div class="stat-value highlight">${grand.meters}</div></div>
+            <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-value">${grand.jobs}</div></div>
+            <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value">${grand.completed}</div></div>
+            <div class="stat-card"><div class="stat-label">Completion %</div><div class="stat-value">${grandCompPerc}%</div></div>
+            <div class="stat-card"><div class="stat-label">Aborts</div><div class="stat-value">${grand.aborts}</div></div>
+            <div class="stat-card"><div class="stat-label">Duals</div><div class="stat-value">${grand.duals}</div></div>
+            <div class="stat-card"><div class="stat-label">Singles</div><div class="stat-value">${grand.singles}</div></div>
+            <div class="stat-card"><div class="stat-label">Comms/Site Visits</div><div class="stat-value">${grand.commsSiteVisits}</div></div>
+          </div>`;
 
         container.innerHTML = html;
 
@@ -418,15 +432,9 @@
       }
     }
 
-    // Initial load based on URL param
-    loadData(getDayOffsetFromURL());
-
-    // Listen for messages from parent (work screen) to reload with a new offset
-    window.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'SET_DAY_OFFSET') {
-        loadData(event.data.dayOffset);
-      }
-    });
+    // ── Init ──────────────────────────────────────────────────────────────────
+    buildNav();
+    loadDayData(workingDays[activeDayIndex]);
   </script>
 </body>
 </html>
