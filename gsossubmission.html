@@ -159,11 +159,27 @@
     }
 
     input[type="date"]:focus,
+    input[type="text"]:focus,
     select:focus {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(0,210,255,0.12);
     }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 16px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]::placeholder { color: var(--text-dim); }
 
     input[type="date"]::-webkit-calendar-picker-indicator {
       filter: invert(0.7) sepia(1) saturate(3) hue-rotate(165deg);
@@ -745,6 +761,12 @@
       <input type="date" id="jobDate" />
     </div>
 
+    <!-- Job Number -->
+    <div class="form-group">
+      <label for="jobNumber">Job Number</label>
+      <input type="text" id="jobNumber" placeholder="e.g. 12345678" />
+    </div>
+
     <!-- Job Type -->
     <div class="form-group">
       <label>Job Type</label>
@@ -797,6 +819,10 @@
       <div class="summary-row">
         <span>Date</span>
         <span id="sum-date">—</span>
+      </div>
+      <div class="summary-row">
+        <span>Job Number</span>
+        <span id="sum-jobnum">—</span>
       </div>
       <div class="summary-row">
         <span>Job Type</span>
@@ -916,9 +942,10 @@
   const JOB_PRICES = { 'Dual Exchange': 139.05, 'Single': 113.30, 'Comms': 72.10 };
 
   function updateSummary() {
-    const engineer = document.getElementById('engineerSelect').value;
-    const date     = document.getElementById('jobDate').value;
-    const jobRadio = document.querySelector('input[name="jobType"]:checked');
+    const engineer  = document.getElementById('engineerSelect').value;
+    const date      = document.getElementById('jobDate').value;
+    const jobNumber = document.getElementById('jobNumber').value.trim();
+    const jobRadio  = document.querySelector('input[name="jobType"]:checked');
 
     const summary = document.getElementById('summary');
 
@@ -930,7 +957,6 @@
     const jobType = jobRadio.value;
     const price   = JOB_PRICES[jobType];
 
-    // Format date nicely
     const [y, m, d] = date.split('-');
     const formatted  = new Date(+y, +m - 1, +d).toLocaleDateString('en-GB', {
       weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
@@ -938,6 +964,7 @@
 
     document.getElementById('sum-engineer').textContent = engineer;
     document.getElementById('sum-date').textContent     = formatted;
+    document.getElementById('sum-jobnum').textContent   = jobNumber || '—';
     document.getElementById('sum-job').textContent      = jobType;
     document.getElementById('sum-price').textContent    = `£${price.toFixed(2)}`;
 
@@ -946,6 +973,7 @@
 
   document.getElementById('engineerSelect').addEventListener('change', updateSummary);
   document.getElementById('jobDate').addEventListener('change', updateSummary);
+  document.getElementById('jobNumber').addEventListener('input', updateSummary);
   document.querySelectorAll('input[name="jobType"]').forEach(r => r.addEventListener('change', updateSummary));
 
   // ── Toast helper ──────────────────────────────────────────────
@@ -962,8 +990,8 @@
   // ── Session recent submissions ────────────────────────────────
   const sessionSubmissions = [];
 
-  function addRecentItem(engineer, jobType, price, dateStr) {
-    sessionSubmissions.unshift({ engineer, jobType, price, dateStr });
+  function addRecentItem(engineer, jobType, price, dateStr, jobNumber) {
+    sessionSubmissions.unshift({ engineer, jobType, price, dateStr, jobNumber });
 
     const section = document.getElementById('recentSection');
     const list    = document.getElementById('recentList');
@@ -979,14 +1007,12 @@
     item.innerHTML = `
       <div class="recent-item-left">
         ${engineer}
-        <div class="recent-item-sub">${jobType} · ${formatted}</div>
+        <div class="recent-item-sub">${jobType} · ${formatted}${jobNumber ? ' · #' + jobNumber : ''}</div>
       </div>
       <div class="recent-item-price">£${price.toFixed(2)}</div>
     `;
 
     list.insertBefore(item, list.firstChild);
-
-    // Keep max 5
     while (list.children.length > 5) list.removeChild(list.lastChild);
   }
 
@@ -1081,9 +1107,10 @@
     const byEngineer = {};
     records.forEach(r => {
       const eng = r.engineerName || 'Unknown';
-      if (!byEngineer[eng]) byEngineer[eng] = { total: 0, value: 0, jobs: {} };
+      if (!byEngineer[eng]) byEngineer[eng] = { total: 0, value: 0, jobs: {}, jobNumbers: [] };
       byEngineer[eng].total++;
       byEngineer[eng].value += r.price || 0;
+      if (r.jobNumber) byEngineer[eng].jobNumbers.push(r.jobNumber);
       const jt = r.jobType || 'Unknown';
       byEngineer[eng].jobs[jt] = (byEngineer[eng].jobs[jt] || 0) + 1;
     });
@@ -1110,8 +1137,13 @@
         singleCount ? `<span class="job-pill pill-single">S×${singleCount}</span>` : '',
         commsCount  ? `<span class="job-pill pill-comms">C×${commsCount}</span>` : '',
       ].join('');
+      // List job numbers for this engineer
+      const jobNums = d.jobNumbers.filter(Boolean);
+      const jobNumDisplay = jobNums.length
+        ? `<div style="font-size:0.72rem;color:var(--text-dim);margin-top:3px;">${jobNums.join(', ')}</div>`
+        : '';
       return `<tr>
-        <td class="eng-name">${eng}</td>
+        <td class="eng-name">${eng}${jobNumDisplay}</td>
         <td>${pills}</td>
         <td>${dualCount}</td>
         <td>${singleCount}</td>
@@ -1168,9 +1200,10 @@
   };
 
   window.submitForm = async function() {
-    const engineer = document.getElementById('engineerSelect').value;
-    const date     = document.getElementById('jobDate').value;
-    const jobRadio = document.querySelector('input[name="jobType"]:checked');
+    const engineer  = document.getElementById('engineerSelect').value;
+    const date      = document.getElementById('jobDate').value;
+    const jobNumber = document.getElementById('jobNumber').value.trim();
+    const jobRadio  = document.querySelector('input[name="jobType"]:checked');
 
     if (!engineer) { showToast('Please select an engineer', 'error'); return; }
     if (!date)     { showToast('Please select a date', 'error'); return; }
@@ -1187,16 +1220,18 @@
       await addDoc(collection(db, 'GSOS'), {
         engineerName: engineer,
         date:         date,
+        jobNumber:    jobNumber || null,
         jobType:      jobType,
         price:        price,
         submittedAt:  serverTimestamp()
       });
 
       showToast(`Submitted — ${engineer} · ${jobType}`, 'success');
-      addRecentItem(engineer, jobType, price, date);
+      addRecentItem(engineer, jobType, price, date, jobNumber);
 
-      // Reset form — keep engineer selected, reset date to today, clear job type
+      // Reset — keep engineer, reset date to today, clear job number + job type
       dateInput.value = today.toISOString().split('T')[0];
+      document.getElementById('jobNumber').value = '';
       document.querySelectorAll('input[name="jobType"]').forEach(r => r.checked = false);
       document.getElementById('summary').classList.remove('visible');
 
