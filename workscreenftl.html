@@ -734,10 +734,12 @@
                 snap.forEach(doc => {
                     const d = doc.data();
                     const name = (d.engineerName || '').trim();
-                    const tl   = (d.teamLeader || '').trim();
+                    let tl = (d.teamLeader || '').trim();
+                    // Normalise any variation of FTL4 / FTL 4 to the canonical "FTL 4"
+                    if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
                     if (name && tl) engineerTeamMap[name] = tl;
                 });
-                console.log('[Miles] Engineer map built from performanceDb:', Object.keys(engineerTeamMap).length, 'engineers');
+                console.log('[Miles] Engineer map built:', Object.keys(engineerTeamMap).length, 'engineers');
                 console.table(engineerTeamMap);
             } catch (err) {
                 console.error('Error building engineer team map:', err);
@@ -764,10 +766,15 @@
                 milesSnap.forEach(doc => {
                     const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
                     const engineerName = (d.engineer||'').trim();
-                    // Use fuzzy lookup so minor name differences still resolve correctly
-                    const tl = lookupTeamLeader(engineerName);
+                    // First check if the record itself has a teamLeader field (e.g. "FTL4" or "FTL 4")
+                    // Normalise FTL4/FTL 4 -> "FTL 4" so it hits TEAM_KEY_MAP correctly
+                    let tl = (d.teamLeader || d.team_leader || '').trim();
+                    if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                    // If no teamLeader on the record, fall back to engineer name lookup
+                    if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
+                    // Final fallback: if engineer name itself contains FTL4/FTL 4, assign to Tom Green
+                    if (!TEAM_KEY_MAP[tl] && /ftl\s*4/i.test(engineerName)) tl = 'FTL 4';
                     const key = TEAM_KEY_MAP[tl]||null;
-                    console.log(`[Miles] "${engineerName}" -> TL: "${tl}" -> key: "${key}"`);
                     if (key) teamBuckets[key].push({ engineer:engineerName, value:val });
                     allRecords.push({ engineer:engineerName, teamLeader:tl, value:val });
                 });
@@ -797,7 +804,13 @@
             const records = cachedMilesRecords;
             if (!records.length) { container.innerHTML=`<div style="text-align:center;padding:60px;color:#a8dadc;"><div style="font-size:2em;">📭</div><div>No miles per meter data for this date</div></div>`; return; }
             const grouped = {}; TEAM_ORDER.forEach(tl=>grouped[tl]=[]); grouped['Unknown']=[];
-            records.forEach(r => { const tl = r.teamLeader || lookupTeamLeader(r.engineer); const grp=TEAM_ORDER.includes(tl)?tl:'Unknown'; grouped[grp].push({...r, teamLeader:tl}); });
+            records.forEach(r => {
+                let tl = r.teamLeader || lookupTeamLeader(r.engineer);
+                // Normalise FTL4 / FTL 4 variants to canonical key
+                if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                const grp = TEAM_ORDER.includes(tl) ? tl : 'Unknown';
+                grouped[grp].push({...r, teamLeader: tl});
+            });
             Object.values(grouped).forEach(arr=>arr.sort((a,b)=>a.engineer.localeCompare(b.engineer)));
             let html=''; const allTeams=[...TEAM_ORDER,'Unknown'];
             allTeams.forEach(teamLeader => {
