@@ -120,7 +120,7 @@
   <div class="team-filter">
     <span class="bar-label">Team:</span>
     <button class="team-btn active" data-team="all">All Teams</button>
-    <button class="team-btn" data-team="FTL 4">FTL 4</button>
+    <button class="team-btn" data-team="Tom Green">Tom Green</button>
     <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko</button>
     <button class="team-btn" data-team="Scott Carson">Scott Carson</button>
     <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot</button>
@@ -170,6 +170,9 @@
 
   let period='curr-month', sortBy='meters', team='all', rows=[];
 
+  // Normalise FTL 4 / FTL4 -> Tom Green
+  const normTL=tl=>/^ftl\s*4$/i.test((tl||'').trim())?'Tom Green':(tl||'Unknown');
+
   const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   function sowDate(d){const day=d.getDay();return new Date(d.getFullYear(),d.getMonth(),d.getDate()-(day===0?6:day-1));}
   function addD(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
@@ -196,7 +199,9 @@
       const d=doc.data();
       if(!d.engineerName||!wdSet.has(d.date))return;
       const k=d.engineerName.trim();
-      if(!map[k])map[k]={name:k,team:d.teamLeader||'Unknown',meters:0,jobs:0,completed:0,aborts:0,days:new Set(),att:{}};
+      // Normalise FTL 4 -> Tom Green
+      const tlNorm=normTL(d.teamLeader);
+      if(!map[k])map[k]={name:k,team:tlNorm,meters:0,jobs:0,completed:0,aborts:0,days:new Set(),att:{}};
       const r=map[k];
       r.meters+=Number(d.meters||0);r.jobs+=Number(d.jobs||0);r.completed+=Number(d.completed||0);r.days.add(d.date);
     });
@@ -225,11 +230,6 @@
     return{s,e,wd};
   }
 
-  // Sorting rules:
-  // meters     → desc
-  // completion → desc, tie: more meters first
-  // avgDay     → desc, tie: more meters first
-  // aborts     → asc,  tie: more meters first
   function sorted(){
     let out=team==='all'?[...rows]:rows.filter(r=>r.team===team);
     out.sort((a,b)=>{
@@ -273,51 +273,31 @@
       sb.style.display='block';tw.style.display='none';pod.innerHTML='';return;
     }
     sb.style.display='none';tw.style.display='block';
-
-    // Summary
     document.getElementById('sumMeters').textContent=data.reduce((s,r)=>s+r.meters,0).toLocaleString();
     document.getElementById('sumComp').textContent=(data.reduce((s,r)=>s+r.completion,0)/data.length).toFixed(1)+'%';
     document.getElementById('sumAborts').textContent=data.reduce((s,r)=>s+r.aborts,0);
     document.getElementById('sumEng').textContent=data.length;
-
-    // Podium — layout: [2nd | 1st | 3rd] all centred
     const slots=
       data.length>=3?[{r:data[1],rank:2,m:'🥈'},{r:data[0],rank:1,m:'🥇'},{r:data[2],rank:3,m:'🥉'}]:
       data.length===2?[{r:null,rank:null,m:''},{r:data[0],rank:1,m:'🥇'},{r:data[1],rank:2,m:'🥈'}]:
       [{r:null,rank:null,m:''},{r:data[0],rank:1,m:'🥇'},{r:null,rank:null,m:''}];
-
     pod.innerHTML=slots.map(sl=>{
       if(!sl.r)return`<div class="podium-slot"></div>`;
       const pc=sl.rank===1?'rank-1':sl.rank===2?'rank-2':'rank-3';
-      return`<div class="podium-slot">
-        <div class="podium-card ${pc}">
-          <span class="medal">${sl.m}</span>
-          <div class="podium-name">${sl.r.name}</div>
-          <div class="podium-team">${sl.r.team}</div>
-          <div class="podium-value">${podiumVal(sl.r)}</div>
-          <div class="podium-metric">${podiumLbl()}</div>
-        </div>
-      </div>`;
+      return`<div class="podium-slot"><div class="podium-card ${pc}"><span class="medal">${sl.m}</span><div class="podium-name">${sl.r.name}</div><div class="podium-team">${sl.r.team}</div><div class="podium-value">${podiumVal(sl.r)}</div><div class="podium-metric">${podiumLbl()}</div></div></div>`;
     }).join('');
-
-    // Table rows
     document.getElementById('tableBody').innerHTML=data.map((r,i)=>
       `<tr style="animation-delay:${Math.min(i*25,600)}ms">
         <td class="col-rank"><div class="rank-badge ${rnkCls(i)}">${i+1}</div></td>
         <td><div class="eng-name">${r.name}</div><div class="eng-team">${r.team}</div></td>
         <td><span class="val-meters">${r.meters.toLocaleString()}</span></td>
         <td><span class="val-avg">${r.avgDay}</span></td>
-        <td><div class="comp-wrap">
-          <span class="comp-value" style="color:${compColor(r.completion)}">${r.completion}%</span>
-          <div class="comp-bar-bg"><div class="comp-bar-fill" style="width:${Math.min(r.completion,100)}%;background:${compColor(r.completion)}"></div></div>
-        </div></td>
+        <td><div class="comp-wrap"><span class="comp-value" style="color:${compColor(r.completion)}">${r.completion}%</span><div class="comp-bar-bg"><div class="comp-bar-fill" style="width:${Math.min(r.completion,100)}%;background:${compColor(r.completion)}"></div></div></div></td>
         <td><span class="abort-pill ${abortCls(r.aborts)}">${r.aborts===0?'&#10003; 0':r.aborts}</span></td>
         <td><span class="days-count">${r.daysActive} / ${r.totalWd}</span></td>
         <td>${attHtml(r)}</td>
       </tr>`
     ).join('');
-
-    // Header arrows
     document.querySelectorAll('thead th[data-col]').forEach(th=>{th.classList.remove('sorted');th.querySelector('.sa').textContent='';});
     const colMap={meters:'meters',completion:'completion',aborts:'aborts',avgDay:'avgDay'};
     const ath=document.querySelector(`thead th[data-col="${colMap[sortBy]}"]`);
@@ -343,18 +323,9 @@
     }
   }
 
-  document.querySelectorAll('.pill').forEach(b=>b.addEventListener('click',()=>{
-    document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');period=b.dataset.period;load();
-  }));
-  document.querySelectorAll('.sort-btn').forEach(b=>b.addEventListener('click',()=>{
-    document.querySelectorAll('.sort-btn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');sortBy=b.dataset.sort;render();
-  }));
-  document.querySelectorAll('.team-btn').forEach(b=>b.addEventListener('click',()=>{
-    document.querySelectorAll('.team-btn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');team=b.dataset.team;render();
-  }));
+  document.querySelectorAll('.pill').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));b.classList.add('active');period=b.dataset.period;load();}));
+  document.querySelectorAll('.sort-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.sort-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');sortBy=b.dataset.sort;render();}));
+  document.querySelectorAll('.team-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.team-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');team=b.dataset.team;render();}));
   document.querySelectorAll('thead th[data-col]').forEach(th=>th.addEventListener('click',()=>{
     const m={meters:'meters',completion:'completion',aborts:'aborts',avgDay:'avgDay'};
     const s=m[th.dataset.col];if(!s)return;
