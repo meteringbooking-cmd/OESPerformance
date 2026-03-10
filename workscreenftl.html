@@ -700,6 +700,30 @@
         };
 
         let engineerTeamMap = null;
+        // Normalise a name for fuzzy matching: lowercase, collapse spaces, remove punctuation
+        function normaliseName(n) {
+            return (n || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+        }
+        // Lookup a team leader by engineer name, with fallback fuzzy match
+        function lookupTeamLeader(rawName) {
+            if (!engineerTeamMap) return '';
+            const exact = engineerTeamMap[rawName.trim()];
+            if (exact) return exact;
+            // Try normalised match
+            const norm = normaliseName(rawName);
+            for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                if (normaliseName(storedName) === norm) return tl;
+            }
+            // Try last-name-only match as last resort
+            const lastWord = norm.split(' ').pop();
+            if (lastWord && lastWord.length > 2) {
+                for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                    if (normaliseName(storedName).split(' ').pop() === lastWord) return tl;
+                }
+            }
+            return '';
+        }
+
         async function buildEngineerTeamMap() {
             if (engineerTeamMap) return engineerTeamMap;
             engineerTeamMap = {};
@@ -713,7 +737,8 @@
                     const tl   = (d.teamLeader || '').trim();
                     if (name && tl) engineerTeamMap[name] = tl;
                 });
-                console.log('[Miles] Engineer map built from performanceDb:', Object.keys(engineerTeamMap).length, 'engineers', engineerTeamMap);
+                console.log('[Miles] Engineer map built from performanceDb:', Object.keys(engineerTeamMap).length, 'engineers');
+                console.table(engineerTeamMap);
             } catch (err) {
                 console.error('Error building engineer team map:', err);
                 engineerTeamMap = null;
@@ -739,7 +764,10 @@
                 milesSnap.forEach(doc => {
                     const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
                     const engineerName = (d.engineer||'').trim();
-                    const tl = teamMap[engineerName]||''; const key = TEAM_KEY_MAP[tl]||null;
+                    // Use fuzzy lookup so minor name differences still resolve correctly
+                    const tl = lookupTeamLeader(engineerName);
+                    const key = TEAM_KEY_MAP[tl]||null;
+                    console.log(`[Miles] "${engineerName}" -> TL: "${tl}" -> key: "${key}"`);
                     if (key) teamBuckets[key].push({ engineer:engineerName, value:val });
                     allRecords.push({ engineer:engineerName, teamLeader:tl, value:val });
                 });
@@ -769,7 +797,7 @@
             const records = cachedMilesRecords;
             if (!records.length) { container.innerHTML=`<div style="text-align:center;padding:60px;color:#a8dadc;"><div style="font-size:2em;">📭</div><div>No miles per meter data for this date</div></div>`; return; }
             const grouped = {}; TEAM_ORDER.forEach(tl=>grouped[tl]=[]); grouped['Unknown']=[];
-            records.forEach(r => { const grp=TEAM_ORDER.includes(r.teamLeader)?r.teamLeader:'Unknown'; grouped[grp].push(r); });
+            records.forEach(r => { const tl = r.teamLeader || lookupTeamLeader(r.engineer); const grp=TEAM_ORDER.includes(tl)?tl:'Unknown'; grouped[grp].push({...r, teamLeader:tl}); });
             Object.values(grouped).forEach(arr=>arr.sort((a,b)=>a.engineer.localeCompare(b.engineer)));
             let html=''; const allTeams=[...TEAM_ORDER,'Unknown'];
             allTeams.forEach(teamLeader => {
