@@ -307,7 +307,8 @@
                         <div class="miles-team-item"><div class="miles-team-label">Scott Carson</div><div class="miles-team-value" id="milesTeam_scott">—</div></div>
                         <div class="miles-team-item"><div class="miles-team-label">Scott Carson – Scot</div><div class="miles-team-value" id="milesTeam_scottScot">—</div></div>
                         <div class="miles-team-item"><div class="miles-team-label">Stuart Whyte</div><div class="miles-team-value" id="milesTeam_stuart">—</div></div>
-                        <div class="miles-team-item"><div class="miles-team-label">FTL 4</div><div class="miles-team-value" id="milesTeam_ftl4">—</div></div>
+                        <!-- DISPLAY: Tom Green — DATA: FTL 4 -->
+                        <div class="miles-team-item"><div class="miles-team-label">Tom Green</div><div class="miles-team-value" id="milesTeam_ftl4">—</div></div>
                     </div>
                 </div>
 
@@ -410,12 +411,11 @@
     </div>
 
     <!-- Graph Popup -->
-    <!-- Graph Popup -->
     <div class="popup-overlay" id="graphPopup" onclick="closeGraphPopup(event)">
         <div class="popup-content" onclick="event.stopPropagation()">
             <div class="popup-header">
                 <div class="popup-title" id="popupTitle">📊 Performance Graphs</div>
-                <div id="dailyNavControls" style="display:none; display:none; align-items:center; gap:8px;">
+                <div id="dailyNavControls" style="display:none; align-items:center; gap:8px;">
                     <button id="dailyNavPrev" onclick="navigateDailyOffset(1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">◀ Older</button>
                     <span id="dailyNavLabel" style="font-size:0.8em; color:#a8dadc; font-weight:600; min-width:80px; text-align:center;"></span>
                     <button id="dailyNavNext" onclick="navigateDailyOffset(-1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">Newer ▶</button>
@@ -518,6 +518,15 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+        // ── Display name → Firestore data key mapping ──────────
+        // Tom Green is displayed to users but stored as "FTL 4" in Firestore
+        const DISPLAY_TO_DATA_TEAMLEADER = {
+            'Tom Green': 'FTL 4'
+        };
+        function dataTeamLeader(displayName) {
+            return DISPLAY_TO_DATA_TEAMLEADER[displayName] || displayName;
+        }
+
         // ── Daily Stats navigation ──────────────────────────────
         let _dailyOffset = 0;
 
@@ -541,10 +550,8 @@
             const d = getPrevWorkingDayByOffset(offset);
             const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
             document.getElementById('dailyNavLabel').textContent = label;
-            // Disable "Newer" button when already at most recent working day (offset 0)
             document.getElementById('dailyNavNext').style.opacity = offset === 0 ? '0.3' : '1';
             document.getElementById('dailyNavNext').style.pointerEvents = offset === 0 ? 'none' : 'auto';
-            // Disable "Older" button at max (4 = 5th working day back)
             document.getElementById('dailyNavPrev').style.opacity = offset >= 4 ? '0.3' : '1';
             document.getElementById('dailyNavPrev').style.pointerEvents = offset >= 4 ? 'none' : 'auto';
         }
@@ -554,7 +561,6 @@
             _dailyOffset = offset;
             document.getElementById('popupTitle').textContent = '📅 Daily Stats';
             document.getElementById('graphIframe').src = buildDailyUrl(offset);
-            // Show nav controls
             const nav = document.getElementById('dailyNavControls');
             nav.style.display = 'flex';
             updateDailyNavLabel(offset);
@@ -573,7 +579,7 @@
             document.getElementById('graphIframe').src = url;
             document.getElementById('graphPopup').classList.add('active');
         };
-       window.closeGraphPopup = function(event) {
+        window.closeGraphPopup = function(event) {
             if (event) event.stopPropagation();
             document.getElementById('graphPopup').classList.remove('active');
             setTimeout(() => {
@@ -677,12 +683,22 @@
             return new Date(+yyyy, +mm-1, +dd, +hh, +min, +sec);
         }
 
-        // Team mappings
+        // Team mappings — keys are Firestore data values, display is handled separately
         const TEAM_KEY_MAP = {
             'Richard Wiecko':'richard','Scott Carson':'scott',
             'Scott Carson - Scot':'scottScot','Stuart Whyte':'stuart','FTL 4':'ftl4',
         };
+        // TEAM_ORDER uses Firestore data keys for grouping
         const TEAM_ORDER = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'FTL 4'];
+        // Display names for rendering — maps data key to friendly display name
+        const TEAM_DISPLAY_NAMES = {
+            'Richard Wiecko': 'Richard Wiecko',
+            'Scott Carson': 'Scott Carson',
+            'Scott Carson - Scot': 'Scott Carson - Scot',
+            'Stuart Whyte': 'Stuart Whyte',
+            'FTL 4': 'Tom Green'
+        };
+
         let engineerTeamMap = null;
         async function buildEngineerTeamMap() {
             if (engineerTeamMap) return engineerTeamMap;
@@ -747,12 +763,14 @@
             let html=''; const allTeams=[...TEAM_ORDER,'Unknown'];
             allTeams.forEach(teamLeader => {
                 const engineers=grouped[teamLeader]; if(!engineers.length) return;
+                // Use display name for rendering (FTL 4 → Tom Green)
+                const displayName = TEAM_DISPLAY_NAMES[teamLeader] || teamLeader;
                 const teamVals=engineers.map(e=>e.value);
                 const teamAvg=(teamVals.reduce((a,b)=>a+b,0)/teamVals.length).toFixed(2);
                 const teamMin=Math.min(...teamVals).toFixed(2); const teamMax=Math.max(...teamVals).toFixed(2);
                 html+=`<div style="margin-bottom:28px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid rgba(0,210,255,0.2);">
-                        <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${teamLeader}</div>
+                        <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${displayName}</div>
                         <div style="display:flex;gap:20px;align-items:center;">
                             <div style="text-align:center;"><div style="font-size:0.65em;color:#a8dadc;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Min</div><div style="font-size:1em;font-weight:700;color:#e1e8ed;">${teamMin}</div></div>
                             <div style="text-align:center;"><div style="font-size:0.65em;color:#a8dadc;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Avg</div><div style="font-size:1.4em;font-weight:800;color:#00d2ff;">${teamAvg}</div></div>
@@ -808,7 +826,7 @@
         // ABORT POPUP STATE — multi-select with Ctrl+Click
         // ═══════════════════════════════════════════════════════
         let abortAllDaysData = [];
-        let abortSelectedDays = new Set([0]);  // Set of selected indices
+        let abortSelectedDays = new Set([0]);
         let abortChartMode = false;
         let abortChartInstance = null;
 
@@ -821,18 +839,14 @@
             renderAbortDays();
         };
 
-        // Called when a tab is clicked — supports Ctrl+Click multi-select
         window.selectAbortDay = function(idx, event) {
             if (event && (event.ctrlKey || event.metaKey)) {
-                // Ctrl/Cmd+Click: toggle this day in the set
                 if (abortSelectedDays.has(idx)) {
-                    // Only deselect if at least one other day remains selected
                     if (abortSelectedDays.size > 1) abortSelectedDays.delete(idx);
                 } else {
                     abortSelectedDays.add(idx);
                 }
             } else {
-                // Normal click: select only this day
                 abortSelectedDays = new Set([idx]);
             }
             refreshAbortTabs();
@@ -849,34 +863,26 @@
             });
         }
 
-        // Merge data from all selected days into one aggregated view
         function getAggregatedDayData() {
             const selectedDays = [...abortSelectedDays].map(i => abortAllDaysData[i]);
             if (selectedDays.length === 1) return selectedDays[0];
-
-            // Aggregate across multiple days
             const merged = { teamData: {}, total: 0, reasons: {}, label: selectedDays.map(d=>d.label).join(' + ') };
             for (const day of selectedDays) {
                 merged.total += day.total;
-                // Merge reasons
                 for (const [r, q] of Object.entries(day.reasons)) {
                     merged.reasons[r] = (merged.reasons[r]||0) + q;
                 }
-                // Merge teamData
                 for (const [tl, tdata] of Object.entries(day.teamData)) {
                     if (!merged.teamData[tl]) merged.teamData[tl] = { total:0, engineers:[] };
                     merged.teamData[tl].total += tdata.total;
-                    // Merge engineers within the team
                     for (const eng of tdata.engineers) {
                         const existing = merged.teamData[tl].engineers.find(e => e.name === eng.name);
                         if (existing) {
                             existing.aborts += eng.aborts;
-                            // Combine parsed reasons
                             for (const pr of eng.parsedReasons) {
                                 const ep = existing.parsedReasons.find(r=>r.reason===pr.reason);
                                 if (ep) ep.qty += pr.qty; else existing.parsedReasons.push({...pr});
                             }
-                            // Rebuild reason string
                             const rc = {};
                             existing.parsedReasons.forEach(({reason,qty})=>{rc[reason]=(rc[reason]||0)+qty;});
                             existing.reason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
@@ -886,7 +892,6 @@
                     }
                 }
             }
-            // Sort engineers within each team
             for (const tdata of Object.values(merged.teamData)) {
                 tdata.engineers.sort((a,b)=>a.name.localeCompare(b.name));
             }
@@ -904,18 +909,17 @@
         function renderAbortTable(container, dayData) {
             if (abortChartInstance) { abortChartInstance.destroy(); abortChartInstance = null; }
             const { teamData, total: grandTotal, label } = dayData;
+            // Use display names for team leaders when rendering
             const sortedTeams = Object.entries(teamData).sort((a,b)=>b[1].total-a[1].total);
-
             let html = '';
-
-            // ── Per-team breakdown ────────────────────────────────
             if (sortedTeams.length === 0) {
                 html = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div><div style="font-size:0.8em;margin-top:10px;opacity:0.8;">All jobs completed successfully</div></div>`;
             } else {
                 sortedTeams.forEach(([teamLeader, data]) => {
+                    const displayName = TEAM_DISPLAY_NAMES[teamLeader] || teamLeader;
                     html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(239,68,68,0.3);">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,0.2);">
-                            <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${teamLeader}</div>
+                            <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${displayName}</div>
                             <div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total>1?'s':''}</div>
                         </div>
                         <table style="width:100%;border-collapse:collapse;">
@@ -932,7 +936,6 @@
                         </table></div>`;
                 });
 
-                // Reason summary tiles
                 const allReasons = {};
                 sortedTeams.forEach(([,d])=>d.engineers.forEach(e=>e.parsedReasons.forEach(({reason,qty})=>{allReasons[reason]=(allReasons[reason]||0)+qty;})));
                 const sortedR = Object.entries(allReasons).sort((a,b)=>b[1]-a[1]);
@@ -949,29 +952,20 @@
                     <div style="font-size:2.5em;font-weight:900;color:#ef4444;">${grandTotal}</div></div>`;
             }
 
-            // ── 5-Day Summary Table (always shown) ───────────────
             html += buildFiveDaySummaryTable();
-
             container.innerHTML = html;
         }
 
-        // Build the 5-day summary table — same as old version
         function buildFiveDaySummaryTable() {
             if (!abortAllDaysData.length) return '';
-
-            // Collect all unique reason names across all days
             const allReasons = {};
             abortAllDaysData.forEach(d => {
                 Object.entries(d.reasons).forEach(([r,q]) => { allReasons[r]=(allReasons[r]||0)+q; });
             });
             const sortedReasons = Object.keys(allReasons).sort((a,b)=>allReasons[b]-allReasons[a]);
-
             if (sortedReasons.length === 0) return '';
-
             const thStyle = `style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.78em;letter-spacing:0.3px;white-space:nowrap;"`;
             const reasonHeaders = sortedReasons.map(r => `<th ${thStyle}>${r}</th>`).join('');
-
-            // Days in abortAllDaysData are index 0=most recent. Display oldest→newest for the summary table.
             const displayDays = [...abortAllDaysData].reverse();
             const summaryRows = displayDays.map((d, revIdx) => {
                 const origIdx = abortAllDaysData.length - 1 - revIdx;
@@ -988,14 +982,12 @@
                     ${cells}
                 </tr>`;
             }).join('');
-
             const grandTotalAll = abortAllDaysData.reduce((s,d)=>s+d.total,0);
             const totalsRow = `<tr style="background:rgba(0,210,255,0.08);border-top:2px solid rgba(0,210,255,0.3);">
                 <td style="padding:10px 14px;color:#00d2ff;font-weight:800;text-transform:uppercase;font-size:0.85em;">Total</td>
                 <td style="padding:10px 14px;text-align:center;font-weight:900;font-size:1.1em;color:#ef4444;">${grandTotalAll}</td>
                 ${sortedReasons.map(r=>`<td style="padding:10px 8px;text-align:center;color:#f59e0b;font-weight:800;">${allReasons[r]}</td>`).join('')}
             </tr>`;
-
             return `<div style="background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);overflow-x:auto;">
                 <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 5-Day Summary — Aborts by Type
                     <span style="font-size:0.8em;color:#a8dadc;font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px;">Selected days highlighted ◀</span>
@@ -1016,7 +1008,6 @@
             const sortedR = Object.entries(reasonCounts).sort((a,b)=>b[1]-a[1]);
             if (sortedR.length === 0) {
                 container.innerHTML=`<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div></div>`;
-                // Still show 5-day table
                 container.innerHTML += buildFiveDaySummaryTable();
                 return;
             }
@@ -1084,7 +1075,7 @@
                     return { date:d, label:formatDate(d), total, teamData, reasons };
                 }));
 
-                abortAllDaysData = rawDays.reverse(); // index 0 = most recent
+                abortAllDaysData = rawDays.reverse();
 
                 const tabsEl = document.getElementById('abortDayTabs');
                 tabsEl.innerHTML = abortAllDaysData.map((day, i) => `
@@ -1274,12 +1265,16 @@
 
         // PowerPoint helpers
         async function getEngineerCount(teamLeader) {
-            if(!teamLeader) return oesEngineerCount;
+            // teamLeader here is the display name — convert to data key for Firestore lookup
+            const dataKey = dataTeamLeader(teamLeader);
+            if(!dataKey) return oesEngineerCount;
             const staffSnap=await getDocs(collection(staffDb,"employees")); let count=0;
-            staffSnap.forEach(doc=>{const d=doc.data();if(d.leaveDate)return;const tl=d['Team Leader']||d.teamLeader||'';const loc=d.Location||d.location||'';if(tl===teamLeader&&loc==='OES')count++;});
+            staffSnap.forEach(doc=>{const d=doc.data();if(d.leaveDate)return;const tl=d['Team Leader']||d.teamLeader||'';const loc=d.Location||d.location||'';if(tl===dataKey&&loc==='OES')count++;});
             return count;
         }
         async function getLast5DaysAllData(teamLeader) {
+            // teamLeader is display name (or null for overall); convert to data key for Firestore
+            const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
             const dates=getPreviousWorkingDays(5).reverse();
             const engCount=await getEngineerCount(teamLeader);
             const dailyTarget=Math.round(engCount*6*0.9);
@@ -1287,12 +1282,12 @@
             for(const date of dates){
                 const ds=formatDateForQuery(date);
                 result.dates.push(formatDate(date)); result.targets.push(dailyTarget);
-                const perfQ=teamLeader?query(collection(performanceDb,"performance"),where("date","==",ds),where("teamLeader","==",teamLeader)):query(collection(performanceDb,"performance"),where("date","==",ds));
+                const perfQ=dataKey?query(collection(performanceDb,"performance"),where("date","==",ds),where("teamLeader","==",dataKey)):query(collection(performanceDb,"performance"),where("date","==",ds));
                 const perfSnap=await getDocs(perfQ); let m=0,j=0,c=0;
                 perfSnap.forEach(doc=>{const d=doc.data();m+=d.meters||0;j+=d.jobs||0;c+=d.completed||0;});
                 result.meters.push(m); result.vsTargetPct.push(dailyTarget>0?Math.round((m/dailyTarget)*1000)/10:0);
                 result.completion.push(j>0?Math.round((c/j)*1000)/10:0);
-                const abortQ=teamLeader?query(collection(performanceDb,"aborts"),where("date","==",ds),where("teamLeader","==",teamLeader)):query(collection(performanceDb,"aborts"),where("date","==",ds));
+                const abortQ=dataKey?query(collection(performanceDb,"aborts"),where("date","==",ds),where("teamLeader","==",dataKey)):query(collection(performanceDb,"aborts"),where("date","==",ds));
                 const abortSnap=await getDocs(abortQ); let abortTotal=0;
                 abortSnap.forEach(doc=>{const d=doc.data();if(!d.engineer||d.engineer==='')return;parseAbortReasons(d.reason||'',d.total||1).forEach(r=>{abortTotal+=r.qty;});});
                 result.aborts.push(abortTotal);
@@ -1322,7 +1317,8 @@
             btn.disabled=true; btn.textContent='⏳ Fetching data...';
             try {
                 const pptx=new PptxGenJS(); pptx.layout='LAYOUT_16x9'; pptx.author='OES Performance System'; pptx.company='NGU'; pptx.title='OES Weekly Performance Report';
-                const teamLeaders=['Richard Wiecko','Scott Carson','Scott Carson - Scot','Stuart Whyte','FTL 4'];
+                // Display names used here — dataTeamLeader() handles the Firestore lookup conversion
+                const teamLeaders=['Richard Wiecko','Scott Carson','Scott Carson - Scot','Stuart Whyte','Tom Green'];
                 btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx);
                 btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx);
                 for(let i=0;i<teamLeaders.length;i++){btn.textContent=`⏳ ${teamLeaders[i]}...`;await createTeamSlide(pptx,teamLeaders[i]);}
@@ -1332,146 +1328,139 @@
         };
 
         async function createOverallSlide1(pptx) {
-    const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    addHeader(pptx, slide, 'OES Overall Performance  —  Meters, Completion & Attendance', 'Last 5 Working Days  ·  ' + today);
+            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
+            const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Meters, Completion & Attendance', 'Last 5 Working Days  ·  ' + today);
 
-    const [perf, att] = await Promise.all([getLast5DaysAllData(null), getLast5DaysAttendance()]);
-    const dailyTarget = perf.targets[0];
-    const totalMeters = perf.meters.reduce((a, b) => a + b, 0);
-    const dailyAvg = Math.round(totalMeters / 5);
-    const avgVsPct = avg(perf.vsTargetPct); const vsColor = avgVsPct >= 100 ? '10B981' : avgVsPct >= 90 ? 'F59E0B' : 'EF4444';
-    const avgComp = avg(perf.completion); const compColor = avgComp >= 90 ? '10B981' : avgComp >= 80 ? 'F59E0B' : 'EF4444';
-    const avgAtWork = avg(att.atWork); const attColor = avgAtWork >= 90 ? '10B981' : avgAtWork >= 80 ? 'F59E0B' : 'EF4444';
-    const metersMax = niceMax(Math.max(...perf.meters));
+            const [perf, att] = await Promise.all([getLast5DaysAllData(null), getLast5DaysAttendance()]);
+            const dailyTarget = perf.targets[0];
+            const totalMeters = perf.meters.reduce((a, b) => a + b, 0);
+            const dailyAvg = Math.round(totalMeters / 5);
+            const avgVsPct = avg(perf.vsTargetPct); const vsColor = avgVsPct >= 100 ? '10B981' : avgVsPct >= 90 ? 'F59E0B' : 'EF4444';
+            const avgComp = avg(perf.completion); const compColor = avgComp >= 90 ? '10B981' : avgComp >= 80 ? 'F59E0B' : 'EF4444';
+            const avgAtWork = avg(att.atWork); const attColor = avgAtWork >= 90 ? '10B981' : avgAtWork >= 80 ? 'F59E0B' : 'EF4444';
+            const metersMax = niceMax(Math.max(...perf.meters));
 
-    const cols = [0.25, 3.45, 6.65], cw = 3.0, statY = 0.83, labelY = statY + 0.52, chartY = labelY + 0.24, chartH = 2.85;
+            const cols = [0.25, 3.45, 6.65], cw = 3.0, statY = 0.83, labelY = statY + 0.52, chartY = labelY + 0.24, chartH = 2.85;
 
-    // Column 1 — Meters
-    addStatStrip(slide, [
-        { label: '5-Day Total', value: totalMeters.toLocaleString(), color: 'FFFFFF' },
-        { label: 'Daily Avg', value: dailyAvg.toLocaleString(), color: 'FFFFFF' },
-        { label: 'Avg % of Target', value: avgVsPct.toFixed(1) + '%', color: vsColor }
-    ], cols[0], statY, cw);
-    slide.addText('Meters Installed', { x: cols[0], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
-    slide.addChart(pptx.charts.BAR, [{ name: 'Meters', labels: perf.dates, values: perf.meters }], { x: cols[0], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['1D6FA4'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: metersMax });
-    slide.addText('Target: ' + dailyTarget.toLocaleString() + ' meters/day  (engineers × 6 × 90%)', { x: cols[0], y: chartY + chartH + 0.03, w: cw, h: 0.18, fontSize: 8, color: 'F59E0B', fontFace: 'Calibri', italic: true, margin: 0 });
+            addStatStrip(slide, [
+                { label: '5-Day Total', value: totalMeters.toLocaleString(), color: 'FFFFFF' },
+                { label: 'Daily Avg', value: dailyAvg.toLocaleString(), color: 'FFFFFF' },
+                { label: 'Avg % of Target', value: avgVsPct.toFixed(1) + '%', color: vsColor }
+            ], cols[0], statY, cw);
+            slide.addText('Meters Installed', { x: cols[0], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
+            slide.addChart(pptx.charts.BAR, [{ name: 'Meters', labels: perf.dates, values: perf.meters }], { x: cols[0], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['1D6FA4'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: metersMax });
+            slide.addText('Target: ' + dailyTarget.toLocaleString() + ' meters/day  (engineers × 6 × 90%)', { x: cols[0], y: chartY + chartH + 0.03, w: cw, h: 0.18, fontSize: 8, color: 'F59E0B', fontFace: 'Calibri', italic: true, margin: 0 });
 
-    // Column 2 — Completion
-    addStatStrip(slide, [
-        { label: '5-Day Avg', value: avgComp.toFixed(1) + '%', color: compColor },
-        { label: 'Best Day', value: Math.max(...perf.completion).toFixed(1) + '%', color: 'FFFFFF' },
-        { label: 'Worst Day', value: Math.min(...perf.completion).toFixed(1) + '%', color: 'FFFFFF' }
-    ], cols[1], statY, cw);
-    slide.addText('Completion Rate %', { x: cols[1], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: '10B981', fontFace: 'Calibri', margin: 0 });
-    slide.addChart(pptx.charts.BAR, [{ name: 'Completion %', labels: perf.dates, values: perf.completion }], { x: cols[1], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['0E7C5B'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: 100 });
+            addStatStrip(slide, [
+                { label: '5-Day Avg', value: avgComp.toFixed(1) + '%', color: compColor },
+                { label: 'Best Day', value: Math.max(...perf.completion).toFixed(1) + '%', color: 'FFFFFF' },
+                { label: 'Worst Day', value: Math.min(...perf.completion).toFixed(1) + '%', color: 'FFFFFF' }
+            ], cols[1], statY, cw);
+            slide.addText('Completion Rate %', { x: cols[1], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: '10B981', fontFace: 'Calibri', margin: 0 });
+            slide.addChart(pptx.charts.BAR, [{ name: 'Completion %', labels: perf.dates, values: perf.completion }], { x: cols[1], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['0E7C5B'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: 100 });
 
-    // Column 3 — Attendance (stacked bar)
-    addStatStrip(slide, [
-        { label: 'Avg At Work', value: avgAtWork.toFixed(1) + '%', color: attColor },
-        { label: 'Avg Holiday', value: avg(att.holiday).toFixed(1) + '%', color: '8EAEC9' },
-        { label: 'Avg Sick', value: avg(att.sick).toFixed(1) + '%', color: '8EAEC9' }
-    ], cols[2], statY, cw);
-    slide.addText('Attendance %', { x: cols[2], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: 'F59E0B', fontFace: 'Calibri', margin: 0 });
-    slide.addChart(pptx.charts.BAR, [
-        { name: 'At Work',  labels: att.dates, values: att.atWork },
-        { name: 'Holiday',  labels: att.dates, values: att.holiday },
-        { name: 'Sick',     labels: att.dates, values: att.sick },
-        { name: 'AAUP',     labels: att.dates, values: att.aaup }
-    ], { x: cols[2], y: chartY, w: cw, h: chartH, barDir: 'col', barGrouping: 'stacked', chartColors: ['1D6FA4', '10B981', '9B2335', 'D97706'], showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC', showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: false, valAxisMaxVal: 100 });
+            addStatStrip(slide, [
+                { label: 'Avg At Work', value: avgAtWork.toFixed(1) + '%', color: attColor },
+                { label: 'Avg Holiday', value: avg(att.holiday).toFixed(1) + '%', color: '8EAEC9' },
+                { label: 'Avg Sick', value: avg(att.sick).toFixed(1) + '%', color: '8EAEC9' }
+            ], cols[2], statY, cw);
+            slide.addText('Attendance %', { x: cols[2], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: 'F59E0B', fontFace: 'Calibri', margin: 0 });
+            slide.addChart(pptx.charts.BAR, [
+                { name: 'At Work',  labels: att.dates, values: att.atWork },
+                { name: 'Holiday',  labels: att.dates, values: att.holiday },
+                { name: 'Sick',     labels: att.dates, values: att.sick },
+                { name: 'AAUP',     labels: att.dates, values: att.aaup }
+            ], { x: cols[2], y: chartY, w: cw, h: chartH, barDir: 'col', barGrouping: 'stacked', chartColors: ['1D6FA4', '10B981', '9B2335', 'D97706'], showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC', showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: false, valAxisMaxVal: 100 });
 
-    addCommentaryBox(pptx, slide, 0.25, 4.17, 9.5, 1.18);
-}
-async function createOverallSlide2(pptx) {
-    const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    addHeader(pptx, slide, 'OES Overall Performance  —  Aborts & Compliance', 'Last 5 Working Days / Current Month  ·  ' + today);
-
-    const perf = await getLast5DaysAllData(null);
-    const totalAborts = perf.aborts.reduce((a, b) => a + b, 0);
-    const avgAborts = Math.round(totalAborts / 5);
-    const abortsMax = niceMax(Math.max(...perf.aborts));
-
-    const cols = [0.25, 3.45], cw = 3.0, statY = 0.83, labelY = statY + 0.52, chartY = labelY + 0.24, chartH = 2.85;
-
-    // Column 1 — Aborts
-    addStatStrip(slide, [
-        { label: '5-Day Total', value: totalAborts.toString(), color: totalAborts === 0 ? '10B981' : 'FFFFFF' },
-        { label: 'Daily Avg', value: avgAborts.toString(), color: 'FFFFFF' },
-        { label: 'Highest Day', value: Math.max(...perf.aborts).toString(), color: 'EF4444' }
-    ], cols[0], statY, cw);
-    slide.addText('Aborts', { x: cols[0], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: 'EF4444', fontFace: 'Calibri', margin: 0 });
-    slide.addChart(pptx.charts.BAR, [{ name: 'Aborts', labels: perf.dates, values: perf.aborts }], { x: cols[0], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['9B2335'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: abortsMax });
-
-    // Column 2 — Compliance (6-month grouped bar: WIP + Post Comp pass rates)
-    // Use already-loaded complianceData (populated during loadComplianceData)
-    // We need to re-fetch it here since we're in a separate async context
-    const compSnap = await getDocs(collection(performanceDb, 'compliance'));
-    const sixMonths = getPreviousSixMonths();
-    // Include current month too
-    sixMonths.push(new Date());
-    const compRows = [];
-    for (const month of sixMonths) {
-        const start = new Date(month.getFullYear(), month.getMonth(), 1);
-        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
-        const wipJobs = new Map(), postJobs = new Map();
-        compSnap.forEach(doc => {
-            const d = doc.data();
-            const submitted = parseDateSubmitted(d['Date Submitted'] || d.dateSubmitted || '');
-            if (!submitted || submitted < start || submitted > end) return;
-            const ref = d.jobReference;
-            const passed = (d.auditOutcome || '').toLowerCase().includes('pass') || (d.auditOutcome || '').toLowerCase() === 'p';
-            if (d.type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
-            if (d.type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
-        });
-        const wt = wipJobs.size, wp = [...wipJobs.values()].filter(v => v).length;
-        const pt = postJobs.size, pp = [...postJobs.values()].filter(v => v).length;
-        const ot = wt + pt, op = wp + pp;
-        compRows.push({
-            label: formatMonth(month),
-            wipRate: wt ? parseFloat((wp / wt * 100).toFixed(1)) : 0,
-            postRate: pt ? parseFloat((pp / pt * 100).toFixed(1)) : 0,
-            overallRate: ot ? parseFloat((op / ot * 100).toFixed(1)) : 0
-        });
-    }
-
-    const compLabels = compRows.map(r => r.label);
-    const wipRates = compRows.map(r => r.wipRate);
-    const postRates = compRows.map(r => r.postRate);
-    const overallRates = compRows.map(r => r.overallRate);
-
-    // Latest month stats for strip
-    const latestComp = compRows[compRows.length - 1];
-    const compColor = latestComp.overallRate >= 90 ? '10B981' : latestComp.overallRate >= 80 ? 'F59E0B' : 'EF4444';
-
-    const compX = 3.55, compW = 6.1;
-    addStatStrip(slide, [
-        { label: 'Overall (this month)', value: latestComp.overallRate.toFixed(1) + '%', color: compColor },
-        { label: 'WIP Pass Rate', value: latestComp.wipRate.toFixed(1) + '%', color: 'FFFFFF' },
-        { label: 'Post Comp Pass Rate', value: latestComp.postRate.toFixed(1) + '%', color: 'FFFFFF' }
-    ], compX, statY, compW);
-    slide.addText('Compliance — 6-Month Pass Rate Trend', { x: compX, y: labelY, w: compW, h: 0.22, fontSize: 10, bold: true, color: '8B5CF6', fontFace: 'Calibri', margin: 0 });
-    slide.addChart(pptx.charts.BAR, [
-        { name: 'WIP',          labels: compLabels, values: wipRates },
-        { name: 'Post Comp',    labels: compLabels, values: postRates },
-        { name: 'Overall',      labels: compLabels, values: overallRates }
-    ], {
-        x: compX, y: chartY, w: compW, h: chartH,
-        barDir: 'col', barGrouping: 'clustered',
-        chartColors: ['1D6FA4', '8B5CF6', '10B981'],
-        showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
-        showTitle: false,
-        catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
-        catAxisLabelFontSize: 9, valAxisLabelFontSize: 9,
-        showValue: true, dataLabelFontSize: 9, dataLabelColor: 'FFFFFF',
-        valAxisMaxVal: 100
-    });
-    // 90% target reference line note
-    slide.addText('Target: 90% pass rate', { x: compX, y: chartY + chartH + 0.03, w: compW, h: 0.18, fontSize: 8, color: 'F59E0B', fontFace: 'Calibri', italic: true, margin: 0 });
-
-    addCommentaryBox(pptx, slide, 0.25, 4.17, 9.5, 1.18);
+            addCommentaryBox(pptx, slide, 0.25, 4.17, 9.5, 1.18);
         }
-        async function createTeamSlide(pptx,teamLeader) {
+
+        async function createOverallSlide2(pptx) {
+            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
+            const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Aborts & Compliance', 'Last 5 Working Days / Current Month  ·  ' + today);
+
+            const perf = await getLast5DaysAllData(null);
+            const totalAborts = perf.aborts.reduce((a, b) => a + b, 0);
+            const avgAborts = Math.round(totalAborts / 5);
+            const abortsMax = niceMax(Math.max(...perf.aborts));
+
+            const cols = [0.25, 3.45], cw = 3.0, statY = 0.83, labelY = statY + 0.52, chartY = labelY + 0.24, chartH = 2.85;
+
+            addStatStrip(slide, [
+                { label: '5-Day Total', value: totalAborts.toString(), color: totalAborts === 0 ? '10B981' : 'FFFFFF' },
+                { label: 'Daily Avg', value: avgAborts.toString(), color: 'FFFFFF' },
+                { label: 'Highest Day', value: Math.max(...perf.aborts).toString(), color: 'EF4444' }
+            ], cols[0], statY, cw);
+            slide.addText('Aborts', { x: cols[0], y: labelY, w: cw, h: 0.22, fontSize: 10, bold: true, color: 'EF4444', fontFace: 'Calibri', margin: 0 });
+            slide.addChart(pptx.charts.BAR, [{ name: 'Aborts', labels: perf.dates, values: perf.aborts }], { x: cols[0], y: chartY, w: cw, h: chartH, barDir: 'col', chartColors: ['9B2335'], showLegend: false, showTitle: false, catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9', catAxisLabelFontSize: 10, valAxisLabelFontSize: 9, showValue: true, dataLabelFontSize: 11, dataLabelColor: 'FFFFFF', valAxisMaxVal: abortsMax });
+
+            const compSnap = await getDocs(collection(performanceDb, 'compliance'));
+            const sixMonths = getPreviousSixMonths();
+            sixMonths.push(new Date());
+            const compRows = [];
+            for (const month of sixMonths) {
+                const start = new Date(month.getFullYear(), month.getMonth(), 1);
+                const end = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
+                const wipJobs = new Map(), postJobs = new Map();
+                compSnap.forEach(doc => {
+                    const d = doc.data();
+                    const submitted = parseDateSubmitted(d['Date Submitted'] || d.dateSubmitted || '');
+                    if (!submitted || submitted < start || submitted > end) return;
+                    const ref = d.jobReference;
+                    const passed = (d.auditOutcome || '').toLowerCase().includes('pass') || (d.auditOutcome || '').toLowerCase() === 'p';
+                    if (d.type === 'wip' && !wipJobs.has(ref)) wipJobs.set(ref, passed);
+                    if (d.type === 'post_completion' && !postJobs.has(ref)) postJobs.set(ref, passed);
+                });
+                const wt = wipJobs.size, wp = [...wipJobs.values()].filter(v => v).length;
+                const pt = postJobs.size, pp = [...postJobs.values()].filter(v => v).length;
+                const ot = wt + pt, op = wp + pp;
+                compRows.push({
+                    label: formatMonth(month),
+                    wipRate: wt ? parseFloat((wp / wt * 100).toFixed(1)) : 0,
+                    postRate: pt ? parseFloat((pp / pt * 100).toFixed(1)) : 0,
+                    overallRate: ot ? parseFloat((op / ot * 100).toFixed(1)) : 0
+                });
+            }
+
+            const compLabels = compRows.map(r => r.label);
+            const wipRates = compRows.map(r => r.wipRate);
+            const postRates = compRows.map(r => r.postRate);
+            const overallRates = compRows.map(r => r.overallRate);
+            const latestComp = compRows[compRows.length - 1];
+            const compColor = latestComp.overallRate >= 90 ? '10B981' : latestComp.overallRate >= 80 ? 'F59E0B' : 'EF4444';
+
+            const compX = 3.55, compW = 6.1;
+            addStatStrip(slide, [
+                { label: 'Overall (this month)', value: latestComp.overallRate.toFixed(1) + '%', color: compColor },
+                { label: 'WIP Pass Rate', value: latestComp.wipRate.toFixed(1) + '%', color: 'FFFFFF' },
+                { label: 'Post Comp Pass Rate', value: latestComp.postRate.toFixed(1) + '%', color: 'FFFFFF' }
+            ], compX, statY, compW);
+            slide.addText('Compliance — 6-Month Pass Rate Trend', { x: compX, y: labelY, w: compW, h: 0.22, fontSize: 10, bold: true, color: '8B5CF6', fontFace: 'Calibri', margin: 0 });
+            slide.addChart(pptx.charts.BAR, [
+                { name: 'WIP',       labels: compLabels, values: wipRates },
+                { name: 'Post Comp', labels: compLabels, values: postRates },
+                { name: 'Overall',   labels: compLabels, values: overallRates }
+            ], {
+                x: compX, y: chartY, w: compW, h: chartH,
+                barDir: 'col', barGrouping: 'clustered',
+                chartColors: ['1D6FA4', '8B5CF6', '10B981'],
+                showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
+                showTitle: false,
+                catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
+                catAxisLabelFontSize: 9, valAxisLabelFontSize: 9,
+                showValue: true, dataLabelFontSize: 9, dataLabelColor: 'FFFFFF',
+                valAxisMaxVal: 100
+            });
+            slide.addText('Target: 90% pass rate', { x: compX, y: chartY + chartH + 0.03, w: compW, h: 0.18, fontSize: 8, color: 'F59E0B', fontFace: 'Calibri', italic: true, margin: 0 });
+
+            addCommentaryBox(pptx, slide, 0.25, 4.17, 9.5, 1.18);
+        }
+
+        async function createTeamSlide(pptx, teamLeader) {
+            // teamLeader is the display name (e.g. "Tom Green")
+            // dataTeamLeader() maps it to the Firestore key (e.g. "FTL 4") inside getLast5DaysAllData
             const slide=pptx.addSlide(); slide.background={color:'131F2E'};
             const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
             addHeader(pptx,slide,teamLeader,'Last 5 Working Days  ·  '+today);
