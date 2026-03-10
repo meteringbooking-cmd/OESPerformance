@@ -704,8 +704,21 @@
             if (engineerTeamMap) return engineerTeamMap;
             engineerTeamMap = {};
             try {
-                const snap = await getDocs(collection(performanceDb, "engineers"));
-                snap.forEach(doc => { const d = doc.data(); const name = (d.engineerName||'').trim(); const tl=(d.teamLeader||'').trim(); if(name) engineerTeamMap[name]=tl; });
+                // Engineers are stored in staffDb (pingu-solar), not performanceDb
+                // Field names may be 'Name'/'Team Leader' (staff db style) or 'engineerName'/'teamLeader'
+                const snap = await getDocs(collection(staffDb, "employees"));
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    // Skip leavers
+                    if (d.leaveDate) return;
+                    // Support multiple possible field name formats
+                    const name = (d.Name || d.name || d.engineerName || d['Engineer Name'] || '').trim();
+                    const tl = (d['Team Leader'] || d.teamLeader || d['team leader'] || '').trim();
+                    // Only map OES engineers (so team bucketing works correctly)
+                    const loc = (d.Location || d.location || '').trim();
+                    if (name && tl && loc === 'OES') engineerTeamMap[name] = tl;
+                });
+                console.log(`Engineer team map built: ${Object.keys(engineerTeamMap).length} engineers`, engineerTeamMap);
             } catch (err) { console.error('Error building engineer team map:', err); }
             return engineerTeamMap;
         }
