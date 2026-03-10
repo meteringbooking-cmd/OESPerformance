@@ -704,23 +704,21 @@
             if (engineerTeamMap) return engineerTeamMap;
             engineerTeamMap = {};
             try {
-                // Engineers are stored in staffDb (pingu-solar), not performanceDb
-                // Field names may be 'Name'/'Team Leader' (staff db style) or 'engineerName'/'teamLeader'
-                const snap = await getDocs(collection(staffDb, "employees"));
+                // Engineers are in performanceDb (oesperformance-a54c0) -> "engineers" collection
+                // Fields confirmed from view engineers page: engineerName, teamLeader
+                const snap = await getDocs(collection(performanceDb, "engineers"));
                 snap.forEach(doc => {
                     const d = doc.data();
-                    // Skip leavers
-                    if (d.leaveDate) return;
-                    // Support multiple possible field name formats
-                    const name = (d.Name || d.name || d.engineerName || d['Engineer Name'] || '').trim();
-                    const tl   = (d['Team Leader'] || d.teamLeader || d['team leader'] || '').trim();
-                    // Map ALL engineers — no location filter — so every engineer in the
-                    // miles upload gets matched to their correct team leader
+                    const name = (d.engineerName || '').trim();
+                    const tl   = (d.teamLeader || '').trim();
                     if (name && tl) engineerTeamMap[name] = tl;
                 });
-                console.log(`[Miles] Engineer→TeamLeader map built: ${Object.keys(engineerTeamMap).length} engineers`, engineerTeamMap);
-            } catch (err) { console.error('Error building engineer team map:', err); }
-            return engineerTeamMap;
+                console.log('[Miles] Engineer map built from performanceDb:', Object.keys(engineerTeamMap).length, 'engineers', engineerTeamMap);
+            } catch (err) {
+                console.error('Error building engineer team map:', err);
+                engineerTeamMap = null;
+            }
+            return engineerTeamMap || {};
         }
 
         // Miles
