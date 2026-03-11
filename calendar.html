@@ -140,20 +140,35 @@
             font-weight: 700; font-size: 0.7rem; color: var(--secondary);
             text-align: center; padding: 0.2rem; background: var(--dark-lighter); border-radius: 3px;
         }
+
+        /* Base meeting item — default (pending, no status) */
         .meeting-item {
             background: linear-gradient(135deg, var(--primary), var(--accent));
             padding: 0.4rem 0.5rem; border-radius: 4px; color: white;
             text-align: left; line-height: 1.3; cursor: pointer; transition: all 0.3s ease;
         }
         .meeting-item:hover { transform: scale(1.02); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
-        .meeting-item.completed { background: linear-gradient(135deg, #4ECCA3, #2ECC71); }
-        .meeting-item.not-completed { background: linear-gradient(135deg, #FF6B6B, #E74C3C); }
-        .meeting-item-line { font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Status colours — these must take priority over everything else */
+        .meeting-item.completed {
+            background: linear-gradient(135deg, #4ECCA3, #2ECC71) !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .meeting-item.not-completed {
+            background: linear-gradient(135deg, #FF6B6B, #E74C3C) !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        /* WIP highlight only applies to pending (unstatused) meetings */
         .meeting-item.wip-scheduled {
             border: 2px solid var(--wip-highlight);
             box-shadow: 0 0 10px rgba(255, 200, 87, 0.4);
             background: linear-gradient(135deg, rgba(255, 200, 87, 0.18), var(--primary) 70%);
         }
+
+        .meeting-item-line { font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         /* ── Scott/Darren clarification banner ── */
         .leader-clarify {
@@ -538,8 +553,6 @@
     let allMeetings = [];
     let wipRequiredData = {};
 
-    // Tracks the display name chosen for the current form submission
-    // 'Scott Carson' (default) or 'Darren Cook'
     let leaderDisplayName = 'Scott Carson';
 
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -634,10 +647,15 @@
                     const buildMeetingHtml = (m) => {
                         const statusClass = m.status ? m.status : '';
                         const additionalPurposes = m.additionalPurposes && m.additionalPurposes.length > 0 ? ` +${m.additionalPurposes.length}` : '';
-                        let extraClasses = statusClass;
-                        if (isWIPRequiredForEngineer(m.engineer, currentDate)) extraClasses += ' wip-scheduled';
-                        // displayLeader is stored in the meeting; fall back to teamLeader
+
+                        // Only apply WIP highlight to meetings that have NO status yet.
+                        // Once a meeting is marked completed or not-completed, status colour wins.
+                        const isWIP = isWIPRequiredForEngineer(m.engineer, currentDate);
+                        const wipClass = (isWIP && !m.status) ? 'wip-scheduled' : '';
+
+                        const extraClasses = [statusClass, wipClass].filter(Boolean).join(' ');
                         const displayLeader = m.displayLeader || m.teamLeader;
+
                         return `<div class="meeting-item ${extraClasses}"
                             onclick="openStatusModal('${m.id}','${m.teamLeader}','${m.engineer}','${m.purpose}','${m.timeSlot}','${m.status || ''}','${encodeURIComponent(JSON.stringify(m.additionalPurposes || []))}','${displayLeader}')">
                             <div class="meeting-item-line">${displayLeader}</div>
@@ -725,18 +743,15 @@
         }
     }
 
-    // ── Team leader dropdown change handler ──
     window.onTeamLeaderChange = function() {
         const val = document.getElementById('team-leader-select').value;
         const clarify = document.getElementById('scott-clarify');
 
         if (val === 'Scott Carson') {
             clarify.classList.add('show');
-            // Reset selection state
             document.getElementById('btn-scott').classList.remove('selected');
             document.getElementById('btn-darren').classList.remove('selected');
-            leaderDisplayName = 'Scott Carson'; // default until chosen
-            // Don't load engineers yet — wait for clarification
+            leaderDisplayName = 'Scott Carson';
             document.getElementById('engineer-select').innerHTML = '<option value="">Select Engineer</option>';
         } else {
             clarify.classList.remove('show');
@@ -749,7 +764,6 @@
         leaderDisplayName = name;
         document.getElementById('btn-scott').classList.toggle('selected', name === 'Scott Carson');
         document.getElementById('btn-darren').classList.toggle('selected', name === 'Darren Cook');
-        // Always load Scott Carson's engineers regardless of display name
         loadEngineers();
     };
 
@@ -832,17 +846,15 @@
     };
 
     window.loadEngineers = function() {
-        // Always use 'Scott Carson' as the team key for engineer lookup
         const rawLeader = document.getElementById('team-leader-select').value;
-        const lookupLeader = rawLeader; // Scott Carson is the Firestore team key
         const select = document.getElementById('engineer-select');
         select.innerHTML = '<option value="">Select Engineer</option>';
-        if (!lookupLeader) return;
+        if (!rawLeader) return;
 
         const engineers = allEmployees
             .filter(emp => {
                 const l = emp['Team Leader'] || emp.teamLeader;
-                return l === lookupLeader && !emp.leaveDate;
+                return l === rawLeader && !emp.leaveDate;
             })
             .sort((a, b) => (a['Full Name'] || '').localeCompare(b['Full Name'] || ''));
 
@@ -871,7 +883,6 @@
             return;
         }
 
-        // If Scott Carson selected, make sure a clarification was chosen
         if (teamLeader === 'Scott Carson') {
             const chosen = document.querySelector('#scott-clarify .clarify-btn.selected');
             if (!chosen) {
@@ -883,8 +894,8 @@
         try {
             const { collection, addDoc } = window.firebaseModules;
             await addDoc(collection(window.db, 'meetings'), {
-                teamLeader: teamLeader,           // always 'Scott Carson' for DB queries / unscheduled logic
-                displayLeader: leaderDisplayName,  // 'Scott Carson' or 'Darren Cook' — shown on calendar
+                teamLeader: teamLeader,
+                displayLeader: leaderDisplayName,
                 engineer: engineer,
                 purpose: purpose,
                 timeSlot: timeSlot,
@@ -935,7 +946,6 @@
     document.getElementById('meeting-modal').addEventListener('click', e => { if (e.target.id === 'meeting-modal') closeMeetingModal(); });
     document.getElementById('wip-modal').addEventListener('click', e => { if (e.target.id === 'wip-modal') closeWIPModal(); });
 
-    // ── Status modal ──
     let currentMeetingId = null;
     let currentMeetingStatus = null;
     let currentMeetingTeamLeader = null;
@@ -1011,7 +1021,6 @@
         const selectedLeader = document.getElementById('verify-team-leader').value;
         if (!selectedLeader) { showToast('Please select a team leader', 'error'); return; }
 
-        // Accept either the teamLeader (Scott Carson) or displayLeader (Darren Cook) as valid
         if (selectedLeader !== currentMeetingTeamLeader && selectedLeader !== currentMeetingDisplayLeader) {
             showToast('Team leader does not match. Access denied.', 'error');
             return;
