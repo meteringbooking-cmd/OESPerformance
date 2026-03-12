@@ -333,7 +333,7 @@
   <button class="team-btn" data-team="Scott Carson">Scott Carson</button>
   <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot</button>
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte</button>
-  <button class="team-btn" data-team="FTL 4">FTL 4</button>
+  <button class="team-btn" data-team="Tom Green">Tom Green</button>
 
   <!-- Monthly buttons (hidden for aborts view) -->
   <div id="monthSection">
@@ -404,6 +404,9 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
+  // Normalise FTL4 / FTL 4 (any casing/spacing) -> "Tom Green"
+  const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
+
   const ctx = document.createElement('canvas');
   document.querySelector('#chartContainer').appendChild(ctx);
   let chart = null;
@@ -417,7 +420,7 @@
     "year":    { label: "Year to date",   daysBack: 365, color: "#c084fc", type: "line" },
   };
 
-  let currentView   = "mix";    // "mix" | "types" | "aborts"
+  let currentView   = "mix";
   let currentPeriod = "7days";
   let currentTeam   = "all";
   let currentMonth  = null;
@@ -444,7 +447,9 @@
     const recs = [];
     snap.forEach(doc => {
       const d = doc.data();
-      if (team === "all" || d.teamLeader === team) recs.push(d);
+      // Normalise teamLeader before filtering
+      const normalisedTeam = normTeam(d.teamLeader);
+      if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
     });
     return recs;
   }
@@ -591,14 +596,15 @@
       const total = data.values.reduce((s,v)=>s+v,0);
       const pop   = data.values.filter(v=>v>0).length;
 
-const engineerHeadcount = {
-  "all": 41,
-  "Richard Wiecko": 9,
-  "Scott Carson": 9,
-  "Scott Carson - Scot": 4,  // ← add the correct number here
-  "Stuart Whyte": 7,
-  "FTL 4": 12
-};
+      const engineerHeadcount = {
+        "all": 41,
+        "Richard Wiecko": 9,
+        "Scott Carson": 9,
+        "Scott Carson - Scot": 4,
+        "Stuart Whyte": 7,
+        "Tom Green": 12   // was FTL 4
+      };
+
       let targetHTML = '';
       if (currentPeriod === '7days') {
         const last5  = data.values.filter(v=>v>0).slice(-5);
@@ -790,7 +796,6 @@ const engineerHeadcount = {
 
   // ── VIEW: Aborts chart by reason ─────────────────────────────────────────────
 
-
   // ── Canonical abort reasons (fixed order) ───────────────────────────────────
   const ABORT_REASONS = [
     'Tech abort',
@@ -807,13 +812,9 @@ const engineerHeadcount = {
     'Left open',
   ];
 
-  // Normalise a raw reason string → canonical label(s)
-  // Handles: "x2" multipliers, comma-separated lists, fuzzy matching
   function normaliseReason(raw) {
     if (!raw) return ['No abort code'];
     const str = raw.trim();
-
-    // Check for x2 / x3 etc multiplier at end, e.g. "No access x2"
     const multMatch = str.match(/^(.+?)\s*[xX×](\d+)\s*$/);
     let baseStr = str;
     let multiplier = 1;
@@ -821,10 +822,7 @@ const engineerHeadcount = {
       baseStr   = multMatch[1].trim();
       multiplier = parseInt(multMatch[2]) || 1;
     }
-
-    // Split on comma to handle "No access, Refused access"
     const parts = baseStr.split(',').map(p => p.trim()).filter(Boolean);
-
     const results = [];
     parts.forEach(part => {
       const matched = fuzzyMatchReason(part);
@@ -835,7 +833,6 @@ const engineerHeadcount = {
 
   function fuzzyMatchReason(str) {
     const s = str.toLowerCase().replace(/[^a-z0-9 &]/g, '').trim();
-    // Direct / close matches
     const map = {
       'tech abort':                  'Tech abort',
       'technical abort':             'Tech abort',
@@ -864,17 +861,14 @@ const engineerHeadcount = {
       'cancellation':                'Customer Cancellation',
       'left open':                   'Left open',
     };
-    // Try exact map first
     if (map[s]) return map[s];
-    // Try partial match against map keys
     for (const [key, val] of Object.entries(map)) {
       if (s.includes(key) || key.includes(s)) return val;
     }
-    // Try partial match against canonical names
     for (const canon of ABORT_REASONS) {
       if (s.includes(canon.toLowerCase()) || canon.toLowerCase().includes(s)) return canon;
     }
-    return 'No abort code'; // fallback
+    return 'No abort code';
   }
 
   async function loadAborts() {
@@ -895,7 +889,11 @@ const engineerHeadcount = {
 
       const snap = await getDocs(q);
       const allAborts = [];
-      snap.forEach(doc => allAborts.push(doc.data()));
+      snap.forEach(doc => {
+        const d = doc.data();
+        // Normalise teamLeader on abort records too
+        allAborts.push({ ...d, teamLeader: normTeam(d.teamLeader) });
+      });
 
       // Filter to selected team if not "all"
       const filtered = currentTeam === 'all'
@@ -908,25 +906,19 @@ const engineerHeadcount = {
         return;
       }
 
-      // Build reason totals using canonical reasons + normalisation
       const reasonTotals = {};
       ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
 
       filtered.forEach(row => {
         const rawTotal  = Number(row.total) || 1;
         const rawReason = row.reason || '';
-
-        // normaliseReason returns an array (handles x2 and commas)
-        const resolved = normaliseReason(rawReason);
-
-        // Divide the total evenly across resolved reasons
-        const share = rawTotal / resolved.length;
+        const resolved  = normaliseReason(rawReason);
+        const share     = rawTotal / resolved.length;
         resolved.forEach(canon => {
           reasonTotals[canon] = (reasonTotals[canon] || 0) + share;
         });
       });
 
-      // Round all totals
       ABORT_REASONS.forEach(r => { reasonTotals[r] = Math.round(reasonTotals[r]); });
 
       const grandTotal = ABORT_REASONS.reduce((s,r) => s + reasonTotals[r], 0);
@@ -939,7 +931,6 @@ const engineerHeadcount = {
         `<div class="stats-box" style="min-width:200px"><div class="stats-label">Top Reason</div><div class="stats-value orange-grad" style="font-size:1rem;line-height:1.3;padding-top:2px">${topReason}</div></div>`
       );
 
-      // Build chart
       abortsChartEl.innerHTML = '';
       const abortCtx = document.createElement('canvas');
       abortsChartEl.appendChild(abortCtx);
