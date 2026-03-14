@@ -145,6 +145,20 @@
     .view-tab.active.tab-types { background: #10b981; }
     .view-tab.active.tab-abort { background: #f97316; }
 
+    /* headcount badge */
+    .headcount-badge {
+      display: inline-block;
+      background: rgba(99,102,241,0.18);
+      border: 1px solid rgba(99,102,241,0.4);
+      border-radius: 6px;
+      font-size: 0.72rem;
+      color: #a78bfa;
+      padding: 2px 7px;
+      margin-left: 6px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+
     main {
       padding: 2.5rem 3rem;
       max-width: 1600px;
@@ -253,7 +267,6 @@
       color: var(--text-dim);
       font-weight: 600;
     }
-
     .abort-date-range {
       display: flex;
       gap: 0.75rem;
@@ -318,7 +331,7 @@
     <button class="view-tab tab-abort" data-view="aborts">🚫 Aborts</button>
   </div>
 
-  <!-- Period buttons (hidden for aborts view) -->
+  <!-- Period buttons -->
   <div id="periodSection">
     <h2>Time Period</h2>
     <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
@@ -328,14 +341,14 @@
   </div>
 
   <h2>Team Leader</h2>
-  <button class="team-btn active" data-team="all">All Teams</button>
-  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko</button>
-  <button class="team-btn" data-team="Scott Carson">Scott Carson</button>
-  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot</button>
-  <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte</button>
-  <button class="team-btn" data-team="Tom Green">Tom Green</button>
+  <button class="team-btn active" data-team="all">All Teams <span class="headcount-badge" id="hc_all">…</span></button>
+  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
+  <button class="team-btn" data-team="Scott Carson">Scott Carson <span class="headcount-badge" id="hc_scott">…</span></button>
+  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot <span class="headcount-badge" id="hc_scottscot">…</span></button>
+  <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
+  <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
 
-  <!-- Monthly buttons (hidden for aborts view) -->
+  <!-- Monthly buttons -->
   <div id="monthSection">
     <h2>2026 Monthly View</h2>
     <div class="months-grid">
@@ -364,12 +377,9 @@
   </header>
 
   <div class="card">
-    <!-- Chart view -->
     <div id="chartContainer">
       <div class="loading">Loading performance data…</div>
     </div>
-
-    <!-- Aborts chart view -->
     <div id="abortsContainer">
       <div class="abort-filters">
         <span class="abort-filter-label">Date range:</span>
@@ -388,10 +398,11 @@
 </main>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  const firebaseConfig = {
+  // ── Firebase: performance DB ──────────────────────────────────────────────────
+  const perfConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
     authDomain: "oesperformance-a54c0.firebaseapp.com",
     projectId: "oesperformance-a54c0",
@@ -400,11 +411,25 @@
     appId: "1:484894102454:web:17535ee497eac2d90d6717",
     measurementId: "G-R56BGZYV8N"
   };
+  // ── Firebase: staff DB ────────────────────────────────────────────────────────
+  const staffConfig = {
+    apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+    authDomain: "pingu-solar.firebaseapp.com",
+    projectId: "pingu-solar",
+    storageBucket: "pingu-solar.firebasestorage.app",
+    messagingSenderId: "232764952866",
+    appId: "1:232764952866:web:5923b7f419de6355d6157b",
+    measurementId: "G-PFH059DZ64"
+  };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+  // Initialise apps — avoid duplicate-app errors if loaded inside an iframe that already has them
+  const existingApps = getApps();
+  const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
+  const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
+  const db      = getFirestore(perfApp);
+  const staffDb = getFirestore(staffApp);
 
-  // Normalise FTL4 / FTL 4 (any casing/spacing) -> "Tom Green"
+  // Normalise FTL4 / FTL 4 (any casing/spacing) → "Tom Green"
   const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
 
   const ctx = document.createElement('canvas');
@@ -425,7 +450,54 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
-  // ── Abort chart state ────────────────────────────────────────────────────────
+  // ── Dynamic headcount from staff Firebase ────────────────────────────────────
+  // engineerHeadcount maps display name → OES engineer count
+  // "all" = total OES engineers across all teams
+  let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
+  let headcountLoaded = false;
+
+  async function loadHeadcount() {
+    try {
+      const staffSnap = await getDocs(collection(staffDb, "employees"));
+      // Reset counts
+      Object.keys(engineerHeadcount).forEach(k => engineerHeadcount[k] = 0);
+      staffSnap.forEach(doc => {
+        const d = doc.data();
+        if (d.leaveDate) return; // skip leavers
+        const loc = (d.Location || d.location || '').trim();
+        if (loc !== 'OES') return; // only OES engineers count toward meter targets
+        const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
+        // Normalise FTL 4 / FTL4 → "Tom Green"
+        const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
+        engineerHeadcount["all"]++;
+        if (engineerHeadcount[tl] !== undefined) {
+          engineerHeadcount[tl]++;
+        }
+      });
+      headcountLoaded = true;
+
+      // Update badge displays in sidebar
+      document.getElementById('hc_all').textContent     = engineerHeadcount["all"];
+      document.getElementById('hc_richard').textContent = engineerHeadcount["Richard Wiecko"];
+      document.getElementById('hc_scott').textContent   = engineerHeadcount["Scott Carson"];
+      document.getElementById('hc_scottscot').textContent = engineerHeadcount["Scott Carson - Scot"];
+      document.getElementById('hc_stuart').textContent  = engineerHeadcount["Stuart Whyte"];
+      document.getElementById('hc_tom').textContent     = engineerHeadcount["Tom Green"];
+    } catch (err) {
+      console.warn('Could not load dynamic headcount, using fallback values:', err);
+      // Fallback hardcoded values if Firebase staff DB unreachable
+      engineerHeadcount = { "all": 41, "Richard Wiecko": 9, "Scott Carson": 9, "Scott Carson - Scot": 4, "Stuart Whyte": 7, "Tom Green": 12 };
+      headcountLoaded = true;
+      document.getElementById('hc_all').textContent     = engineerHeadcount["all"];
+      document.getElementById('hc_richard').textContent = engineerHeadcount["Richard Wiecko"];
+      document.getElementById('hc_scott').textContent   = engineerHeadcount["Scott Carson"];
+      document.getElementById('hc_scottscot').textContent = engineerHeadcount["Scott Carson - Scot"];
+      document.getElementById('hc_stuart').textContent  = engineerHeadcount["Stuart Whyte"];
+      document.getElementById('hc_tom').textContent     = engineerHeadcount["Tom Green"];
+    }
+  }
+
+  // ── Abort chart state ─────────────────────────────────────────────────────────
   let abortChart = null;
 
   // Set default abort date range (last 7 days)
@@ -434,7 +506,7 @@
   document.getElementById('abortFrom').value = sevenAgo.toISOString().split('T')[0];
   document.getElementById('abortTo').value   = today.toISOString().split('T')[0];
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────────
 
   async function fetchRecordsForRange(startDate, endDate, team) {
     const q = query(
@@ -447,7 +519,6 @@
     const recs = [];
     snap.forEach(doc => {
       const d = doc.data();
-      // Normalise teamLeader before filtering
       const normalisedTeam = normTeam(d.teamLeader);
       if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
     });
@@ -473,17 +544,8 @@
     return multiLine ? [`${dd}/${mm}`, weekday] : `${dd}/${mm}`;
   }
 
-  // ── Stats HTML builders ───────────────────────────────────────────────────────
-
   function setStats(html) {
     document.getElementById('statsContainer').innerHTML = html;
-  }
-
-  function statBox(label, valueId, extraClass = '', boxClass = '') {
-    return `<div class="stats-box ${boxClass}">
-      <div class="stats-label">${label}</div>
-      <div class="stats-value ${extraClass}" id="${valueId}">—</div>
-    </div>`;
   }
 
   // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
@@ -507,9 +569,9 @@
       }
     });
     return {
-      labels:            weekdays.map(d => formatDayLabel(d, true)),
-      metersValues:      weekdays.map(d => Math.round(dateMap[d].meters)),
-      completionValues:  weekdays.map(d => {
+      labels:           weekdays.map(d => formatDayLabel(d, true)),
+      metersValues:     weekdays.map(d => Math.round(dateMap[d].meters)),
+      completionValues: weekdays.map(d => {
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       })
@@ -542,9 +604,9 @@
       document.getElementById('pageTitle').textContent = `Meters — ${label}`;
 
       setStats(
-        statBox('Total', 'statTotal', 'large') +
-        statBox('Daily Avg', 'statAvg') +
-        statBox('Avg Completion', 'statComp', 'success', 'green')
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large" id="statTotal">—</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value" id="statAvg">—</div></div>` +
+        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success" id="statComp">—</div></div>`
       );
 
       const data = await fetchMonthDataMix(currentMonth, currentTeam);
@@ -596,29 +658,23 @@
       const total = data.values.reduce((s,v)=>s+v,0);
       const pop   = data.values.filter(v=>v>0).length;
 
-      const engineerHeadcount = {
-        "all": 41,
-        "Richard Wiecko": 9,
-        "Scott Carson": 9,
-        "Scott Carson - Scot": 4,
-        "Stuart Whyte": 7,
-        "Tom Green": 12   // was FTL 4
-      };
+      // ── Dynamic headcount (live from Firebase staff DB) ──
+      const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 41;
 
       let targetHTML = '';
       if (currentPeriod === '7days') {
         const last5  = data.values.filter(v=>v>0).slice(-5);
         const l5tot  = last5.reduce((s,v)=>s+v,0);
-        const hc     = engineerHeadcount[currentTeam]||42;
-        const target = hc*6*0.9*last5.length;
-        const pct    = (l5tot/target)*100;
+        const target = hc * 6 * 0.9 * last5.length;
+        const pct    = target > 0 ? (l5tot/target)*100 : 0;
         const cls    = pct>=100 ? 'success' : pct>=80 ? 'warning' : 'error';
-        targetHTML   = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
+        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Headcount (OES)</div><div class="stats-value">${hc}</div></div>` +
         targetHTML
       );
 
@@ -644,7 +700,7 @@
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: {
-            title: { display:true, text:`${cfg.label} – Meters Installed`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
+            title: { display:true, text:`${cfg.label} – Meters Installed (${hc} OES engineers, target ${Math.round(hc*6*0.9)}/day)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
             legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
             datalabels: cfg.type==='bar' ? {
               anchor:'end', align:'top', offset:4, color:'#e2e8f0', font:{weight:'bold',size:12},
@@ -661,7 +717,7 @@
     }
   }
 
-  // ── VIEW: Install Types (duals / singles / comms) ────────────────────────────
+  // ── VIEW: Install Types ───────────────────────────────────────────────────────
 
   async function fetchTypesData(periodKey, monthKey, team) {
     let startDate, endDate, weekdays, label, isBar;
@@ -686,7 +742,6 @@
       isBar      = cfg.type === 'bar';
     }
 
-    // Install types always show all teams (company-wide view)
     const records = await fetchRecordsForRange(startDate, endDate, "all");
     const dateMap = {};
     weekdays.forEach(d => dateMap[d] = { duals:0, singles:0, comms:0 });
@@ -703,8 +758,7 @@
       duals:   weekdays.map(d => dateMap[d].duals),
       singles: weekdays.map(d => dateMap[d].singles),
       comms:   weekdays.map(d => dateMap[d].comms),
-      label,
-      isBar
+      label, isBar
     };
   }
 
@@ -777,11 +831,7 @@
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          title: {
-            display: true,
-            text: `${data.label} – Install Types (All Teams)`,
-            color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20}
-          },
+          title: { display:true, text:`${data.label} – Install Types (All Teams)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
           legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
           datalabels: chartType==='bar' ? {} : false
         },
@@ -794,80 +844,44 @@
     });
   }
 
-  // ── VIEW: Aborts chart by reason ─────────────────────────────────────────────
+  // ── VIEW: Aborts ──────────────────────────────────────────────────────────────
 
-  // ── Canonical abort reasons (fixed order) ───────────────────────────────────
   const ABORT_REASONS = [
-    'Tech abort',
-    'No access',
-    'Refused access',
-    'Higher skill set required',
-    'Work not required',
-    'DNO Issue',
-    'Stock issue',
-    'Wrong details',
-    'H&S issue',
-    'No abort code',
-    'Customer Cancellation',
-    'Left open',
+    'Tech abort','No access','Refused access','Higher skill set required',
+    'Work not required','DNO Issue','Stock issue','Wrong details',
+    'H&S issue','No abort code','Customer Cancellation','Left open',
   ];
 
   function normaliseReason(raw) {
     if (!raw) return ['No abort code'];
     const str = raw.trim();
     const multMatch = str.match(/^(.+?)\s*[xX×](\d+)\s*$/);
-    let baseStr = str;
-    let multiplier = 1;
-    if (multMatch) {
-      baseStr   = multMatch[1].trim();
-      multiplier = parseInt(multMatch[2]) || 1;
-    }
+    let baseStr = str, multiplier = 1;
+    if (multMatch) { baseStr = multMatch[1].trim(); multiplier = parseInt(multMatch[2]) || 1; }
     const parts = baseStr.split(',').map(p => p.trim()).filter(Boolean);
     const results = [];
-    parts.forEach(part => {
-      const matched = fuzzyMatchReason(part);
-      for (let i = 0; i < multiplier; i++) results.push(matched);
-    });
+    parts.forEach(part => { const matched = fuzzyMatchReason(part); for (let i=0;i<multiplier;i++) results.push(matched); });
     return results;
   }
 
   function fuzzyMatchReason(str) {
-    const s = str.toLowerCase().replace(/[^a-z0-9 &]/g, '').trim();
+    const s = str.toLowerCase().replace(/[^a-z0-9 &]/g,'').trim();
     const map = {
-      'tech abort':                  'Tech abort',
-      'technical abort':             'Tech abort',
-      'no access':                   'No access',
-      'refused access':              'Refused access',
-      'refused':                     'Refused access',
-      'higher skill set required':   'Higher skill set required',
-      'higher skill':                'Higher skill set required',
-      'skill set':                   'Higher skill set required',
-      'work not required':           'Work not required',
-      'not required':                'Work not required',
-      'dno issue':                   'DNO Issue',
-      'dno':                         'DNO Issue',
-      'stock issue':                 'Stock issue',
-      'stock':                       'Stock issue',
-      'wrong details':               'Wrong details',
-      'wrong detail':                'Wrong details',
-      'hs issue':                    'H&S issue',
-      'h&s issue':                   'H&S issue',
-      'h&s':                         'H&S issue',
-      'health and safety':           'H&S issue',
-      'no abort code':               'No abort code',
-      'no code':                     'No abort code',
-      'customer cancellation':       'Customer Cancellation',
-      'customer cancel':             'Customer Cancellation',
-      'cancellation':                'Customer Cancellation',
-      'left open':                   'Left open',
+      'tech abort':'Tech abort','technical abort':'Tech abort',
+      'no access':'No access','refused access':'Refused access','refused':'Refused access',
+      'higher skill set required':'Higher skill set required','higher skill':'Higher skill set required','skill set':'Higher skill set required',
+      'work not required':'Work not required','not required':'Work not required',
+      'dno issue':'DNO Issue','dno':'DNO Issue',
+      'stock issue':'Stock issue','stock':'Stock issue',
+      'wrong details':'Wrong details','wrong detail':'Wrong details',
+      'hs issue':'H&S issue','h&s issue':'H&S issue','h&s':'H&S issue','health and safety':'H&S issue',
+      'no abort code':'No abort code','no code':'No abort code',
+      'customer cancellation':'Customer Cancellation','customer cancel':'Customer Cancellation','cancellation':'Customer Cancellation',
+      'left open':'Left open',
     };
     if (map[s]) return map[s];
-    for (const [key, val] of Object.entries(map)) {
-      if (s.includes(key) || key.includes(s)) return val;
-    }
-    for (const canon of ABORT_REASONS) {
-      if (s.includes(canon.toLowerCase()) || canon.toLowerCase().includes(s)) return canon;
-    }
+    for (const [key,val] of Object.entries(map)) { if (s.includes(key)||key.includes(s)) return val; }
+    for (const canon of ABORT_REASONS) { if (s.includes(canon.toLowerCase())||canon.toLowerCase().includes(s)) return canon; }
     return 'No abort code';
   }
 
@@ -880,25 +894,12 @@
     abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">Loading…</div>';
 
     try {
-      const q = query(
-        collection(db, "aborts"),
-        where("date", ">=", fromDate),
-        where("date", "<=", toDate),
-        orderBy("date", "asc")
-      );
-
+      const q = query(collection(db,"aborts"),where("date",">=",fromDate),where("date","<=",toDate),orderBy("date","asc"));
       const snap = await getDocs(q);
       const allAborts = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        // Normalise teamLeader on abort records too
-        allAborts.push({ ...d, teamLeader: normTeam(d.teamLeader) });
-      });
+      snap.forEach(doc => { const d = doc.data(); allAborts.push({...d, teamLeader: normTeam(d.teamLeader)}); });
 
-      // Filter to selected team if not "all"
-      const filtered = currentTeam === 'all'
-        ? allAborts
-        : allAborts.filter(r => r.teamLeader === currentTeam);
+      const filtered = currentTeam==='all' ? allAborts : allAborts.filter(r=>r.teamLeader===currentTeam);
 
       if (filtered.length === 0) {
         abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">No abort records found for this period.</div>';
@@ -908,22 +909,17 @@
 
       const reasonTotals = {};
       ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
-
       filtered.forEach(row => {
-        const rawTotal  = Number(row.total) || 1;
-        const rawReason = row.reason || '';
-        const resolved  = normaliseReason(rawReason);
-        const share     = rawTotal / resolved.length;
-        resolved.forEach(canon => {
-          reasonTotals[canon] = (reasonTotals[canon] || 0) + share;
-        });
+        const rawTotal = Number(row.total)||1;
+        const resolved = normaliseReason(row.reason||'');
+        const share = rawTotal/resolved.length;
+        resolved.forEach(canon => { reasonTotals[canon] = (reasonTotals[canon]||0) + share; });
       });
-
       ABORT_REASONS.forEach(r => { reasonTotals[r] = Math.round(reasonTotals[r]); });
 
-      const grandTotal = ABORT_REASONS.reduce((s,r) => s + reasonTotals[r], 0);
-      const topReason  = ABORT_REASONS.slice().sort((a,b) => reasonTotals[b] - reasonTotals[a])[0];
-      const uniqueEng  = new Set(filtered.map(r => r.engineer)).size;
+      const grandTotal = ABORT_REASONS.reduce((s,r)=>s+reasonTotals[r],0);
+      const topReason  = ABORT_REASONS.slice().sort((a,b)=>reasonTotals[b]-reasonTotals[a])[0];
+      const uniqueEng  = new Set(filtered.map(r=>r.engineer)).size;
 
       setStats(
         `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>` +
@@ -937,65 +933,33 @@
       if (abortChart) abortChart.destroy();
 
       const chartData = ABORT_REASONS.map(r => reasonTotals[r]);
-
       abortChart = new Chart(abortCtx, {
         type: 'bar',
         data: {
           labels: ABORT_REASONS,
           datasets: [{
-            label: 'Aborts',
-            data: chartData,
-            backgroundColor: chartData.map(v =>
-              v === Math.max(...chartData) ? 'rgba(239,68,68,0.8)' : 'rgba(249,115,22,0.75)'
-            ),
-            borderColor: chartData.map(v =>
-              v === Math.max(...chartData) ? '#ef4444' : '#f97316'
-            ),
-            borderWidth: 1,
-            borderRadius: 5,
+            label: 'Aborts', data: chartData,
+            backgroundColor: chartData.map(v => v===Math.max(...chartData)?'rgba(239,68,68,0.8)':'rgba(249,115,22,0.75)'),
+            borderColor: chartData.map(v => v===Math.max(...chartData)?'#ef4444':'#f97316'),
+            borderWidth: 1, borderRadius: 5,
             datalabels: {
-              anchor: 'end', align: 'top', offset: 2,
-              color: '#e2e8f0', font: { weight: 'bold', size: 12 },
-              formatter: v => v > 0 ? v : '',
-              textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:12},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
             }
           }]
         },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          layout: { padding: { top: 24 } },
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding:{ top:24 } },
           plugins: {
-            title: {
-              display: true,
-              text: `Aborts by Reason — ${currentTeam === 'all' ? 'All Teams' : currentTeam} (${fromDate} → ${toDate})`,
-              color: '#e2e8f0', font: { size: 16, weight: '600' }, padding: { bottom: 20 }
-            },
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: c => ` Total: ${c.raw}`
-              }
-            },
+            title: { display:true, text:`Aborts by Reason — ${currentTeam==='all'?'All Teams':currentTeam} (${fromDate} → ${toDate})`, color:'#e2e8f0', font:{size:16,weight:'600'}, padding:{bottom:20} },
+            legend: { display:false },
+            tooltip: { callbacks:{ label: c=>` Total: ${c.raw}` } },
             datalabels: {}
           },
           scales: {
-            x: {
-              ticks: {
-                color: '#94a3b8',
-                font: { size: 11 },
-                padding: 4,
-                maxRotation: 90,
-                minRotation: 90,
-                autoSkip: false,
-              },
-              grid: { color: '#334155' }
-            },
-            y: {
-              beginAtZero: true,
-              ticks: { color: '#94a3b8', precision: 0 },
-              grid: { color: '#334155' }
-            }
+            x: { ticks:{ color:'#94a3b8', font:{size:11}, padding:4, maxRotation:90, minRotation:90, autoSkip:false }, grid:{color:'#334155'} },
+            y: { beginAtZero:true, ticks:{ color:'#94a3b8', precision:0 }, grid:{color:'#334155'} }
           }
         },
         plugins: [ChartDataLabels]
@@ -1017,26 +981,12 @@
       plugins: {
         title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
         legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
-        tooltip: {
-          callbacks: {
-            label: c => c.dataset.label==='Completion %'
-              ? (c.raw!==null ? ` Completion: ${c.raw}%` : ' Completion: No data')
-              : ` Meters: ${c.raw}`
-          }
-        }
+        tooltip: { callbacks:{ label: c => c.dataset.label==='Completion %'?(c.raw!==null?` Completion: ${c.raw}%`:' Completion: No data'):` Meters: ${c.raw}` } }
       },
       scales: {
         x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
-        yMeters: {
-          type:'linear', position:'left', beginAtZero:true,
-          ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'},
-          title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} }
-        },
-        yCompletion: {
-          type:'linear', position:'right', beginAtZero:true, max:100,
-          ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false },
-          title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} }
-        }
+        yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
+        yCompletion: { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } }
       }
     };
   }
@@ -1117,7 +1067,8 @@
 
   document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
 
-  // Initial render
+  // ── Bootstrap: load headcount first, then render ──────────────────────────────
+  await loadHeadcount();
   updateView();
 </script>
 
