@@ -1338,21 +1338,28 @@
                 const d=doc.data();if(d.leaveDate)return;
                 const tl=(d['Team Leader']||d.teamLeader||'').trim();
                 const loc=d.Location||d.location||'';
-                // Match both "FTL 4" and "FTL4" for Tom Green
-                const tlNorm=/^ftl\s*4$/i.test(tl)?'FTL 4':tl;
+                // Normalise FTL 4, FTL4, and "Tom Green" stored directly
+                const tlNorm=/^ftl\s*4$/i.test(tl)?'FTL 4':tl==='Tom Green'?'FTL 4':tl;
                 if(tlNorm===dataKey&&loc==='OES')count++;
             });
             return count;
         }
 
-        // ── Helper: query performance/aborts handling FTL 4 / FTL4 variants ──
+        // ── Helper: query performance/aborts handling all Tom Green / FTL variants ──
+        // Firestore may store the teamLeader field as "FTL 4", "FTL4", or "Tom Green"
+        // so we query all three and merge the results.
+        function mergeSnaps(...snaps) {
+            const docs = snaps.flatMap(s => s.docs);
+            return { docs, forEach(fn) { docs.forEach(fn); } };
+        }
         async function queryPerfSnap(dateStr, dataKey) {
             if (dataKey === 'FTL 4') {
-                const [s1, s2] = await Promise.all([
+                const [s1, s2, s3] = await Promise.all([
                     getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr),where("teamLeader","==","FTL 4"))),
-                    getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr),where("teamLeader","==","FTL4")))
+                    getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr),where("teamLeader","==","FTL4"))),
+                    getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
                 ]);
-                return { docs:[...s1.docs,...s2.docs], forEach(fn){this.docs.forEach(fn);} };
+                return mergeSnaps(s1, s2, s3);
             } else if (dataKey) {
                 return getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
             } else {
@@ -1361,11 +1368,12 @@
         }
         async function queryAbortSnap(dateStr, dataKey) {
             if (dataKey === 'FTL 4') {
-                const [a1, a2] = await Promise.all([
+                const [a1, a2, a3] = await Promise.all([
                     getDocs(query(collection(performanceDb,"aborts"),where("date","==",dateStr),where("teamLeader","==","FTL 4"))),
-                    getDocs(query(collection(performanceDb,"aborts"),where("date","==",dateStr),where("teamLeader","==","FTL4")))
+                    getDocs(query(collection(performanceDb,"aborts"),where("date","==",dateStr),where("teamLeader","==","FTL4"))),
+                    getDocs(query(collection(performanceDb,"aborts"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
                 ]);
-                return { docs:[...a1.docs,...a2.docs], forEach(fn){this.docs.forEach(fn);} };
+                return mergeSnaps(a1, a2, a3);
             } else if (dataKey) {
                 return getDocs(query(collection(performanceDb,"aborts"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
             } else {
