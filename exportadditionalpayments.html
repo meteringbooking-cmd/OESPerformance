@@ -265,30 +265,12 @@
         }
 
         @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-            }
-
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .stats-section {
-                grid-template-columns: 1fr;
-            }
-
-            .preview-table {
-                font-size: 0.85em;
-            }
-
-            .preview-table th,
-            .preview-table td {
-                padding: 8px;
-            }
-
-            .export-buttons {
-                grid-template-columns: 1fr;
-            }
+            .container { padding: 20px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .stats-section { grid-template-columns: 1fr; }
+            .preview-table { font-size: 0.85em; }
+            .preview-table th, .preview-table td { padding: 8px; }
+            .export-buttons { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -322,7 +304,7 @@
         </div>
 
         <div id="loadingDiv" class="loading" style="display: none;">Loading data...</div>
-        
+
         <div id="statsSection" class="stats-section" style="display: none;"></div>
 
         <div id="previewSection" class="preview-section" style="display: none;">
@@ -375,15 +357,8 @@
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
 
-            if (!startDate || !endDate) {
-                alert('Please select both start and end dates');
-                return;
-            }
-
-            if (new Date(startDate) > new Date(endDate)) {
-                alert('Start date must be before end date');
-                return;
-            }
+            if (!startDate || !endDate) { alert('Please select both start and end dates'); return; }
+            if (new Date(startDate) > new Date(endDate)) { alert('Start date must be before end date'); return; }
 
             document.getElementById('loadingDiv').style.display = 'block';
             document.getElementById('previewSection').style.display = 'none';
@@ -398,36 +373,52 @@
                 paymentsSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const paymentDate = data.date;
-
                     if (paymentDate >= startDate && paymentDate <= endDate &&
                         (data.status === 'approved' || data.status === 'approved-with-changes')) {
-
                         if (!paymentsMap[data.engineerName]) paymentsMap[data.engineerName] = 0;
-
                         const dateObj = new Date(data.date + 'T00:00:00');
                         paymentsMap[data.engineerName] += calculatePaymentTotal(data, dateObj);
                     }
                 });
 
-                // ── 2. Performance bonuses ──────────────────────────────────
+                // ── 2. Performance bonuses — deduplicated ────────────────────
+                //
+                // Strategy: for each engineerName + weekStartDate combination,
+                // keep only the most recently submitted document.
+                // This prevents inflated totals caused by accidental duplicate saves.
+                //
                 const bonusSnapshot = await getDocs(collection(db, "bonuses"));
-                // bonusMap value: { perfTotal, avgBonusTotal, avgBonusDays }
-                const bonusMap = {};
+
+                // bonusLatest: key = "engineerName|weekStartDate" → most recent doc data
+                const bonusLatest = {};
 
                 bonusSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const weekStartDate = data.weekStartDate;
+                    if (!weekStartDate || weekStartDate < startDate || weekStartDate > endDate) return;
 
-                    if (weekStartDate >= startDate && weekStartDate <= endDate) {
-                        if (!bonusMap[data.engineerName]) {
-                            bonusMap[data.engineerName] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
-                        }
-                        bonusMap[data.engineerName].perfTotal += parseFloat(data.weekTotal || 0);
+                    const key = `${data.engineerName}|${weekStartDate}`;
+                    const existing = bonusLatest[key];
+                    const existingTime = existing?.submittedAt?.seconds ?? 0;
+                    const thisTime = data.submittedAt?.seconds ?? 0;
+
+                    // Keep whichever was submitted most recently
+                    if (!existing || thisTime >= existingTime) {
+                        bonusLatest[key] = data;
                     }
                 });
 
+                // Build bonusMap from deduplicated entries only
+                const bonusMap = {};
+                Object.values(bonusLatest).forEach((data) => {
+                    if (!bonusMap[data.engineerName]) {
+                        bonusMap[data.engineerName] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
+                    }
+                    bonusMap[data.engineerName].perfTotal += parseFloat(data.weekTotal || 0);
+                });
+
                 // ── 3. Average bonuses per engineer ─────────────────────────
-                const avgBonusMap = {}; // engineerName -> fullDay average bonus amount
+                const avgBonusMap = {};
                 const avgBonusSnapshot = await getDocs(collection(db, "Average Bonuses"));
                 avgBonusSnapshot.forEach((doc) => {
                     const d = doc.data();
@@ -436,20 +427,17 @@
 
                 // ── 4. Attendance — find H, H/H, Training days ──────────────
                 const attendanceSnapshot = await getDocs(collection(db, "attendance"));
-                // attendanceMap: engineerName -> array of { date, attendance }
                 const attendanceMap = {};
 
                 attendanceSnapshot.forEach((doc) => {
                     const d = doc.data();
                     if (!d.date || d.date < startDate || d.date > endDate) return;
                     if (!['H', 'H/H', 'Training'].includes(d.attendance)) return;
-
                     if (!attendanceMap[d.engineerName]) attendanceMap[d.engineerName] = [];
                     attendanceMap[d.engineerName].push({ date: d.date, attendance: d.attendance });
                 });
 
                 // ── 5. Merge average bonus into bonusMap ─────────────────────
-                // Also capture engineers who only have avg-bonus days (no perf bonus entry)
                 const allBonusEngineers = new Set([
                     ...Object.keys(bonusMap),
                     ...Object.keys(attendanceMap)
@@ -457,7 +445,6 @@
 
                 allBonusEngineers.forEach(name => {
                     if (!bonusMap[name]) bonusMap[name] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
-
                     const avg = avgBonusMap[name] || 0;
                     const days = attendanceMap[name] || [];
 
@@ -522,7 +509,6 @@
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
             const isSaturday = dayOfWeek === 6;
             const isSunday = dayOfWeek === 0;
-
             const month = dateObj.getMonth() + 1;
             const day = dateObj.getDate();
             const isSpecialHoliday = (month === 12 && day === 25) || (month === 12 && day === 26) || (month === 1 && day === 1);
@@ -585,9 +571,7 @@
         }
 
         function displayPreview() {
-            const previewSection = document.getElementById('previewSection');
-            previewSection.style.display = 'block';
-
+            document.getElementById('previewSection').style.display = 'block';
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
@@ -595,7 +579,6 @@
             // Payments table
             const paymentsTable = document.getElementById('paymentsTable');
             let paymentsHTML = `<thead><tr><th>Engineer Name</th><th>Date Range</th><th>Total Amount</th></tr></thead><tbody>`;
-
             if (paymentsSummary.length === 0) {
                 paymentsHTML += `<tr><td colspan="3" style="text-align:center;padding:20px;color:#666;">No additional payments found for this period</td></tr>`;
             } else {
@@ -606,7 +589,7 @@
             paymentsHTML += '</tbody>';
             paymentsTable.innerHTML = paymentsHTML;
 
-            // Bonus table — now with breakdown columns
+            // Bonus table
             const bonusTable = document.getElementById('bonusTable');
             let bonusHTML = `
                 <thead>
@@ -624,7 +607,6 @@
                 bonusHTML += `<tr><td colspan="5" style="text-align:center;padding:20px;color:#666;">No bonuses found for this period</td></tr>`;
             } else {
                 bonusSummary.forEach(b => {
-                    // Build a tooltip-style breakdown of avg bonus days
                     let avgBadge = '';
                     if (b.avgBonusTotal > 0 && b.avgBonusDays.length > 0) {
                         const breakdown = b.avgBonusDays
@@ -636,7 +618,6 @@
                             }).join(' | ');
                         avgBadge = `<span class="avg-bonus-badge" title="${breakdown}">${b.avgBonusDays.length} day${b.avgBonusDays.length !== 1 ? 's' : ''}</span>`;
                     }
-
                     bonusHTML += `
                         <tr>
                             <td>${b.engineerName}</td>
@@ -653,31 +634,25 @@
 
         window.exportPaymentsToCSV = function() {
             if (paymentsSummary.length === 0) { alert('No additional payments data to export'); return; }
-
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
-
             let csv = 'Engineer Name,Date Range,Total Amount\n';
             paymentsSummary.forEach(p => {
                 csv += `${escapeCSV(p.engineerName)},${escapeCSV(dateRange)},${p.totalAmount.toFixed(2)}\n`;
             });
-
             downloadCSV(csv, `additional_payments_summary_${startDate}_to_${endDate}.csv`);
         }
 
         window.exportBonusToCSV = function() {
             if (bonusSummary.length === 0) { alert('No bonus data to export'); return; }
-
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
-
             let csv = 'Engineer Name,Date Range,Performance Bonus,Holiday/Training Avg Bonus,Total Bonus\n';
             bonusSummary.forEach(b => {
                 csv += `${escapeCSV(b.engineerName)},${escapeCSV(dateRange)},${b.perfTotal.toFixed(2)},${b.avgBonusTotal.toFixed(2)},${b.totalBonus.toFixed(2)}\n`;
             });
-
             downloadCSV(csv, `bonus_summary_${startDate}_to_${endDate}.csv`);
         }
 
