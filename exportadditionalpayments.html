@@ -381,40 +381,38 @@
                     }
                 });
 
-                // ── 2. Performance bonuses — deduplicated ────────────────────
+                // ── 2. Performance bonuses — mirrors engineer dashboard exactly ─
                 //
-                // Strategy: for each engineerName + weekStartDate combination,
-                // keep only the most recently submitted document.
-                // This prevents inflated totals caused by accidental duplicate saves.
+                // The engineer dashboard builds bonusData[date] using ASSIGNMENT (=),
+                // not accumulation (+=). Last document processed per date wins.
+                // We replicate that here per engineer, then sum only dates in range.
                 //
                 const bonusSnapshot = await getDocs(collection(db, "bonuses"));
 
-                // bonusLatest: key = "engineerName|weekStartDate" → most recent doc data
-                const bonusLatest = {};
-
+                // Build engineerDailyBonus[engineerName][date] = amount  (assign, not +=)
+                const engineerDailyBonus = {};
                 bonusSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const weekStartDate = data.weekStartDate;
-                    if (!weekStartDate || weekStartDate < startDate || weekStartDate > endDate) return;
-
-                    const key = `${data.engineerName}|${weekStartDate}`;
-                    const existing = bonusLatest[key];
-                    const existingTime = existing?.submittedAt?.seconds ?? 0;
-                    const thisTime = data.submittedAt?.seconds ?? 0;
-
-                    // Keep whichever was submitted most recently
-                    if (!existing || thisTime >= existingTime) {
-                        bonusLatest[key] = data;
+                    if (!data.dailyBonuses || !data.engineerName) return;
+                    if (!engineerDailyBonus[data.engineerName]) {
+                        engineerDailyBonus[data.engineerName] = {};
                     }
+                    // ASSIGN per date — exactly as engineer dashboard does
+                    Object.keys(data.dailyBonuses).forEach(date => {
+                        engineerDailyBonus[data.engineerName][date] = data.dailyBonuses[date];
+                    });
                 });
 
-                // Build bonusMap from deduplicated entries only
+                // Sum only dates within the selected range — same as dashboard
                 const bonusMap = {};
-                Object.values(bonusLatest).forEach((data) => {
-                    if (!bonusMap[data.engineerName]) {
-                        bonusMap[data.engineerName] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
-                    }
-                    bonusMap[data.engineerName].perfTotal += parseFloat(data.weekTotal || 0);
+                Object.entries(engineerDailyBonus).forEach(([engineerName, dateMap]) => {
+                    Object.entries(dateMap).forEach(([date, amount]) => {
+                        if (date < startDate || date > endDate) return;
+                        if (!bonusMap[engineerName]) {
+                            bonusMap[engineerName] = { perfTotal: 0, avgBonusTotal: 0, avgBonusDays: [] };
+                        }
+                        bonusMap[engineerName].perfTotal += parseFloat(amount || 0);
+                    });
                 });
 
                 // ── 3. Average bonuses per engineer ─────────────────────────
