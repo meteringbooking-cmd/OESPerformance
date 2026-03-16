@@ -264,6 +264,97 @@
             margin-top: 20px;
         }
 
+
+        /* ── Payment claim cards (mirrors engineer dashboard) ── */
+        .engineer-claims-block {
+            margin-bottom: 30px;
+        }
+        .engineer-claims-name {
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #333;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .engineer-claims-total {
+            font-size: 0.95em;
+            opacity: 0.95;
+        }
+        .claim-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-top: none;
+            padding: 18px;
+            position: relative;
+        }
+        .claim-card:last-child {
+            border-radius: 0 0 10px 10px;
+        }
+        .claim-card + .claim-card {
+            border-top: 2px dashed #e0e0e0;
+        }
+        .claim-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .claim-date {
+            font-weight: 700;
+            color: #333;
+            font-size: 1em;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            font-weight: 700;
+        }
+        .badge-approved { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .badge-pending  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+        .badge-rejected { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .badge-changes  { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .claim-line {
+            padding: 5px 0;
+            font-size: 0.9em;
+            color: #444;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .claim-line:last-child { border-bottom: none; }
+        .claim-line.removed { text-decoration: line-through; color: #999; }
+        .claim-line.removed::after { content: ' [REMOVED]'; color: #dc3545; font-weight: 700; text-decoration: none; display: inline; }
+        .claim-total-line {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: #f0fdf4;
+            border-radius: 8px;
+            border: 2px solid #6ee7b7;
+            font-weight: 700;
+            color: #065f46;
+            font-size: 0.95em;
+        }
+        .claim-total-line.rejected-total {
+            background: #fef2f2;
+            border-color: #fca5a5;
+            color: #991b1b;
+        }
+        .claim-comment {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85em;
+        }
+        .claim-comment.rejection { background: #fee2e2; border-left: 4px solid #ef4444; color: #991b1b; }
+        .claim-comment.approval  { background: #dbeafe; border-left: 4px solid #3b82f6; color: #1e3a8a; }
+        .no-claims { text-align: center; padding: 30px; color: #666; font-style: italic; background: #f8f9fa; border-radius: 10px; }
         @media (max-width: 768px) {
             .container { padding: 20px; }
             .form-grid { grid-template-columns: 1fr; }
@@ -309,9 +400,7 @@
 
         <div id="previewSection" class="preview-section" style="display: none;">
             <div class="preview-header">📋 Additional Payments Summary</div>
-            <div style="overflow-x: auto;">
-                <table class="preview-table" id="paymentsTable"></table>
-            </div>
+            <div id="paymentsContainer"></div>
 
             <div class="preview-header" style="margin-top: 40px;">🎁 Bonus Summary</div>
             <div style="overflow-x: auto;">
@@ -366,19 +455,23 @@
             document.getElementById('noDataDiv').style.display = 'none';
 
             try {
-                // ── 1. Additional payments ──────────────────────────────────
+                // ── 1. Additional payments — store ALL claims (any status) in range ─
                 const paymentsSnapshot = await getDocs(collection(db, "additionalPayments"));
-                const paymentsMap = {};
+                // rawClaims: engineerName -> array of claim objects, sorted by date
+                const rawClaimsMap = {};
 
                 paymentsSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const paymentDate = data.date;
-                    if (paymentDate >= startDate && paymentDate <= endDate &&
-                        (data.status === 'approved' || data.status === 'approved-with-changes')) {
-                        if (!paymentsMap[data.engineerName]) paymentsMap[data.engineerName] = 0;
-                        const dateObj = new Date(data.date + 'T00:00:00');
-                        paymentsMap[data.engineerName] += calculatePaymentTotal(data, dateObj);
+                    if (paymentDate >= startDate && paymentDate <= endDate) {
+                        if (!rawClaimsMap[data.engineerName]) rawClaimsMap[data.engineerName] = [];
+                        rawClaimsMap[data.engineerName].push(data);
                     }
+                });
+
+                // Sort each engineer's claims by date
+                Object.values(rawClaimsMap).forEach(claims => {
+                    claims.sort((a, b) => a.date.localeCompare(b.date));
                 });
 
                 // ── 2. Performance bonuses — mirrors engineer dashboard exactly ─
@@ -460,8 +553,17 @@
                 });
 
                 // ── 6. Build summary arrays ──────────────────────────────────
-                paymentsSummary = Object.entries(paymentsMap)
-                    .map(([name, total]) => ({ engineerName: name, totalAmount: total }))
+                // paymentsSummary: one entry per engineer with raw claims + approved total
+                paymentsSummary = Object.entries(rawClaimsMap)
+                    .map(([name, claims]) => {
+                        const approvedTotal = claims.reduce((sum, p) => {
+                            if (p.status === 'approved' || p.status === 'approved-with-changes') {
+                                return sum + calcApprovedTotal(p, new Date(p.date + 'T00:00:00'));
+                            }
+                            return sum;
+                        }, 0);
+                        return { engineerName: name, claims, approvedTotal };
+                    })
                     .sort((a, b) => a.engineerName.localeCompare(b.engineerName));
 
                 bonusSummary = Object.entries(bonusMap)
@@ -544,11 +646,123 @@
             return breakdown;
         }
 
+        // ── Mirrors calcApprovedTotal from engineer dashboard exactly ──────
+        function calcApprovedTotal(payment, dateObj) {
+            const bd = calculatePaymentBreakdown(payment, dateObj);
+            let total = 0;
+            if (payment.status === 'approved') {
+                if (payment.standby === 'yes')    total += bd.standby.amount;
+                if (payment.workingAway === 'yes') total += bd.workingAway.amount;
+                if (payment.overtime === 'yes')    total += bd.overtime.amount;
+                if (payment.hasJobs && payment.jobs) {
+                    payment.jobs.forEach(j => {
+                        if (j.claimPricePerJob === 'yes') {
+                            if (j.jobType === 'Dual')   total += 80;
+                            else if (j.jobType === 'Single') total += 50;
+                            else if (j.jobType === 'Comms')  total += 25;
+                        }
+                    });
+                }
+            } else if (payment.status === 'approved-with-changes') {
+                const am = payment.amendments || {};
+                if (payment.standby === 'yes' && am.standby !== false)       total += bd.standby.amount;
+                if (payment.workingAway === 'yes' && am.workingAway !== false) total += bd.workingAway.amount;
+                if (payment.overtime === 'yes' && am.overtime !== false) {
+                    total += am.overtimeHours ? am.overtimeHours * bd.overtime.rate : bd.overtime.amount;
+                }
+                if (payment.hasJobs && payment.jobs) {
+                    const rm = am.removeJobs || [];
+                    payment.jobs.forEach(j => {
+                        if (j.claimPricePerJob === 'yes' && !rm.includes(j.jobNumber)) {
+                            if (j.jobType === 'Dual')   total += 80;
+                            else if (j.jobType === 'Single') total += 50;
+                            else if (j.jobType === 'Comms')  total += 25;
+                        }
+                    });
+                }
+            }
+            return total;
+        }
+
+        // ── Renders a single claim card — mirrors buildPaymentHTML in engineer dashboard ──
+        function buildClaimHTML(p, dateObj) {
+            const bd = calculatePaymentBreakdown(p, dateObj);
+            const hasAm = p.status === 'approved-with-changes' && p.amendments;
+            const lines = [];
+
+            if (p.standby === 'yes') {
+                const removed = hasAm && p.amendments.standby === false;
+                lines.push({ text: `Standby Payment (${bd.standby.label}): £${bd.standby.amount.toFixed(2)}`, removed });
+            }
+            if (p.workingAway === 'yes') {
+                const removed = hasAm && p.amendments.workingAway === false;
+                lines.push({ text: `Working Away Allowance: £${bd.workingAway.amount.toFixed(2)}`, removed });
+            }
+            if (p.overtime === 'yes') {
+                const st = p.overtimeStartTime || 'N/A', et = p.overtimeEndTime || 'N/A';
+                const removed = hasAm && p.amendments.overtime === false;
+                if (removed) {
+                    lines.push({ text: `Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et}) @ £${bd.overtime.rate.toFixed(2)}/hr (${bd.overtime.rateLabel}) = £${bd.overtime.amount.toFixed(2)}`, removed: true });
+                } else if (hasAm && p.amendments.overtimeHours) {
+                    const nh = p.amendments.overtimeHours;
+                    lines.push({ text: `Overtime (original): ${p.overtimeHours.toFixed(1)}h (${st}–${et})`, removed: true });
+                    lines.push({ text: `Overtime (modified): ${nh.toFixed(1)}h @ £${bd.overtime.rate.toFixed(2)}/hr (${bd.overtime.rateLabel}) = £${(nh * bd.overtime.rate).toFixed(2)}`, removed: false });
+                } else {
+                    lines.push({ text: `Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et}) @ £${bd.overtime.rate.toFixed(2)}/hr (${bd.overtime.rateLabel}) = £${bd.overtime.amount.toFixed(2)} | Reason: ${p.overtimeReason || 'N/A'}`, removed: false });
+                }
+            }
+            if (p.hasJobs && p.jobs && p.jobs.length > 0) {
+                const rm = (hasAm && p.amendments.removeJobs) ? p.amendments.removeJobs : [];
+                p.jobs.forEach((j, i) => {
+                    const amt = j.jobType === 'Dual' ? 80 : j.jobType === 'Single' ? 50 : j.jobType === 'Comms' ? 25 : 0;
+                    const isRm = rm.includes(j.jobNumber);
+                    const claimStr = j.claimPricePerJob === 'yes' ? ` — £${amt}` : ' — Not claimed';
+                    lines.push({ text: `Job ${i+1}: ${j.jobNumber} | ${j.jobType} | ${j.postcode}${claimStr}`, removed: isRm });
+                });
+            }
+
+            const approved = calcApprovedTotal(p, dateObj);
+            const statusBadge =
+                p.status === 'approved'              ? '<span class="badge badge-approved">✓ Approved</span>' :
+                p.status === 'approved-with-changes' ? '<span class="badge badge-changes">✓ Approved with Changes</span>' :
+                p.status === 'rejected'              ? '<span class="badge badge-rejected">✗ Rejected</span>' :
+                                                       '<span class="badge badge-pending">⏳ Pending</span>';
+
+            const totalLabel =
+                p.status === 'approved'              ? 'Approved Amount' :
+                p.status === 'approved-with-changes' ? 'Approved Amount (with changes)' :
+                p.status === 'rejected'              ? 'Claimed Amount (Rejected)' :
+                                                       'Claimed Amount (Pending)';
+
+            const totalClass = p.status === 'rejected' ? 'claim-total-line rejected-total' : 'claim-total-line';
+            const totalAmt = (p.status === 'pending' || p.status === 'rejected')
+                ? calculatePaymentTotal(p, dateObj)
+                : approved;
+
+            let html = `
+                <div class="claim-card">
+                    <div class="claim-card-header">
+                        <span class="claim-date">📅 ${new Date(p.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday:'long', day:'2-digit', month:'long', year:'numeric' })}</span>
+                        ${statusBadge}
+                    </div>
+                    ${lines.map(l => `<div class="claim-line${l.removed ? ' removed' : ''}">${l.removed ? '✗ ' : '✓ '}${l.text}</div>`).join('')}
+                    <div class="${totalClass}">${totalLabel}: £${totalAmt.toFixed(2)}</div>`;
+
+            if (p.status === 'rejected' && p.rejectionComment) {
+                html += `<div class="claim-comment rejection"><strong>Rejection Reason:</strong> ${p.rejectionComment}</div>`;
+            }
+            if (p.status === 'approved-with-changes' && p.changesComment) {
+                html += `<div class="claim-comment approval"><strong>Approval Comments:</strong> ${p.changesComment}</div>`;
+            }
+            html += `</div>`;
+            return html;
+        }
+
         function displayStats() {
             const statsSection = document.getElementById('statsSection');
             statsSection.style.display = 'grid';
 
-            const totalPayments = paymentsSummary.reduce((sum, p) => sum + p.totalAmount, 0);
+            const totalPayments = paymentsSummary.reduce((sum, p) => sum + p.approvedTotal, 0);
             const totalBonus = bonusSummary.reduce((sum, b) => sum + b.totalBonus, 0);
             const grandTotal = totalPayments + totalBonus;
 
@@ -574,18 +788,24 @@
             const endDate = document.getElementById('endDate').value;
             const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
 
-            // Payments table
-            const paymentsTable = document.getElementById('paymentsTable');
-            let paymentsHTML = `<thead><tr><th>Engineer Name</th><th>Date Range</th><th>Total Amount</th></tr></thead><tbody>`;
+            // Payments — full claim cards, grouped by engineer
+            const paymentsContainer = document.getElementById('paymentsContainer');
             if (paymentsSummary.length === 0) {
-                paymentsHTML += `<tr><td colspan="3" style="text-align:center;padding:20px;color:#666;">No additional payments found for this period</td></tr>`;
+                paymentsContainer.innerHTML = '<div class="no-claims">No additional payment claims found for this period</div>';
             } else {
-                paymentsSummary.forEach(p => {
-                    paymentsHTML += `<tr><td>${p.engineerName}</td><td>${dateRange}</td><td>£${p.totalAmount.toFixed(2)}</td></tr>`;
-                });
+                paymentsContainer.innerHTML = paymentsSummary.map(eng => {
+                    const claimsHTML = eng.claims.map(p => buildClaimHTML(p, new Date(p.date + 'T00:00:00'))).join('');
+                    const approvedCount = eng.claims.filter(p => p.status === 'approved' || p.status === 'approved-with-changes').length;
+                    return `
+                        <div class="engineer-claims-block">
+                            <div class="engineer-claims-name">
+                                <span>👷 ${eng.engineerName} <small style="opacity:0.8;font-weight:400;">(${eng.claims.length} claim${eng.claims.length !== 1 ? 's' : ''})</small></span>
+                                <span class="engineer-claims-total">Approved Total: £${eng.approvedTotal.toFixed(2)}</span>
+                            </div>
+                            ${claimsHTML}
+                        </div>`;
+                }).join('');
             }
-            paymentsHTML += '</tbody>';
-            paymentsTable.innerHTML = paymentsHTML;
 
             // Bonus table
             const bonusTable = document.getElementById('bonusTable');
@@ -634,12 +854,60 @@
             if (paymentsSummary.length === 0) { alert('No additional payments data to export'); return; }
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            const dateRange = `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-GB')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-GB')}`;
-            let csv = 'Engineer Name,Date Range,Total Amount\n';
-            paymentsSummary.forEach(p => {
-                csv += `${escapeCSV(p.engineerName)},${escapeCSV(dateRange)},${p.totalAmount.toFixed(2)}\n`;
+
+            // One row per individual claim with full breakdown columns
+            let csv = 'Engineer Name,Date,Status,Standby,Working Away,Overtime Hours,Overtime Rate,Overtime Total,Jobs Total,Approved Total,Rejection/Approval Notes\n';
+
+            paymentsSummary.forEach(eng => {
+                eng.claims.forEach(p => {
+                    const dateObj = new Date(p.date + 'T00:00:00');
+                    const bd = calculatePaymentBreakdown(p, dateObj);
+                    const hasAm = p.status === 'approved-with-changes' && p.amendments;
+
+                    const standbyAmt = p.standby === 'yes' && !(hasAm && p.amendments.standby === false)
+                        ? bd.standby.amount : 0;
+                    const workingAwayAmt = p.workingAway === 'yes' && !(hasAm && p.amendments.workingAway === false)
+                        ? bd.workingAway.amount : 0;
+
+                    let otHours = 0, otRate = 0, otTotal = 0;
+                    if (p.overtime === 'yes' && !(hasAm && p.amendments.overtime === false)) {
+                        otRate = bd.overtime.rate;
+                        otHours = (hasAm && p.amendments.overtimeHours) ? p.amendments.overtimeHours : p.overtimeHours;
+                        otTotal = otHours * otRate;
+                    }
+
+                    let jobsTotal = 0;
+                    if (p.hasJobs && p.jobs) {
+                        const rm = (hasAm && p.amendments.removeJobs) ? p.amendments.removeJobs : [];
+                        p.jobs.forEach(j => {
+                            if (j.claimPricePerJob === 'yes' && !rm.includes(j.jobNumber)) {
+                                if (j.jobType === 'Dual')        jobsTotal += 80;
+                                else if (j.jobType === 'Single') jobsTotal += 50;
+                                else if (j.jobType === 'Comms')  jobsTotal += 25;
+                            }
+                        });
+                    }
+
+                    const approvedTotal = calcApprovedTotal(p, dateObj);
+                    const notes = p.rejectionComment || p.changesComment || '';
+
+                    csv += [
+                        escapeCSV(eng.engineerName),
+                        escapeCSV(new Date(p.date + 'T00:00:00').toLocaleDateString('en-GB')),
+                        escapeCSV(p.status || 'pending'),
+                        standbyAmt > 0 ? standbyAmt.toFixed(2) : '0.00',
+                        workingAwayAmt > 0 ? workingAwayAmt.toFixed(2) : '0.00',
+                        otHours > 0 ? otHours.toFixed(2) : '0.00',
+                        otRate > 0 ? otRate.toFixed(2) : '0.00',
+                        otTotal > 0 ? otTotal.toFixed(2) : '0.00',
+                        jobsTotal > 0 ? jobsTotal.toFixed(2) : '0.00',
+                        approvedTotal.toFixed(2),
+                        escapeCSV(notes)
+                    ].join(',') + '\n';
+                });
             });
-            downloadCSV(csv, `additional_payments_summary_${startDate}_to_${endDate}.csv`);
+
+            downloadCSV(csv, `additional_payments_detailed_${startDate}_to_${endDate}.csv`);
         }
 
         window.exportBonusToCSV = function() {
