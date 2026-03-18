@@ -14,10 +14,24 @@
     aside { background: var(--card); border-right: 1px solid var(--border); padding: 2rem 1.5rem; height: 100vh; position: sticky; top: 0; overflow-y: auto; }
     .logo { font-size: 1.6rem; font-weight: 700; background: linear-gradient(90deg, var(--accent), #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2.5rem; text-align: center; }
     h2 { font-size: 1.1rem; color: var(--text-dim); margin: 1.8rem 0 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-    .period-btn, .team-btn { display: block; width: 100%; padding: 0.95rem 1.2rem; margin: 0.4rem 0; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: left; cursor: pointer; transition: all 0.18s ease; font-size: 0.97rem; }
+    .period-btn, .team-btn { display: block; width: 100%; padding: 0.95rem 1.2rem; margin: 0.4rem 0; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: left; cursor: pointer; transition: all 0.18s ease; font-size: 0.97rem; font-family: inherit; }
     .period-btn:hover, .team-btn:hover { background: rgba(16,185,129,0.08); border-color: var(--accent); }
     .period-btn.active { background: var(--accent); color: white; border-color: var(--accent); box-shadow: 0 3px 12px rgba(16,185,129,0.3); }
     .team-btn.active { background: rgba(16,185,129,0.25); color: white; font-weight: 600; border-color: var(--accent); }
+
+    /* Month picker */
+    .month-picker { display: none; margin-top: 0.5rem; }
+    .month-picker.visible { display: block; }
+    .month-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.35rem; margin-top: 0.5rem; }
+    .month-cell { padding: 0.5rem 0.3rem; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 0.8rem; font-family: inherit; cursor: pointer; text-align: center; transition: all 0.15s; }
+    .month-cell:hover { background: rgba(16,185,129,0.1); border-color: var(--accent); color: var(--text); }
+    .month-cell.active { background: rgba(16,185,129,0.25); border-color: var(--accent); color: white; font-weight: 600; }
+    .month-cell.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    .year-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; }
+    .year-nav span { font-size: 0.88rem; color: var(--text); font-weight: 600; }
+    .year-btn { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text-dim); cursor: pointer; padding: 0.25rem 0.6rem; font-size: 0.8rem; transition: all 0.15s; font-family: inherit; }
+    .year-btn:hover { border-color: var(--accent); color: var(--text); }
+
     main { padding: 2.5rem 3rem; max-width: 1600px; }
     header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
     h1 { font-size: 2.1rem; font-weight: 700; background: linear-gradient(90deg, #e2e8f0, #d1d5db); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -40,6 +54,18 @@
   <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
   <button class="period-btn" data-period="6months">6 months (by month)</button>
   <button class="period-btn" data-period="year">Year to date (line)</button>
+  <button class="period-btn" data-period="specificMonth">Specific Month…</button>
+
+  <!-- Month picker (shown when specificMonth is active) -->
+  <div class="month-picker" id="monthPicker">
+    <div class="year-nav">
+      <button class="year-btn" id="yearPrev">‹</button>
+      <span id="yearLabel">2025</span>
+      <button class="year-btn" id="yearNext">›</button>
+    </div>
+    <div class="month-grid" id="monthGrid"></div>
+  </div>
+
   <h2>Team Leader</h2>
   <button class="team-btn active" data-team="all">All Teams</button>
   <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko</button>
@@ -81,12 +107,13 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // Normalise FTL 4 / FTL4 -> Tom Green
   const normTL = tl => /^ftl\s*4$/i.test((tl||'').trim()) ? 'Tom Green' : (tl||'');
 
   const ctx = document.createElement('canvas');
   document.querySelector('#chartContainer').appendChild(ctx);
   let chart = null;
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   const periods = {
     "7days":   { label: "Last 7 days",    daysBack: 7,   color: "#10b981", type: "bar",  groupBy: "day"   },
@@ -98,14 +125,86 @@
   let currentPeriod = "7days";
   let currentTeam   = "all";
 
+  // Month picker state
+  const today = new Date();
+  let pickerYear  = today.getFullYear();
+  let pickerMonth = null; // 0-indexed
+
+  // ── Month Picker UI ─────────────────────────────────────────────────────
+  function renderMonthGrid() {
+    const grid = document.getElementById('monthGrid');
+    grid.innerHTML = MONTH_NAMES.map((name, i) => {
+      const isFuture = pickerYear > today.getFullYear() ||
+                       (pickerYear === today.getFullYear() && i > today.getMonth());
+      const isActive = pickerYear === (pickerMonth !== null ? pickerYear : -1) &&
+                       i === pickerMonth && currentPeriod === 'specificMonth';
+      return `<button class="month-cell${isActive ? ' active' : ''}${isFuture ? ' disabled' : ''}"
+                data-month="${i}">${name}</button>`;
+    }).join('');
+
+    grid.querySelectorAll('.month-cell:not(.disabled)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pickerMonth = parseInt(btn.dataset.month);
+        renderMonthGrid();
+        updateChart();
+      });
+    });
+  }
+
+  document.getElementById('yearLabel').textContent = pickerYear;
+
+  document.getElementById('yearPrev').addEventListener('click', () => {
+    if (pickerYear > today.getFullYear() - 5) {
+      pickerYear--;
+      document.getElementById('yearLabel').textContent = pickerYear;
+      renderMonthGrid();
+    }
+  });
+
+  document.getElementById('yearNext').addEventListener('click', () => {
+    if (pickerYear < today.getFullYear()) {
+      pickerYear++;
+      document.getElementById('yearLabel').textContent = pickerYear;
+      renderMonthGrid();
+    }
+  });
+
+  renderMonthGrid();
+
+  // ── Data fetch ─────────────────────────────────────────────────────────
   async function fetchAndAggregateCompletion(periodKey, team) {
-    const cfg = periods[periodKey];
-    const today = new Date();
-    const start = new Date(today);
-    start.setDate(start.getDate() - cfg.daysBack);
-    const startDate = start.toISOString().split('T')[0];
-    const endDate   = today.toISOString().split('T')[0];
-    const q = query(collection(db, "performance"), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "asc"));
+    let startDate, endDate, chartType, color, titleLabel, groupBy;
+
+    if (periodKey === 'specificMonth' && pickerMonth !== null) {
+      const firstDay = new Date(pickerYear, pickerMonth, 1);
+      const lastDay  = new Date(pickerYear, pickerMonth + 1, 0);
+      startDate  = firstDay.toISOString().split('T')[0];
+      endDate    = lastDay.toISOString().split('T')[0];
+      chartType  = 'bar';
+      color      = '#10b981';
+      groupBy    = 'day';
+      titleLabel = `${MONTH_NAMES[pickerMonth]} ${pickerYear} – Daily Completion %`;
+    } else {
+      const cfg   = periods[periodKey];
+      const now   = new Date();
+      const start = new Date(now);
+      start.setDate(start.getDate() - cfg.daysBack);
+      startDate  = start.toISOString().split('T')[0];
+      endDate    = now.toISOString().split('T')[0];
+      chartType  = cfg.type;
+      color      = cfg.color;
+      groupBy    = cfg.groupBy;
+      titleLabel = cfg.groupBy === 'month'
+        ? `${cfg.label} – Monthly Average Completion %`
+        : `${cfg.label} – Completion %`;
+    }
+
+    const q = query(
+      collection(db, "performance"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc")
+    );
     const snapshot = await getDocs(q);
     let records = [];
     snapshot.forEach(doc => {
@@ -114,34 +213,63 @@
       if (team === "all" || recTL === team) records.push(d);
     });
 
-    if (cfg.groupBy === "month") {
+    // Monthly grouping
+    if (groupBy === "month") {
+      const now = new Date();
       const monthsMap = {};
       const monthLabels = [];
       for (let i = 5; i >= 0; i--) {
-        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
         monthsMap[key] = { completed: 0, jobs: 0, label };
         monthLabels.push(key);
       }
-      records.forEach(r => { const k = r.date.substring(0, 7); if (monthsMap[k]) { monthsMap[k].completed += Number(r.completed || 0); monthsMap[k].jobs += Number(r.jobs || 0); } });
-      return { labels: monthLabels.map(k => monthsMap[k].label), values: monthLabels.map(k => { const { completed, jobs } = monthsMap[k]; return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0; }) };
+      records.forEach(r => {
+        const k = r.date.substring(0, 7);
+        if (monthsMap[k]) { monthsMap[k].completed += Number(r.completed || 0); monthsMap[k].jobs += Number(r.jobs || 0); }
+      });
+      return {
+        labels: monthLabels.map(k => monthsMap[k].label),
+        values: monthLabels.map(k => { const { completed, jobs } = monthsMap[k]; return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0; }),
+        chartType, color, titleLabel
+      };
     }
 
-    const allWeekdayDates = [];
-    const current = new Date(start);
-    while (current <= today) { const day = current.getDay(); if (day !== 0 && day !== 6) allWeekdayDates.push(current.toISOString().split('T')[0]); current.setDate(current.getDate() + 1); }
+    // Daily grouping (weekdays for rolling periods, all days for specific month)
+    const allDates = [];
+    const cur = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (cur <= end) {
+      const day = cur.getDay();
+      // For specific month show all weekdays; for other periods skip weekends
+      if (periodKey === 'specificMonth' || (day !== 0 && day !== 6)) {
+        allDates.push(cur.toISOString().split('T')[0]);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
     const dateMap = {};
-    allWeekdayDates.forEach(date => dateMap[date] = { completed: 0, jobs: 0 });
-    records.forEach(r => { if (dateMap[r.date]) { dateMap[r.date].completed += Number(r.completed || 0); dateMap[r.date].jobs += Number(r.jobs || 0); } });
-    const values = allWeekdayDates.map(date => { const { completed, jobs } = dateMap[date]; return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0; });
-    const labels = allWeekdayDates.map(dateStr => {
-      const dateObj = new Date(dateStr);
-      const ddmm = `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}`;
-      const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
-      return cfg.type === 'bar' ? [ddmm, weekday] : ddmm;
+    allDates.forEach(date => dateMap[date] = { completed: 0, jobs: 0 });
+    records.forEach(r => {
+      if (dateMap[r.date]) {
+        dateMap[r.date].completed += Number(r.completed || 0);
+        dateMap[r.date].jobs += Number(r.jobs || 0);
+      }
     });
-    return { labels, values };
+
+    const values = allDates.map(date => {
+      const { completed, jobs } = dateMap[date];
+      return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0;
+    });
+    const labels = allDates.map(dateStr => {
+      const dateObj = new Date(dateStr);
+      const ddmm    = `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}`;
+      const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
+      return chartType === 'bar' ? [ddmm, weekday] : ddmm;
+    });
+
+    return { labels, values, chartType, color, titleLabel };
   }
 
   function updateAverageDisplay(values) {
@@ -152,30 +280,33 @@
   }
 
   async function updateChart() {
+    if (currentPeriod === 'specificMonth' && pickerMonth === null) return;
+
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading completion data…</div>';
     document.getElementById('avgValue').textContent = '—';
+
     try {
       const data = await fetchAndAggregateCompletion(currentPeriod, currentTeam);
-      const cfg = periods[currentPeriod];
       updateAverageDisplay(data.values);
       container.innerHTML = '';
       container.appendChild(ctx);
       if (chart) chart.destroy();
+
       chart = new Chart(ctx, {
-        type: cfg.type,
+        type: data.chartType,
         data: {
           labels: data.labels,
           datasets: [{
             label: `Completion % (${currentTeam === 'all' ? 'All Teams' : currentTeam})`,
             data: data.values,
-            backgroundColor: cfg.type === 'bar' ? 'rgba(16,185,129,0.75)' : 'rgba(16,185,129,0.18)',
-            borderColor: cfg.color,
-            borderWidth: cfg.type === 'bar' ? 1 : 3,
-            borderRadius: cfg.type === 'bar' ? 6 : 0,
-            tension: cfg.type === 'line' ? 0.35 : 0,
-            fill: cfg.type === 'line',
-            pointRadius: cfg.type === 'bar' ? 0 : 3,
+            backgroundColor: data.chartType === 'bar' ? 'rgba(16,185,129,0.75)' : 'rgba(16,185,129,0.18)',
+            borderColor: data.color,
+            borderWidth: data.chartType === 'bar' ? 1 : 3,
+            borderRadius: data.chartType === 'bar' ? 6 : 0,
+            tension: data.chartType === 'line' ? 0.35 : 0,
+            fill: data.chartType === 'line',
+            pointRadius: data.chartType === 'bar' ? 0 : 3,
             pointHoverRadius: 7,
           }]
         },
@@ -183,12 +314,17 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            title: { display: true, text: cfg.groupBy === 'month' ? `${cfg.label} – Monthly Average Completion %` : `${cfg.label} – Completion %`, color: '#e2e8f0', font: { size: 18, weight: '600' }, padding: { bottom: 20 } },
+            title: { display: true, text: data.titleLabel, color: '#e2e8f0', font: { size: 18, weight: '600' }, padding: { bottom: 20 } },
             legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
-            datalabels: cfg.type === 'bar' ? { anchor: 'end', align: 'top', offset: 4, color: '#e2e8f0', font: { weight: 'bold', size: 12 }, formatter: (value) => value > 0 ? `${value.toFixed(1)}%` : '', textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4 } : false
+            datalabels: data.chartType === 'bar' ? {
+              anchor: 'end', align: 'top', offset: 4, color: '#e2e8f0',
+              font: { weight: 'bold', size: 12 },
+              formatter: (value) => value > 0 ? `${value.toFixed(1)}%` : '',
+              textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+            } : false
           },
           scales: {
-            x: { ticks: { color: '#94a3b8', font: { size: cfg.groupBy === 'month' ? 13 : (cfg.type === 'bar' ? 11 : 12) }, padding: 8, callback: function(value) { return this.getLabelForValue(value); } }, grid: { color: '#334155' } },
+            x: { ticks: { color: '#94a3b8', font: { size: 11 }, padding: 8 }, grid: { color: '#334155' } },
             y: { beginAtZero: true, max: 100, ticks: { color: '#94a3b8', stepSize: 10, callback: value => `${value}%` }, grid: { color: '#334155' } }
           }
         },
@@ -200,8 +336,39 @@
     }
   }
 
-  document.querySelectorAll('.period-btn').forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentPeriod = btn.dataset.period; updateChart(); }); });
-  document.querySelectorAll('.team-btn').forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentTeam = btn.dataset.team; updateChart(); }); });
+  // ── Period buttons ────────────────────────────────────────────────────
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+
+      const picker = document.getElementById('monthPicker');
+      if (currentPeriod === 'specificMonth') {
+        picker.classList.add('visible');
+        // Default to current month if none selected
+        if (pickerMonth === null) {
+          pickerYear  = today.getFullYear();
+          pickerMonth = today.getMonth();
+          document.getElementById('yearLabel').textContent = pickerYear;
+          renderMonthGrid();
+        }
+      } else {
+        picker.classList.remove('visible');
+      }
+
+      updateChart();
+    });
+  });
+
+  document.querySelectorAll('.team-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTeam = btn.dataset.team;
+      updateChart();
+    });
+  });
 
   updateChart();
 </script>
