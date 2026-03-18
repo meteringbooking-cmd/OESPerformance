@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jobs Checker</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1c2030;
+    --border: #2a2f42;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #a8ff3e;
+    --warn: #ffcc00;
+    --danger: #ff4757;
+    --text: #e8eaf0;
+    --muted: #6b7290;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  header h1 {
+    font-family: var(--sans);
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+
+  header span {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* Input panels */
+  .input-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .panel-header h2 {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .panel-header .tag {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+  }
+
+  .panel[data-slot="1pm"] .dot { background: var(--accent); }
+  .panel[data-slot="4pm"] .dot { background: var(--accent2); }
+  .panel[data-slot="6am"] .dot { background: var(--accent3); }
+  .panel[data-slot="1pm"] .tag { background: rgba(0,229,255,0.1); color: var(--accent); }
+  .panel[data-slot="4pm"] .tag { background: rgba(255,107,53,0.1); color: var(--accent2); }
+  .panel[data-slot="6am"] .tag { background: rgba(168,255,62,0.1); color: var(--accent3); }
+
+  textarea {
+    width: 100%;
+    height: 180px;
+    background: transparent;
+    border: none;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+  }
+
+  textarea::placeholder { color: var(--muted); }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 24px;
+    transition: all 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover { background: #33eaff; transform: translateY(-1px); }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-secondary:hover { border-color: var(--muted); color: var(--text); }
+
+  /* Summary */
+  #summary {
+    display: none;
+    margin-bottom: 28px;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .summary-card.warn { border: 1px solid rgba(255,204,0,0.3); }
+  .summary-card.info { border: 1px solid var(--border); }
+
+  .summary-card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .summary-card.warn .summary-card-header { background: rgba(255,204,0,0.06); }
+
+  .summary-card-header h3 {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .summary-card.warn .summary-card-header h3 { color: var(--warn); }
+
+  .badge {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .badge-warn { background: rgba(255,204,0,0.15); color: var(--warn); }
+  .badge-ok { background: rgba(168,255,62,0.15); color: var(--accent3); }
+  .badge-neutral { background: rgba(107,114,144,0.2); color: var(--muted); }
+
+  .summary-list {
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .job-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: default;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .job-chip:hover { transform: translateY(-1px); }
+  .job-chip.dropped { background: rgba(255,71,87,0.15); color: var(--danger); border: 1px solid rgba(255,71,87,0.2); }
+  .job-chip.completed { background: rgba(168,255,62,0.1); color: var(--accent3); border: 1px solid rgba(168,255,62,0.15); }
+  .job-chip.neutral { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.15); }
+
+  .job-chip .engineer-name {
+    color: var(--muted);
+    font-size: 10px;
+    border-left: 1px solid currentColor;
+    padding-left: 6px;
+    opacity: 0.7;
+  }
+
+  .empty-msg {
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Main results table */
+  #results { display: none; }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .results-table thead tr {
+    background: var(--surface2);
+  }
+
+  .results-table th {
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .results-table th.col-1pm { color: var(--accent); }
+  .results-table th.col-4pm { color: var(--accent2); }
+  .results-table th.col-6am { color: var(--accent3); }
+
+  .results-table tbody tr {
+    border-bottom: 1px solid rgba(42,47,66,0.5);
+    transition: background 0.1s;
+  }
+  .results-table tbody tr:hover { background: var(--surface2); }
+
+  .results-table td {
+    padding: 10px 14px;
+    vertical-align: top;
+  }
+
+  .engineer-cell {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+
+  .job-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin: 2px 3px 2px 0;
+  }
+  .job-tag.present { background: rgba(0,229,255,0.1); color: var(--accent); }
+  .job-tag.absent { color: var(--border); background: rgba(42,47,66,0.3); }
+
+  .stat-strip {
+    display: flex;
+    gap: 24px;
+    padding: 12px 0;
+    margin-bottom: 20px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-value.c1 { color: var(--accent); }
+  .stat-value.c2 { color: var(--accent2); }
+  .stat-value.c3 { color: var(--accent3); }
+  .stat-value.cw { color: var(--warn); }
+
+  .no-data {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Jobs Checker</h1>
+    <span>Engineer Schedule Diff Tool</span>
+  </header>
+
+  <div class="input-grid">
+    <div class="panel" data-slot="1pm">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>1pm Snapshot</h2>
+        <span class="tag">T+0</span>
+      </div>
+      <textarea id="input-1pm" placeholder="Paste engineer data here...&#10;&#10;e.g. Bryan McCabeSOL10...J-5548443E32..."></textarea>
+    </div>
+    <div class="panel" data-slot="4pm">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>4pm Snapshot</h2>
+        <span class="tag">T+3h</span>
+      </div>
+      <textarea id="input-4pm" placeholder="Paste engineer data here..."></textarea>
+    </div>
+    <div class="panel" data-slot="6am">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>6am Next Day</h2>
+        <span class="tag">T+17h</span>
+      </div>
+      <textarea id="input-6am" placeholder="Paste engineer data here..."></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="processData()">▶ Run Comparison</button>
+    <button class="btn-secondary" onclick="clearAll()">✕ Clear All</button>
+  </div>
+
+  <!-- Summary -->
+  <div id="summary">
+    <div class="section-title">Change Summary</div>
+
+    <div class="stat-strip" id="stat-strip"></div>
+
+    <div class="summary-grid">
+      <div class="summary-card warn">
+        <div class="summary-card-header">
+          <h3>Dropped: 1pm → 4pm</h3>
+          <span class="badge badge-warn" id="badge-1to4">0</span>
+        </div>
+        <div class="summary-list" id="list-1to4">
+          <span class="empty-msg">No jobs dropped</span>
+        </div>
+      </div>
+      <div class="summary-card warn">
+        <div class="summary-card-header">
+          <h3>Dropped: 4pm → 6am</h3>
+          <span class="badge badge-warn" id="badge-4to6">0</span>
+        </div>
+        <div class="summary-list" id="list-4to6">
+          <span class="empty-msg">No jobs dropped</span>
+        </div>
+      </div>
+      <div class="summary-card info">
+        <div class="summary-card-header">
+          <h3>New at 4pm</h3>
+          <span class="badge badge-neutral" id="badge-new4">0</span>
+        </div>
+        <div class="summary-list" id="list-new4">
+          <span class="empty-msg">No new jobs</span>
+        </div>
+      </div>
+      <div class="summary-card info">
+        <div class="summary-card-header">
+          <h3>New at 6am</h3>
+          <span class="badge badge-neutral" id="badge-new6">0</span>
+        </div>
+        <div class="summary-list" id="list-new6">
+          <span class="empty-msg">No new jobs</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Per-engineer table -->
+  <div id="results">
+    <div class="section-title">Per Engineer Breakdown</div>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Engineer</th>
+          <th class="col-1pm">1pm Jobs</th>
+          <th class="col-4pm">4pm Jobs</th>
+          <th class="col-6am">6am Jobs</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+
+  <div id="no-data" class="no-data" style="display:none">
+    No valid engineer data found. Make sure your data contains names and J- job numbers.
+  </div>
+</div>
+
+<script>
+function parseSnapshot(text) {
+  if (!text.trim()) return {};
+
+  // Split into rows — try newlines first, then detect if it's one long block
+  let rows = text.split(/\n/).map(r => r.trim()).filter(Boolean);
+
+  // If only 1 row but very long, it might be pasted without newlines — treat as single
+  if (rows.length === 1 && rows[0].length < 30) return {};
+
+  const engineers = {};
+
+  for (const row of rows) {
+    // Extract engineer name: starts at beginning, ends before a postcode pattern (e.g. SOL10 2AE, BL9, OL4)
+    // Name is everything before the first postcode-like pattern or pipe character
+    // Strategy: name = leading text before any uppercase letters run that looks like a postcode
+    const nameMatch = row.match(/^([A-Za-z\s\-']+?)([A-Z]{1,2}\d{1,2}\s?\d[A-Z]{2}|\s*\|)/);
+    let name = nameMatch ? nameMatch[1].trim() : null;
+
+    // Fallback: take first "words" until we hit something non-name-like
+    if (!name) {
+      const fallback = row.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})/);
+      name = fallback ? fallback[1].trim() : null;
+    }
+
+    if (!name || name.length < 3) continue;
+
+    // Extract all job numbers: J- followed by exactly 8 alphanumeric characters
+    const jobs = [...row.matchAll(/J-([A-Z0-9]{8})/gi)].map(m => ('J-' + m[1]).toUpperCase());
+
+    if (jobs.length === 0) continue;
+
+    // Merge if name appears in multiple rows
+    if (!engineers[name]) {
+      engineers[name] = new Set();
+    }
+    jobs.forEach(j => engineers[name].add(j));
+  }
+
+  // Convert sets to arrays
+  const result = {};
+  for (const [name, jobs] of Object.entries(engineers)) {
+    result[name] = [...jobs];
+  }
+  return result;
+}
+
+function processData() {
+  const snap1 = parseSnapshot(document.getElementById('input-1pm').value);
+  const snap4 = parseSnapshot(document.getElementById('input-4pm').value);
+  const snap6 = parseSnapshot(document.getElementById('input-6am').value);
+
+  const hasData = Object.keys(snap1).length + Object.keys(snap4).length + Object.keys(snap6).length;
+
+  if (!hasData) {
+    document.getElementById('no-data').style.display = 'block';
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('results').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('no-data').style.display = 'none';
+
+  // All jobs sets
+  const allJobs1 = new Set(Object.values(snap1).flat());
+  const allJobs4 = new Set(Object.values(snap4).flat());
+  const allJobs6 = new Set(Object.values(snap6).flat());
+
+  // Build job→engineer map for labelling
+  const jobEngineer1 = buildJobEngineerMap(snap1);
+  const jobEngineer4 = buildJobEngineerMap(snap4);
+
+  // Dropped 1→4: in 1pm but not 4pm (only if 4pm has data)
+  const dropped1to4 = allJobs4.size > 0 ? [...allJobs1].filter(j => !allJobs4.has(j)) : [];
+  // Dropped 4→6: in 4pm but not 6am (only if 6am has data)
+  const dropped4to6 = allJobs6.size > 0 ? [...allJobs4].filter(j => !allJobs6.has(j)) : [];
+  // New at 4pm: in 4pm but not 1pm
+  const newAt4 = allJobs1.size > 0 ? [...allJobs4].filter(j => !allJobs1.has(j)) : [...allJobs4];
+  // New at 6am: in 6am but not 4pm
+  const newAt6 = allJobs4.size > 0 ? [...allJobs6].filter(j => !allJobs4.has(j)) : [...allJobs6];
+
+  // Render stats
+  document.getElementById('stat-strip').innerHTML = `
+    <div class="stat"><div class="stat-value c1">${allJobs1.size}</div><div class="stat-label">1pm Jobs</div></div>
+    <div class="stat"><div class="stat-value c2">${allJobs4.size}</div><div class="stat-label">4pm Jobs</div></div>
+    <div class="stat"><div class="stat-value c3">${allJobs6.size}</div><div class="stat-label">6am Jobs</div></div>
+    <div class="stat"><div class="stat-value cw">${dropped1to4.length + dropped4to6.length}</div><div class="stat-label">Total Dropped</div></div>
+  `;
+
+  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, jobEngineer1, 'dropped');
+  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, jobEngineer4, 'dropped');
+  renderSummaryList('list-new4', 'badge-new4', newAt4, jobEngineer4, 'neutral');
+  renderSummaryList('list-new6', 'badge-new6', newAt6, buildJobEngineerMap(snap6), 'neutral');
+
+  // Per-engineer table
+  const allEngineers = new Set([...Object.keys(snap1), ...Object.keys(snap4), ...Object.keys(snap6)]);
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+
+  [...allEngineers].sort().forEach(eng => {
+    const jobs1 = snap1[eng] || [];
+    const jobs4 = snap4[eng] || [];
+    const jobs6 = snap6[eng] || [];
+    const allEng = new Set([...jobs1, ...jobs4, ...jobs6]);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="engineer-cell">${eng}</td>
+      <td>${renderJobTags(jobs1, allEng, jobs1)}</td>
+      <td>${renderJobTags(jobs4, allEng, jobs4)}</td>
+      <td>${renderJobTags(jobs6, allEng, jobs6)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('summary').style.display = 'block';
+  document.getElementById('results').style.display = 'block';
+}
+
+function buildJobEngineerMap(snap) {
+  const map = {};
+  for (const [eng, jobs] of Object.entries(snap)) {
+    jobs.forEach(j => map[j] = eng);
+  }
+  return map;
+}
+
+function renderSummaryList(listId, badgeId, jobs, engineerMap, chipClass) {
+  const list = document.getElementById(listId);
+  const badge = document.getElementById(badgeId);
+  badge.textContent = jobs.length;
+
+  if (jobs.length === 0) {
+    list.innerHTML = '<span class="empty-msg">None</span>';
+    return;
+  }
+
+  list.innerHTML = jobs.map(j => {
+    const eng = engineerMap[j] || '';
+    const shortEng = eng.split(' ').map(w => w[0]).join('').toUpperCase();
+    return `<span class="job-chip ${chipClass}">${j}${eng ? `<span class="engineer-name">${shortEng}</span>` : ''}</span>`;
+  }).join('');
+}
+
+function renderJobTags(presentJobs, allJobs, thisSlotJobs) {
+  if (presentJobs.length === 0) return '<span style="color:var(--border);font-size:11px">—</span>';
+  return presentJobs.map(j =>
+    `<span class="job-tag present">${j}</span>`
+  ).join('');
+}
+
+function clearAll() {
+  document.getElementById('input-1pm').value = '';
+  document.getElementById('input-4pm').value = '';
+  document.getElementById('input-6am').value = '';
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('no-data').style.display = 'none';
+}
+</script>
+</body>
+</html>
