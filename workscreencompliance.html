@@ -289,7 +289,10 @@
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // Match the same team leader names as the completion dashboard
+  // Normalise FTL 4 / FTL4 (any casing/spacing) → "Tom Green", matching workscreenmetersgraph.html
+  const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
+
+  // Match the same team leader names as the meters dashboard
   const TEAM_LEADERS = [
     "Richard Wiecko",
     "Scott Carson",
@@ -302,13 +305,17 @@
   document.querySelector('#chartContainer').appendChild(ctx);
   let chart = null;
 
-  // Cache all compliance docs so we don't re-fetch on every filter change
+  // Cache all compliance docs — normalise lineManager on load so all
+  // downstream filtering is consistent with workscreenmetersgraph.html
   let allDocs = null;
   async function getAllDocs() {
     if (allDocs) return allDocs;
     const snapshot = await getDocs(collection(db, "compliance"));
     allDocs = [];
-    snapshot.forEach(doc => allDocs.push(doc.data()));
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      allDocs.push({ ...d, lineManager: normTeam(d.lineManager) });
+    });
     return allDocs;
   }
 
@@ -328,9 +335,11 @@
   async function buildEngineerLists() {
     const docs = await getAllDocs();
     docs.forEach(d => {
+      // lineManager is already normalised via normTeam in getAllDocs
       const tl  = (d.lineManager || '').trim();
       const eng = (d.installerEngineer || '').trim();
-      if (!tl || !eng) return;
+      // Only bucket engineers under known team leaders so the sidebar stays clean
+      if (!tl || !eng || !TEAM_LEADERS.includes(tl)) return;
       if (!engineersByTeam[tl]) engineersByTeam[tl] = new Set();
       engineersByTeam[tl].add(eng);
     });
@@ -491,7 +500,8 @@
       const installDate = parseInstallationDate(d.installationDate);
       if (!installDate || installDate < start || installDate > today) return;
 
-      const tlMatch  = team === 'all' || (d.lineManager || '').trim() === team;
+      // lineManager already normalised via normTeam in getAllDocs (e.g. FTL4 → Tom Green)
+      const tlMatch  = team === 'all' || d.lineManager === team;
       const engMatch = engineer === 'all' || (d.installerEngineer || '').trim() === engineer;
       const auditMatch = auditType === 'all' || d.type === auditType;
 
