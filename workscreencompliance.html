@@ -600,7 +600,23 @@
       return total === 0 ? 0 : Math.round((passed / total) * 100);
     });
 
-    return { labels, values, monthMap, allMonths };
+    // Also compute per-month passed/total for bar sub-labels
+    const passedArr = allMonths.map(mk => {
+      const data = monthMap[mk];
+      let passed = 0;
+      if (auditType === 'all' || auditType === 'wip')           passed += [...data.wipJobs.values()].filter(Boolean).length;
+      if (auditType === 'all' || auditType === 'post_completion') passed += [...data.postCompJobs.values()].filter(Boolean).length;
+      return passed;
+    });
+    const totalArr = allMonths.map(mk => {
+      const data = monthMap[mk];
+      let total = 0;
+      if (auditType === 'all' || auditType === 'wip')           total += data.wipJobs.size;
+      if (auditType === 'all' || auditType === 'post_completion') total += data.postCompJobs.size;
+      return total;
+    });
+
+    return { labels, values, monthMap, allMonths, passedArr, totalArr };
   }
 
   // ── Chart render ────────────────────────────────────────────────────────
@@ -637,6 +653,7 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          layout: { padding: { top: 28 } },
           plugins: {
             title: {
               display: true,
@@ -647,11 +664,23 @@
             },
             legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
             datalabels: {
-              anchor: 'end', align: 'top', offset: 4,
-              color: '#e2e8f0',
-              font: { weight: 'bold', size: 12 },
-              formatter: value => value > 0 ? value + '%' : '',
-              textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+              anchor: 'end',
+              align: 'top',
+              offset: 4,
+              color: (ctx) => {
+                const pct = data.values[ctx.dataIndex];
+                return pct === 0 && data.totalArr[ctx.dataIndex] > 0 ? '#f87171' : '#e2e8f0';
+              },
+              font: { weight: 'bold', size: 11 },
+              textShadowColor: 'rgba(0,0,0,0.8)',
+              textShadowBlur: 4,
+              formatter: (value, ctx) => {
+                const passed = data.passedArr[ctx.dataIndex];
+                const total  = data.totalArr[ctx.dataIndex];
+                if (total === 0) return '';
+                const pctLine = value > 0 ? value + '%' : '0%';
+                return pctLine + '\n' + passed + '/' + total;
+              },
             },
             tooltip: {
               callbacks: {
