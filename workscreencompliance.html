@@ -289,10 +289,6 @@
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // Normalise FTL 4 / FTL4 (any casing/spacing) → "Tom Green", matching workscreenmetersgraph.html
-  const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
-
-  // Match the same team leader names as the meters dashboard
   const TEAM_LEADERS = [
     "Richard Wiecko",
     "Scott Carson",
@@ -301,12 +297,92 @@
     "Tom Green"
   ];
 
+  // ── Hardcoded engineer → team leader map ──────────────────────────────────
+  // This is the source of truth — ignores whatever lineManager is stored in
+  // Firestore and assigns every engineer to the correct team leader directly.
+  const ENGINEER_TO_TEAM = {
+    "Aaron Shepherd":      "Richard Wiecko",
+    "Alex Duff":           "Richard Wiecko",
+    "Authur Bumhira":      "Richard Wiecko",
+    "Bryan McCabe":        "Richard Wiecko",
+    "Herve Ntwali":        "Richard Wiecko",
+    "Matti Chalkowski":    "Richard Wiecko",
+    "Muhammad Shahroze":   "Richard Wiecko",
+    "Nick Griffiths":      "Richard Wiecko",
+    "Simon Morris":        "Richard Wiecko",
+    "Craig O'Sullivan":    "Richard Wiecko",
+    "Mehdi Khamseh":       "Richard Wiecko",
+    "Owain Sigsworth":     "Richard Wiecko",
+
+    "Chris Timm":          "Scott Carson",
+    "Daniel Sanders":      "Scott Carson",
+    "Geoff Pymm":          "Scott Carson",
+    "Jon Convery":         "Scott Carson",
+    "Jordan Gray":         "Scott Carson",
+    "Martin Bailes":       "Scott Carson",
+    "Michael Douglass":    "Scott Carson",
+    "Michael Seaman":      "Scott Carson",
+    "Michael Timm":        "Scott Carson",
+    "Alistair Cavan":      "Scott Carson",
+    "Harris Saleem":       "Scott Carson",
+    "Scott Coyle":         "Scott Carson",
+    "Tomas Anderson":      "Scott Carson",
+
+    "Bilal Amin":          "Scott Carson - Scot",
+    "Daniel Nally":        "Scott Carson - Scot",
+    "James Mclean":        "Scott Carson - Scot",
+    "Richard Lang":        "Scott Carson - Scot",
+
+    "Calum Ballingal":     "Stuart Whyte",
+    "Chris Stein":         "Stuart Whyte",
+    "Clayton Spink":       "Stuart Whyte",
+    "Jamie Longland":      "Stuart Whyte",
+    "Jonny Thompson":      "Stuart Whyte",
+    "Morris Dow":          "Stuart Whyte",
+    "Paul Davidson":       "Stuart Whyte",
+    "Allan Grant":         "Stuart Whyte",
+    "Craig Steel":         "Stuart Whyte",
+    "Jonathan Chyla":      "Stuart Whyte",
+    "Kris Armstrong":      "Stuart Whyte",
+    "Muhammad Zafar":      "Stuart Whyte",
+    "Neil Burns":          "Stuart Whyte",
+    "Ryan Clark":          "Stuart Whyte",
+
+    "Billy McDonough":     "Tom Green",
+    "Chanda Kasama":       "Tom Green",
+    "Dinis Cruz":          "Tom Green",
+    "George Chapman":      "Tom Green",
+    "Ivan Rivers":         "Tom Green",
+    "Johnson Allepot":     "Tom Green",
+    "Jordan Morrison":     "Tom Green",
+    "Lukasz Holysz":       "Tom Green",
+    "Ryan Beekawa":        "Tom Green",
+    "Sammim Miah":         "Tom Green",
+    "Stephen Lawless":     "Tom Green",
+  };
+
+  // Pre-build the engineersByTeam sidebar list from the hardcoded map
+  const engineersByTeam = {};
+  TEAM_LEADERS.forEach(tl => engineersByTeam[tl] = []);
+  Object.entries(ENGINEER_TO_TEAM).forEach(([eng, tl]) => {
+    if (engineersByTeam[tl]) engineersByTeam[tl].push(eng);
+  });
+  TEAM_LEADERS.forEach(tl => engineersByTeam[tl].sort());
+
+  // Resolve team for a compliance record:
+  // 1. Look up installerEngineer in the hardcoded map (most reliable)
+  // 2. Fall back to lineManager field as stored
+  function resolveTeam(d) {
+    const eng = (d.installerEngineer || '').trim();
+    if (eng && ENGINEER_TO_TEAM[eng]) return ENGINEER_TO_TEAM[eng];
+    return (d.lineManager || '').trim();
+  }
+
   const ctx = document.createElement('canvas');
   document.querySelector('#chartContainer').appendChild(ctx);
   let chart = null;
 
-  // Cache all compliance docs — normalise lineManager on load so all
-  // downstream filtering is consistent with workscreenmetersgraph.html
+  // Cache all compliance docs with resolved team attached
   let allDocs = null;
   async function getAllDocs() {
     if (allDocs) return allDocs;
@@ -314,7 +390,7 @@
     allDocs = [];
     snapshot.forEach(doc => {
       const d = doc.data();
-      allDocs.push({ ...d, lineManager: normTeam(d.lineManager) });
+      allDocs.push({ ...d, _team: resolveTeam(d) });
     });
     return allDocs;
   }
@@ -329,25 +405,9 @@
   let currentEngineer = "all";
   let currentAudit    = "all";
 
-  // ── Engineers per team leader (built from live data) ────────────────────
-  const engineersByTeam = {}; // { "Richard Wiecko": ["Alice", "Bob", ...], ... }
-
-  async function buildEngineerLists() {
-    const docs = await getAllDocs();
-    docs.forEach(d => {
-      // lineManager is already normalised via normTeam in getAllDocs
-      const tl  = (d.lineManager || '').trim();
-      const eng = (d.installerEngineer || '').trim();
-      // Only bucket engineers under known team leaders so the sidebar stays clean
-      if (!tl || !eng || !TEAM_LEADERS.includes(tl)) return;
-      if (!engineersByTeam[tl]) engineersByTeam[tl] = new Set();
-      engineersByTeam[tl].add(eng);
-    });
-    // Convert Sets to sorted arrays
-    Object.keys(engineersByTeam).forEach(tl => {
-      engineersByTeam[tl] = [...engineersByTeam[tl]].sort();
-    });
-  }
+  // engineersByTeam is pre-built from the hardcoded ENGINEER_TO_TEAM map.
+  // buildEngineerLists is a no-op kept so init() still works.
+  async function buildEngineerLists() { /* no-op */ }
 
   // ── Build sidebar team leader rows ──────────────────────────────────────
   function buildTeamLeaderSidebar() {
@@ -500,8 +560,8 @@
       const installDate = parseInstallationDate(d.installationDate);
       if (!installDate || installDate < start || installDate > today) return;
 
-      // lineManager already normalised via normTeam in getAllDocs (e.g. FTL4 → Tom Green)
-      const tlMatch  = team === 'all' || d.lineManager === team;
+      // _team is resolved from the hardcoded ENGINEER_TO_TEAM map (most reliable)
+      const tlMatch  = team === 'all' || d._team === team;
       const engMatch = engineer === 'all' || (d.installerEngineer || '').trim() === engineer;
       const auditMatch = auditType === 'all' || d.type === auditType;
 
