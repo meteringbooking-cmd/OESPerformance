@@ -157,6 +157,7 @@
       <button class="sort-btn sp-sort" data-sort="completion">Completion %</button>
       <button class="sort-btn sp-sort" data-sort="completed">Jobs Completed</button>
       <button class="sort-btn sp-sort" data-sort="aborts">Fewest Aborts</button>
+      <button class="sort-btn sp-sort compliance-sort" data-sort="compliancePass">&#128737; Compliance %</button>
     </div>
     <div class="team-filter" id="spTeamFilter">
       <span class="bar-label">Team:</span>
@@ -210,6 +211,7 @@
           <th data-col="completed">Completed <span class="sa"></span></th>
           <th data-col="completion">Completion % <span class="sa"></span></th>
           <th data-col="aborts">Full Aborts <span class="sa"></span></th>
+          <th data-col="compliancePass">Compliance <span class="sa"></span></th>
           <th data-col="team">Team Leader <span class="sa"></span></th>
           <th>Job Types</th>
         </tr>
@@ -425,7 +427,20 @@
       const jt=(data.jobType||'boom').trim();
       if(jt)r.jobTypes[jt]=(r.jobTypes[jt]||0)+1;
     });
-    spRows=Object.values(map).map(r=>({...r,completion:r.jobs>0?+((r.completed/r.jobs)*100).toFixed(1):0}));
+    const compMap = await fetchCompliance(s, e);
+    spRows=Object.values(map).map(r=>{
+      const cData = compMap[r.name.toLowerCase()];
+      const compPassed  = cData ? cData.passed : null;
+      const compTotal   = cData ? cData.total  : null;
+      const compPct     = (compTotal && compTotal > 0) ? +((compPassed/compTotal)*100).toFixed(1) : null;
+      return{
+        ...r,
+        completion:r.jobs>0?+((r.completed/r.jobs)*100).toFixed(1):0,
+        compliancePass: compPct,
+        compliancePassed: compPassed,
+        complianceTotal: compTotal,
+      };
+    });
     return{s,e,wd};
   }
 
@@ -477,6 +492,13 @@
       if(spSortBy==='completed')return b.completed!==a.completed?b.completed-a.completed:b.jobs-a.jobs;
       if(spSortBy==='completion')return b.completion!==a.completion?b.completion-a.completion:b.jobs-a.jobs;
       if(spSortBy==='aborts')return a.aborts!==b.aborts?a.aborts-b.aborts:b.jobs-a.jobs;
+      if(spSortBy==='compliancePass'){
+        if(a.compliancePass===null && b.compliancePass===null) return b.jobs-a.jobs;
+        if(a.compliancePass===null) return 1;
+        if(b.compliancePass===null) return -1;
+        if(b.compliancePass===a.compliancePass) return b.complianceTotal-a.complianceTotal;
+        return b.compliancePass-a.compliancePass;
+      }
       return b.jobs-a.jobs;
     });
     return out;
@@ -514,10 +536,11 @@
     if(spSortBy==='completed')return r.completed;
     if(spSortBy==='completion')return r.completion+'%';
     if(spSortBy==='aborts')return r.aborts;
+    if(spSortBy==='compliancePass')return r.compliancePass!==null?r.compliancePass+'%':'N/A';
     return r.jobs;
   }
   const oesPodiumLbl=()=>({meters:'Meters Installed',completion:'Completion Rate',avgDay:'Avg Meters / Day',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[oesSortBy]);
-  const spPodiumLbl=()=>({jobs:'Total Jobs',completed:'Jobs Completed',completion:'Completion Rate',aborts:'Fewest Aborts'}[spSortBy]);
+  const spPodiumLbl=()=>({jobs:'Total Jobs',completed:'Jobs Completed',completion:'Completion Rate',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[spSortBy]);
 
   function attHtml(r){
     const p=[];
@@ -630,8 +653,19 @@
     document.getElementById('sumComp').textContent=(data.reduce((s,r)=>s+r.completion,0)/data.length).toFixed(1)+'%';
     document.getElementById('sumAborts').textContent=data.reduce((s,r)=>s+r.aborts,0);
     document.getElementById('sumEng').textContent=data.length;
-    document.getElementById('sumComplianceCard').style.display='none';
-    renderPodium(data, spPodiumVal, spPodiumLbl, null);
+    // Compliance summary card for SP
+    const spAudited = data.filter(r=>r.compliancePass!==null);
+    const spCompCard = document.getElementById('sumComplianceCard');
+    if (spAudited.length > 0) {
+      spCompCard.style.display = '';
+      document.getElementById('sumCompliance').textContent =
+        (spAudited.reduce((s,r)=>s+r.compliancePass,0)/spAudited.length).toFixed(1)+'%';
+    } else {
+      spCompCard.style.display = 'none';
+    }
+    const isSpComplianceSort = spSortBy === 'compliancePass';
+    renderPodium(data, spPodiumVal, spPodiumLbl,
+      isSpComplianceSort ? r => r.compliancePass !== null : null);
     document.getElementById('spTableBody').innerHTML=data.map((r,i)=>
       `<tr style="animation-delay:${Math.min(i*25,600)}ms">
         <td class="col-rank"><div class="rank-badge ${rnkCls(i)}">${i+1}</div></td>
@@ -640,14 +674,20 @@
         <td><span class="val-jobs" style="color:#34d399;">${r.completed}</span></td>
         <td><div class="comp-wrap"><span class="comp-value" style="color:${compColor(r.completion)}">${r.completion}%</span><div class="comp-bar-bg"><div class="comp-bar-fill" style="width:${Math.min(r.completion,100)}%;background:${compColor(r.completion)}"></div></div></div></td>
         <td><span class="abort-pill ${abortCls(r.aborts)}">${r.aborts===0?'&#10003; 0':r.aborts}</span></td>
+        <td>${complianceHtml(r)}</td>
         <td><div class="eng-team">${r.team}</div></td>
         <td>${jobTypesHtml(r.jobTypes)}</td>
       </tr>`
     ).join('');
-    document.querySelectorAll('#spTableWrap thead th[data-col]').forEach(th=>{th.classList.remove('sorted');th.querySelector('.sa').textContent='';});
-    const spColMap={jobs:'jobs',completed:'completed',completion:'completion',aborts:'aborts'};
+    document.querySelectorAll('#spTableWrap thead th[data-col]').forEach(th=>{
+      th.classList.remove('sorted','sorted-compliance');th.querySelector('.sa').textContent='';
+    });
+    const spColMap={jobs:'jobs',completed:'completed',completion:'completion',aborts:'aborts',compliancePass:'compliancePass'};
     const sath=document.querySelector(`#spTableWrap thead th[data-col="${spColMap[spSortBy]}"]`);
-    if(sath){sath.classList.add('sorted');sath.querySelector('.sa').textContent=spSortBy==='aborts'?'↑':'↓';}
+    if(sath){
+      sath.classList.add(spSortBy==='compliancePass'?'sorted-compliance':'sorted');
+      sath.querySelector('.sa').textContent=spSortBy==='aborts'?'↑':'↓';
+    }
   }
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -720,7 +760,7 @@
   }));
 
   document.querySelectorAll('#spTableWrap thead th[data-col]').forEach(th=>th.addEventListener('click',()=>{
-    const m={jobs:'jobs',completed:'completed',completion:'completion',aborts:'aborts'};
+    const m={jobs:'jobs',completed:'completed',completion:'completion',aborts:'aborts',compliancePass:'compliancePass'};
     const s=m[th.dataset.col];if(!s)return;
     spSortBy=s;
     document.querySelectorAll('.sp-sort').forEach(x=>x.classList.remove('active'));
