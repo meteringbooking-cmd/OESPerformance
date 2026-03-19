@@ -227,6 +227,61 @@
     }
     .error-msg { color: var(--error) !important; font-weight: 500; }
 
+    /* ── Stats strip ── */
+    .stats-strip {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .stat-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.4rem;
+      min-width: 130px;
+      flex: 1;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+    }
+    .stat-box.highlight {
+      border-color: var(--accent);
+      background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08));
+    }
+    .stat-box.green {
+      border-color: #10b981;
+      background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(52,211,153,0.08));
+    }
+    .stat-box.red {
+      border-color: #f87171;
+      background: linear-gradient(135deg, rgba(248,113,113,0.12), rgba(252,165,165,0.08));
+    }
+    .stat-box.amber {
+      border-color: #f59e0b;
+      background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(251,191,36,0.08));
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .stat-value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .stat-value.purple { background: linear-gradient(90deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-value.green  { background: linear-gradient(90deg, #10b981, #34d399);       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-value.red    { background: linear-gradient(90deg, #f87171, #fca5a5);       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-value.amber  { background: linear-gradient(90deg, #f59e0b, #fbbf24);       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stat-sub {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      margin-top: 0.2rem;
+    }
+
     @media (max-width: 1100px) {
       body { grid-template-columns: 1fr; }
       aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); }
@@ -264,6 +319,35 @@
       </div>
     </div>
   </header>
+
+  <!-- Stats strip -->
+  <div class="stats-strip" id="statsStrip">
+    <div class="stat-box highlight">
+      <div class="stat-label">Overall Pass Rate</div>
+      <div class="stat-value purple" id="statOverall">—</div>
+      <div class="stat-sub" id="statOverallRaw"></div>
+    </div>
+    <div class="stat-box green">
+      <div class="stat-label">Jobs Passed</div>
+      <div class="stat-value green" id="statPassed">—</div>
+      <div class="stat-sub" id="statPassedSub"></div>
+    </div>
+    <div class="stat-box red">
+      <div class="stat-label">Jobs Failed</div>
+      <div class="stat-value red" id="statFailed">—</div>
+      <div class="stat-sub" id="statFailedSub"></div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Total Audited</div>
+      <div class="stat-value purple" id="statTotal">—</div>
+      <div class="stat-sub" id="statTotalSub"></div>
+    </div>
+    <div class="stat-box amber">
+      <div class="stat-label">Best Month</div>
+      <div class="stat-value amber" id="statBest">—</div>
+      <div class="stat-sub" id="statBestSub"></div>
+    </div>
+  </div>
 
   <div class="card">
     <div id="chartContainer">
@@ -619,6 +703,62 @@
     return { labels, values, monthMap, allMonths, passedArr, totalArr };
   }
 
+  // ── Stats strip update ──────────────────────────────────────────────────
+  function updateStats(data) {
+    // Sum across all months in the period
+    let totalPassed = 0, totalJobs = 0;
+    let bestPct = -1, bestLabel = '—', bestRaw = '';
+    let worstActiveMonth = null;
+
+    data.allMonths.forEach((mk, i) => {
+      const passed = data.passedArr[i];
+      const total  = data.totalArr[i];
+      totalPassed += passed;
+      totalJobs   += total;
+
+      if (total > 0) {
+        const pct = Math.round((passed / total) * 100);
+        if (pct > bestPct) {
+          bestPct   = pct;
+          bestLabel = pct + '%';
+          bestRaw   = data.labels[i] + ' (' + passed + '/' + total + ')';
+        }
+      }
+    });
+
+    const totalFailed = totalJobs - totalPassed;
+    const overallPct  = totalJobs > 0 ? Math.round((totalPassed / totalJobs) * 100) : null;
+
+    // Overall pass rate — colour by performance
+    const overallEl = document.getElementById('statOverall');
+    overallEl.textContent = overallPct !== null ? overallPct + '%' : '—';
+    overallEl.className = 'stat-value ' +
+      (overallPct === null ? 'purple' : overallPct >= 90 ? 'green' : overallPct >= 75 ? 'amber' : 'red');
+
+    const overallBox = overallEl.closest('.stat-box');
+    overallBox.className = 'stat-box ' +
+      (overallPct === null ? 'highlight' : overallPct >= 90 ? 'green' : overallPct >= 75 ? 'amber' : 'red');
+
+    document.getElementById('statOverallRaw').textContent =
+      totalJobs > 0 ? totalPassed + ' passed from ' + totalJobs + ' audited' : 'No data for this period';
+
+    document.getElementById('statPassed').textContent  = totalPassed || '—';
+    document.getElementById('statPassedSub').textContent =
+      totalJobs > 0 ? ((totalPassed / totalJobs * 100).toFixed(1)) + '% of audited jobs' : '';
+
+    document.getElementById('statFailed').textContent  = totalFailed > 0 ? totalFailed : totalJobs > 0 ? '0' : '—';
+    document.getElementById('statFailedSub').textContent =
+      totalJobs > 0 ? ((totalFailed / totalJobs * 100).toFixed(1)) + '% of audited jobs' : '';
+
+    document.getElementById('statTotal').textContent   = totalJobs || '—';
+    const activeMonths = data.allMonths.filter((_, i) => data.totalArr[i] > 0).length;
+    document.getElementById('statTotalSub').textContent =
+      activeMonths > 0 ? 'across ' + activeMonths + ' month' + (activeMonths !== 1 ? 's' : '') : '';
+
+    document.getElementById('statBest').textContent    = bestPct >= 0 ? bestLabel : '—';
+    document.getElementById('statBestSub').textContent = bestRaw;
+  }
+
   // ── Chart render ────────────────────────────────────────────────────────
   async function updateChart() {
     const container = document.querySelector('#chartContainer');
@@ -627,6 +767,8 @@
     try {
       const data = await fetchAndAggregateCompliance(currentPeriod, currentTeam, currentEngineer, currentAudit);
       const cfg  = periods[currentPeriod];
+
+      updateStats(data);
 
       container.innerHTML = '';
       container.appendChild(ctx);
