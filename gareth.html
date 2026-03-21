@@ -1096,6 +1096,38 @@
         let oesEngineerCount = 0;
         let complianceData = [];
 
+        // ── Named engineers on £50/day + job-value table ──────────────────────
+        const NAMED_ENGINEERS = [
+            'Billy McDonough', 'Chanda Kasama', 'Dinis Cruz',
+            'Johnson Allepot', 'Ryan Beekawa', 'Sammim Miah', 'Stephen Lawless'
+        ];
+
+        const JOB_VALUE_TABLE = {
+            1: 130.00,  2: 160.00,  3: 207.50,  4: 270.00,  5: 332.50,
+            6: 400.00,  7: 467.50,  8: 545.00,  9: 622.50, 10: 700.00,
+            11: 777.50, 12: 855.00, 13: 932.50
+        };
+
+        function getJobValue(completed) {
+            if (!completed || completed <= 0) return 0;
+            const capped = Math.min(completed, 13);
+            return JOB_VALUE_TABLE[capped] || 0;
+        }
+
+        // Revenue contribution for a named engineer:
+        // take what they generated (Firestore value), deduct £50 day rate and
+        // the job-value payout for the number of jobs they completed.
+        function calcNamedEngineerContribution(firestoreValue, completed) {
+            const contribution = firestoreValue - 50 - getJobValue(completed);
+            return Math.max(0, contribution); // never go negative
+        }
+
+        function isNamedEngineer(name) {
+            if (!name) return false;
+            return NAMED_ENGINEERS.some(n => n.toLowerCase() === name.trim().toLowerCase());
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         function getPreviousWorkingDay() {
             const today = new Date();
             let previousDay = new Date(today);
@@ -1344,15 +1376,9 @@
                     complianceData.push({
                         month: month,
                         monthLabel: formatMonth(month),
-                        wipTotal: wipTotal,
-                        wipPass: wipPass,
-                        wipPassRate: wipPassRate,
-                        postCompTotal: postCompTotal,
-                        postCompPass: postCompPass,
-                        postCompPassRate: postCompPassRate,
-                        overallTotal: overallTotal,
-                        overallPass: overallPass,
-                        overallPassRate: overallPassRate
+                        wipTotal, wipPass, wipPassRate,
+                        postCompTotal, postCompPass, postCompPassRate,
+                        overallTotal, overallPass, overallPassRate
                     });
                 }
                 
@@ -1505,11 +1531,12 @@
                 document.getElementById('edfCount').textContent = edfEngineers;
                 document.getElementById('backOfficeCount').textContent = backOfficeCount;
                 
+                // Target: named engineers excluded; remaining OES engineers × £500 × 0.9
                 const metersTarget = Math.round(oesEngineers * 6 * 0.9);
-const revenueTarget = Math.round(oesEngineers * 500 * 0.9);
-
-document.getElementById('metersTarget').textContent = metersTarget;
-document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLocaleString();
+                const revenueTarget = Math.round((oesEngineers - 7) * 500 * 0.9);
+                
+                document.getElementById('metersTarget').textContent = metersTarget;
+                document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLocaleString();
                 
                 const performanceQuery = query(
                     collection(performanceDb, "performance"),
@@ -1525,10 +1552,20 @@ document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLo
                 
                 performanceSnapshot.forEach((doc) => {
                     const data = doc.data();
+                    const engineerName = data.engineerName || '';
+                    const rawValue = data.value || 0;
+                    const completed = data.completed || 0;
+
                     totalMeters += data.meters || 0;
                     totalJobs += data.jobs || 0;
-                    totalCompleted += data.completed || 0;
-                    totalValue += data.value || 0;
+                    totalCompleted += completed;
+
+                    // Named engineers: deduct £50 day rate + job-value payout
+                    if (isNamedEngineer(engineerName)) {
+                        totalValue += calcNamedEngineerContribution(rawValue, completed);
+                    } else {
+                        totalValue += rawValue;
+                    }
                 });
                 
                 const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
@@ -1872,11 +1909,19 @@ document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLo
                     performanceSnapshot.forEach((doc) => {
                         const data = doc.data();
                         const teamLeader = data.teamLeader;
-                        
+                        const engineerName = data.engineerName || '';
+                        const rawValue = data.value || 0;
+                        const completed = data.completed || 0;
+
                         totalMeters += data.meters || 0;
                         totalJobs += data.jobs || 0;
-                        totalCompleted += data.completed || 0;
-                        totalValue += data.value || 0;
+                        totalCompleted += completed;
+
+                        // Named engineers: deduct £50 day rate + job-value payout
+                        const engValue = isNamedEngineer(engineerName)
+                            ? calcNamedEngineerContribution(rawValue, completed)
+                            : rawValue;
+                        totalValue += engValue;
                         
                         if (!teamLeaderBreakdown[teamLeader]) {
                             teamLeaderBreakdown[teamLeader] = {
@@ -1888,16 +1933,16 @@ document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLo
                             };
                         }
                         
-                        teamLeaderBreakdown[teamLeader].totalMeters += data.meters || 0;
-                        teamLeaderBreakdown[teamLeader].totalJobs += data.jobs || 0;
-                        teamLeaderBreakdown[teamLeader].totalCompleted += data.completed || 0;
-                        teamLeaderBreakdown[teamLeader].totalValue += data.value || 0;
-                        teamLeaderBreakdown[teamLeader].engineerCount += 1;
+                        teamLeaderBreakdown[teamLeader].totalMeters    += data.meters || 0;
+                        teamLeaderBreakdown[teamLeader].totalJobs      += data.jobs || 0;
+                        teamLeaderBreakdown[teamLeader].totalCompleted += completed;
+                        teamLeaderBreakdown[teamLeader].totalValue     += engValue;
+                        teamLeaderBreakdown[teamLeader].engineerCount  += 1;
                     });
                     
                     Object.keys(teamLeaderBreakdown).forEach(teamLeader => {
                         const breakdown = teamLeaderBreakdown[teamLeader];
-                        breakdown.metersTarget = breakdown.engineerCount * 6;
+                        breakdown.metersTarget  = breakdown.engineerCount * 6;
                         breakdown.revenueTarget = breakdown.engineerCount * 500;
                     });
                     
@@ -1917,14 +1962,15 @@ document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLo
                     
                     garethStatsSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        atWorkPercent = (data.atWorkPercent || 0).toFixed(1);
-                        holPercent = (data.holidayPercent || 0).toFixed(1);
-                        sickPercent = (data.sickPercent || 0).toFixed(1);
-                        aaupPercent = (data.aaupPercent || 0).toFixed(1);
+                        atWorkPercent = (data.atWorkPercent   || 0).toFixed(1);
+                        holPercent    = (data.holidayPercent  || 0).toFixed(1);
+                        sickPercent   = (data.sickPercent     || 0).toFixed(1);
+                        aaupPercent   = (data.aaupPercent     || 0).toFixed(1);
                     });
                     
-const metersTarget = Math.round(oesEngineerCount * 6 * 0.9);
-const revenueTarget = Math.round(oesEngineerCount * 500 * 0.9);
+                    // Historical targets: exclude the 7 named engineers from revenue target
+                    const metersTarget  = Math.round(oesEngineerCount * 6 * 0.9);
+                    const revenueTarget = Math.round((oesEngineerCount - 7) * 500 * 0.9);
                     const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
                     
                     historicalData.push({
