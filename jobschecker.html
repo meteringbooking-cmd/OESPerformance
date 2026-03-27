@@ -684,21 +684,44 @@ function processData() {
 
   document.getElementById('no-data').style.display = 'none';
 
-  // All job sets
+  // All job counts for stats strip
   const allJobs1 = new Set(Object.values(snap1).flat());
   const allJobs4 = new Set(Object.values(snap4).flat());
   const allJobs6 = new Set(Object.values(snap6).flat());
 
-  // Job → engineer maps for labelling chips
-  const jobEng1 = buildJobEngineerMap(snap1);
-  const jobEng4 = buildJobEngineerMap(snap4);
-  const jobEng6 = buildJobEngineerMap(snap6);
+  // Per-engineer diff: a job is "dropped" if it was on that engineer's list in snapshot A
+  // but is NOT on that same engineer's list in snapshot B.
+  // A job is "new" if it appears on the engineer's list in B but not in A.
+  // We only run the diff if both snapshots have data (otherwise nothing to compare).
+  const has1 = Object.keys(snap1).length > 0;
+  const has4 = Object.keys(snap4).length > 0;
+  const has6 = Object.keys(snap6).length > 0;
 
-  // Diffs
-  const dropped1to4 = allJobs4.size > 0 ? [...allJobs1].filter(j => !allJobs4.has(j)) : [];
-  const dropped4to6 = allJobs6.size > 0 ? [...allJobs4].filter(j => !allJobs6.has(j)) : [];
-  const newAt4      = allJobs1.size > 0 ? [...allJobs4].filter(j => !allJobs1.has(j)) : [...allJobs4];
-  const newAt6      = allJobs4.size > 0 ? [...allJobs6].filter(j => !allJobs4.has(j)) : [...allJobs6];
+  // Collect diffs as { jobId, engineer } objects
+  const dropped1to4 = [];
+  const newAt4      = [];
+  const dropped4to6 = [];
+  const newAt6      = [];
+
+  if (has1 && has4) {
+    const allEngs14 = new Set([...Object.keys(snap1), ...Object.keys(snap4)]);
+    for (const eng of allEngs14) {
+      const j1 = new Set(snap1[eng] || []);
+      const j4 = new Set(snap4[eng] || []);
+      for (const j of j1) if (!j4.has(j)) dropped1to4.push({ jobId: j, engineer: eng });
+      for (const j of j4) if (!j1.has(j)) newAt4.push({ jobId: j, engineer: eng });
+    }
+  }
+
+  if (has4 && has6) {
+    const allEngs46 = new Set([...Object.keys(snap4), ...Object.keys(snap6)]);
+    for (const eng of allEngs46) {
+      const j4 = new Set(snap4[eng] || []);
+      const j6 = new Set(snap6[eng] || []);
+      for (const j of j4) if (!j6.has(j)) dropped4to6.push({ jobId: j, engineer: eng });
+      for (const j of j6) if (!j4.has(j)) newAt6.push({ jobId: j, engineer: eng });
+    }
+  }
 
   // Stats
   document.getElementById('stat-strip').innerHTML = `
@@ -708,10 +731,10 @@ function processData() {
     <div class="stat"><div class="stat-value cw">${dropped1to4.length + dropped4to6.length}</div><div class="stat-label">Total Dropped</div></div>
   `;
 
-  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, jobEng1, 'dropped');
-  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, jobEng4, 'dropped');
-  renderSummaryList('list-new4', 'badge-new4', newAt4, jobEng4, 'neutral');
-  renderSummaryList('list-new6', 'badge-new6', newAt6, jobEng6, 'neutral');
+  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, 'dropped');
+  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, 'dropped');
+  renderSummaryList('list-new4', 'badge-new4', newAt4, 'neutral');
+  renderSummaryList('list-new6', 'badge-new6', newAt6, 'neutral');
 
   // Per-engineer table
   const allEngineers = new Set([...Object.keys(snap1), ...Object.keys(snap4), ...Object.keys(snap6)]);
@@ -740,27 +763,21 @@ function processData() {
   document.getElementById('debug-panel').style.display = 'block';
 }
 
-function buildJobEngineerMap(snap) {
-  const map = {};
-  for (const [eng, jobs] of Object.entries(snap)) {
-    jobs.forEach(j => map[j] = eng);
-  }
-  return map;
-}
 
-function renderSummaryList(listId, badgeId, jobs, engineerMap, chipClass) {
+function renderSummaryList(listId, badgeId, items, chipClass) {
   const list = document.getElementById(listId);
-  document.getElementById(badgeId).textContent = jobs.length;
+  document.getElementById(badgeId).textContent = items.length;
 
-  if (jobs.length === 0) {
+  if (items.length === 0) {
     list.innerHTML = '<span class="empty-msg">None</span>';
     return;
   }
 
-  list.innerHTML = jobs.sort().map(j => {
-    const eng = engineerMap[j] || '';
-    return `<span class="job-chip ${chipClass}">${j}${eng ? `<span class="engineer-name">${eng}</span>` : ''}</span>`;
-  }).join('');
+  // Sort by engineer name, then job id
+  const sorted = [...items].sort((a, b) => a.engineer.localeCompare(b.engineer) || a.jobId.localeCompare(b.jobId));
+  list.innerHTML = sorted.map(({ jobId, engineer }) =>
+    `<span class="job-chip ${chipClass}">${jobId}<span class="engineer-name">${engineer}</span></span>`
+  ).join('');
 }
 
 function renderJobTags(jobs) {
