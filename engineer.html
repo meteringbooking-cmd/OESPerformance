@@ -636,15 +636,40 @@
                 const pmSnap = await getDocs(pmQ);
                 additionalPayments = {};
                 const weekendWithPay = new Set();
-                pmSnap.forEach(doc=>{
-                    const d=doc.data(); const pd=d.date;
-                    if(pd>=startDate&&pd<=endDate){
-                        if(!additionalPayments[pd]) additionalPayments[pd]=[];
-                        additionalPayments[pd].push(d);
-                        const dow=new Date(pd+'T00:00:00').getDay();
-                        if(dow===0||dow===6) weekendWithPay.add(pd);
-                    }
-                });
+// Fetch attendance records for Q1 to identify holidays
+const attQ1Start = `${year}-01-01`;
+const attQ1End   = `${year}-03-31`;
+const attSnap = await getDocs(query(
+    collection(db, 'attendance'),
+    where('engineerName', '==', currentEngineer)
+));
+const holidayDates = new Set();
+attSnap.forEach(doc => {
+    const d = doc.data();
+    if (d.date >= attQ1Start && d.date <= attQ1End) {
+        // Skip days marked as Holiday or Half Day Holiday
+        if (d.attendance === 'H' || d.attendance === 'H/H') {
+            holidayDates.add(d.date);
+        }
+    }
+});
+
+snap.forEach(doc => {
+    const d = doc.data();
+    const [docYear, docMonth] = (d.month || '').split('-').map(Number);
+    if (docYear === year && monthData[docMonth] !== undefined) {
+        (d.entries || []).forEach(e => {
+            // Skip this date entirely if the engineer was on holiday
+            if (holidayDates.has(e.date)) return;
+
+            const m = parseFloat(e.meters) || 0;
+            if (!(e.date in monthData[docMonth])) {
+                monthData[docMonth][e.date] = 0;
+            }
+            monthData[docMonth][e.date] += m;
+        });
+    }
+});
 
                 const allDates=[];
                 for(let d=new Date(startDate+'T00:00:00');d<=new Date(endDate+'T00:00:00');d.setDate(d.getDate()+1)){
