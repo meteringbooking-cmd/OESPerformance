@@ -32,7 +32,6 @@
     padding: 24px;
   }
 
-  /* Grid background */
   body::before {
     content: '';
     position: fixed;
@@ -77,7 +76,6 @@
     text-transform: uppercase;
   }
 
-  /* Input panels */
   .input-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -178,7 +176,6 @@
   }
   .btn-secondary:hover { border-color: var(--muted); color: var(--text); }
 
-  /* Summary */
   #summary {
     display: none;
     margin-bottom: 28px;
@@ -277,7 +274,6 @@
     font-style: italic;
   }
 
-  /* Main results table */
   #results { display: none; }
 
   .section-title {
@@ -395,6 +391,27 @@
     font-family: var(--mono);
     font-size: 13px;
   }
+
+  /* Debug panel */
+  #debug-panel {
+    margin-top: 28px;
+    display: none;
+  }
+  #debug-panel .section-title { cursor: pointer; }
+  #debug-panel .section-title:hover { color: var(--text); }
+  #debug-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.8;
+    display: none;
+  }
+  .debug-eng { color: var(--text); font-weight: 600; }
+  .debug-job { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -411,7 +428,7 @@
         <h2>1pm Snapshot</h2>
         <span class="tag">T+0</span>
       </div>
-      <textarea id="input-1pm" placeholder="Paste engineer data here...&#10;&#10;e.g. Bryan McCabeSOL10...J-5548443E32..."></textarea>
+      <textarea id="input-1pm" placeholder="Paste engineer data here..."></textarea>
     </div>
     <div class="panel" data-slot="4pm">
       <div class="panel-header">
@@ -439,45 +456,35 @@
   <!-- Summary -->
   <div id="summary">
     <div class="section-title">Change Summary</div>
-
     <div class="stat-strip" id="stat-strip"></div>
-
     <div class="summary-grid">
       <div class="summary-card warn">
         <div class="summary-card-header">
           <h3>Dropped: 1pm → 4pm</h3>
           <span class="badge badge-warn" id="badge-1to4">0</span>
         </div>
-        <div class="summary-list" id="list-1to4">
-          <span class="empty-msg">No jobs dropped</span>
-        </div>
+        <div class="summary-list" id="list-1to4"><span class="empty-msg">No jobs dropped</span></div>
       </div>
       <div class="summary-card warn">
         <div class="summary-card-header">
           <h3>Dropped: 4pm → 6am</h3>
           <span class="badge badge-warn" id="badge-4to6">0</span>
         </div>
-        <div class="summary-list" id="list-4to6">
-          <span class="empty-msg">No jobs dropped</span>
-        </div>
+        <div class="summary-list" id="list-4to6"><span class="empty-msg">No jobs dropped</span></div>
       </div>
       <div class="summary-card info">
         <div class="summary-card-header">
           <h3>New at 4pm</h3>
           <span class="badge badge-neutral" id="badge-new4">0</span>
         </div>
-        <div class="summary-list" id="list-new4">
-          <span class="empty-msg">No new jobs</span>
-        </div>
+        <div class="summary-list" id="list-new4"><span class="empty-msg">No new jobs</span></div>
       </div>
       <div class="summary-card info">
         <div class="summary-card-header">
           <h3>New at 6am</h3>
           <span class="badge badge-neutral" id="badge-new6">0</span>
         </div>
-        <div class="summary-list" id="list-new6">
-          <span class="empty-msg">No new jobs</span>
-        </div>
+        <div class="summary-list" id="list-new6"><span class="empty-msg">No new jobs</span></div>
       </div>
     </div>
   </div>
@@ -501,51 +508,64 @@
   <div id="no-data" class="no-data" style="display:none">
     No valid engineer data found. Make sure your data contains names and J- job numbers.
   </div>
+
+  <!-- Debug panel -->
+  <div id="debug-panel">
+    <div class="section-title" onclick="toggleDebug()" title="Click to toggle">Parsed Data (debug) ▾</div>
+    <div id="debug-content"></div>
+  </div>
 </div>
 
 <script>
+/**
+ * parseSnapshot
+ *
+ * Handles the format:
+ *   Bilal AminMG68 0HY | PVD | LIVE...J-ACE997AE...J-21B67B05...
+ *   Bryan McCabeSOL10 2AE | PVD | LIVE...J-40AE1FCD...
+ *
+ * Key insight: the name runs directly into the postcode with no space.
+ * A UK postcode starts with 1-2 letters then 1-2 digits (e.g. MG68, SOL10, BL9, FK7).
+ * So we split on the first occurrence of that pattern to extract the name.
+ */
 function parseSnapshot(text) {
   if (!text.trim()) return {};
 
-  // Split into rows — try newlines first, then detect if it's one long block
-  let rows = text.split(/\n/).map(r => r.trim()).filter(Boolean);
-
-  // If only 1 row but very long, it might be pasted without newlines — treat as single
-  if (rows.length === 1 && rows[0].length < 30) return {};
+  // Split on newlines; each engineer is one (long) line
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
 
   const engineers = {};
 
-  for (const row of rows) {
-    // Extract engineer name: starts at beginning, ends before a postcode pattern (e.g. SOL10 2AE, BL9, OL4)
-    // Name is everything before the first postcode-like pattern or pipe character
-    // Strategy: name = leading text before any uppercase letters run that looks like a postcode
-    const nameMatch = row.match(/^([A-Za-z\s\-']+?)([A-Z]{1,2}\d{1,2}\s?\d[A-Z]{2}|\s*\|)/);
+  for (const line of lines) {
+    // --- Extract name ---
+    // Name ends where a UK postcode area begins: 1-2 capital letters followed by 1-2 digits
+    // e.g. "Bilal AminMG68" → name="Bilal Amin", postcode-area="MG68"
+    // We look for the transition: lowercase (or space) → uppercase letter that starts a postcode
+    // Pattern: name is leading text up to the first [A-Z]{1,2}\d{1,2} that isn't part of a word
+    const nameMatch = line.match(/^([A-Za-z][A-Za-z\s'\-]+?)([A-Z]{1,2}\d{1,2}[A-Z0-9\s]*?\|)/);
     let name = nameMatch ? nameMatch[1].trim() : null;
 
-    // Fallback: take first "words" until we hit something non-name-like
+    // Fallback: try splitting at first occurrence of uppercase+digits pattern
     if (!name) {
-      const fallback = row.match(/^([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})/);
-      name = fallback ? fallback[1].trim() : null;
+      const m = line.match(/^([A-Za-z][A-Za-z\s'\-]{2,40?})([A-Z]{1,2}\d)/);
+      name = m ? m[1].trim() : null;
     }
 
     if (!name || name.length < 3) continue;
 
-    // Extract all job numbers: J- followed by exactly 8 alphanumeric characters
-    const jobs = [...row.matchAll(/J-([A-Z0-9]{8})/gi)].map(m => ('J-' + m[1]).toUpperCase());
+    // --- Extract all J- job numbers (exactly 8 hex/alphanum chars after J-) ---
+    const jobs = [...line.matchAll(/J-([A-Z0-9]{8})/gi)].map(m => ('J-' + m[1]).toUpperCase());
 
     if (jobs.length === 0) continue;
 
-    // Merge if name appears in multiple rows
-    if (!engineers[name]) {
-      engineers[name] = new Set();
-    }
+    if (!engineers[name]) engineers[name] = new Set();
     jobs.forEach(j => engineers[name].add(j));
   }
 
-  // Convert sets to arrays
+  // Convert sets to sorted arrays
   const result = {};
   for (const [name, jobs] of Object.entries(engineers)) {
-    result[name] = [...jobs];
+    result[name] = [...jobs].sort();
   }
   return result;
 }
@@ -561,30 +581,29 @@ function processData() {
     document.getElementById('no-data').style.display = 'block';
     document.getElementById('summary').style.display = 'none';
     document.getElementById('results').style.display = 'none';
+    document.getElementById('debug-panel').style.display = 'none';
     return;
   }
 
   document.getElementById('no-data').style.display = 'none';
 
-  // All jobs sets
+  // All job sets
   const allJobs1 = new Set(Object.values(snap1).flat());
   const allJobs4 = new Set(Object.values(snap4).flat());
   const allJobs6 = new Set(Object.values(snap6).flat());
 
-  // Build job→engineer map for labelling
-  const jobEngineer1 = buildJobEngineerMap(snap1);
-  const jobEngineer4 = buildJobEngineerMap(snap4);
+  // Job → engineer maps for labelling chips
+  const jobEng1 = buildJobEngineerMap(snap1);
+  const jobEng4 = buildJobEngineerMap(snap4);
+  const jobEng6 = buildJobEngineerMap(snap6);
 
-  // Dropped 1→4: in 1pm but not 4pm (only if 4pm has data)
+  // Diffs
   const dropped1to4 = allJobs4.size > 0 ? [...allJobs1].filter(j => !allJobs4.has(j)) : [];
-  // Dropped 4→6: in 4pm but not 6am (only if 6am has data)
   const dropped4to6 = allJobs6.size > 0 ? [...allJobs4].filter(j => !allJobs6.has(j)) : [];
-  // New at 4pm: in 4pm but not 1pm
-  const newAt4 = allJobs1.size > 0 ? [...allJobs4].filter(j => !allJobs1.has(j)) : [...allJobs4];
-  // New at 6am: in 6am but not 4pm
-  const newAt6 = allJobs4.size > 0 ? [...allJobs6].filter(j => !allJobs4.has(j)) : [...allJobs6];
+  const newAt4      = allJobs1.size > 0 ? [...allJobs4].filter(j => !allJobs1.has(j)) : [...allJobs4];
+  const newAt6      = allJobs4.size > 0 ? [...allJobs6].filter(j => !allJobs4.has(j)) : [...allJobs6];
 
-  // Render stats
+  // Stats
   document.getElementById('stat-strip').innerHTML = `
     <div class="stat"><div class="stat-value c1">${allJobs1.size}</div><div class="stat-label">1pm Jobs</div></div>
     <div class="stat"><div class="stat-value c2">${allJobs4.size}</div><div class="stat-label">4pm Jobs</div></div>
@@ -592,10 +611,10 @@ function processData() {
     <div class="stat"><div class="stat-value cw">${dropped1to4.length + dropped4to6.length}</div><div class="stat-label">Total Dropped</div></div>
   `;
 
-  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, jobEngineer1, 'dropped');
-  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, jobEngineer4, 'dropped');
-  renderSummaryList('list-new4', 'badge-new4', newAt4, jobEngineer4, 'neutral');
-  renderSummaryList('list-new6', 'badge-new6', newAt6, buildJobEngineerMap(snap6), 'neutral');
+  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, jobEng1, 'dropped');
+  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, jobEng4, 'dropped');
+  renderSummaryList('list-new4', 'badge-new4', newAt4, jobEng4, 'neutral');
+  renderSummaryList('list-new6', 'badge-new6', newAt6, jobEng6, 'neutral');
 
   // Per-engineer table
   const allEngineers = new Set([...Object.keys(snap1), ...Object.keys(snap4), ...Object.keys(snap6)]);
@@ -606,20 +625,22 @@ function processData() {
     const jobs1 = snap1[eng] || [];
     const jobs4 = snap4[eng] || [];
     const jobs6 = snap6[eng] || [];
-    const allEng = new Set([...jobs1, ...jobs4, ...jobs6]);
-
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="engineer-cell">${eng}</td>
-      <td>${renderJobTags(jobs1, allEng, jobs1)}</td>
-      <td>${renderJobTags(jobs4, allEng, jobs4)}</td>
-      <td>${renderJobTags(jobs6, allEng, jobs6)}</td>
+      <td>${renderJobTags(jobs1)}</td>
+      <td>${renderJobTags(jobs4)}</td>
+      <td>${renderJobTags(jobs6)}</td>
     `;
     tbody.appendChild(tr);
   });
 
+  // Debug output
+  renderDebug(snap1, snap4, snap6);
+
   document.getElementById('summary').style.display = 'block';
   document.getElementById('results').style.display = 'block';
+  document.getElementById('debug-panel').style.display = 'block';
 }
 
 function buildJobEngineerMap(snap) {
@@ -632,34 +653,47 @@ function buildJobEngineerMap(snap) {
 
 function renderSummaryList(listId, badgeId, jobs, engineerMap, chipClass) {
   const list = document.getElementById(listId);
-  const badge = document.getElementById(badgeId);
-  badge.textContent = jobs.length;
+  document.getElementById(badgeId).textContent = jobs.length;
 
   if (jobs.length === 0) {
     list.innerHTML = '<span class="empty-msg">None</span>';
     return;
   }
 
-  list.innerHTML = jobs.map(j => {
+  list.innerHTML = jobs.sort().map(j => {
     const eng = engineerMap[j] || '';
     return `<span class="job-chip ${chipClass}">${j}${eng ? `<span class="engineer-name">${eng}</span>` : ''}</span>`;
   }).join('');
 }
 
-function renderJobTags(presentJobs, allJobs, thisSlotJobs) {
-  if (presentJobs.length === 0) return '<span style="color:var(--border);font-size:11px">—</span>';
-  return presentJobs.map(j =>
-    `<span class="job-tag present">${j}</span>`
-  ).join('');
+function renderJobTags(jobs) {
+  if (!jobs.length) return '<span style="color:var(--border);font-size:11px">—</span>';
+  return jobs.map(j => `<span class="job-tag present">${j}</span>`).join('');
+}
+
+function renderDebug(snap1, snap4, snap6) {
+  const slots = [['1pm', snap1], ['4pm', snap4], ['6am', snap6]];
+  let html = '';
+  for (const [label, snap] of slots) {
+    const engs = Object.keys(snap);
+    if (!engs.length) continue;
+    html += `<div style="margin-bottom:12px"><span style="color:var(--accent2);letter-spacing:1px">${label}</span> — ${engs.length} engineer(s)<br>`;
+    for (const eng of engs.sort()) {
+      html += `&nbsp;&nbsp;<span class="debug-eng">${eng}</span>: ${snap[eng].map(j => `<span class="debug-job">${j}</span>`).join(', ')}<br>`;
+    }
+    html += '</div>';
+  }
+  document.getElementById('debug-content').innerHTML = html || '<span>Nothing parsed.</span>';
+}
+
+function toggleDebug() {
+  const el = document.getElementById('debug-content');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function clearAll() {
-  document.getElementById('input-1pm').value = '';
-  document.getElementById('input-4pm').value = '';
-  document.getElementById('input-6am').value = '';
-  document.getElementById('summary').style.display = 'none';
-  document.getElementById('results').style.display = 'none';
-  document.getElementById('no-data').style.display = 'none';
+  ['input-1pm','input-4pm','input-6am'].forEach(id => document.getElementById(id).value = '');
+  ['summary','results','no-data','debug-panel'].forEach(id => document.getElementById(id).style.display = 'none');
 }
 </script>
 </body>
