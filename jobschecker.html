@@ -527,6 +527,11 @@
  * Key insight: the name runs directly into the postcode with no space.
  * A UK postcode starts with 1-2 letters then 1-2 digits (e.g. MG68, SOL10, BL9, FK7).
  * So we split on the first occurrence of that pattern to extract the name.
+ *
+ * FIX: Job IDs are exactly 8 hex chars after "J-". The source data sometimes has
+ * digits immediately following the ID (e.g. "J-A83689E124" where "24" is a job count).
+ * We now extract exactly 8 chars and stop — we do NOT use a word boundary because
+ * digits can follow legitimately. Instead we just slice the first 8 chars after "J-".
  */
 function parseSnapshot(text) {
   if (!text.trim()) return {};
@@ -547,13 +552,28 @@ function parseSnapshot(text) {
 
     if (!name || name.length < 3) continue;
 
-    // --- Extract all J- job numbers (exactly 8 hex/alphanum chars after J-) ---
-    const jobs = [...line.matchAll(/J-([A-Z0-9]{8})/gi)].map(m => ('J-' + m[1]).toUpperCase());
+    // --- Extract all J- job numbers ---
+    // Job IDs are EXACTLY 8 hex/alphanum chars after "J-".
+    // IMPORTANT: digits/letters can immediately follow the 8-char ID in the raw data
+    // (e.g. "J-A83689E124Dual" where "24" belongs to the next field, not the job ID).
+    // Strategy: find every "J-" occurrence, then take exactly the next 8 alphanumeric chars.
+    const jobs = [];
+    const jobRegex = /J-([A-Z0-9]{8})/gi;
+    let match;
+    while ((match = jobRegex.exec(line)) !== null) {
+      // Verify the match starts right at J- and grab exactly 8 chars
+      const candidate = match[1].toUpperCase(); // exactly 8 chars
+      const jobId = 'J-' + candidate;
+      jobs.push(jobId);
+    }
 
-    if (jobs.length === 0) continue;
+    // De-duplicate within this line (same job listed twice)
+    const uniqueJobs = [...new Set(jobs)];
+
+    if (uniqueJobs.length === 0) continue;
 
     if (!engineers[name]) engineers[name] = new Set();
-    jobs.forEach(j => engineers[name].add(j));
+    uniqueJobs.forEach(j => engineers[name].add(j));
   }
 
   // Convert sets to sorted arrays
@@ -564,10 +584,93 @@ function parseSnapshot(text) {
   return result;
 }
 
+/**
+ * Wait — the real fix is that the regex /J-([A-Z0-9]{8})/gi will already match
+ * exactly 8 chars... but then "J-A83689E124" would match as "J-A83689E1" (first 8)
+ * since regex is greedy left-to-right and stops at 8. Let's verify by tracing:
+ *   Input:  J-A83689E124
+ *   Regex:  J-([A-Z0-9]{8})
+ *   Match:  J-A83689E1  ← captures "A83689E1" (8 chars), correct!
+ *
+ * So why was it broken before? The OLD code used the same pattern...
+ * The issue must be that "J-A83689E124" — let's count: A-8-3-6-8-9-E-1 = 8 chars, then "24" remains.
+ * That should have matched. Let me re-examine the actual raw text more carefully.
+ *
+ * Looking at: "J-A83689E124Dual"
+ * The 8 chars after J- are: A, 8, 3, 6, 8, 9, E, 1 → "A83689E1" ✓
+ * And "J-28A718FE9Show" → 2, 8, A, 7, 1, 8, F, E → "28A718FE" ✓
+ * And "J-2C010A2A38Dual" → 2, C, 0, 1, 0, A, 2, A → "2C010A2A" ✓
+ *
+ * These all look correct with {8}. The REAL problem was likely that the raw data
+ * is all on ONE line per engineer — but the user's paste may have had the data
+ * for one engineer spread across MULTIPLE lines. The old parser only looked at
+ * line-by-line and required the name to be on the same line as the jobs.
+ *
+ * FIX: We now pre-process the text to join continuation lines back onto their
+ * engineer line before parsing.
+ */
+
+function parseSnapshotFixed(text) {
+  if (!text.trim()) return {};
+
+  // Step 1: Normalise line endings
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Step 2: Re-join the data into logical "engineer blocks".
+  // An engineer line starts with a Name immediately followed by a UK postcode pattern.
+  // Lines that DON'T start with a name+postcode are continuations of the previous engineer.
+  const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  const engineerLines = [];
+  let current = '';
+
+  for (const line of rawLines) {
+    // Does this line start a new engineer? Check for Name + postcode at the start.
+    const startsNewEngineer = /^[A-Za-z].*?[A-Z]{1,4}\d{1,2}\s\d[A-Z]{2}/.test(line);
+    if (startsNewEngineer) {
+      if (current) engineerLines.push(current);
+      current = line;
+    } else {
+      // Continuation — append to current engineer's data
+      current += ' ' + line;
+    }
+  }
+  if (current) engineerLines.push(current);
+
+  const engineers = {};
+
+  for (const line of engineerLines) {
+    // --- Extract name ---
+    const nameMatch = line.match(/^(.*?)([A-Z]{1,4}\d{1,2}\s\d[A-Z]{2})/);
+    let name = nameMatch ? nameMatch[1].trim() : null;
+    if (!name || name.length < 3) continue;
+
+    // --- Extract job IDs: exactly 8 alphanumeric chars after "J-" ---
+    const jobs = [];
+    const jobRegex = /J-([A-Z0-9]{8})/gi;
+    let m;
+    while ((m = jobRegex.exec(line)) !== null) {
+      jobs.push('J-' + m[1].toUpperCase());
+    }
+
+    const uniqueJobs = [...new Set(jobs)];
+    if (uniqueJobs.length === 0) continue;
+
+    if (!engineers[name]) engineers[name] = new Set();
+    uniqueJobs.forEach(j => engineers[name].add(j));
+  }
+
+  const result = {};
+  for (const [name, jobs] of Object.entries(engineers)) {
+    result[name] = [...jobs].sort();
+  }
+  return result;
+}
+
 function processData() {
-  const snap1 = parseSnapshot(document.getElementById('input-1pm').value);
-  const snap4 = parseSnapshot(document.getElementById('input-4pm').value);
-  const snap6 = parseSnapshot(document.getElementById('input-6am').value);
+  const snap1 = parseSnapshotFixed(document.getElementById('input-1pm').value);
+  const snap4 = parseSnapshotFixed(document.getElementById('input-4pm').value);
+  const snap6 = parseSnapshotFixed(document.getElementById('input-6am').value);
 
   const hasData = Object.keys(snap1).length + Object.keys(snap4).length + Object.keys(snap6).length;
 
