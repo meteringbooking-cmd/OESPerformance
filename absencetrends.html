@@ -90,9 +90,22 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 /* Category bar */
 .cat-toggle{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+
+/* Toggle pill — active uses category color, inactive is greyed out */
 .toggle-pill{display:flex;align-items:center;gap:.4rem;padding:.4rem .9rem;border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--surface);color:var(--muted);transition:all .2s;user-select:none;}
-.toggle-pill.active{color:#fff;}
-.toggle-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.toggle-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .2s;}
+
+/* When inactive/deselected: grey dot, grey text, greyed out appearance */
+.toggle-pill.inactive{
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--muted) !important;
+  opacity: 0.5;
+}
+.toggle-pill.inactive .dot{
+  background: #4a5568 !important;
+}
+
 .split-btn{font-size:.75rem;font-family:'JetBrains Mono',monospace;padding:.3rem .75rem;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--muted);cursor:pointer;transition:all .2s;}
 .split-btn.active{background:rgba(59,130,246,.15);border-color:var(--accent);color:#93c5fd;}
 .split-btn:hover{border-color:var(--accent);color:var(--text);}
@@ -278,6 +291,32 @@ function countWorkingDays(fromStr, toStr) {
   return Math.max(n, 1);
 }
 
+// ── NEW: Split a record's working days across calendar months ──
+// Returns an object: { "YYYY-MM": days, "YYYY-MM": days, ... }
+function splitDaysByMonth(fromStr, toStr) {
+  const p = s => { if (!s) return null; const d = new Date(s+'T00:00:00'); return isNaN(d)?null:d; };
+  const from = p(fromStr);
+  if (!from) return { [fromStr ? fromStr.substring(0,7) : '']: 1 };
+  const to = p(toStr) || from;
+
+  const result = {};
+  const cur = new Date(from);
+  while (cur <= to) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) { // Mon–Fri only
+      const key = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`;
+      result[key] = (result[key] || 0) + 1;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  // Ensure at least 1 day is attributed to the start month
+  if (Object.keys(result).length === 0) {
+    const key = fromStr.substring(0, 7);
+    result[key] = 1;
+  }
+  return result;
+}
+
 // ── State ──
 let allRecords       = [];
 let gasSplit         = false;
@@ -307,7 +346,28 @@ function parseExcelDate(v) {
 }
 function dataMonthSet() { const s = new Set(); allRecords.forEach(r=>{ if(r.fromDate) s.add(r.fromDate.substring(0,7)); }); return s; }
 function fmt(n) { return n%1===0 ? n : n.toFixed(1); }
-function sumDays(recs) { return recs.reduce((s,r)=>s+(parseFloat(r.workingDays)||1),0); }
+
+// ── NEW: Get filtered records expanded into per-month day slices ──
+// Each slice: { ...record fields, monthKey: "YYYY-MM", sliceDays: N }
+function getFilteredSlices() {
+  const slices = [];
+  for (const r of allRecords) {
+    if (!r.fromDate) continue;
+    const displayCat = resolveDisplayCat(r.category);
+    if (!displayCat || hiddenCats.has(displayCat)) continue;
+
+    const monthDays = splitDaysByMonth(r.fromDate, r.toDate || r.fromDate);
+    for (const [monthKey, days] of Object.entries(monthDays)) {
+      if (!selectedPeriods.has(monthKey)) continue;
+      slices.push({ ...r, monthKey, sliceDays: days, displayCat });
+    }
+  }
+  return slices;
+}
+
+function sumSliceDays(slices) {
+  return slices.reduce((s, sl) => s + sl.sliceDays, 0);
+}
 
 // ── Calendar builder ──
 function buildCalendar() {
@@ -452,13 +512,40 @@ function buildCatBar() {
   const toggle=document.getElementById('catToggle'); toggle.innerHTML='';
   activeCats().forEach(cat=>{
     const m=CAT_META[cat], pill=document.createElement('span');
-    pill.className='toggle-pill active'; pill.dataset.cat=cat;
-    pill.style.borderColor=m.color+'55'; pill.style.background=m.color+'1a'; pill.style.color=m.color;
+    // Start active
+    pill.className='toggle-pill';
+    pill.dataset.cat=cat;
+    // Apply colour styling for active state
+    pill.style.borderColor=m.color+'55';
+    pill.style.background=m.color+'1a';
+    pill.style.color=m.color;
     pill.innerHTML=`<span class="dot" style="background:${m.color}"></span>${m.label}`;
-    pill.addEventListener('click',()=>{ hiddenCats.has(cat)?(hiddenCats.delete(cat),pill.classList.add('active')):(hiddenCats.add(cat),pill.classList.remove('active')); renderAll(); });
+
+    pill.addEventListener('click', () => {
+      if (hiddenCats.has(cat)) {
+        // Re-enable: restore colour
+        hiddenCats.delete(cat);
+        pill.classList.remove('inactive');
+        pill.style.borderColor = m.color+'55';
+        pill.style.background  = m.color+'1a';
+        pill.style.color       = m.color;
+        pill.querySelector('.dot').style.background = m.color;
+      } else {
+        // Disable: go grey
+        hiddenCats.add(cat);
+        pill.classList.add('inactive');
+        // Inline styles cleared so CSS .inactive rules take over
+        pill.style.borderColor = '';
+        pill.style.background  = '';
+        pill.style.color       = '';
+        pill.querySelector('.dot').style.background = '';
+      }
+      renderAll();
+    });
     toggle.appendChild(pill);
   });
 }
+
 function activeCats(){
   const c=[CAT.SICKNESS];
   gasSplit?c.push(CAT.GA_AAUP,CAT.GA_JS,CAT.GA_DEPEND,CAT.GA_PMPL,CAT.GA_AWOL):c.push(CAT.GA);
@@ -474,20 +561,10 @@ function resolveDisplayCat(base){
 document.getElementById('gasSplitBtn').addEventListener('click',()=>{ gasSplit=!gasSplit; document.getElementById('gasSplitBtn').classList.toggle('active',gasSplit); hiddenCats.clear(); buildCatBar(); renderAll(); });
 document.getElementById('holSplitBtn').addEventListener('click',()=>{ holSplit=!holSplit; document.getElementById('holSplitBtn').classList.toggle('active',holSplit); hiddenCats.clear(); buildCatBar(); renderAll(); });
 
-// ── Filter using YYYY-MM period keys ──
-function getFiltered(){
-  return allRecords.filter(r=>{
-    if (!r.fromDate) return false;
-    if (!selectedPeriods.has(r.fromDate.substring(0,7))) return false;
-    const d=resolveDisplayCat(r.category);
-    return d && !hiddenCats.has(d);
-  });
-}
-
 // ── Render ──
 function renderAll(){
-  const f=getFiltered();
-  if (!f.length){
+  const slices = getFilteredSlices();
+  if (!slices.length){
     document.getElementById('statsRow').style.display='none';
     document.getElementById('chartsGrid').style.display='none';
     document.getElementById('emptyState').style.display='block';
@@ -497,36 +574,40 @@ function renderAll(){
   document.getElementById('emptyState').style.display='none';
   document.getElementById('statsRow').style.display='flex';
   document.getElementById('chartsGrid').style.display='grid';
-  renderStats(f); renderBarChart(f); renderDoughnut(f); renderBreakdownTable(f);
+  renderStats(slices); renderBarChart(slices); renderDoughnut(slices); renderBreakdownTable(slices);
 }
 
-function renderStats(data){
-  const total=sumDays(data), sick=sumDays(data.filter(r=>r.category===CAT.SICKNESS));
-  document.getElementById('stDays').textContent=fmt(total);
-  document.getElementById('stEmployees').textContent=new Set(data.map(r=>r.employee)).size;
-  document.getElementById('stRecords').textContent=data.length;
-  document.getElementById('stSickness').textContent=fmt(sick);
+function renderStats(slices){
+  const total = sumSliceDays(slices);
+  const sick  = sumSliceDays(slices.filter(sl => sl.category === CAT.SICKNESS));
+  // Unique employees: count from the original records referenced by slices
+  const uniqueEmployees = new Set(slices.map(sl => sl.employee)).size;
+  // Count of unique source records (not slices)
+  const uniqueRecordIds = new Set(slices.map(sl => sl.id)).size;
+  document.getElementById('stDays').textContent      = fmt(total);
+  document.getElementById('stEmployees').textContent = uniqueEmployees;
+  document.getElementById('stRecords').textContent   = uniqueRecordIds;
+  document.getElementById('stSickness').textContent  = fmt(sick);
 }
 
-function renderBarChart(data){
-  // Sort selected periods chronologically — each becomes a bar group on the X axis
-  const periods=Array.from(selectedPeriods).sort();
-  const cats=activeCats().filter(c=>!hiddenCats.has(c));
-  const labels=periods.map(k=>periodLabel(k));
+function renderBarChart(slices){
+  const periods = Array.from(selectedPeriods).sort();
+  const cats    = activeCats().filter(c=>!hiddenCats.has(c));
+  const labels  = periods.map(k=>periodLabel(k));
 
-  const barDatasets=cats.map(cat=>{
-    const m=CAT_META[cat];
+  const barDatasets = cats.map(cat => {
+    const m = CAT_META[cat];
     return {
       type:'bar', label:m.label,
       backgroundColor:m.color+'bb', borderColor:m.color, borderWidth:1,
       borderRadius:5, borderSkipped:false, yAxisID:'y',
-      data:periods.map(p=>sumDays(data.filter(r=>r.fromDate.substring(0,7)===p&&resolveDisplayCat(r.category)===cat)))
+      data: periods.map(p => sumSliceDays(slices.filter(sl => sl.monthKey === p && sl.displayCat === cat)))
     };
   });
 
-  const trendDataset={
+  const trendDataset = {
     type:'line', label:'Total days (trend)',
-    data:periods.map(p=>sumDays(data.filter(r=>r.fromDate.substring(0,7)===p))),
+    data: periods.map(p => sumSliceDays(slices.filter(sl => sl.monthKey === p))),
     borderColor:'#ffffff', backgroundColor:'rgba(255,255,255,.05)',
     borderWidth:2.5, pointBackgroundColor:'#ffffff', pointRadius:5, pointHoverRadius:7,
     tension:0.4, fill:false, yAxisID:'y', order:0
@@ -552,9 +633,9 @@ function renderBarChart(data){
   });
 }
 
-function renderDoughnut(data){
-  const cats=activeCats().filter(c=>!hiddenCats.has(c));
-  const totals=cats.map(c=>sumDays(data.filter(r=>resolveDisplayCat(r.category)===c)));
+function renderDoughnut(slices){
+  const cats   = activeCats().filter(c=>!hiddenCats.has(c));
+  const totals = cats.map(cat => sumSliceDays(slices.filter(sl => sl.displayCat === cat)));
   if (doughnutInst) doughnutInst.destroy();
   doughnutInst=new Chart(document.getElementById('doughnutChart'),{
     type:'doughnut',
@@ -565,15 +646,17 @@ function renderDoughnut(data){
   });
 }
 
-function renderBreakdownTable(data){
-  const cats=activeCats().filter(c=>!hiddenCats.has(c));
-  const totalDays=sumDays(data);
-  const rows=cats.map(cat=>{
-    const m=CAT_META[cat], recs=data.filter(r=>resolveDisplayCat(r.category)===cat);
-    const days=sumDays(recs);
-    return {cat,m,count:recs.length,days,pct:totalDays>0?((days/totalDays)*100).toFixed(1):'0.0'};
+function renderBreakdownTable(slices){
+  const cats      = activeCats().filter(c=>!hiddenCats.has(c));
+  const totalDays = sumSliceDays(slices);
+  const rows = cats.map(cat => {
+    const m    = CAT_META[cat];
+    const catSlices = slices.filter(sl => sl.displayCat === cat);
+    const days = sumSliceDays(catSlices);
+    const uniqueRecs = new Set(catSlices.map(sl => sl.id)).size;
+    return {cat,m,count:uniqueRecs,days,pct:totalDays>0?((days/totalDays)*100).toFixed(1):'0.0'};
   }).sort((a,b)=>b.days-a.days);
-  const maxDays=Math.max(1,...rows.map(r=>r.days));
+  const maxDays = Math.max(1,...rows.map(r=>r.days));
   document.getElementById('breakdownTable').innerHTML=`
     <thead><tr><th>Category</th><th>Working Days Lost</th><th>% of Total</th><th>Records</th><th class="bt-bar-cell">Distribution</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
