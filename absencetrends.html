@@ -42,6 +42,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .upload-btn:hover{opacity:.85;transform:translateY(-1px);}
 .upload-btn:disabled{opacity:.3;cursor:not-allowed;transform:none;}
 
+/* Column hint */
+.col-hint{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:10px;padding:.75rem 1rem;margin-bottom:1.5rem;font-family:'JetBrains Mono',monospace;font-size:.75rem;color:#93c5fd;display:flex;align-items:flex-start;gap:.6rem;line-height:1.5;}
+.col-hint-icon{flex-shrink:0;opacity:.7;}
+
 /* Progress */
 .progress-wrap{height:4px;background:var(--border);border-radius:4px;margin-bottom:1.5rem;display:none;overflow:hidden;}
 .progress-wrap.show{display:block;}
@@ -90,12 +94,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 /* Category bar */
 .cat-toggle{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
-
 .toggle-pill{display:flex;align-items:center;gap:.4rem;padding:.4rem .9rem;border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--surface);color:var(--muted);transition:all .2s;user-select:none;}
 .toggle-pill .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .2s;}
 .toggle-pill.inactive{background:var(--surface)!important;border-color:var(--border)!important;color:var(--muted)!important;opacity:.5;}
 .toggle-pill.inactive .dot{background:#4a5568!important;}
-
 .split-btn{font-size:.75rem;font-family:'JetBrains Mono',monospace;padding:.3rem .75rem;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--muted);cursor:pointer;transition:all .2s;}
 .split-btn.active{background:rgba(59,130,246,.15);border-color:var(--accent);color:#93c5fd;}
 .split-btn:hover{border-color:var(--accent);color:var(--text);}
@@ -128,6 +130,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 /* Empty */
 .empty-state{text-align:center;padding:4rem 2rem;color:var(--muted);font-size:.95rem;font-family:'JetBrains Mono',monospace;}
 .empty-state .es-icon{font-size:3rem;margin-bottom:1rem;opacity:.4;}
+
+/* Debug panel */
+.debug-panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:1.25rem 1.5rem;margin-bottom:2rem;display:none;}
+.debug-panel h4{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--accent2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.75rem;}
+.debug-panel pre{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);white-space:pre-wrap;max-height:200px;overflow-y:auto;}
 </style>
 </head>
 <body>
@@ -146,7 +153,22 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <span class="upload-file-name" id="fileName">No file selected</span>
     <button class="upload-btn" id="uploadBtn" disabled>Upload &amp; Process</button>
   </div>
+
+  <div class="col-hint">
+    <span class="col-hint-icon">ℹ️</span>
+    <span>
+      Expected columns: A=Employee · D=Type · E=Date From · F=Date To · G=No. Working Days Off · H=No. Working Hours Off · I=Notes · J=Submitted<br>
+      Days are read from <strong>column G</strong>. If 0, hours from <strong>column H</strong> are converted at 7.5 hrs/day. Days are then split proportionally across selected months.
+    </span>
+  </div>
+
   <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+
+  <!-- Debug panel (shown after upload) -->
+  <div class="debug-panel" id="debugPanel">
+    <h4>Column mapping check — first 3 records</h4>
+    <pre id="debugPre"></pre>
+  </div>
 
   <!-- Multi-year calendar picker -->
   <div class="controls-bar" id="controlsBar" style="display:none;">
@@ -235,6 +257,7 @@ const db = getFirestore(app);
 
 // ── Constants ──
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const HOURS_PER_DAY = 7.5; // Used to convert hours → days when working days column is 0
 
 const CAT = {
   SICKNESS:'sickness', GA:'ga', GA_AAUP:'ga_aaup', GA_JS:'ga_js',
@@ -273,7 +296,6 @@ function parseLocalDate(s) {
   if (!s) return null;
   const str = s.toString().trim();
   if (!str) return null;
-  // Already YYYY-MM-DD
   const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(+m[1], +m[2]-1, +m[3]);
   const d = new Date(str);
@@ -291,12 +313,10 @@ function parseExcelDate(v) {
   }
   const str = v.toString().trim();
   if (!str) return '';
-  // Try DD/MM/YYYY (common UK format)
   const ukMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (ukMatch) {
     return `${ukMatch[3]}-${ukMatch[2].padStart(2,'0')}-${ukMatch[1].padStart(2,'0')}`;
   }
-  // Try DD/MM/YY
   const ukShort = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (ukShort) {
     const yr = +ukShort[3] >= 50 ? '19'+ukShort[3] : '20'+ukShort[3];
@@ -307,25 +327,37 @@ function parseExcelDate(v) {
   return str;
 }
 
+// ── Parse a numeric cell value (working days or hours) ──
+function parseNumeric(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = parseFloat(v.toString().replace(/[^\d.-]/g,''));
+  return isNaN(n) ? 0 : Math.abs(n); // abs handles any negative entries
+}
+
+// ── Resolve the working days value for a record:
+//    1. Use "No. working days off" column (G = index 6)
+//    2. If that is 0 or blank, use "No. working hours off" (H = index 7) ÷ HOURS_PER_DAY
+//    3. Minimum 0 (records with 0 days and 0 hours are kept but contribute 0 days)
+// ──
+function resolveWorkingDays(rawDays, rawHours) {
+  const days  = parseNumeric(rawDays);
+  const hours = parseNumeric(rawHours);
+  if (days > 0) return days;
+  if (hours > 0) return hours / HOURS_PER_DAY;
+  return 0;
+}
+
 // ── Count Mon–Fri working days between two date strings (inclusive) ──
-// Rules:
-//   - If toDate is blank/missing → single day (1) regardless of weekday
-//   - If fromDate falls on a weekend and no toDate → still counts as 1
-//   - Otherwise count Mon–Fri days in [from, to]
+// Used only for calendar highlighting (dataMonthSet), NOT for day counts.
 function countWorkingDaysBetween(fromStr, toStr) {
   const from = parseLocalDate(fromStr);
   if (!from) return 0;
-
   const hasTo = toStr && toStr.toString().trim() !== '';
-  if (!hasTo) return 1; // No end date = single day absence
-
+  if (!hasTo) return 1;
   const to = parseLocalDate(toStr);
   if (!to) return 1;
-
-  // Ensure order
   const start = from <= to ? from : to;
   const end   = from <= to ? to   : from;
-
   let count = 0;
   const cur = new Date(start);
   while (cur <= end) {
@@ -333,26 +365,30 @@ function countWorkingDaysBetween(fromStr, toStr) {
     if (dow !== 0 && dow !== 6) count++;
     cur.setDate(cur.getDate() + 1);
   }
-  // If date range exists but falls entirely on weekends, count as 1
   return Math.max(count, 1);
 }
 
 // ── Split a record's working days across calendar months ──
-// Returns { "YYYY-MM": proportionalDays, ... }
-// The total of all values == totalDays passed in.
-// Distribution is based on how many Mon–Fri days fall in each month.
+// Distributes `totalDays` proportionally based on Mon–Fri days in each month
+// within the [fromDate, toDate] range.
+// Returns { "YYYY-MM": days, ... }
 function splitDaysByMonth(fromStr, toStr, totalDays) {
+  if (totalDays <= 0) return {};
+
   const from = parseLocalDate(fromStr);
   if (!from) return {};
 
   const hasTo = toStr && toStr.toString().trim() !== '';
   const to    = hasTo ? parseLocalDate(toStr) : from;
-  if (!to) return { [fromStr.substring(0,7)]: totalDays };
+  if (!to) {
+    const key = `${from.getFullYear()}-${String(from.getMonth()+1).padStart(2,'0')}`;
+    return { [key]: totalDays };
+  }
 
   const start = from <= to ? from : to;
   const end   = from <= to ? to   : from;
 
-  // Count Mon–Fri days per month
+  // Count Mon–Fri days per calendar month within the range
   const calBuckets = {};
   const cur = new Date(start);
   while (cur <= end) {
@@ -367,12 +403,12 @@ function splitDaysByMonth(fromStr, toStr, totalDays) {
   const calTotal = Object.values(calBuckets).reduce((a,b)=>a+b, 0);
 
   if (calTotal === 0) {
-    // Entire range is weekend — put all days in the from month
+    // Entire range is weekend — assign all days to the from-month
     const key = `${from.getFullYear()}-${String(from.getMonth()+1).padStart(2,'0')}`;
     return { [key]: totalDays };
   }
 
-  // Distribute totalDays proportionally
+  // Distribute totalDays proportionally across months
   const result = {};
   for (const [k, v] of Object.entries(calBuckets)) {
     result[k] = totalDays * (v / calTotal);
@@ -399,12 +435,17 @@ function toast(msg, type='info') {
 const periodKey   = (yr, mo0) => `${yr}-${String(mo0+1).padStart(2,'0')}`;
 const periodLabel = k => { const [y,m] = k.split('-'); return `${MONTH_NAMES[+m-1]} ${y}`; };
 const makeFingerprint = (emp, from) => `${(emp||'').trim().toLowerCase()}|${(from||'').trim()}`;
+
 function dataMonthSet() {
   const s = new Set();
   allRecords.forEach(r => { if (r.fromDate) s.add(r.fromDate.substring(0,7)); });
   return s;
 }
-function fmt(n) { return n%1===0 ? n : n.toFixed(1); }
+
+function fmt(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '0';
+  return n % 1 === 0 ? n.toString() : n.toFixed(1);
+}
 
 // ── Resolve display category given split settings ──
 function resolveDisplayCat(base) {
@@ -416,10 +457,8 @@ function resolveDisplayCat(base) {
 
 // ── Get filtered slices ──
 // For each record:
-//   1. Compute working days from the date range (Mon–Fri inclusive).
-//      - No toDate → 1 day
-//      - toDate present → count Mon–Fri days; minimum 1
-//   2. Split that day count proportionally across calendar months
+//   1. Use the stored workingDays value (from col G, or hours÷7.5 from col H)
+//   2. Split that day count proportionally across calendar months using date range
 //   3. Emit one slice per (record × month) that falls in selectedPeriods
 function getFilteredSlices() {
   const slices = [];
@@ -428,13 +467,11 @@ function getFilteredSlices() {
     const displayCat = resolveDisplayCat(r.category);
     if (!displayCat || hiddenCats.has(displayCat)) continue;
 
-    // Step 1: compute true working day count from dates
-    const totalDays = countWorkingDaysBetween(r.fromDate, r.toDate || '');
+    const totalDays = r.workingDays || 0;
 
-    // Step 2: distribute across months
+    // Split days across months proportionally based on date range
     const monthDays = splitDaysByMonth(r.fromDate, r.toDate || '', totalDays);
 
-    // Step 3: emit matching slices
     for (const [monthKey, days] of Object.entries(monthDays)) {
       if (!selectedPeriods.has(monthKey)) continue;
       slices.push({ ...r, monthKey, sliceDays: days, displayCat });
@@ -444,7 +481,7 @@ function getFilteredSlices() {
 }
 
 function sumSliceDays(slices) {
-  return slices.reduce((s, sl) => s + sl.sliceDays, 0);
+  return slices.reduce((s, sl) => s + (sl.sliceDays || 0), 0);
 }
 
 // ── Calendar builder ──
@@ -546,7 +583,21 @@ uploadBtn.addEventListener('click', async () => {
     const data = await file.arrayBuffer();
     const wb   = XLSX.read(data);
     const ws   = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, {header:1});
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
+
+    // ── Show column header debug info ──
+    const debugPanel = document.getElementById('debugPanel');
+    const debugPre   = document.getElementById('debugPre');
+    if (rows[0]) {
+      let debugTxt = `Header row: ${JSON.stringify(rows[0])}\n\n`;
+      for (let i = 1; i <= Math.min(3, rows.length - 1); i++) {
+        const r = rows[i];
+        debugTxt += `Row ${i}: A="${r[0]}" | D="${r[3]}" | E="${r[4]}" | F="${r[5]}" | G(days)="${r[6]}" | H(hours)="${r[7]}"\n`;
+      }
+      debugPre.textContent = debugTxt;
+      debugPanel.style.display = 'block';
+    }
+
     const existing = new Set(allRecords.map(r => makeFingerprint(r.employee, r.fromDate)));
     let parsed = [], dupes = 0;
 
@@ -556,21 +607,25 @@ uploadBtn.addEventListener('click', async () => {
       const rawType  = (row[3]||'').toString().trim();
       const fromDate = parseExcelDate(row[4]);
       const toDate   = parseExcelDate(row[5]);
-      const cat      = classifyRow(rawType);
+
+      // ── KEY FIX: read working days from col G (index 6) and hours from col H (index 7) ──
+      const rawDays  = row[6]; // "No. working days off"
+      const rawHours = row[7]; // "No. working hours off"
+      const workingDays = resolveWorkingDays(rawDays, rawHours);
+
+      const cat = classifyRow(rawType);
       if (!employee || !fromDate || !cat) continue;
 
       const fp = makeFingerprint(employee, fromDate);
       if (existing.has(fp)) { dupes++; continue; }
       existing.add(fp);
 
-      // Compute working days purely from dates — this is the source of truth
-      // Store toDate as empty string if blank so the logic knows it's a single day
-      const workingDays = countWorkingDaysBetween(fromDate, toDate || '');
-
       parsed.push({
         employee, rawType, category: cat,
         fromDate, toDate: toDate || '',
-        workingDays,
+        workingDays,       // ← actual value from spreadsheet columns G/H
+        rawDays: rawDays !== undefined ? rawDays.toString() : '',   // stored for reference
+        rawHours: rawHours !== undefined ? rawHours.toString() : '',
         notes: (row[8]||'').toString().trim(),
         submitted: parseExcelDate(row[9])
       });
@@ -585,7 +640,7 @@ uploadBtn.addEventListener('click', async () => {
     }
     toast(`✓ Uploaded ${parsed.length} record${parsed.length>1?'s':''}${dupes?` (${dupes} dupe${dupes>1?'s':''} skipped)`:''}`, 'success');
     await loadData();
-  } catch(err) { toast('Error: '+err.message,'error'); }
+  } catch(err) { toast('Error: '+err.message,'error'); console.error(err); }
   resetUpload();
 });
 
@@ -608,7 +663,7 @@ async function loadData() {
     document.getElementById('controlsBar').style.display = 'block';
     document.getElementById('catBar').style.display      = 'block';
     renderAll();
-  } catch(e) { toast('Error loading data: '+e.message,'error'); }
+  } catch(e) { toast('Error loading data: '+e.message,'error'); console.error(e); }
 }
 
 // ── Category bar ──
@@ -702,13 +757,19 @@ function renderBarChart(slices) {
       type:'bar', label:m.label,
       backgroundColor:m.color+'bb', borderColor:m.color, borderWidth:1,
       borderRadius:5, borderSkipped:false, yAxisID:'y',
-      data: periods.map(p => sumSliceDays(slices.filter(sl => sl.monthKey === p && sl.displayCat === cat)))
+      data: periods.map(p => {
+        const v = sumSliceDays(slices.filter(sl => sl.monthKey === p && sl.displayCat === cat));
+        return Math.round(v * 10) / 10; // 1 d.p.
+      })
     };
   });
 
   const trendDataset = {
     type:'line', label:'Total days (trend)',
-    data: periods.map(p => sumSliceDays(slices.filter(sl => sl.monthKey === p))),
+    data: periods.map(p => {
+      const v = sumSliceDays(slices.filter(sl => sl.monthKey === p));
+      return Math.round(v * 10) / 10;
+    }),
     borderColor:'#ffffff', backgroundColor:'rgba(255,255,255,.05)',
     borderWidth:2.5, pointBackgroundColor:'#ffffff', pointRadius:5, pointHoverRadius:7,
     tension:0.4, fill:false, yAxisID:'y', order:0
@@ -744,7 +805,10 @@ function renderBarChart(slices) {
 
 function renderDoughnut(slices) {
   const cats   = activeCats().filter(c => !hiddenCats.has(c));
-  const totals = cats.map(cat => sumSliceDays(slices.filter(sl => sl.displayCat === cat)));
+  const totals = cats.map(cat => {
+    const v = sumSliceDays(slices.filter(sl => sl.displayCat === cat));
+    return Math.round(v * 10) / 10;
+  });
   if (doughnutInst) doughnutInst.destroy();
   doughnutInst = new Chart(document.getElementById('doughnutChart'), {
     type:'doughnut',
