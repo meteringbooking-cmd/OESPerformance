@@ -276,13 +276,13 @@ body::before {
     <div class="stat-tile"><div class="st-num" id="stTotal" style="color:var(--accent)">—</div><div class="st-lbl">Total Absences</div></div>
     <div class="stat-tile"><div class="st-num" id="stEmployees" style="color:#34d399">—</div><div class="st-lbl">Employees Affected</div></div>
     <div class="stat-tile"><div class="st-num" id="stDays" style="color:#fb923c">—</div><div class="st-lbl">Working Days Lost</div></div>
-    <div class="stat-tile"><div class="st-num" id="stSickness" style="color:#f87171">—</div><div class="st-lbl">Sickness Records</div></div>
+    <div class="stat-tile"><div class="st-num" id="stSickness" style="color:#f87171">—</div><div class="st-lbl">Sickness Days Lost</div></div>
   </div>
 
   <!-- Charts -->
   <div class="charts-grid" id="chartsGrid" style="display:none;">
     <div class="chart-card full">
-      <h3><span class="ch-dot" style="background:#3b82f6"></span>Absences by Month <span style="font-size:.75rem;font-family:'JetBrains Mono',monospace;color:var(--muted);font-weight:400;margin-left:.5rem;">Grouped bars + total trend line</span></h3>
+      <h3><span class="ch-dot" style="background:#3b82f6"></span>Working Days Lost by Month <span style="font-size:.75rem;font-family:'JetBrains Mono',monospace;color:var(--muted);font-weight:400;margin-left:.5rem;">Grouped bars + total trend line</span></h3>
       <canvas id="barChart" height="85"></canvas>
     </div>
     <div class="chart-card full">
@@ -329,16 +329,15 @@ const db = getFirestore(app);
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTH_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-// canonical category keys
 const CAT = {
   SICKNESS:  'sickness',
-  GA:        'ga',            // all GA grouped
+  GA:        'ga',
   GA_AAUP:   'ga_aaup',
   GA_JS:     'ga_js',
   GA_DEPEND: 'ga_depend',
   GA_PMPL:   'ga_pmpl',
   GA_AWOL:   'ga_awol',
-  HOLIDAY:   'holiday',       // both holiday types grouped
+  HOLIDAY:   'holiday',
   HOL_TAKEN: 'hol_taken',
   HOL_YET:   'hol_yet',
 };
@@ -366,20 +365,49 @@ function classifyRow(rawType) {
   if (t.includes('pmpl'))     return CAT.GA_PMPL;
   if (t.includes('holiday taken') || t === 'holiday taken') return CAT.HOL_TAKEN;
   if (t.includes('yet to be taken') || t.includes('yet to take')) return CAT.HOL_YET;
-  // fallback — any other "general absence" prefix
   if (t.startsWith('general absence')) return CAT.GA_AAUP;
   return null;
 }
 
 // ─────────────────────────────────────────────────────────
+//  WORKING DAYS CALCULATOR (Mon–Fri only, inclusive)
+// ─────────────────────────────────────────────────────────
+function countWorkingDays(fromDateStr, toDateStr) {
+  // Parse dates — expects 'YYYY-MM-DD' strings
+  const parseDate = s => {
+    if (!s) return null;
+    const d = new Date(s + 'T00:00:00');
+    return isNaN(d) ? null : d;
+  };
+
+  const from = parseDate(fromDateStr);
+  if (!from) return 1; // fallback
+
+  const to = parseDate(toDateStr) || from; // no To date → same day as From (1 day)
+
+  // Ensure from <= to
+  const start = from <= to ? from : to;
+  const end   = from <= to ? to   : from;
+
+  let count = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay(); // 0=Sun, 6=Sat
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(count, 1); // at least 1
+}
+
+// ─────────────────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────────────────
-let allRecords    = [];   // all firestore records
-let gasSplit      = false; // show GA sub-types vs grouped
-let holSplit      = false; // show holiday sub-types vs grouped
+let allRecords    = [];
+let gasSplit      = false;
+let holSplit      = false;
 let hiddenCats    = new Set();
 let selectedYear  = new Date().getFullYear();
-let selectedMonths= new Set(); // 0-indexed
+let selectedMonths= new Set();
 
 let barChartInst  = null;
 let doughnutInst  = null;
@@ -413,6 +441,8 @@ function parseExcelDate(v) {
 
 // ─────────────────────────────────────────────────────────
 //  UPLOAD
+//  Col E = index 4 = From date
+//  Col F = index 5 = To date
 // ─────────────────────────────────────────────────────────
 const xlInput   = document.getElementById('xlFile');
 const uploadBtn = document.getElementById('uploadBtn');
@@ -437,28 +467,29 @@ uploadBtn.addEventListener('click', async () => {
     const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
 
-    // Build fingerprint set from existing records
     const existing = new Set(allRecords.map(r => makeFingerprint(r.employee, r.fromDate)));
 
     let parsed=[], dupes=0;
     for (let i=1; i<rows.length; i++) {
       const row = rows[i];
-      const employee   = (row[0]||'').toString().trim();
-      const rawType    = (row[3]||'').toString().trim();
-      const fromDate   = parseExcelDate(row[4]);
-      const cat        = classifyRow(rawType);
+      const employee = (row[0]||'').toString().trim();
+      const rawType  = (row[3]||'').toString().trim();
+      const fromDate = parseExcelDate(row[4]); // Col E
+      const toDate   = parseExcelDate(row[5]); // Col F — may be empty
+      const cat      = classifyRow(rawType);
       if (!employee || !fromDate || !cat) continue;
 
       const fp = makeFingerprint(employee, fromDate);
       if (existing.has(fp)) { dupes++; continue; }
-      existing.add(fp); // prevent intra-file dupes too
+      existing.add(fp);
 
-      const workingDays  = parseFloat(row[6]) || 0;
-      let   workingHours = parseFloat(row[7]) || 0;
-      if (workingHours===0 && workingDays>0) workingHours = workingDays*8;
+      // Calculate working days from From→To (weekends excluded); default 1 if no To
+      const workingDays  = countWorkingDays(fromDate, toDate || null);
+      const workingHours = workingDays * 8;
+
       const notes     = (row[8]||'').toString().trim();
       const submitted = parseExcelDate(row[9]);
-      parsed.push({ employee, rawType, category:cat, fromDate, workingDays, workingHours, notes, submitted });
+      parsed.push({ employee, rawType, category:cat, fromDate, toDate: toDate||'', workingDays, workingHours, notes, submitted });
     }
 
     if (parsed.length===0 && dupes===0) { toast('No valid records found in file.','error'); resetUpload(); return; }
@@ -495,7 +526,6 @@ async function loadData() {
     buildCatBar();
     document.getElementById('controlsBar').style.display='grid';
     document.getElementById('catBar').style.display='block';
-    // auto-select current month
     const now = new Date();
     selectedYear = now.getFullYear();
     selectedMonths = new Set([now.getMonth()]);
@@ -573,7 +603,6 @@ function buildCatBar() {
   });
 }
 
-// Which category keys are currently "active" given split state
 function activeCats() {
   const cats = [CAT.SICKNESS];
   if (gasSplit) cats.push(CAT.GA_AAUP, CAT.GA_JS, CAT.GA_DEPEND, CAT.GA_PMPL, CAT.GA_AWOL);
@@ -583,7 +612,6 @@ function activeCats() {
   return cats;
 }
 
-// Resolve a record's base category to active display category
 function resolveDisplayCat(baseCat) {
   if (baseCat === CAT.SICKNESS) return CAT.SICKNESS;
   if ([CAT.GA_AAUP,CAT.GA_JS,CAT.GA_DEPEND,CAT.GA_PMPL,CAT.GA_AWOL].includes(baseCat)) {
@@ -651,24 +679,31 @@ function renderAll() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  STATS
+//  STATS — all totals now use workingDays
 // ─────────────────────────────────────────────────────────
+function sumDays(records) {
+  return records.reduce((s, r) => s + (parseFloat(r.workingDays) || 1), 0);
+}
+
 function renderStats(data) {
-  document.getElementById('stTotal').textContent     = data.length;
-  document.getElementById('stEmployees').textContent = new Set(data.map(r=>r.employee)).size;
-  document.getElementById('stDays').textContent      = data.reduce((s,r)=>s+(parseFloat(r.workingDays)||0),0).toFixed(1);
-  document.getElementById('stSickness').textContent  = data.filter(r=>r.category===CAT.SICKNESS).length;
+  const totalDays    = sumDays(data);
+  const sicknessData = data.filter(r => r.category === CAT.SICKNESS);
+  const sickDays     = sumDays(sicknessData);
+
+  document.getElementById('stTotal').textContent     = totalDays % 1 === 0 ? totalDays : totalDays.toFixed(1);
+  document.getElementById('stEmployees').textContent = new Set(data.map(r => r.employee)).size;
+  document.getElementById('stDays').textContent      = totalDays % 1 === 0 ? totalDays : totalDays.toFixed(1);
+  document.getElementById('stSickness').textContent  = sickDays % 1 === 0 ? sickDays : sickDays.toFixed(1);
 }
 
 // ─────────────────────────────────────────────────────────
-//  BAR CHART — grouped bars per month + total trend line
+//  BAR CHART — Y axis = working days lost (not record count)
 // ─────────────────────────────────────────────────────────
 function renderBarChart(data) {
   const sortedMonths = Array.from(selectedMonths).sort((a,b)=>a-b);
   const cats = activeCats().filter(c=>!hiddenCats.has(c));
   const labels = sortedMonths.map(m=>MONTH_FULL[m]);
 
-  // Grouped bar datasets (one per category)
   const barDatasets = cats.map(cat => {
     const m = CAT_META[cat];
     return {
@@ -680,26 +715,29 @@ function renderBarChart(data) {
       borderRadius: 5,
       borderSkipped: false,
       yAxisID: 'y',
-      data: sortedMonths.map(mo => data.filter(r => {
-        const rMo = parseInt(r.fromDate.substring(5,7))-1;
-        return rMo===mo && resolveDisplayCat(r.category)===cat;
-      }).length)
+      data: sortedMonths.map(mo => {
+        const recs = data.filter(r => {
+          const rMo = parseInt(r.fromDate.substring(5,7))-1;
+          return rMo===mo && resolveDisplayCat(r.category)===cat;
+        });
+        return sumDays(recs);
+      })
     };
   });
 
-  // Trend line — total absences per month
-  const totalPerMonth = sortedMonths.map(mo =>
-    data.filter(r => parseInt(r.fromDate.substring(5,7))-1 === mo).length
-  );
+  // Trend line — total working days per month
+  const totalPerMonth = sortedMonths.map(mo => {
+    const recs = data.filter(r => parseInt(r.fromDate.substring(5,7))-1 === mo);
+    return sumDays(recs);
+  });
 
   const trendDataset = {
     type: 'line',
-    label: 'Total (trend)',
+    label: 'Total days (trend)',
     data: totalPerMonth,
     borderColor: '#ffffff',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 2.5,
-    borderDash: [],
     pointBackgroundColor: '#ffffff',
     pointRadius: 5,
     pointHoverRadius: 7,
@@ -735,7 +773,7 @@ function renderBarChart(data) {
           padding: 12,
           callbacks: {
             title: items => items[0].label,
-            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}`
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} day${ctx.parsed.y !== 1 ? 's' : ''}`
           }
         }
       },
@@ -745,9 +783,15 @@ function renderBarChart(data) {
           grid: { color: '#1e2d441a' }
         },
         y: {
-          ticks: { color: '#8eaac8', stepSize: 1 },
+          ticks: { color: '#8eaac8' },
           grid: { color: '#1e2d44' },
-          beginAtZero: true
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Working Days Lost',
+            color: '#5a7194',
+            font: { family: 'JetBrains Mono', size: 10 }
+          }
         }
       }
     }
@@ -755,22 +799,27 @@ function renderBarChart(data) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  DOUGHNUT — category split
+//  DOUGHNUT — weighted by working days
 // ─────────────────────────────────────────────────────────
 function renderDoughnut(data) {
-  const cats = activeCats().filter(c=>!hiddenCats.has(c));
-  const counts = cats.map(c => data.filter(r=>resolveDisplayCat(r.category)===c).length);
+  const cats   = activeCats().filter(c=>!hiddenCats.has(c));
+  const totals = cats.map(c => sumDays(data.filter(r => resolveDisplayCat(r.category)===c)));
   const colors = cats.map(c=>CAT_META[c].color);
   const labels = cats.map(c=>CAT_META[c].label);
 
   if (doughnutInst) doughnutInst.destroy();
   doughnutInst = new Chart(document.getElementById('doughnutChart'), {
     type:'doughnut',
-    data:{ labels, datasets:[{ data:counts, backgroundColor:colors.map(c=>c+'bb'), borderColor:colors, borderWidth:2 }] },
+    data:{ labels, datasets:[{ data:totals, backgroundColor:colors.map(c=>c+'bb'), borderColor:colors, borderWidth:2 }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{ position:'bottom', labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:10}, padding:12 } }
+        legend:{ position:'bottom', labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:10}, padding:12 } },
+        tooltip:{
+          callbacks:{
+            label: ctx => ` ${ctx.label}: ${ctx.parsed} day${ctx.parsed !== 1 ? 's' : ''}`
+          }
+        }
       },
       cutout:'62%'
     }
@@ -778,28 +827,30 @@ function renderDoughnut(data) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  BREAKDOWN TABLE
+//  BREAKDOWN TABLE — days-based
 // ─────────────────────────────────────────────────────────
 function renderBreakdownTable(data) {
-  const cats = activeCats().filter(c=>!hiddenCats.has(c));
-  const maxCount = Math.max(1, ...cats.map(c=>data.filter(r=>resolveDisplayCat(r.category)===c).length));
+  const cats    = activeCats().filter(c=>!hiddenCats.has(c));
+  const totalAllDays = sumDays(data);
 
   const rows = cats.map(cat => {
-    const m     = CAT_META[cat];
-    const count = data.filter(r=>resolveDisplayCat(r.category)===cat).length;
-    const days  = data.filter(r=>resolveDisplayCat(r.category)===cat).reduce((s,r)=>s+(parseFloat(r.workingDays)||0),0).toFixed(1);
-    const pct   = ((count/data.length)*100).toFixed(1);
-    const bar   = ((count/maxCount)*100).toFixed(1);
-    return { cat, m, count, days, pct, bar };
-  }).sort((a,b)=>b.count-a.count);
+    const m        = CAT_META[cat];
+    const recs     = data.filter(r => resolveDisplayCat(r.category)===cat);
+    const days     = sumDays(recs);
+    const count    = recs.length;
+    const pct      = totalAllDays > 0 ? ((days / totalAllDays)*100).toFixed(1) : '0.0';
+    return { cat, m, count, days, pct };
+  }).sort((a,b) => b.days - a.days);
+
+  const maxDays = Math.max(1, ...rows.map(r => r.days));
 
   document.getElementById('breakdownTable').innerHTML = `
     <thead>
       <tr>
         <th>Category</th>
+        <th>Working Days Lost</th>
+        <th>% of Total Days</th>
         <th>Records</th>
-        <th>% of Total</th>
-        <th>Days Lost</th>
         <th class="bt-bar-cell">Distribution</th>
       </tr>
     </thead>
@@ -807,12 +858,12 @@ function renderBreakdownTable(data) {
       ${rows.map(r=>`
         <tr>
           <td><span class="cat-pill" style="background:${r.m.color}1a;color:${r.m.color};border:1px solid ${r.m.color}44">${r.m.label}</span></td>
-          <td style="font-weight:700;color:var(--text)">${r.count}</td>
+          <td style="font-weight:700;color:var(--text)">${r.days % 1 === 0 ? r.days : r.days.toFixed(1)}</td>
           <td style="color:var(--muted)">${r.pct}%</td>
-          <td style="color:var(--muted)">${r.days}</td>
+          <td style="color:var(--muted)">${r.count}</td>
           <td class="bt-bar-cell">
             <div class="bt-bar-bg">
-              <div class="bt-bar-fill" style="width:${r.bar}%;background:${r.m.color}"></div>
+              <div class="bt-bar-fill" style="width:${((r.days/maxDays)*100).toFixed(1)}%;background:${r.m.color}"></div>
             </div>
           </td>
         </tr>`).join('')}
