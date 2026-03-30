@@ -386,6 +386,19 @@
             color: var(--accent-violet);
         }
 
+        /* ─── START OF DAY TABLE ─── */
+        .sod-table thead tr { background: rgba(52,211,153,0.06); }
+        .sod-table th { color: var(--success); opacity: 0.8; }
+        .sod-table td.reg { color: var(--success); }
+        .sod-table tbody tr:hover { background: rgba(52,211,153,0.04); }
+        td.late-flag {
+            font-weight: 700;
+            color: var(--accent-amber);
+        }
+        td.late-flag.very-late {
+            color: var(--accent-rose);
+        }
+
         /* ─── NON-WORKING DAY NOTICE BANNER ─── */
         .nwd-banner {
             display: none;
@@ -454,6 +467,34 @@
         </div>
     </div>
 
+    <!-- ── START OF DAY PANEL ── -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-icon" style="background:linear-gradient(135deg,rgba(52,211,153,0.2),rgba(56,189,248,0.2))">🌅</div>
+            <div>
+                <div class="panel-title">Start of Day</div>
+                <div class="panel-subtitle">First journey per vehicle — vehicles starting after 08:00 are highlighted</div>
+            </div>
+        </div>
+        <div class="summary-row" id="sodSummaryRow"></div>
+        <div class="table-wrap">
+            <table class="sod-table" id="sodTable">
+                <thead>
+                    <tr>
+                        <th class="sort-th" onclick="sortSod('reg')" data-sod-col="reg">Registration <span class="sort-icon" id="sod-si-reg">⇅</span></th>
+                        <th class="sort-th" onclick="sortSod('driver')" data-sod-col="driver">Driver <span class="sort-icon" id="sod-si-driver">⇅</span></th>
+                        <th class="sort-th" onclick="sortSod('firstMins')" data-sod-col="firstMins" style="color:var(--success);">First Journey ▾ <span class="sort-icon" id="sod-si-firstMins">▼</span></th>
+                        <th class="sort-th" onclick="sortSod('miles')" data-sod-col="miles">Total Miles <span class="sort-icon" id="sod-si-miles">⇅</span></th>
+                        <th class="sort-th" onclick="sortSod('journeys')" data-sod-col="journeys">Journeys <span class="sort-icon" id="sod-si-journeys">⇅</span></th>
+                    </tr>
+                </thead>
+                <tbody id="sodBody">
+                    <tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>Select a date and click Refresh</p></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- ── AFTER 5PM / ALL-DAY PANEL ── -->
     <div class="panel" id="after5Panel">
         <div class="panel-header">
@@ -475,12 +516,12 @@
             <table class="after5-table" id="after5Table">
                 <thead>
                     <tr id="after5TableHead">
-                        <th>Registration</th>
-                        <th>Journeys</th>
-                        <th>Total Miles</th>
-                        <th>Total Duration</th>
-                        <th>Total Idle</th>
-                        <th id="after5LastCol">Latest Journey</th>
+                        <th class="sort-th" onclick="sortAfter5('reg')" data-a5-col="reg">Registration <span class="sort-icon" id="a5-si-reg">⇅</span></th>
+                        <th class="sort-th" onclick="sortAfter5('journeys')" data-a5-col="journeys">Journeys <span class="sort-icon" id="a5-si-journeys">⇅</span></th>
+                        <th class="sort-th" onclick="sortAfter5('miles')" data-a5-col="miles">Total Miles <span class="sort-icon" id="a5-si-miles">⇅</span></th>
+                        <th class="sort-th" onclick="sortAfter5('durationMins')" data-a5-col="durationMins">Total Duration <span class="sort-icon" id="a5-si-durationMins">⇅</span></th>
+                        <th class="sort-th" onclick="sortAfter5('idleMins')" data-a5-col="idleMins">Total Idle <span class="sort-icon" id="a5-si-idleMins">⇅</span></th>
+                        <th class="sort-th" onclick="sortAfter5('latestMins')" data-a5-col="latestMins" id="after5LastCol" style="color:var(--accent-rose);">Latest Journey ▾ <span class="sort-icon" id="a5-si-latestMins">▼</span></th>
                     </tr>
                 </thead>
                 <tbody id="after5Body">
@@ -843,6 +884,9 @@
         tbody.innerHTML      = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         a5tbody.innerHTML    = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        document.getElementById('sodBody').innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        window._sodData    = [];
+        window._after5Data = [];
 
         // ── Update After 5PM panel UI for weekend/BH mode ──
         const after5PanelIcon     = document.getElementById('after5PanelIcon');
@@ -936,6 +980,38 @@
                 renderUsageTable('miles', 'desc');
             }
 
+            // ── START OF DAY TABLE ──
+            const sodSummRow = document.getElementById('sodSummaryRow');
+            const sodBody    = document.getElementById('sodBody');
+            sodSummRow.innerHTML = '';
+            if (journeys.length === 0) {
+                sodBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
+            } else {
+                // Find the earliest journey per vehicle
+                const sodByReg = {};
+                journeys.forEach(j => {
+                    const r = j.registration || 'Unknown';
+                    const st = j.startTime ? new Date(j.startTime) : null;
+                    if (!sodByReg[r]) {
+                        sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: st, firstMins: st ? st.getHours()*60+st.getMinutes() : 9999, journeys: 0, miles: 0 };
+                    }
+                    sodByReg[r].journeys++;
+                    sodByReg[r].miles += j.miles;
+                    if (st && st < sodByReg[r].firstTime) {
+                        sodByReg[r].firstTime = st;
+                        sodByReg[r].firstMins = st.getHours()*60 + st.getMinutes();
+                        sodByReg[r].driver = j.driver || sodByReg[r].driver;
+                    }
+                });
+                window._sodData = Object.values(sodByReg);
+                const lateCount = window._sodData.filter(r => r.firstMins >= 8*60).length;
+                sodSummRow.innerHTML = `
+                    <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">🌅 ${window._sodData.length} Vehicles</div>
+                    ${lateCount > 0 ? `<div class="chip amber">⚠️ ${lateCount} First Journey After 08:00</div>` : '<div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ All Started Before 08:00</div>'}
+                `;
+                renderSodTable('firstMins', 'asc');
+            }
+
             // ── AFTER 5PM / ALL-DAY TABLE ──
             // On weekends/BH: show ALL journeys. On weekdays: only after 5pm.
             const relevantJourneys = nwdInfo.isNonWorkingDay
@@ -957,7 +1033,7 @@
                 const byReg = {};
                 relevantJourneys.forEach(j => {
                     const r = j.registration || 'Unknown';
-                    if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null };
+                    if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null, latestMins:0 };
                     const g = byReg[r];
                     g.journeys++;
                     g.miles += j.miles;
@@ -966,35 +1042,31 @@
                     const st = j.startTime ? new Date(j.startTime) : null;
                     if (st) {
                         if (!g.earliest || st < g.earliest) g.earliest = st;
-                        if (!g.latest   || st > g.latest)   g.latest   = st;
+                        if (!g.latest   || st > g.latest) {
+                            g.latest = st;
+                            g.latestMins = st.getHours()*60 + st.getMinutes();
+                        }
                     }
                 });
 
-                const a5rows = Object.values(byReg).sort((a,b) => b.miles - a.miles);
-                const totalA5Miles = a5rows.reduce((s,r) => s + r.miles, 0);
+                window._after5Data = Object.values(byReg);
+                const totalA5Miles = window._after5Data.reduce((s,r) => s + r.miles, 0);
 
                 if (nwdInfo.isNonWorkingDay) {
                     a5SummRow.innerHTML = `
                         <div class="chip violet">📅 ${relevantJourneys.length} Journeys on ${nwdInfo.label}</div>
                         <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Total Miles</div>
-                        <div class="chip violet">${a5rows.length} Vehicles Active</div>
+                        <div class="chip violet">${window._after5Data.length} Vehicles Active</div>
                     `;
                 } else {
                     a5SummRow.innerHTML = `
                         <div class="chip rose">🌙 ${relevantJourneys.length} After-Hours Journeys</div>
                         <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Miles After 5pm</div>
-                        <div class="chip rose">${a5rows.length} Vehicles</div>
+                        <div class="chip rose">${window._after5Data.length} Vehicles</div>
                     `;
                 }
 
-                a5tbody.innerHTML = a5rows.map(g => `<tr>
-                    <td class="reg">${esc(g.reg)}</td>
-                    <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
-                    <td class="miles">${g.miles.toFixed(1)}</td>
-                    <td class="muted">${minsToHM(g.durationMins)}</td>
-                    <td class="muted">${minsToHM(g.idleMins)}</td>
-                    <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
-                </tr>`).join('');
+                renderAfter5Table('latestMins', 'desc');
             }
 
             // ── MOVEMENT WHILST OFF ──
@@ -1201,6 +1273,101 @@
             console.error(err);
         }
     }
+
+    // ── START OF DAY SORT & RENDER ─────────────────────────────────────────
+    let _sodSortCol = 'firstMins', _sodSortDir = 'asc';
+
+    function renderSodTable(col, dir) {
+        _sodSortCol = col; _sodSortDir = dir;
+        const data = (window._sodData || []).slice();
+        data.sort((a, b) => {
+            const av = typeof a[col] === 'string' ? a[col].toLowerCase() : (a[col] ?? 9999);
+            const bv = typeof b[col] === 'string' ? b[col].toLowerCase() : (b[col] ?? 9999);
+            if (av < bv) return dir === 'asc' ? -1 : 1;
+            if (av > bv) return dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        const cols = ['reg','driver','firstMins','miles','journeys'];
+        cols.forEach(c => {
+            const si = document.getElementById(`sod-si-${c}`);
+            const th = document.querySelector(`[data-sod-col="${c}"]`);
+            if (!si || !th) return;
+            th.classList.toggle('active', c === col);
+            si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
+        });
+
+        const tbody = document.getElementById('sodBody');
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>No data</p></div></td></tr>';
+            return;
+        }
+        const LATE_MINS = 8 * 60; // 08:00
+        tbody.innerHTML = data.map(g => {
+            const isLate     = g.firstMins >= LATE_MINS;
+            const isVeryLate = g.firstMins >= 9 * 60; // 09:00+
+            const timeClass  = isVeryLate ? 'late-flag very-late' : isLate ? 'late-flag' : 'muted';
+            const timeLabel  = g.firstTime ? timeStr(g.firstTime) : '—';
+            const lateTag    = isLate ? `<span style="margin-left:8px;font-size:0.72em;padding:2px 7px;border-radius:5px;background:${isVeryLate?'rgba(251,113,133,0.15)':'rgba(245,158,11,0.15)'};border:1px solid ${isVeryLate?'rgba(251,113,133,0.35)':'rgba(245,158,11,0.35)'};">${isVeryLate?'09:00+':'After 08:00'}</span>` : '';
+            return `<tr>
+                <td class="reg" style="color:var(--success)">${esc(g.reg)}</td>
+                <td class="muted">${esc(g.driver) || '—'}</td>
+                <td class="${timeClass}">${timeLabel}${lateTag}</td>
+                <td class="miles">${g.miles.toFixed(1)}</td>
+                <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function sortSod(col) {
+        const dir = (_sodSortCol === col && _sodSortDir === 'asc') ? 'desc' : 'asc';
+        renderSodTable(col, dir);
+    }
+    window.sortSod = sortSod;
+
+    // ── AFTER-HOURS SORT & RENDER ──────────────────────────────────────────
+    let _a5SortCol = 'latestMins', _a5SortDir = 'desc';
+
+    function renderAfter5Table(col, dir) {
+        _a5SortCol = col; _a5SortDir = dir;
+        const data = (window._after5Data || []).slice();
+        data.sort((a, b) => {
+            const av = typeof a[col] === 'string' ? a[col].toLowerCase() : (a[col] ?? 0);
+            const bv = typeof b[col] === 'string' ? b[col].toLowerCase() : (b[col] ?? 0);
+            if (av < bv) return dir === 'asc' ? -1 : 1;
+            if (av > bv) return dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        const cols = ['reg','journeys','miles','durationMins','idleMins','latestMins'];
+        cols.forEach(c => {
+            const si = document.getElementById(`a5-si-${c}`);
+            const th = document.querySelector(`[data-a5-col="${c}"]`);
+            if (!si || !th) return;
+            th.classList.toggle('active', c === col);
+            si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
+        });
+
+        const a5tbody = document.getElementById('after5Body');
+        if (!data.length) {
+            a5tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">🌙</div><p>No data</p></div></td></tr>';
+            return;
+        }
+        a5tbody.innerHTML = data.map(g => `<tr>
+            <td class="reg">${esc(g.reg)}</td>
+            <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
+            <td class="miles">${g.miles.toFixed(1)}</td>
+            <td class="muted">${minsToHM(g.durationMins)}</td>
+            <td class="muted">${minsToHM(g.idleMins)}</td>
+            <td class="muted" style="font-weight:600;">${g.latest ? timeStr(g.latest) : '—'}</td>
+        </tr>`).join('');
+    }
+
+    function sortAfter5(col) {
+        const dir = (_a5SortCol === col && _a5SortDir === 'desc') ? 'asc' : 'desc';
+        renderAfter5Table(col, dir);
+    }
+    window.sortAfter5 = sortAfter5;
 
     // ── DAY'S USAGE SORT & RENDER ──────────────────────────────────────────
     let _currentSortCol = 'miles';
