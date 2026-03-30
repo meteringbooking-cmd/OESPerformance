@@ -282,16 +282,14 @@ body::before {
   <!-- Charts -->
   <div class="charts-grid" id="chartsGrid" style="display:none;">
     <div class="chart-card full">
-      <h3><span class="ch-dot" style="background:#3b82f6"></span>Absences by Month</h3>
-      <canvas id="barChart" height="90"></canvas>
+      <h3><span class="ch-dot" style="background:#3b82f6"></span>Absences by Month <span style="font-size:.75rem;font-family:'JetBrains Mono',monospace;color:var(--muted);font-weight:400;margin-left:.5rem;">Grouped bars + total trend line</span></h3>
+      <canvas id="barChart" height="85"></canvas>
     </div>
-    <div class="chart-card">
+    <div class="chart-card full">
       <h3><span class="ch-dot" style="background:#06b6d4"></span>Breakdown by Category</h3>
-      <canvas id="doughnutChart" height="260"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3><span class="ch-dot" style="background:#a78bfa"></span>Top 10 Employees</h3>
-      <canvas id="empChart" height="260"></canvas>
+      <div style="max-width:480px;margin:0 auto;">
+        <canvas id="doughnutChart" height="300"></canvas>
+      </div>
     </div>
     <div class="chart-card full">
       <h3><span class="ch-dot" style="background:#34d399"></span>Category Breakdown</h3>
@@ -385,7 +383,6 @@ let selectedMonths= new Set(); // 0-indexed
 
 let barChartInst  = null;
 let doughnutInst  = null;
-let empChartInst  = null;
 
 // ─────────────────────────────────────────────────────────
 //  HELPERS
@@ -650,7 +647,6 @@ function renderAll() {
   renderStats(filtered);
   renderBarChart(filtered);
   renderDoughnut(filtered);
-  renderEmpChart(filtered);
   renderBreakdownTable(filtered);
 }
 
@@ -665,21 +661,25 @@ function renderStats(data) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  BAR CHART — absences per month (stacked by category)
+//  BAR CHART — grouped bars per month + total trend line
 // ─────────────────────────────────────────────────────────
 function renderBarChart(data) {
   const sortedMonths = Array.from(selectedMonths).sort((a,b)=>a-b);
   const cats = activeCats().filter(c=>!hiddenCats.has(c));
   const labels = sortedMonths.map(m=>MONTH_FULL[m]);
 
-  const datasets = cats.map(cat => {
+  // Grouped bar datasets (one per category)
+  const barDatasets = cats.map(cat => {
     const m = CAT_META[cat];
     return {
+      type: 'bar',
       label: m.label,
-      backgroundColor: m.color+'cc',
+      backgroundColor: m.color+'bb',
       borderColor: m.color,
-      borderWidth:1,
-      borderRadius:4,
+      borderWidth: 1,
+      borderRadius: 5,
+      borderSkipped: false,
+      yAxisID: 'y',
       data: sortedMonths.map(mo => data.filter(r => {
         const rMo = parseInt(r.fromDate.substring(5,7))-1;
         return rMo===mo && resolveDisplayCat(r.category)===cat;
@@ -687,16 +687,68 @@ function renderBarChart(data) {
     };
   });
 
+  // Trend line — total absences per month
+  const totalPerMonth = sortedMonths.map(mo =>
+    data.filter(r => parseInt(r.fromDate.substring(5,7))-1 === mo).length
+  );
+
+  const trendDataset = {
+    type: 'line',
+    label: 'Total (trend)',
+    data: totalPerMonth,
+    borderColor: '#ffffff',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 2.5,
+    borderDash: [],
+    pointBackgroundColor: '#ffffff',
+    pointRadius: 5,
+    pointHoverRadius: 7,
+    tension: 0.4,
+    fill: false,
+    yAxisID: 'y',
+    order: 0,
+    z: 10
+  };
+
   if (barChartInst) barChartInst.destroy();
   barChartInst = new Chart(document.getElementById('barChart'), {
-    type:'bar',
-    data:{ labels, datasets },
-    options:{
-      responsive:true, maintainAspectRatio:true,
-      plugins:{ legend:{ labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:11} } } },
-      scales:{
-        x:{ stacked:true, ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'} },
-        y:{ stacked:true, ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'}, beginAtZero:true }
+    data: { labels, datasets: [...barDatasets, trendDataset] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#8eaac8',
+            font: { family: 'JetBrains Mono', size: 11 },
+            usePointStyle: true,
+            pointStyleWidth: 14
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0e1420',
+          borderColor: '#1e2d44',
+          borderWidth: 1,
+          titleColor: '#e2eaf5',
+          bodyColor: '#8eaac8',
+          padding: 12,
+          callbacks: {
+            title: items => items[0].label,
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8eaac8' },
+          grid: { color: '#1e2d441a' }
+        },
+        y: {
+          ticks: { color: '#8eaac8', stepSize: 1 },
+          grid: { color: '#1e2d44' },
+          beginAtZero: true
+        }
       }
     }
   });
@@ -721,41 +773,6 @@ function renderDoughnut(data) {
         legend:{ position:'bottom', labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:10}, padding:12 } }
       },
       cutout:'62%'
-    }
-  });
-}
-
-// ─────────────────────────────────────────────────────────
-//  EMPLOYEE CHART — top 10 by count
-// ─────────────────────────────────────────────────────────
-function renderEmpChart(data) {
-  const empMap = {};
-  data.forEach(r => { empMap[r.employee] = (empMap[r.employee]||0)+1; });
-  const top = Object.entries(empMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  const labels = top.map(([e])=>e.split(' ').slice(-1)[0]); // last name for space
-  const values = top.map(([,v])=>v);
-
-  if (empChartInst) empChartInst.destroy();
-  empChartInst = new Chart(document.getElementById('empChart'), {
-    type:'bar',
-    data:{
-      labels,
-      datasets:[{
-        label:'Absences',
-        data:values,
-        backgroundColor:'#3b82f6aa',
-        borderColor:'#3b82f6',
-        borderWidth:1,
-        borderRadius:6
-      }]
-    },
-    options:{
-      indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
-      scales:{
-        x:{ ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'}, beginAtZero:true },
-        y:{ ticks:{color:'#c2d4e8', font:{size:11}}, grid:{display:false} }
-      }
     }
   });
 }
