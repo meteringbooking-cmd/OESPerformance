@@ -272,6 +272,17 @@
         .after5-table td.miles { color: var(--accent-amber); }
         .after5-table tbody tr:hover { background: rgba(251,113,133,0.04); }
 
+        /* ─── SORTABLE HEADERS ─── */
+        .sort-th {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        .sort-th:hover { color: var(--accent-cyan) !important; }
+        .sort-th.active { color: var(--accent-cyan) !important; }
+        .sort-icon { display: inline-block; margin-left: 4px; font-style: normal; opacity: 0.4; font-size: 0.85em; }
+        .sort-th.active .sort-icon { opacity: 1; }
+
         /* ─── ABSENT / MOVEMENT WHILST OFF TABLE ─── */
         .absent-table thead tr { background: rgba(167,139,250,0.06); }
         .absent-table th { color: var(--accent-violet); opacity: 0.8; }
@@ -441,13 +452,13 @@
         </div>
     </div>
 
-    <!-- ── JOURNEY LOG PANEL (moved to bottom) ── -->
+    <!-- ── DAY'S USAGE PANEL ── -->
     <div class="panel">
         <div class="panel-header">
-            <div class="panel-icon">📋</div>
+            <div class="panel-icon">📊</div>
             <div>
-                <div class="panel-title">Journey Log</div>
-                <div class="panel-subtitle">All journeys with miles &gt; 0.1</div>
+                <div class="panel-title">Day's Usage</div>
+                <div class="panel-subtitle">Consolidated per vehicle — click column headers to sort</div>
             </div>
         </div>
 
@@ -457,22 +468,15 @@
             <table id="journeyTable">
                 <thead>
                     <tr>
-                        <th>Registration</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Start Location</th>
-                        <th>End Location</th>
-                        <th>Start POI</th>
-                        <th>End POI</th>
-                        <th>Miles</th>
-                        <th>Duration</th>
-                        <th>Idle</th>
-                        <th>Start Postcode</th>
-                        <th>End Postcode</th>
+                        <th class="sort-th" data-col="reg" data-dir="asc" onclick="sortUsage('reg')">Registration <span class="sort-icon" id="si-reg"></span></th>
+                        <th class="sort-th" data-col="journeys" data-dir="asc" onclick="sortUsage('journeys')">Journeys <span class="sort-icon" id="si-journeys"></span></th>
+                        <th class="sort-th" data-col="miles" data-dir="asc" onclick="sortUsage('miles')">Total Miles <span class="sort-icon" id="si-miles"></span></th>
+                        <th class="sort-th" data-col="durationMins" data-dir="asc" onclick="sortUsage('durationMins')">Total Duration <span class="sort-icon" id="si-durationMins"></span></th>
+                        <th class="sort-th" data-col="idleMins" data-dir="asc" onclick="sortUsage('idleMins')">Total Idle <span class="sort-icon" id="si-idleMins"></span></th>
                     </tr>
                 </thead>
                 <tbody id="journeyBody">
-                    <tr><td colspan="12"><div class="empty-state"><div class="icon">🚐</div><p>Select a date and click Refresh</p></div></td></tr>
+                    <tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>Select a date and click Refresh</p></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -746,35 +750,33 @@
                 return ta - tb;
             });
 
-            // ── ALL JOURNEYS TABLE ──
+            // ── DAY'S USAGE TABLE (consolidated by registration) ──
             summRow.innerHTML = '';
+            window._usageData = []; // store for sorting
+
             if (journeys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">🚐</div><p>No journeys found for ' + dateVal + '</p></div></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ' + dateVal + '</p></div></td></tr>';
             } else {
+                const byReg = {};
+                journeys.forEach(j => {
+                    const r = j.registration || 'Unknown';
+                    if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0 };
+                    byReg[r].journeys++;
+                    byReg[r].miles        += j.miles;
+                    byReg[r].durationMins += parseDurationToMins(j.duration);
+                    byReg[r].idleMins     += parseDurationToMins(j.idle);
+                });
+
+                window._usageData = Object.values(byReg);
+
                 const totalMiles = journeys.reduce((s,j) => s + j.miles, 0);
                 summRow.innerHTML = `
                     <div class="chip">🚐 ${journeys.length} Journeys</div>
                     <div class="chip amber">📍 ${totalMiles.toFixed(1)} Total Miles</div>
-                    <div class="chip">${[...new Set(journeys.map(j=>j.registration))].length} Vehicles</div>
+                    <div class="chip">${window._usageData.length} Vehicles</div>
                 `;
-                tbody.innerHTML = journeys.map(j => {
-                    const st = j.startTime ? new Date(j.startTime) : null;
-                    const et = j.endTime   ? new Date(j.endTime)   : null;
-                    return `<tr>
-                        <td class="reg">${esc(j.registration)}</td>
-                        <td>${timeStr(st)}</td>
-                        <td>${timeStr(et)}</td>
-                        <td class="muted">${esc(j.startLocation)}</td>
-                        <td class="muted">${esc(j.endLocation)}</td>
-                        <td class="muted">${esc(j.startPOI)}</td>
-                        <td class="muted">${esc(j.endPOI)}</td>
-                        <td class="miles">${j.miles.toFixed(1)}</td>
-                        <td class="muted">${esc(j.duration)}</td>
-                        <td class="muted">${esc(j.idle)}</td>
-                        <td class="muted">${esc(j.startPostcode)}</td>
-                        <td class="muted">${esc(j.endPostcode)}</td>
-                    </tr>`;
-                }).join('');
+
+                renderUsageTable('miles', 'desc');
             }
 
             // ── AFTER 5PM TABLE ──
@@ -932,6 +934,56 @@
             console.error(err);
         }
     }
+
+    // ── DAY'S USAGE SORT & RENDER ──────────────────────────────────────────
+    let _currentSortCol = 'miles';
+    let _currentSortDir = 'desc';
+
+    function renderUsageTable(col, dir) {
+        _currentSortCol = col;
+        _currentSortDir = dir;
+
+        const data = (window._usageData || []).slice();
+
+        data.sort((a, b) => {
+            const av = typeof a[col] === 'string' ? a[col].toLowerCase() : a[col];
+            const bv = typeof b[col] === 'string' ? b[col].toLowerCase() : b[col];
+            if (av < bv) return dir === 'asc' ? -1 :  1;
+            if (av > bv) return dir === 'asc' ?  1 : -1;
+            return 0;
+        });
+
+        // Update header indicators
+        const cols = ['reg','journeys','miles','durationMins','idleMins'];
+        cols.forEach(c => {
+            const th = document.querySelector(`[data-col="${c}"]`);
+            const si = document.getElementById(`si-${c}`);
+            if (!th || !si) return;
+            th.classList.toggle('active', c === col);
+            si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
+        });
+
+        const tbody = document.getElementById('journeyBody');
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No data</p></div></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.map(g => `<tr>
+            <td class="reg">${esc(g.reg)}</td>
+            <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
+            <td class="miles">${g.miles.toFixed(1)}</td>
+            <td class="muted">${minsToHM(g.durationMins)}</td>
+            <td class="muted">${minsToHM(g.idleMins)}</td>
+        </tr>`).join('');
+    }
+
+    function sortUsage(col) {
+        const dir = (_currentSortCol === col && _currentSortDir === 'desc') ? 'asc' : 'desc';
+        renderUsageTable(col, dir);
+    }
+
+    window.sortUsage = sortUsage;
 
     // ── UTILS ──────────────────────────────────────────────────────────────
     function esc(str) {
