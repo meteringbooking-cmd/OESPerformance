@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Absence Trends — OES Performance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #080b12;
+  --surface:  #0e1420;
+  --panel:    #131b2b;
+  --border:   #1e2d44;
+  --border2:  #253550;
+  --text:     #e2eaf5;
+  --muted:    #5a7194;
+  --accent:   #3b82f6;
+  --accent2:  #06b6d4;
+
+  --c-sickness:  #f87171;
+  --c-ga:        #fb923c;
+  --c-holiday:   #34d399;
+  --c-aaup:      #fbbf24;
+  --c-jury:      #a78bfa;
+  --c-depend:    #60a5fa;
+  --c-maternity: #f472b6;
+  --c-awol:      #ef4444;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 2.5rem 1.5rem;
+}
+
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 10%, rgba(59,130,246,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 80%, rgba(6,182,212,0.05) 0%, transparent 60%);
+  pointer-events:none; z-index:0;
+}
+
+.wrap { max-width:1400px; margin:0 auto; position:relative; z-index:1; }
+
+/* ── Header ── */
+.page-header { display:flex; align-items:center; gap:1.25rem; margin-bottom:3rem; }
+.back-btn {
+  width:44px; height:44px; background:var(--panel); border:1px solid var(--border);
+  border-radius:10px; display:flex; align-items:center; justify-content:center;
+  text-decoration:none; color:var(--text); font-size:1.1rem; flex-shrink:0;
+  transition:all .25s;
+}
+.back-btn:hover { background:var(--accent); border-color:var(--accent); }
+.page-title {
+  font-size:2rem; font-weight:800; letter-spacing:-.04em;
+  background:linear-gradient(120deg,#e2eaf5 30%,#3b82f6 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.page-sub { font-family:'JetBrains Mono',monospace; color:var(--muted); font-size:.8rem; margin-top:.2rem; letter-spacing:.06em; }
+
+/* ── Upload strip ── */
+.upload-strip {
+  display:flex; align-items:center; gap:1rem; flex-wrap:wrap;
+  background:var(--panel); border:1px solid var(--border); border-radius:14px;
+  padding:1.25rem 1.5rem; margin-bottom:2rem;
+}
+.upload-strip label {
+  display:flex; align-items:center; gap:.6rem;
+  background:var(--accent); color:#fff; border-radius:9px;
+  padding:.6rem 1.25rem; font-weight:700; font-size:.9rem;
+  cursor:pointer; transition:all .25s; white-space:nowrap;
+}
+.upload-strip label:hover { background:#2563eb; }
+.upload-strip input[type=file] { display:none; }
+.upload-file-name { font-family:'JetBrains Mono',monospace; font-size:.8rem; color:var(--muted); }
+.upload-btn {
+  margin-left:auto; padding:.6rem 1.4rem;
+  background:linear-gradient(135deg,#3b82f6,#06b6d4); color:#fff;
+  border:none; border-radius:9px; font-family:'Syne',sans-serif; font-weight:700; font-size:.9rem;
+  cursor:pointer; transition:all .25s; white-space:nowrap;
+}
+.upload-btn:hover { opacity:.85; transform:translateY(-1px); }
+.upload-btn:disabled { opacity:.3; cursor:not-allowed; transform:none; }
+
+/* Progress */
+.progress-wrap { height:4px; background:var(--border); border-radius:4px; margin-bottom:1.5rem; display:none; overflow:hidden; }
+.progress-wrap.show { display:block; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#3b82f6,#06b6d4); width:0%; transition:width .3s; }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:1.5rem; right:1.5rem; z-index:999;
+  padding:.85rem 1.4rem; border-radius:12px; font-weight:600; font-size:.9rem;
+  display:none; max-width:360px;
+}
+.toast.show { display:block; animation:slideUp .3s ease; }
+@keyframes slideUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.toast.success { background:rgba(52,211,153,.15); border:1px solid rgba(52,211,153,.35); color:#34d399; }
+.toast.error   { background:rgba(248,113,113,.15); border:1px solid rgba(248,113,113,.35); color:#f87171; }
+.toast.info    { background:rgba(59,130,246,.15);  border:1px solid rgba(59,130,246,.35);  color:#93c5fd; }
+
+/* ── Controls ── */
+.controls-bar {
+  display:grid; grid-template-columns:1fr 1fr auto; gap:1.25rem; align-items:end;
+  background:var(--panel); border:1px solid var(--border); border-radius:14px;
+  padding:1.5rem; margin-bottom:2rem;
+}
+@media(max-width:760px){ .controls-bar{ grid-template-columns:1fr; } }
+
+.ctrl-group label {
+  display:block; font-size:.78rem; font-family:'JetBrains Mono',monospace;
+  color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:.5rem;
+}
+
+/* month multi-select */
+.month-picker {
+  display:flex; flex-wrap:wrap; gap:.4rem;
+}
+.month-chip {
+  padding:.35rem .75rem; border-radius:20px; font-size:.78rem; font-weight:600;
+  cursor:pointer; border:1px solid var(--border2); background:var(--surface);
+  color:var(--muted); transition:all .2s; user-select:none; font-family:'JetBrains Mono',monospace;
+}
+.month-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.month-chip:hover:not(.active) { border-color:var(--accent); color:var(--text); }
+
+.year-select {
+  width:100%; padding:.65rem .9rem;
+  background:var(--surface); border:1px solid var(--border2); border-radius:9px;
+  color:var(--text); font-family:'Syne',sans-serif; font-size:.9rem; cursor:pointer;
+  transition:all .2s;
+}
+.year-select:focus { outline:none; border-color:var(--accent); }
+.year-select option { background:var(--panel); }
+
+/* Category toggle */
+.cat-toggle {
+  display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+}
+.toggle-pill {
+  display:flex; align-items:center; gap:.4rem; padding:.4rem .9rem;
+  border-radius:20px; font-size:.78rem; font-weight:600; cursor:pointer;
+  border:1px solid var(--border2); background:var(--surface); color:var(--muted);
+  transition:all .2s; user-select:none;
+}
+.toggle-pill.active { color:#fff; }
+.toggle-pill .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.ctrl-apply {
+  padding:.7rem 1.6rem; background:var(--accent); color:#fff; border:none;
+  border-radius:9px; font-family:'Syne',sans-serif; font-weight:700; font-size:.9rem;
+  cursor:pointer; transition:all .2s; white-space:nowrap;
+}
+.ctrl-apply:hover { background:#2563eb; }
+
+/* ── Stats strip ── */
+.stats-row { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:2rem; }
+.stat-tile {
+  flex:1 1 140px; background:var(--panel); border:1px solid var(--border);
+  border-radius:14px; padding:1.2rem 1.4rem; display:flex; flex-direction:column; gap:.3rem;
+}
+.stat-tile .st-num { font-size:2rem; font-weight:800; line-height:1; }
+.stat-tile .st-lbl { font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--muted); letter-spacing:.05em; }
+
+/* ── Charts ── */
+.charts-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:2rem; }
+@media(max-width:900px){ .charts-grid{ grid-template-columns:1fr; } }
+
+.chart-card {
+  background:var(--panel); border:1px solid var(--border); border-radius:16px;
+  padding:1.75rem; position:relative;
+}
+.chart-card.full { grid-column:1/-1; }
+.chart-card h3 {
+  font-size:1rem; font-weight:700; margin-bottom:1.25rem;
+  display:flex; align-items:center; gap:.6rem; color:var(--text);
+}
+.chart-card h3 .ch-dot {
+  width:10px; height:10px; border-radius:50%; background:var(--accent);
+}
+
+/* ── Breakdown table ── */
+.breakdown-table { width:100%; border-collapse:collapse; }
+.breakdown-table th {
+  text-align:left; padding:.75rem 1rem;
+  font-family:'JetBrains Mono',monospace; font-size:.72rem;
+  color:var(--muted); letter-spacing:.07em; text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.breakdown-table td { padding:.8rem 1rem; border-bottom:1px solid var(--border); font-size:.88rem; }
+.breakdown-table tbody tr:hover { background:rgba(59,130,246,.04); }
+.breakdown-table tbody tr:last-child td { border-bottom:none; }
+.bt-bar-cell { width:200px; }
+.bt-bar-bg { background:var(--border); border-radius:4px; height:6px; }
+.bt-bar-fill { height:100%; border-radius:4px; }
+.cat-pill {
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .7rem; border-radius:20px; font-size:.75rem; font-weight:600;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  text-align:center; padding:4rem 2rem;
+  color:var(--muted); font-size:.95rem; font-family:'JetBrains Mono',monospace;
+}
+.empty-state .es-icon { font-size:3rem; margin-bottom:1rem; opacity:.4; }
+
+/* ── Split toggle ── */
+.split-btn {
+  font-size:.75rem; font-family:'JetBrains Mono',monospace; padding:.3rem .75rem;
+  background:var(--surface); border:1px solid var(--border2); border-radius:6px;
+  color:var(--muted); cursor:pointer; transition:all .2s; margin-left:auto;
+}
+.split-btn.active { background:rgba(59,130,246,.15); border-color:var(--accent); color:#93c5fd; }
+.split-btn:hover { border-color:var(--accent); color:var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header class="page-header">
+    <a href="index.html" class="back-btn">←</a>
+    <div>
+      <div class="page-title">Absence Trends</div>
+      <div class="page-sub">ANALYSE PATTERNS ACROSS ANY TIME PERIOD</div>
+    </div>
+  </header>
+
+  <!-- Upload -->
+  <div class="upload-strip">
+    <label>
+      <span>📂</span> Choose Excel File
+      <input type="file" id="xlFile" accept=".xlsx,.xls">
+    </label>
+    <span class="upload-file-name" id="fileName">No file selected</span>
+    <button class="upload-btn" id="uploadBtn" disabled>Upload & Process</button>
+  </div>
+  <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+
+  <!-- Controls -->
+  <div class="controls-bar" id="controlsBar" style="display:none;">
+    <div class="ctrl-group">
+      <label>Year</label>
+      <select class="year-select" id="yearSelect"></select>
+    </div>
+    <div class="ctrl-group">
+      <label>Months (select one or more)</label>
+      <div class="month-picker" id="monthPicker"></div>
+    </div>
+    <button class="ctrl-apply" id="applyBtn">Apply</button>
+  </div>
+
+  <!-- Category filters -->
+  <div id="catBar" style="display:none; margin-bottom:2rem; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:1.25rem 1.5rem;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.75rem;">
+      Categories — click to toggle visibility
+    </div>
+    <div class="cat-toggle" id="catToggle"></div>
+    <div style="margin-top:.75rem; display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
+      <button class="split-btn" id="gasSplitBtn">Split GA sub-types</button>
+      <button class="split-btn" id="holSplitBtn">Split Holiday sub-types</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow" style="display:none;">
+    <div class="stat-tile"><div class="st-num" id="stTotal" style="color:var(--accent)">—</div><div class="st-lbl">Total Absences</div></div>
+    <div class="stat-tile"><div class="st-num" id="stEmployees" style="color:#34d399">—</div><div class="st-lbl">Employees Affected</div></div>
+    <div class="stat-tile"><div class="st-num" id="stDays" style="color:#fb923c">—</div><div class="st-lbl">Working Days Lost</div></div>
+    <div class="stat-tile"><div class="st-num" id="stSickness" style="color:#f87171">—</div><div class="st-lbl">Sickness Records</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid" id="chartsGrid" style="display:none;">
+    <div class="chart-card full">
+      <h3><span class="ch-dot" style="background:#3b82f6"></span>Absences by Month</h3>
+      <canvas id="barChart" height="90"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3><span class="ch-dot" style="background:#06b6d4"></span>Breakdown by Category</h3>
+      <canvas id="doughnutChart" height="260"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3><span class="ch-dot" style="background:#a78bfa"></span>Top 10 Employees</h3>
+      <canvas id="empChart" height="260"></canvas>
+    </div>
+    <div class="chart-card full">
+      <h3><span class="ch-dot" style="background:#34d399"></span>Category Breakdown</h3>
+      <div style="overflow-x:auto;">
+        <table class="breakdown-table" id="breakdownTable"></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty-state" id="emptyState">
+    <div class="es-icon">📈</div>
+    Upload an absence Excel file and select a time period to view trends.
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey:"AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+  authDomain:"oesperformance-a54c0.firebaseapp.com",
+  projectId:"oesperformance-a54c0",
+  storageBucket:"oesperformance-a54c0.firebasestorage.app",
+  messagingSenderId:"484894102454",
+  appId:"1:484894102454:web:17535ee497eac2d90d6717"
+});
+const db = getFirestore(app);
+
+// ─────────────────────────────────────────────────────────
+//  CATEGORY DEFINITIONS
+// ─────────────────────────────────────────────────────────
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTH_FULL  = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+// canonical category keys
+const CAT = {
+  SICKNESS:  'sickness',
+  GA:        'ga',            // all GA grouped
+  GA_AAUP:   'ga_aaup',
+  GA_JS:     'ga_js',
+  GA_DEPEND: 'ga_depend',
+  GA_PMPL:   'ga_pmpl',
+  GA_AWOL:   'ga_awol',
+  HOLIDAY:   'holiday',       // both holiday types grouped
+  HOL_TAKEN: 'hol_taken',
+  HOL_YET:   'hol_yet',
+};
+
+const CAT_META = {
+  [CAT.SICKNESS]:  { label:'Sickness',              color:'#f87171', group:'sickness' },
+  [CAT.GA]:        { label:'General Absence (All)',  color:'#fb923c', group:'ga' },
+  [CAT.GA_AAUP]:   { label:'GA – AAUP',              color:'#fbbf24', group:'ga' },
+  [CAT.GA_JS]:     { label:'GA – Jury Service',      color:'#a78bfa', group:'ga' },
+  [CAT.GA_DEPEND]: { label:'GA – Dependants',        color:'#60a5fa', group:'ga' },
+  [CAT.GA_PMPL]:   { label:'GA – Maternity/Pat',     color:'#f472b6', group:'ga' },
+  [CAT.GA_AWOL]:   { label:'GA – AWOL',              color:'#ef4444', group:'ga' },
+  [CAT.HOLIDAY]:   { label:'Holiday (All)',           color:'#34d399', group:'holiday' },
+  [CAT.HOL_TAKEN]: { label:'Holiday Taken',          color:'#6ee7b7', group:'holiday' },
+  [CAT.HOL_YET]:   { label:'Holiday Yet to Take',    color:'#10b981', group:'holiday' },
+};
+
+function classifyRow(rawType) {
+  const t = (rawType || '').toString().trim().toLowerCase();
+  if (t.includes('sickness')) return CAT.SICKNESS;
+  if (t.includes('awol'))     return CAT.GA_AWOL;
+  if (t.includes('aaup'))     return CAT.GA_AAUP;
+  if (t.includes('js'))       return CAT.GA_JS;
+  if (t.includes('uptofd'))   return CAT.GA_DEPEND;
+  if (t.includes('pmpl'))     return CAT.GA_PMPL;
+  if (t.includes('holiday taken') || t === 'holiday taken') return CAT.HOL_TAKEN;
+  if (t.includes('yet to be taken') || t.includes('yet to take')) return CAT.HOL_YET;
+  // fallback — any other "general absence" prefix
+  if (t.startsWith('general absence')) return CAT.GA_AAUP;
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────────────────
+let allRecords    = [];   // all firestore records
+let gasSplit      = false; // show GA sub-types vs grouped
+let holSplit      = false; // show holiday sub-types vs grouped
+let hiddenCats    = new Set();
+let selectedYear  = new Date().getFullYear();
+let selectedMonths= new Set(); // 0-indexed
+
+let barChartInst  = null;
+let doughnutInst  = null;
+let empChartInst  = null;
+
+// ─────────────────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────────────────
+function toast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${type} show`;
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function makeFingerprint(employee, fromDate) {
+  return `${(employee||'').trim().toLowerCase()}|${(fromDate||'').trim()}`;
+}
+
+function parseExcelDate(v) {
+  if (!v) return '';
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    if (!isNaN(d)) return d.toISOString().split('T')[0];
+  }
+  return v.toString();
+}
+
+// ─────────────────────────────────────────────────────────
+//  UPLOAD
+// ─────────────────────────────────────────────────────────
+const xlInput   = document.getElementById('xlFile');
+const uploadBtn = document.getElementById('uploadBtn');
+
+xlInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  document.getElementById('fileName').textContent = f ? f.name : 'No file selected';
+  uploadBtn.disabled = !f;
+});
+
+uploadBtn.addEventListener('click', async () => {
+  const file = xlInput.files[0];
+  if (!file) return;
+  uploadBtn.disabled = true; uploadBtn.textContent = 'Processing…';
+  const pw = document.getElementById('progressWrap');
+  const pf = document.getElementById('progressFill');
+  pw.classList.add('show'); pf.style.width='0%';
+
+  try {
+    const data = await file.arrayBuffer();
+    const wb   = XLSX.read(data);
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
+
+    // Build fingerprint set from existing records
+    const existing = new Set(allRecords.map(r => makeFingerprint(r.employee, r.fromDate)));
+
+    let parsed=[], dupes=0;
+    for (let i=1; i<rows.length; i++) {
+      const row = rows[i];
+      const employee   = (row[0]||'').toString().trim();
+      const rawType    = (row[3]||'').toString().trim();
+      const fromDate   = parseExcelDate(row[4]);
+      const cat        = classifyRow(rawType);
+      if (!employee || !fromDate || !cat) continue;
+
+      const fp = makeFingerprint(employee, fromDate);
+      if (existing.has(fp)) { dupes++; continue; }
+      existing.add(fp); // prevent intra-file dupes too
+
+      const workingDays  = parseFloat(row[6]) || 0;
+      let   workingHours = parseFloat(row[7]) || 0;
+      if (workingHours===0 && workingDays>0) workingHours = workingDays*8;
+      const notes     = (row[8]||'').toString().trim();
+      const submitted = parseExcelDate(row[9]);
+      parsed.push({ employee, rawType, category:cat, fromDate, workingDays, workingHours, notes, submitted });
+    }
+
+    if (parsed.length===0 && dupes===0) { toast('No valid records found in file.','error'); resetUpload(); return; }
+    if (parsed.length===0)              { toast(`All ${dupes} records already exist — nothing uploaded.`,'error'); resetUpload(); return; }
+
+    for (let i=0;i<parsed.length;i++) {
+      await addDoc(collection(db,'Absence Trends'), { ...parsed[i], uploadedAt:serverTimestamp() });
+      pf.style.width = ((i+1)/parsed.length*100)+'%';
+    }
+
+    toast(`✓ Uploaded ${parsed.length} record${parsed.length>1?'s':''}${dupes?` (${dupes} duplicate${dupes>1?'s':''} skipped)`:''}`, 'success');
+    await loadData();
+  } catch(err) {
+    toast('Error: '+err.message, 'error');
+  }
+  resetUpload();
+});
+
+function resetUpload() {
+  uploadBtn.disabled = false; uploadBtn.textContent = 'Upload & Process';
+  document.getElementById('progressWrap').classList.remove('show');
+  xlInput.value=''; document.getElementById('fileName').textContent='No file selected';
+}
+
+// ─────────────────────────────────────────────────────────
+//  LOAD FROM FIRESTORE
+// ─────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const snap = await getDocs(query(collection(db,'Absence Trends'), orderBy('fromDate','desc')));
+    allRecords = snap.docs.map(d=>({id:d.id,...d.data()}));
+    buildYearSelect();
+    buildMonthPicker();
+    buildCatBar();
+    document.getElementById('controlsBar').style.display='grid';
+    document.getElementById('catBar').style.display='block';
+    // auto-select current month
+    const now = new Date();
+    selectedYear = now.getFullYear();
+    selectedMonths = new Set([now.getMonth()]);
+    syncYearSelect(); syncMonthChips();
+    renderAll();
+  } catch(e) {
+    toast('Error loading data: '+e.message,'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+//  YEAR / MONTH PICKERS
+// ─────────────────────────────────────────────────────────
+function buildYearSelect() {
+  const years = new Set(allRecords.map(r => r.fromDate?.substring(0,4)).filter(Boolean));
+  const now = new Date().getFullYear().toString();
+  if (!years.has(now)) years.add(now);
+  const sel = document.getElementById('yearSelect');
+  sel.innerHTML = Array.from(years).sort((a,b)=>b-a).map(y=>`<option value="${y}">${y}</option>`).join('');
+  sel.value = selectedYear;
+  sel.addEventListener('change', () => { selectedYear=parseInt(sel.value); syncMonthChips(); });
+}
+
+function syncYearSelect() {
+  document.getElementById('yearSelect').value = selectedYear;
+}
+
+function buildMonthPicker() {
+  const picker = document.getElementById('monthPicker');
+  picker.innerHTML = MONTH_NAMES.map((m,i)=>`
+    <span class="month-chip" data-month="${i}">${m}</span>`).join('');
+  picker.querySelectorAll('.month-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const m = parseInt(chip.dataset.month);
+      if (selectedMonths.has(m)) selectedMonths.delete(m);
+      else selectedMonths.add(m);
+      syncMonthChips();
+    });
+  });
+}
+
+function syncMonthChips() {
+  document.getElementById('monthPicker').querySelectorAll('.month-chip').forEach(chip => {
+    chip.classList.toggle('active', selectedMonths.has(parseInt(chip.dataset.month)));
+  });
+}
+
+document.getElementById('applyBtn').addEventListener('click', () => {
+  if (selectedMonths.size===0) { toast('Select at least one month.','error'); return; }
+  renderAll();
+});
+
+// ─────────────────────────────────────────────────────────
+//  CATEGORY TOGGLE BAR
+// ─────────────────────────────────────────────────────────
+function buildCatBar() {
+  const toggle = document.getElementById('catToggle');
+  toggle.innerHTML = '';
+  const cats = activeCats();
+  cats.forEach(cat => {
+    const m = CAT_META[cat];
+    const pill = document.createElement('span');
+    pill.className = 'toggle-pill active';
+    pill.dataset.cat = cat;
+    pill.style.borderColor = m.color+'55';
+    pill.style.background  = m.color+'1a';
+    pill.style.color       = m.color;
+    pill.innerHTML = `<span class="dot" style="background:${m.color}"></span>${m.label}`;
+    pill.addEventListener('click', () => {
+      if (hiddenCats.has(cat)) { hiddenCats.delete(cat); pill.classList.add('active'); }
+      else { hiddenCats.add(cat); pill.classList.remove('active'); }
+      renderAll();
+    });
+    toggle.appendChild(pill);
+  });
+}
+
+// Which category keys are currently "active" given split state
+function activeCats() {
+  const cats = [CAT.SICKNESS];
+  if (gasSplit) cats.push(CAT.GA_AAUP, CAT.GA_JS, CAT.GA_DEPEND, CAT.GA_PMPL, CAT.GA_AWOL);
+  else          cats.push(CAT.GA);
+  if (holSplit) cats.push(CAT.HOL_TAKEN, CAT.HOL_YET);
+  else          cats.push(CAT.HOLIDAY);
+  return cats;
+}
+
+// Resolve a record's base category to active display category
+function resolveDisplayCat(baseCat) {
+  if (baseCat === CAT.SICKNESS) return CAT.SICKNESS;
+  if ([CAT.GA_AAUP,CAT.GA_JS,CAT.GA_DEPEND,CAT.GA_PMPL,CAT.GA_AWOL].includes(baseCat)) {
+    return gasSplit ? baseCat : CAT.GA;
+  }
+  if ([CAT.HOL_TAKEN,CAT.HOL_YET].includes(baseCat)) {
+    return holSplit ? baseCat : CAT.HOLIDAY;
+  }
+  return null;
+}
+
+const gasSplitBtn = document.getElementById('gasSplitBtn');
+const holSplitBtn = document.getElementById('holSplitBtn');
+
+gasSplitBtn.addEventListener('click', () => {
+  gasSplit = !gasSplit;
+  gasSplitBtn.classList.toggle('active', gasSplit);
+  hiddenCats.clear();
+  buildCatBar(); renderAll();
+});
+holSplitBtn.addEventListener('click', () => {
+  holSplit = !holSplit;
+  holSplitBtn.classList.toggle('active', holSplit);
+  hiddenCats.clear();
+  buildCatBar(); renderAll();
+});
+
+// ─────────────────────────────────────────────────────────
+//  FILTER
+// ─────────────────────────────────────────────────────────
+function getFiltered() {
+  return allRecords.filter(r => {
+    if (!r.fromDate) return false;
+    const yr = parseInt(r.fromDate.substring(0,4));
+    const mo = parseInt(r.fromDate.substring(5,7)) - 1;
+    if (yr !== selectedYear) return false;
+    if (!selectedMonths.has(mo)) return false;
+    const disp = resolveDisplayCat(r.category);
+    if (!disp) return false;
+    if (hiddenCats.has(disp)) return false;
+    return true;
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  RENDER ALL
+// ─────────────────────────────────────────────────────────
+function renderAll() {
+  const filtered = getFiltered();
+  if (filtered.length===0) {
+    document.getElementById('statsRow').style.display='none';
+    document.getElementById('chartsGrid').style.display='none';
+    document.getElementById('emptyState').style.display='block';
+    document.getElementById('emptyState').innerHTML='<div class="es-icon">🔍</div>No records match the selected filters.';
+    return;
+  }
+  document.getElementById('emptyState').style.display='none';
+  document.getElementById('statsRow').style.display='flex';
+  document.getElementById('chartsGrid').style.display='grid';
+
+  renderStats(filtered);
+  renderBarChart(filtered);
+  renderDoughnut(filtered);
+  renderEmpChart(filtered);
+  renderBreakdownTable(filtered);
+}
+
+// ─────────────────────────────────────────────────────────
+//  STATS
+// ─────────────────────────────────────────────────────────
+function renderStats(data) {
+  document.getElementById('stTotal').textContent     = data.length;
+  document.getElementById('stEmployees').textContent = new Set(data.map(r=>r.employee)).size;
+  document.getElementById('stDays').textContent      = data.reduce((s,r)=>s+(parseFloat(r.workingDays)||0),0).toFixed(1);
+  document.getElementById('stSickness').textContent  = data.filter(r=>r.category===CAT.SICKNESS).length;
+}
+
+// ─────────────────────────────────────────────────────────
+//  BAR CHART — absences per month (stacked by category)
+// ─────────────────────────────────────────────────────────
+function renderBarChart(data) {
+  const sortedMonths = Array.from(selectedMonths).sort((a,b)=>a-b);
+  const cats = activeCats().filter(c=>!hiddenCats.has(c));
+  const labels = sortedMonths.map(m=>MONTH_FULL[m]);
+
+  const datasets = cats.map(cat => {
+    const m = CAT_META[cat];
+    return {
+      label: m.label,
+      backgroundColor: m.color+'cc',
+      borderColor: m.color,
+      borderWidth:1,
+      borderRadius:4,
+      data: sortedMonths.map(mo => data.filter(r => {
+        const rMo = parseInt(r.fromDate.substring(5,7))-1;
+        return rMo===mo && resolveDisplayCat(r.category)===cat;
+      }).length)
+    };
+  });
+
+  if (barChartInst) barChartInst.destroy();
+  barChartInst = new Chart(document.getElementById('barChart'), {
+    type:'bar',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{ labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:11} } } },
+      scales:{
+        x:{ stacked:true, ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'} },
+        y:{ stacked:true, ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'}, beginAtZero:true }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  DOUGHNUT — category split
+// ─────────────────────────────────────────────────────────
+function renderDoughnut(data) {
+  const cats = activeCats().filter(c=>!hiddenCats.has(c));
+  const counts = cats.map(c => data.filter(r=>resolveDisplayCat(r.category)===c).length);
+  const colors = cats.map(c=>CAT_META[c].color);
+  const labels = cats.map(c=>CAT_META[c].label);
+
+  if (doughnutInst) doughnutInst.destroy();
+  doughnutInst = new Chart(document.getElementById('doughnutChart'), {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data:counts, backgroundColor:colors.map(c=>c+'bb'), borderColor:colors, borderWidth:2 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:10}, padding:12 } }
+      },
+      cutout:'62%'
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  EMPLOYEE CHART — top 10 by count
+// ─────────────────────────────────────────────────────────
+function renderEmpChart(data) {
+  const empMap = {};
+  data.forEach(r => { empMap[r.employee] = (empMap[r.employee]||0)+1; });
+  const top = Object.entries(empMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const labels = top.map(([e])=>e.split(' ').slice(-1)[0]); // last name for space
+  const values = top.map(([,v])=>v);
+
+  if (empChartInst) empChartInst.destroy();
+  empChartInst = new Chart(document.getElementById('empChart'), {
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        label:'Absences',
+        data:values,
+        backgroundColor:'#3b82f6aa',
+        borderColor:'#3b82f6',
+        borderWidth:1,
+        borderRadius:6
+      }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ ticks:{color:'#8eaac8'}, grid:{color:'#1e2d44'}, beginAtZero:true },
+        y:{ ticks:{color:'#c2d4e8', font:{size:11}}, grid:{display:false} }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+//  BREAKDOWN TABLE
+// ─────────────────────────────────────────────────────────
+function renderBreakdownTable(data) {
+  const cats = activeCats().filter(c=>!hiddenCats.has(c));
+  const maxCount = Math.max(1, ...cats.map(c=>data.filter(r=>resolveDisplayCat(r.category)===c).length));
+
+  const rows = cats.map(cat => {
+    const m     = CAT_META[cat];
+    const count = data.filter(r=>resolveDisplayCat(r.category)===cat).length;
+    const days  = data.filter(r=>resolveDisplayCat(r.category)===cat).reduce((s,r)=>s+(parseFloat(r.workingDays)||0),0).toFixed(1);
+    const pct   = ((count/data.length)*100).toFixed(1);
+    const bar   = ((count/maxCount)*100).toFixed(1);
+    return { cat, m, count, days, pct, bar };
+  }).sort((a,b)=>b.count-a.count);
+
+  document.getElementById('breakdownTable').innerHTML = `
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Records</th>
+        <th>% of Total</th>
+        <th>Days Lost</th>
+        <th class="bt-bar-cell">Distribution</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r=>`
+        <tr>
+          <td><span class="cat-pill" style="background:${r.m.color}1a;color:${r.m.color};border:1px solid ${r.m.color}44">${r.m.label}</span></td>
+          <td style="font-weight:700;color:var(--text)">${r.count}</td>
+          <td style="color:var(--muted)">${r.pct}%</td>
+          <td style="color:var(--muted)">${r.days}</td>
+          <td class="bt-bar-cell">
+            <div class="bt-bar-bg">
+              <div class="bt-bar-fill" style="width:${r.bar}%;background:${r.m.color}"></div>
+            </div>
+          </td>
+        </tr>`).join('')}
+    </tbody>`;
+}
+
+// ─────────────────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
