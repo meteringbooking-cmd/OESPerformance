@@ -177,6 +177,23 @@
         }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 28px -8px rgba(14,165,233,0.55); }
         .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .btn .spinner {
+            display: inline-block;
+            width: 13px; height: 13px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 7px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-wrap { margin-top: 14px; display: none; flex-direction: column; gap: 6px; }
+        .progress-wrap.visible { display: flex; }
+        .progress-label { font-size: 0.82em; color: var(--text-secondary); font-weight: 500; }
+        .progress-track { height: 6px; background: rgba(148,163,184,0.1); border-radius: 99px; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--gradient-btn); border-radius: 99px; width: 0%; transition: width 0.15s ease; }
 
         /* ─── STATUS ─── */
         .status-message {
@@ -255,7 +272,24 @@
         .after5-table td.miles { color: var(--accent-amber); }
         .after5-table tbody tr:hover { background: rgba(251,113,133,0.04); }
 
-        /* ─── EMPTY STATE ─── */
+        /* ─── ABSENT / MOVEMENT WHILST OFF TABLE ─── */
+        .absent-table thead tr { background: rgba(167,139,250,0.06); }
+        .absent-table th { color: var(--accent-violet); opacity: 0.8; }
+        .absent-table td.reg { color: var(--accent-violet); }
+        .absent-table td.miles { color: var(--accent-amber); }
+        .absent-table tbody tr:hover { background: rgba(167,139,250,0.04); }
+        td.absent-status {
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.78em;
+            background: rgba(251,113,133,0.15);
+            color: var(--accent-rose);
+            border: 1px solid rgba(251,113,133,0.3);
+            white-space: nowrap;
+        }
+        td.source-oes { color: #38bdf8; font-size: 0.8em; font-weight: 600; }
+        td.source-sp  { color: #a78bfa; font-size: 0.8em; font-weight: 600; }
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -324,55 +358,21 @@
                 <label class="form-label">Journey File (.xlsx / .xls / .csv)</label>
                 <input type="file" id="journeyFile" accept=".xlsx,.xls,.csv">
             </div>
-            <button class="btn" onclick="uploadJourneyData()">Upload</button>
+            <button class="btn" id="uploadBtn" onclick="uploadJourneyData()">Upload</button>
+        </div>
+        <div class="progress-wrap" id="uploadProgress">
+            <div class="progress-label" id="uploadProgressLabel">Uploading…</div>
+            <div class="progress-track"><div class="progress-bar" id="uploadProgressBar"></div></div>
         </div>
         <div id="uploadStatus" class="status-message"></div>
-    </div>
-
-    <!-- ── VIEW PANEL ── -->
-    <div class="panel">
-        <div class="panel-header">
-            <div class="panel-icon">📋</div>
-            <div>
-                <div class="panel-title">Journey Log</div>
-                <div class="panel-subtitle">Journeys with miles &gt; 0.1 only</div>
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+            <div class="filter-bar">
+                <div class="form-group">
+                    <label class="form-label">View Date (all panels below)</label>
+                    <input type="date" id="viewDate" onchange="loadJourneys()">
+                </div>
+                <button class="btn" onclick="loadJourneys()">🔄 Refresh All</button>
             </div>
-        </div>
-
-        <div class="filter-bar">
-            <div class="form-group">
-                <label class="form-label">View Date</label>
-                <input type="date" id="viewDate" onchange="loadJourneys()">
-            </div>
-            <button class="btn" onclick="loadJourneys()">Refresh</button>
-        </div>
-
-        <div class="summary-row" id="summaryRow"></div>
-
-        <div class="table-wrap">
-            <table id="journeyTable">
-                <thead>
-                    <tr>
-                        <th>Registration</th>
-                        <th>Driver</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Start Location</th>
-                        <th>End Location</th>
-                        <th>Start POI</th>
-                        <th>End POI</th>
-                        <th>Miles</th>
-                        <th>Duration</th>
-                        <th>Idle</th>
-                        <th>Max Speed</th>
-                        <th>Start Postcode</th>
-                        <th>End Postcode</th>
-                    </tr>
-                </thead>
-                <tbody id="journeyBody">
-                    <tr><td colspan="14"><div class="empty-state"><div class="icon">🚐</div><p>Select a date and click Refresh</p></div></td></tr>
-                </tbody>
-            </table>
         </div>
     </div>
 
@@ -393,23 +393,92 @@
                 <thead>
                     <tr>
                         <th>Registration</th>
-                        <th>Driver(s)</th>
                         <th>Journeys</th>
                         <th>Total Miles</th>
                         <th>Total Duration</th>
                         <th>Total Idle</th>
-                        <th>Max Speed</th>
                         <th>Latest Journey</th>
                     </tr>
                 </thead>
                 <tbody id="after5Body">
-                    <tr><td colspan="8"><div class="empty-state"><div class="icon">🌙</div><p>No after-hours data for selected date</p></div></td></tr>
+                    <tr><td colspan="6"><div class="empty-state"><div class="icon">🌙</div><p>No after-hours data for selected date</p></div></td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 
-</div>
+    <!-- ── MOVEMENT WHILST OFF PANEL ── -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-icon" style="background:linear-gradient(135deg,rgba(167,139,250,0.2),rgba(251,113,133,0.2))">⚠️</div>
+            <div>
+                <div class="panel-title">Movement Whilst Off</div>
+                <div class="panel-subtitle">Vehicles linked to engineers marked absent in OES or SP attendance for the selected date</div>
+            </div>
+        </div>
+
+        <div class="summary-row" id="absentSummaryRow"></div>
+
+        <div class="table-wrap">
+            <table class="absent-table" id="absentTable">
+                <thead>
+                    <tr>
+                        <th>Registration</th>
+                        <th>Driver (from file)</th>
+                        <th>Attendance Status</th>
+                        <th>Source</th>
+                        <th>Journeys</th>
+                        <th>Total Miles</th>
+                        <th>Total Duration</th>
+                        <th>First Journey</th>
+                        <th>Last Journey</th>
+                    </tr>
+                </thead>
+                <tbody id="absentBody">
+                    <tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No data — refresh the journey log first</p></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── JOURNEY LOG PANEL (moved to bottom) ── -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-icon">📋</div>
+            <div>
+                <div class="panel-title">Journey Log</div>
+                <div class="panel-subtitle">All journeys with miles &gt; 0.1</div>
+            </div>
+        </div>
+
+        <div class="summary-row" id="summaryRow"></div>
+
+        <div class="table-wrap">
+            <table id="journeyTable">
+                <thead>
+                    <tr>
+                        <th>Registration</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Start Location</th>
+                        <th>End Location</th>
+                        <th>Start POI</th>
+                        <th>End POI</th>
+                        <th>Miles</th>
+                        <th>Duration</th>
+                        <th>Idle</th>
+                        <th>Start Postcode</th>
+                        <th>End Postcode</th>
+                    </tr>
+                </thead>
+                <tbody id="journeyBody">
+                    <tr><td colspan="12"><div class="empty-state"><div class="icon">🚐</div><p>Select a date and click Refresh</p></div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div><!-- /container -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -467,10 +536,18 @@
         return parseFloat(val.toString().replace(/[^\d.]/g,'')) || 0;
     }
 
-    // Parse duration / idle strings like "0h 17m" or "17m" or numeric minutes
+    // Parse duration / idle strings:
+    // "00:03:05" (HH:MM:SS), "0h 17m", "17m", or plain numeric minutes
     function parseDurationToMins(val) {
         if (!val && val !== 0) return 0;
-        const s = val.toString();
+        const s = val.toString().trim();
+        // HH:MM:SS or H:MM:SS
+        const hms = s.match(/^(\d+):(\d{2}):(\d{2})$/);
+        if (hms) return parseInt(hms[1]) * 60 + parseInt(hms[2]) + parseInt(hms[3]) / 60;
+        // MM:SS (no hours part)
+        const ms = s.match(/^(\d+):(\d{2})$/);
+        if (ms) return parseInt(ms[1]) + parseInt(ms[2]) / 60;
+        // "0h 17m" style
         let total = 0;
         const hm = s.match(/(\d+)\s*h/i);
         const mm = s.match(/(\d+)\s*m/i);
@@ -498,14 +575,30 @@
         if (!dateVal) { showStatus('Please select a date', 'error', 'uploadStatus'); return; }
         if (!fileInput.files.length) { showStatus('Please select a file', 'error', 'uploadStatus'); return; }
 
+        const btn = document.getElementById('uploadBtn');
+        const progressWrap = document.getElementById('uploadProgress');
+        const progressBar  = document.getElementById('uploadProgressBar');
+        const progressLabel = document.getElementById('uploadProgressLabel');
+
+        const setProgress = (pct, label) => {
+            progressBar.style.width = pct + '%';
+            progressLabel.textContent = label;
+        };
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Reading file…';
+        progressWrap.classList.add('visible');
+        setProgress(5, 'Reading file…');
+
         const reader = new FileReader();
         reader.onload = async function(e) {
             try {
+                setProgress(15, 'Parsing spreadsheet…');
                 const data = new Uint8Array(e.target.result);
                 const wb = XLSX.read(data, { type:'array' });
                 const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1 });
 
-                // Find header row (first row with "Registration" or similar)
+                // Find header row
                 let headerIdx = 0;
                 for (let i = 0; i < Math.min(5, rows.length); i++) {
                     const row = rows[i].map(c => (c||'').toString().toLowerCase());
@@ -513,7 +606,6 @@
                 }
                 const headers = rows[headerIdx].map(h => (h||'').toString().trim().toLowerCase());
 
-                // Column indices by name
                 const col = name => {
                     const aliases = {
                         registration: ['registration','reg','vehicle'],
@@ -548,22 +640,26 @@
                     startPC: col('startpostcode'), endPC: col('endpostcode'),
                 };
 
-                let saved = 0, skipped = 0;
-                const db = window._db;
-
+                // Pre-filter valid rows
+                const validRows = [];
                 for (let i = headerIdx + 1; i < rows.length; i++) {
                     const row = rows[i];
                     if (!row || row.length < 3) continue;
-
                     const milesVal = parseMiles(C.miles >= 0 ? row[C.miles] : 0);
-                    if (milesVal <= 0.1) { skipped++; continue; }
+                    if (milesVal > 0.1) validRows.push({ row, milesVal });
+                }
 
+                setProgress(20, `Uploading 0 of ${validRows.length}…`);
+                const db = window._db;
+                let saved = 0, skipped = rows.length - 1 - validRows.length;
+
+                for (let vi = 0; vi < validRows.length; vi++) {
+                    const { row, milesVal } = validRows[vi];
                     const startTimeRaw = C.startTime >= 0 ? row[C.startTime] : null;
                     const endTimeRaw   = C.endTime   >= 0 ? row[C.endTime]   : null;
                     const startDt = parseDDMMYYYY(startTimeRaw);
                     const endDt   = parseDDMMYYYY(endTimeRaw);
 
-                    // Determine journey date from start time, fall back to upload date
                     let journeyDateStr = dateVal;
                     if (startDt) {
                         journeyDateStr = startDt.getFullYear() + '-'
@@ -595,14 +691,25 @@
 
                     await window._addDoc(window._collection(db, 'Van Start and End'), rec);
                     saved++;
+
+                    const pct = 20 + Math.round((saved / validRows.length) * 75);
+                    setProgress(pct, `Uploading ${saved} of ${validRows.length}…`);
+                    btn.innerHTML = `<span class="spinner"></span>${saved} / ${validRows.length}`;
                 }
+
+                setProgress(100, `✓ Complete — ${saved} journeys uploaded`);
+                btn.innerHTML = 'Upload';
+                btn.disabled = false;
+                setTimeout(() => { progressWrap.classList.remove('visible'); progressBar.style.width = '0%'; }, 3000);
 
                 showStatus(`✓ Uploaded ${saved} journeys (${skipped} skipped — ≤0.1 miles)`, 'success', 'uploadStatus');
                 fileInput.value = '';
-                // Refresh view if same date
                 if (document.getElementById('viewDate').value === dateVal) loadJourneys();
 
             } catch (err) {
+                btn.innerHTML = 'Upload';
+                btn.disabled = false;
+                progressWrap.classList.remove('visible');
                 showStatus('Error: ' + err.message, 'error', 'uploadStatus');
             }
         };
@@ -616,22 +723,23 @@
 
         const tbody     = document.getElementById('journeyBody');
         const a5tbody   = document.getElementById('after5Body');
+        const absentBody = document.getElementById('absentBody');
         const summRow   = document.getElementById('summaryRow');
         const a5SummRow = document.getElementById('after5SummaryRow');
+        const absentSummRow = document.getElementById('absentSummaryRow');
 
-        tbody.innerHTML   = '<tr><td colspan="14"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
-        a5tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        tbody.innerHTML    = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        a5tbody.innerHTML  = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
 
         try {
+            // ── Fetch journeys ──
             const snap = await window._getDocs(window._collection(window._db, 'Van Start and End'));
-
             const journeys = [];
             snap.forEach(doc => {
                 const d = doc.data();
                 if (d.journeyDate === dateVal) journeys.push(d);
             });
-
-            // Sort by start time
             journeys.sort((a,b) => {
                 const ta = a.startTime ? new Date(a.startTime) : 0;
                 const tb = b.startTime ? new Date(b.startTime) : 0;
@@ -641,7 +749,7 @@
             // ── ALL JOURNEYS TABLE ──
             summRow.innerHTML = '';
             if (journeys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="icon">🚐</div><p>No journeys found for ' + dateVal + '</p></div></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="icon">🚐</div><p>No journeys found for ' + dateVal + '</p></div></td></tr>';
             } else {
                 const totalMiles = journeys.reduce((s,j) => s + j.miles, 0);
                 summRow.innerHTML = `
@@ -649,13 +757,11 @@
                     <div class="chip amber">📍 ${totalMiles.toFixed(1)} Total Miles</div>
                     <div class="chip">${[...new Set(journeys.map(j=>j.registration))].length} Vehicles</div>
                 `;
-
                 tbody.innerHTML = journeys.map(j => {
                     const st = j.startTime ? new Date(j.startTime) : null;
                     const et = j.endTime   ? new Date(j.endTime)   : null;
                     return `<tr>
                         <td class="reg">${esc(j.registration)}</td>
-                        <td class="muted">${esc(j.driver)}</td>
                         <td>${timeStr(st)}</td>
                         <td>${timeStr(et)}</td>
                         <td class="muted">${esc(j.startLocation)}</td>
@@ -665,7 +771,6 @@
                         <td class="miles">${j.miles.toFixed(1)}</td>
                         <td class="muted">${esc(j.duration)}</td>
                         <td class="muted">${esc(j.idle)}</td>
-                        <td class="speed">${esc(j.maxSpeed)}</td>
                         <td class="muted">${esc(j.startPostcode)}</td>
                         <td class="muted">${esc(j.endPostcode)}</td>
                     </tr>`;
@@ -675,54 +780,156 @@
             // ── AFTER 5PM TABLE ──
             const after5 = journeys.filter(j => {
                 if (!j.startTime) return false;
-                const d = new Date(j.startTime);
-                return d.getHours() >= 17;
+                return new Date(j.startTime).getHours() >= 17;
             });
 
             a5SummRow.innerHTML = '';
             if (after5.length === 0) {
-                a5tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">✅</div><p>No after-hours journeys on ' + dateVal + '</p></div></td></tr>';
+                a5tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">✅</div><p>No after-hours journeys on ' + dateVal + '</p></div></td></tr>';
             } else {
-                // Consolidate by registration
                 const byReg = {};
                 after5.forEach(j => {
                     const r = j.registration || 'Unknown';
-                    if (!byReg[r]) byReg[r] = { reg:r, drivers:new Set(), journeys:0, miles:0, durationMins:0, idleMins:0, maxSpeed:0, latest:null };
+                    if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null };
                     const g = byReg[r];
                     g.journeys++;
                     g.miles += j.miles;
                     g.durationMins += parseDurationToMins(j.duration);
                     g.idleMins     += parseDurationToMins(j.idle);
-                    const spd = parseFloat((j.maxSpeed||'0').toString()) || 0;
-                    if (spd > g.maxSpeed) g.maxSpeed = spd;
-                    if (j.driver) g.drivers.add(j.driver);
                     const st = j.startTime ? new Date(j.startTime) : null;
                     if (st && (!g.latest || st > g.latest)) g.latest = st;
                 });
 
-                const rows = Object.values(byReg).sort((a,b) => b.miles - a.miles);
-                const totalA5Miles = rows.reduce((s,r) => s + r.miles, 0);
+                const a5rows = Object.values(byReg).sort((a,b) => b.miles - a.miles);
+                const totalA5Miles = a5rows.reduce((s,r) => s + r.miles, 0);
 
                 a5SummRow.innerHTML = `
                     <div class="chip rose">🌙 ${after5.length} After-Hours Journeys</div>
                     <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Miles After 5pm</div>
-                    <div class="chip rose">${rows.length} Vehicles</div>
+                    <div class="chip rose">${a5rows.length} Vehicles</div>
                 `;
 
-                a5tbody.innerHTML = rows.map(g => `<tr>
+                a5tbody.innerHTML = a5rows.map(g => `<tr>
                     <td class="reg">${esc(g.reg)}</td>
-                    <td class="muted">${[...g.drivers].join(', ') || '—'}</td>
                     <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
                     <td class="miles">${g.miles.toFixed(1)}</td>
                     <td class="muted">${minsToHM(g.durationMins)}</td>
                     <td class="muted">${minsToHM(g.idleMins)}</td>
-                    <td class="speed">${g.maxSpeed > 0 ? g.maxSpeed + ' mph' : '—'}</td>
                     <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
                 </tr>`).join('');
             }
 
+            // ── MOVEMENT WHILST OFF — fetch both attendance collections ──
+            absentSummRow.innerHTML = '';
+            if (journeys.length === 0) {
+                absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No journey data for this date</p></div></td></tr>';
+            } else {
+                // Fetch OES attendance (collection: "attendance", field: date = dateVal)
+                const oesSnap = await window._getDocs(window._collection(window._db, 'attendance'));
+                const spSnap  = await window._getDocs(window._collection(window._db, 'SP Attendance'));
+
+                // Build map: engineerName (lowercase) → { status, source }
+                // Non-working statuses to flag
+                const absentCodes = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
+                const absentPeople = {}; // key: lower name → { name, status, source }
+
+                oesSnap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.date !== dateVal) return;
+                    if (absentCodes.has((d.attendance||'').toLowerCase())) {
+                        const k = (d.engineerName||'').toLowerCase().trim();
+                        if (k) absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'OES' };
+                    }
+                });
+
+                spSnap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.date !== dateVal) return;
+                    if (absentCodes.has((d.attendance||'').toLowerCase())) {
+                        const k = (d.engineerName||'').toLowerCase().trim();
+                        if (k && !absentPeople[k]) absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'SP' };
+                        else if (k) absentPeople[k].source = absentPeople[k].source + ' + SP';
+                    }
+                });
+
+                // For each journey, check if driver name matches an absent person
+                // Match on driver field (partial/case-insensitive) or registration
+                const flagged = {}; // key: registration → { reg, driver, status, source, journeys, miles, durationMins, earliest, latest }
+
+                journeys.forEach(j => {
+                    const driverRaw = (j.driver || '').trim();
+                    const regRaw    = (j.registration || '').trim();
+
+                    // Try to match driver name against absent people
+                    let match = null;
+                    if (driverRaw) {
+                        const dLower = driverRaw.toLowerCase();
+                        for (const [k, v] of Object.entries(absentPeople)) {
+                            // Match if absent name contains driver words or vice versa
+                            if (dLower.includes(k) || k.includes(dLower) ||
+                                k.split(' ').some(part => part.length > 2 && dLower.includes(part))) {
+                                match = v;
+                                break;
+                            }
+                        }
+                    }
+                    // Also try matching registration against driver name stored in absent people
+                    if (!match) {
+                        for (const [k, v] of Object.entries(absentPeople)) {
+                            if (k.includes(regRaw.toLowerCase())) { match = v; break; }
+                        }
+                    }
+
+                    if (!match) return;
+
+                    const key = regRaw || 'Unknown';
+                    if (!flagged[key]) {
+                        flagged[key] = {
+                            reg: regRaw, driver: driverRaw,
+                            status: match.status, source: match.source,
+                            journeys: 0, miles: 0, durationMins: 0,
+                            earliest: null, latest: null
+                        };
+                    }
+                    const g = flagged[key];
+                    g.journeys++;
+                    g.miles += j.miles;
+                    g.durationMins += parseDurationToMins(j.duration);
+                    const st = j.startTime ? new Date(j.startTime) : null;
+                    if (st) {
+                        if (!g.earliest || st < g.earliest) g.earliest = st;
+                        if (!g.latest   || st > g.latest)   g.latest   = st;
+                    }
+                });
+
+                const flaggedRows = Object.values(flagged).sort((a,b) => b.miles - a.miles);
+
+                if (flaggedRows.length === 0) {
+                    const absentCount = Object.keys(absentPeople).length;
+                    absentBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">✅</div><p>${absentCount > 0 ? absentCount + ' absent engineer(s) found but no matching vehicle journeys' : 'No absence records found for this date'}</p></div></td></tr>`;
+                } else {
+                    absentSummRow.innerHTML = `
+                        <div class="chip" style="background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.2);color:var(--accent-violet);">⚠️ ${flaggedRows.length} Flagged Vehicle(s)</div>
+                        <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Journeys Whilst Off</div>
+                        <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
+                    `;
+                    absentBody.innerHTML = flaggedRows.map(g => `<tr>
+                        <td class="reg absent-table" style="color:var(--accent-violet)">${esc(g.reg)}</td>
+                        <td class="muted">${esc(g.driver)}</td>
+                        <td><span class="absent-status">${esc(g.status)}</span></td>
+                        <td class="${g.source.includes('OES') && g.source.includes('SP') ? 'muted' : g.source === 'OES' ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
+                        <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
+                        <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
+                        <td class="muted">${minsToHM(g.durationMins)}</td>
+                        <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
+                        <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
+                    </tr>`).join('');
+                }
+            }
+
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state"><p style="color:var(--error)">Error loading data: ${esc(err.message)}</p></div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><p style="color:var(--error)">Error loading data: ${esc(err.message)}</p></div></td></tr>`;
+            console.error(err);
         }
     }
 
