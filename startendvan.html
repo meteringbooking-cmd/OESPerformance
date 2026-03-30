@@ -30,6 +30,7 @@
             --gradient-header: linear-gradient(135deg, #38bdf8 0%, #2dd4bf 50%, #a78bfa 100%);
             --gradient-btn: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
             --gradient-after5: linear-gradient(135deg, #fb7185 0%, #f59e0b 100%);
+            --gradient-weekend: linear-gradient(135deg, #a78bfa 0%, #fb7185 100%);
         }
 
         body {
@@ -110,8 +111,36 @@
         .panel-icon.after5 {
             background: linear-gradient(135deg, rgba(251,113,133,0.2), rgba(245,158,11,0.2));
         }
+        .panel-icon.weekend-mode {
+            background: linear-gradient(135deg, rgba(167,139,250,0.25), rgba(251,113,133,0.25));
+        }
         .panel-title { font-size: 1.3em; font-weight: 700; color: #f1f5f9; letter-spacing: -0.3px; }
         .panel-subtitle { color: var(--text-secondary); font-size: 0.88em; margin-top: 3px; }
+
+        /* ─── WEEKEND / BANK HOLIDAY BADGE ─── */
+        .day-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.78em;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .day-badge.weekend {
+            background: linear-gradient(135deg, rgba(167,139,250,0.2), rgba(251,113,133,0.2));
+            border: 1px solid rgba(167,139,250,0.4);
+            color: var(--accent-violet);
+        }
+        .day-badge.bankholiday {
+            background: linear-gradient(135deg, rgba(251,113,133,0.2), rgba(245,158,11,0.2));
+            border: 1px solid rgba(251,113,133,0.4);
+            color: var(--accent-rose);
+        }
 
         /* ─── UPLOAD CONTROLS ─── */
         .upload-grid {
@@ -265,12 +294,18 @@
             font-weight: 700;
         }
 
-        /* ─── AFTER 5PM PANEL ─── */
+        /* ─── AFTER 5PM / ALL-DAY PANEL ─── */
         .after5-table thead tr { background: rgba(251,113,133,0.06); }
         .after5-table th { color: var(--accent-rose); opacity: 0.7; }
         .after5-table td.reg { color: var(--accent-rose); }
         .after5-table td.miles { color: var(--accent-amber); }
         .after5-table tbody tr:hover { background: rgba(251,113,133,0.04); }
+
+        /* Weekend/BH mode overrides for after5 table */
+        .after5-table.weekend-table thead tr { background: rgba(167,139,250,0.06); }
+        .after5-table.weekend-table th { color: var(--accent-violet); opacity: 0.8; }
+        .after5-table.weekend-table td.reg { color: var(--accent-violet); }
+        .after5-table.weekend-table tbody tr:hover { background: rgba(167,139,250,0.04); }
 
         /* ─── SORTABLE HEADERS ─── */
         .sort-th {
@@ -297,6 +332,16 @@
             background: rgba(251,113,133,0.15);
             color: var(--accent-rose);
             border: 1px solid rgba(251,113,133,0.3);
+            white-space: nowrap;
+        }
+        td.weekend-status {
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.78em;
+            background: rgba(167,139,250,0.15);
+            color: var(--accent-violet);
+            border: 1px solid rgba(167,139,250,0.3);
             white-space: nowrap;
         }
         td.source-oes { color: #38bdf8; font-size: 0.8em; font-weight: 600; }
@@ -335,6 +380,28 @@
             border-color: rgba(245,158,11,0.2);
             color: var(--accent-amber);
         }
+        .chip.violet {
+            background: rgba(167,139,250,0.08);
+            border-color: rgba(167,139,250,0.2);
+            color: var(--accent-violet);
+        }
+
+        /* ─── NON-WORKING DAY NOTICE BANNER ─── */
+        .nwd-banner {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, rgba(167,139,250,0.1), rgba(251,113,133,0.1));
+            border: 1px solid rgba(167,139,250,0.3);
+            border-radius: 12px;
+            padding: 14px 20px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--accent-violet);
+        }
+        .nwd-banner.visible { display: flex; }
+        .nwd-banner .nwd-icon { font-size: 1.3em; }
     </style>
 </head>
 <body>
@@ -387,14 +454,19 @@
         </div>
     </div>
 
-    <!-- ── AFTER 5PM PANEL ── -->
-    <div class="panel">
+    <!-- ── AFTER 5PM / ALL-DAY PANEL ── -->
+    <div class="panel" id="after5Panel">
         <div class="panel-header">
-            <div class="panel-icon after5">🌙</div>
+            <div class="panel-icon after5" id="after5PanelIcon">🌙</div>
             <div>
-                <div class="panel-title">After-Hours Journeys (after 5:00 PM)</div>
-                <div class="panel-subtitle">Consolidated miles and duration per registration</div>
+                <div class="panel-title" id="after5PanelTitle">After-Hours Journeys (after 5:00 PM)</div>
+                <div class="panel-subtitle" id="after5PanelSubtitle">Consolidated miles and duration per registration</div>
             </div>
+        </div>
+
+        <div class="nwd-banner" id="after5NwdBanner">
+            <span class="nwd-icon">📅</span>
+            <span id="after5NwdText"></span>
         </div>
 
         <div class="summary-row" id="after5SummaryRow"></div>
@@ -402,17 +474,17 @@
         <div class="table-wrap">
             <table class="after5-table" id="after5Table">
                 <thead>
-                    <tr>
+                    <tr id="after5TableHead">
                         <th>Registration</th>
                         <th>Journeys</th>
                         <th>Total Miles</th>
                         <th>Total Duration</th>
                         <th>Total Idle</th>
-                        <th>Latest Journey</th>
+                        <th id="after5LastCol">Latest Journey</th>
                     </tr>
                 </thead>
                 <tbody id="after5Body">
-                    <tr><td colspan="6"><div class="empty-state"><div class="icon">🌙</div><p>No after-hours data for selected date</p></div></td></tr>
+                    <tr><td colspan="6"><div class="empty-state"><div class="icon">🌙</div><p>No data for selected date</p></div></td></tr>
                 </tbody>
             </table>
         </div>
@@ -423,9 +495,14 @@
         <div class="panel-header">
             <div class="panel-icon" style="background:linear-gradient(135deg,rgba(167,139,250,0.2),rgba(251,113,133,0.2))">⚠️</div>
             <div>
-                <div class="panel-title">Movement Whilst Off</div>
-                <div class="panel-subtitle">Vehicles linked to engineers marked absent in OES or SP attendance for the selected date</div>
+                <div class="panel-title" id="absentPanelTitle">Movement Whilst Off</div>
+                <div class="panel-subtitle" id="absentPanelSubtitle">Vehicles linked to engineers marked absent in OES or SP attendance for the selected date</div>
             </div>
+        </div>
+
+        <div class="nwd-banner" id="absentNwdBanner">
+            <span class="nwd-icon">📅</span>
+            <span id="absentNwdText"></span>
         </div>
 
         <div class="summary-row" id="absentSummaryRow"></div>
@@ -433,7 +510,7 @@
         <div class="table-wrap">
             <table class="absent-table" id="absentTable">
                 <thead>
-                    <tr>
+                    <tr id="absentTableHead">
                         <th>Registration</th>
                         <th>Driver (from file)</th>
                         <th>Attendance Status</th>
@@ -510,7 +587,7 @@
     window._query = query;
     window._where = where;
 
-    // Set default dates: yesterday for upload, yesterday for view
+    // Set default dates: yesterday
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fmt = d => d.toISOString().split('T')[0];
@@ -522,15 +599,50 @@
 </script>
 
 <script>
+    // ── UK BANK HOLIDAYS (England & Wales) ────────────────────────────────
+    // Static list covering 2024-2027; extend as needed
+    const UK_BANK_HOLIDAYS = new Set([
+        // 2024
+        '2024-01-01','2024-03-29','2024-04-01','2024-05-06','2024-05-27',
+        '2024-08-26','2024-12-25','2024-12-26',
+        // 2025
+        '2025-01-01','2025-04-18','2025-04-21','2025-05-05','2025-05-26',
+        '2025-08-25','2025-12-25','2025-12-26',
+        // 2026
+        '2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25',
+        '2026-08-31','2026-12-25','2026-12-28',
+        // 2027
+        '2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31',
+        '2027-08-30','2027-12-27','2027-12-28',
+    ]);
+
+    /**
+     * Returns an object describing whether a date string (YYYY-MM-DD) is a
+     * non-working day and what kind it is.
+     * { isNonWorkingDay, isWeekend, isBankHoliday, label }
+     */
+    function getNonWorkingDayInfo(dateStr) {
+        if (!dateStr) return { isNonWorkingDay: false };
+        const d = new Date(dateStr + 'T12:00:00'); // noon to avoid DST edge cases
+        const dow = d.getDay(); // 0=Sun, 6=Sat
+        const isWeekend = dow === 0 || dow === 6;
+        const isBankHoliday = UK_BANK_HOLIDAYS.has(dateStr);
+        const isNonWorkingDay = isWeekend || isBankHoliday;
+        const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const dayName = dayNames[dow];
+        let label = '';
+        if (isBankHoliday && isWeekend) label = `Bank Holiday ${dayName}`;
+        else if (isBankHoliday) label = 'Bank Holiday';
+        else if (isWeekend) label = dayName;
+        return { isNonWorkingDay, isWeekend, isBankHoliday, label, dayName };
+    }
+
     // ── PARSE helpers ──────────────────────────────────────────────────────
     function parseDDMMYYYY(str) {
-        // Accepts "24/03/2026 08:55" or "2026-03-24T08:55" etc.
         if (!str) return null;
         str = str.toString().trim();
-        // dd/mm/yyyy hh:mm
         const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
         if (m) return new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5]);
-        // ISO fallback
         const d = new Date(str);
         return isNaN(d) ? null : d;
     }
@@ -540,18 +652,13 @@
         return parseFloat(val.toString().replace(/[^\d.]/g,'')) || 0;
     }
 
-    // Parse duration / idle strings:
-    // "00:03:05" (HH:MM:SS), "0h 17m", "17m", or plain numeric minutes
     function parseDurationToMins(val) {
         if (!val && val !== 0) return 0;
         const s = val.toString().trim();
-        // HH:MM:SS or H:MM:SS
         const hms = s.match(/^(\d+):(\d{2}):(\d{2})$/);
         if (hms) return parseInt(hms[1]) * 60 + parseInt(hms[2]) + parseInt(hms[3]) / 60;
-        // MM:SS (no hours part)
         const ms = s.match(/^(\d+):(\d{2})$/);
         if (ms) return parseInt(ms[1]) + parseInt(ms[2]) / 60;
-        // "0h 17m" style
         let total = 0;
         const hm = s.match(/(\d+)\s*h/i);
         const mm = s.match(/(\d+)\s*m/i);
@@ -602,7 +709,6 @@
                 const wb = XLSX.read(data, { type:'array' });
                 const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1 });
 
-                // Find header row
                 let headerIdx = 0;
                 for (let i = 0; i < Math.min(5, rows.length); i++) {
                     const row = rows[i].map(c => (c||'').toString().toLowerCase());
@@ -644,7 +750,6 @@
                     startPC: col('startpostcode'), endPC: col('endpostcode'),
                 };
 
-                // Pre-filter valid rows
                 const validRows = [];
                 for (let i = headerIdx + 1; i < rows.length; i++) {
                     const row = rows[i];
@@ -725,16 +830,68 @@
         const dateVal = document.getElementById('viewDate').value;
         if (!dateVal) return;
 
-        const tbody     = document.getElementById('journeyBody');
-        const a5tbody   = document.getElementById('after5Body');
+        // ── Determine if this is a non-working day ──
+        const nwdInfo = getNonWorkingDayInfo(dateVal);
+
+        const tbody      = document.getElementById('journeyBody');
+        const a5tbody    = document.getElementById('after5Body');
         const absentBody = document.getElementById('absentBody');
-        const summRow   = document.getElementById('summaryRow');
-        const a5SummRow = document.getElementById('after5SummaryRow');
+        const summRow    = document.getElementById('summaryRow');
+        const a5SummRow  = document.getElementById('after5SummaryRow');
         const absentSummRow = document.getElementById('absentSummaryRow');
 
-        tbody.innerHTML    = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
-        a5tbody.innerHTML  = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        tbody.innerHTML      = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        a5tbody.innerHTML    = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+
+        // ── Update After 5PM panel UI for weekend/BH mode ──
+        const after5PanelIcon     = document.getElementById('after5PanelIcon');
+        const after5PanelTitle    = document.getElementById('after5PanelTitle');
+        const after5PanelSubtitle = document.getElementById('after5PanelSubtitle');
+        const after5Table         = document.getElementById('after5Table');
+        const after5LastCol       = document.getElementById('after5LastCol');
+        const after5NwdBanner     = document.getElementById('after5NwdBanner');
+        const after5NwdText       = document.getElementById('after5NwdText');
+        const absentNwdBanner     = document.getElementById('absentNwdBanner');
+        const absentNwdText       = document.getElementById('absentNwdText');
+        const absentPanelTitle    = document.getElementById('absentPanelTitle');
+        const absentPanelSubtitle = document.getElementById('absentPanelSubtitle');
+
+        if (nwdInfo.isNonWorkingDay) {
+            // ── Style: After-hours panel becomes "All Journeys" panel ──
+            after5PanelIcon.textContent = '📅';
+            after5PanelIcon.className = 'panel-icon weekend-mode';
+            const nwdTypeLabel = nwdInfo.isBankHoliday ? 'Bank Holiday' : 'Weekend';
+            after5PanelTitle.innerHTML = `All Journeys <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
+            after5PanelSubtitle.textContent = `All vehicle journeys shown — ${nwdTypeLabel} date, no 5pm filter applied`;
+            after5Table.className = 'after5-table weekend-table';
+            after5LastCol.textContent = 'Latest Journey';
+
+            const nwdMsg = nwdInfo.isBankHoliday
+                ? `${nwdInfo.label} — showing all journeys for this date (5pm filter removed)`
+                : `${nwdInfo.label} — showing all journeys for this date (5pm filter removed)`;
+            after5NwdText.textContent = nwdMsg;
+            after5NwdBanner.classList.add('visible');
+
+            // Absent panel: on weekends/BH all movement is notable — adjust copy
+            absentPanelTitle.innerHTML = `Movement Whilst Off <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
+            absentPanelSubtitle.textContent = `All vehicles with any journeys on this ${nwdInfo.isBankHoliday ? 'bank holiday' : 'weekend'} — cross-referenced with absence records`;
+            absentNwdText.textContent = `${nwdInfo.label} — all vehicle movement shown alongside any absence records`;
+            absentNwdBanner.classList.add('visible');
+        } else {
+            // ── Normal weekday — restore defaults ──
+            after5PanelIcon.textContent = '🌙';
+            after5PanelIcon.className = 'panel-icon after5';
+            after5PanelTitle.textContent = 'After-Hours Journeys (after 5:00 PM)';
+            after5PanelSubtitle.textContent = 'Consolidated miles and duration per registration';
+            after5Table.className = 'after5-table';
+            after5LastCol.textContent = 'Latest Journey';
+            after5NwdBanner.classList.remove('visible');
+
+            absentPanelTitle.textContent = 'Movement Whilst Off';
+            absentPanelSubtitle.textContent = 'Vehicles linked to engineers marked absent in OES or SP attendance for the selected date';
+            absentNwdBanner.classList.remove('visible');
+        }
 
         try {
             // ── Fetch journeys ──
@@ -750,12 +907,12 @@
                 return ta - tb;
             });
 
-            // ── DAY'S USAGE TABLE (consolidated by registration) ──
+            // ── DAY'S USAGE TABLE ──
             summRow.innerHTML = '';
-            window._usageData = []; // store for sorting
+            window._usageData = [];
 
             if (journeys.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ' + dateVal + '</p></div></td></tr>';
+                tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
             } else {
                 const byReg = {};
                 journeys.forEach(j => {
@@ -779,18 +936,26 @@
                 renderUsageTable('miles', 'desc');
             }
 
-            // ── AFTER 5PM TABLE ──
-            const after5 = journeys.filter(j => {
-                if (!j.startTime) return false;
-                return new Date(j.startTime).getHours() >= 17;
-            });
+            // ── AFTER 5PM / ALL-DAY TABLE ──
+            // On weekends/BH: show ALL journeys. On weekdays: only after 5pm.
+            const relevantJourneys = nwdInfo.isNonWorkingDay
+                ? journeys
+                : journeys.filter(j => {
+                    if (!j.startTime) return false;
+                    return new Date(j.startTime).getHours() >= 17;
+                });
 
             a5SummRow.innerHTML = '';
-            if (after5.length === 0) {
-                a5tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">✅</div><p>No after-hours journeys on ' + dateVal + '</p></div></td></tr>';
+
+            if (relevantJourneys.length === 0) {
+                const emptyIcon = nwdInfo.isNonWorkingDay ? '📅' : '✅';
+                const emptyMsg  = nwdInfo.isNonWorkingDay
+                    ? `No journeys recorded on this ${nwdInfo.label}`
+                    : `No after-hours journeys on ${dateVal}`;
+                a5tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">${emptyIcon}</div><p>${emptyMsg}</p></div></td></tr>`;
             } else {
                 const byReg = {};
-                after5.forEach(j => {
+                relevantJourneys.forEach(j => {
                     const r = j.registration || 'Unknown';
                     if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null };
                     const g = byReg[r];
@@ -799,17 +964,28 @@
                     g.durationMins += parseDurationToMins(j.duration);
                     g.idleMins     += parseDurationToMins(j.idle);
                     const st = j.startTime ? new Date(j.startTime) : null;
-                    if (st && (!g.latest || st > g.latest)) g.latest = st;
+                    if (st) {
+                        if (!g.earliest || st < g.earliest) g.earliest = st;
+                        if (!g.latest   || st > g.latest)   g.latest   = st;
+                    }
                 });
 
                 const a5rows = Object.values(byReg).sort((a,b) => b.miles - a.miles);
                 const totalA5Miles = a5rows.reduce((s,r) => s + r.miles, 0);
 
-                a5SummRow.innerHTML = `
-                    <div class="chip rose">🌙 ${after5.length} After-Hours Journeys</div>
-                    <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Miles After 5pm</div>
-                    <div class="chip rose">${a5rows.length} Vehicles</div>
-                `;
+                if (nwdInfo.isNonWorkingDay) {
+                    a5SummRow.innerHTML = `
+                        <div class="chip violet">📅 ${relevantJourneys.length} Journeys on ${nwdInfo.label}</div>
+                        <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Total Miles</div>
+                        <div class="chip violet">${a5rows.length} Vehicles Active</div>
+                    `;
+                } else {
+                    a5SummRow.innerHTML = `
+                        <div class="chip rose">🌙 ${relevantJourneys.length} After-Hours Journeys</div>
+                        <div class="chip amber">📍 ${totalA5Miles.toFixed(1)} Miles After 5pm</div>
+                        <div class="chip rose">${a5rows.length} Vehicles</div>
+                    `;
+                }
 
                 a5tbody.innerHTML = a5rows.map(g => `<tr>
                     <td class="reg">${esc(g.reg)}</td>
@@ -821,19 +997,17 @@
                 </tr>`).join('');
             }
 
-            // ── MOVEMENT WHILST OFF — fetch both attendance collections ──
+            // ── MOVEMENT WHILST OFF ──
             absentSummRow.innerHTML = '';
+
             if (journeys.length === 0) {
                 absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No journey data for this date</p></div></td></tr>';
             } else {
-                // Fetch OES attendance (collection: "attendance", field: date = dateVal)
                 const oesSnap = await window._getDocs(window._collection(window._db, 'attendance'));
                 const spSnap  = await window._getDocs(window._collection(window._db, 'SP Attendance'));
 
-                // Build map: engineerName (lowercase) → { status, source }
-                // Non-working statuses to flag
                 const absentCodes = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
-                const absentPeople = {}; // key: lower name → { name, status, source }
+                const absentPeople = {};
 
                 oesSnap.forEach(doc => {
                     const d = doc.data();
@@ -854,78 +1028,171 @@
                     }
                 });
 
-                // For each journey, check if driver name matches an absent person
-                // Match on driver field (partial/case-insensitive) or registration
-                const flagged = {}; // key: registration → { reg, driver, status, source, journeys, miles, durationMins, earliest, latest }
+                if (nwdInfo.isNonWorkingDay) {
+                    // ── WEEKEND / BANK HOLIDAY: show ALL vehicles with journeys ──
+                    // Still cross-reference absence records where they exist, but include all movers
+                    const flagged = {};
 
-                journeys.forEach(j => {
-                    const driverRaw = (j.driver || '').trim();
-                    const regRaw    = (j.registration || '').trim();
+                    journeys.forEach(j => {
+                        const driverRaw = (j.driver || '').trim();
+                        const regRaw    = (j.registration || '').trim();
+                        const key = regRaw || 'Unknown';
 
-                    // Try to match driver name against absent people
-                    let match = null;
-                    if (driverRaw) {
-                        const dLower = driverRaw.toLowerCase();
-                        for (const [k, v] of Object.entries(absentPeople)) {
-                            // Match if absent name contains driver words or vice versa
-                            if (dLower.includes(k) || k.includes(dLower) ||
-                                k.split(' ').some(part => part.length > 2 && dLower.includes(part))) {
-                                match = v;
-                                break;
+                        if (!flagged[key]) {
+                            // Try to find a matching absence record
+                            let match = null;
+                            if (driverRaw) {
+                                const dLower = driverRaw.toLowerCase();
+                                for (const [k, v] of Object.entries(absentPeople)) {
+                                    if (dLower.includes(k) || k.includes(dLower) ||
+                                        k.split(' ').some(part => part.length > 2 && dLower.includes(part))) {
+                                        match = v;
+                                        break;
+                                    }
+                                }
                             }
+                            flagged[key] = {
+                                reg: regRaw, driver: driverRaw,
+                                status: match ? match.status : nwdInfo.label,
+                                source: match ? match.source : '—',
+                                isAbsent: !!match,
+                                journeys: 0, miles: 0, durationMins: 0,
+                                earliest: null, latest: null
+                            };
                         }
-                    }
-                    // Also try matching registration against driver name stored in absent people
-                    if (!match) {
-                        for (const [k, v] of Object.entries(absentPeople)) {
-                            if (k.includes(regRaw.toLowerCase())) { match = v; break; }
+
+                        const g = flagged[key];
+                        g.journeys++;
+                        g.miles += j.miles;
+                        g.durationMins += parseDurationToMins(j.duration);
+                        const st = j.startTime ? new Date(j.startTime) : null;
+                        if (st) {
+                            if (!g.earliest || st < g.earliest) g.earliest = st;
+                            if (!g.latest   || st > g.latest)   g.latest   = st;
                         }
-                    }
+                    });
 
-                    if (!match) return;
+                    const flaggedRows = Object.values(flagged).sort((a,b) => {
+                        // Sort: absent-matched first, then by miles desc
+                        if (a.isAbsent !== b.isAbsent) return a.isAbsent ? -1 : 1;
+                        return b.miles - a.miles;
+                    });
 
-                    const key = regRaw || 'Unknown';
-                    if (!flagged[key]) {
-                        flagged[key] = {
-                            reg: regRaw, driver: driverRaw,
-                            status: match.status, source: match.source,
-                            journeys: 0, miles: 0, durationMins: 0,
-                            earliest: null, latest: null
-                        };
-                    }
-                    const g = flagged[key];
-                    g.journeys++;
-                    g.miles += j.miles;
-                    g.durationMins += parseDurationToMins(j.duration);
-                    const st = j.startTime ? new Date(j.startTime) : null;
-                    if (st) {
-                        if (!g.earliest || st < g.earliest) g.earliest = st;
-                        if (!g.latest   || st > g.latest)   g.latest   = st;
-                    }
-                });
+                    const absentMatched = flaggedRows.filter(r => r.isAbsent).length;
 
-                const flaggedRows = Object.values(flagged).sort((a,b) => b.miles - a.miles);
-
-                if (flaggedRows.length === 0) {
-                    const absentCount = Object.keys(absentPeople).length;
-                    absentBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">✅</div><p>${absentCount > 0 ? absentCount + ' absent engineer(s) found but no matching vehicle journeys' : 'No absence records found for this date'}</p></div></td></tr>`;
-                } else {
                     absentSummRow.innerHTML = `
-                        <div class="chip" style="background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.2);color:var(--accent-violet);">⚠️ ${flaggedRows.length} Flagged Vehicle(s)</div>
-                        <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Journeys Whilst Off</div>
+                        <div class="chip violet">📅 ${flaggedRows.length} Vehicle(s) Active on ${nwdInfo.label}</div>
+                        <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Total Journeys</div>
                         <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
+                        ${absentMatched > 0 ? `<div class="chip rose">⚠️ ${absentMatched} Also Marked Absent</div>` : ''}
                     `;
+
+                    // Update column header for status to make sense on weekends
+                    document.getElementById('absentTableHead').innerHTML = `
+                        <th>Registration</th>
+                        <th>Driver (from file)</th>
+                        <th>Status / Day Type</th>
+                        <th>Absence Source</th>
+                        <th>Journeys</th>
+                        <th>Total Miles</th>
+                        <th>Total Duration</th>
+                        <th>First Journey</th>
+                        <th>Last Journey</th>
+                    `;
+
                     absentBody.innerHTML = flaggedRows.map(g => `<tr>
-                        <td class="reg absent-table" style="color:var(--accent-violet)">${esc(g.reg)}</td>
+                        <td class="reg" style="color:var(--accent-violet)">${esc(g.reg)}</td>
                         <td class="muted">${esc(g.driver)}</td>
-                        <td><span class="absent-status">${esc(g.status)}</span></td>
-                        <td class="${g.source.includes('OES') && g.source.includes('SP') ? 'muted' : g.source === 'OES' ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
+                        <td><span class="${g.isAbsent ? 'absent-status' : 'weekend-status'}">${esc(g.status)}</span></td>
+                        <td class="${g.source === '—' ? 'muted' : g.source.includes('OES') ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
                         <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
                         <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
                         <td class="muted">${minsToHM(g.durationMins)}</td>
                         <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
                         <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
                     </tr>`).join('');
+
+                } else {
+                    // ── WEEKDAY: original logic — only flag absent-matched vehicles ──
+                    document.getElementById('absentTableHead').innerHTML = `
+                        <th>Registration</th>
+                        <th>Driver (from file)</th>
+                        <th>Attendance Status</th>
+                        <th>Source</th>
+                        <th>Journeys</th>
+                        <th>Total Miles</th>
+                        <th>Total Duration</th>
+                        <th>First Journey</th>
+                        <th>Last Journey</th>
+                    `;
+
+                    const flagged = {};
+
+                    journeys.forEach(j => {
+                        const driverRaw = (j.driver || '').trim();
+                        const regRaw    = (j.registration || '').trim();
+
+                        let match = null;
+                        if (driverRaw) {
+                            const dLower = driverRaw.toLowerCase();
+                            for (const [k, v] of Object.entries(absentPeople)) {
+                                if (dLower.includes(k) || k.includes(dLower) ||
+                                    k.split(' ').some(part => part.length > 2 && dLower.includes(part))) {
+                                    match = v;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!match) {
+                            for (const [k, v] of Object.entries(absentPeople)) {
+                                if (k.includes(regRaw.toLowerCase())) { match = v; break; }
+                            }
+                        }
+                        if (!match) return;
+
+                        const key = regRaw || 'Unknown';
+                        if (!flagged[key]) {
+                            flagged[key] = {
+                                reg: regRaw, driver: driverRaw,
+                                status: match.status, source: match.source,
+                                journeys: 0, miles: 0, durationMins: 0,
+                                earliest: null, latest: null
+                            };
+                        }
+                        const g = flagged[key];
+                        g.journeys++;
+                        g.miles += j.miles;
+                        g.durationMins += parseDurationToMins(j.duration);
+                        const st = j.startTime ? new Date(j.startTime) : null;
+                        if (st) {
+                            if (!g.earliest || st < g.earliest) g.earliest = st;
+                            if (!g.latest   || st > g.latest)   g.latest   = st;
+                        }
+                    });
+
+                    const flaggedRows = Object.values(flagged).sort((a,b) => b.miles - a.miles);
+
+                    if (flaggedRows.length === 0) {
+                        const absentCount = Object.keys(absentPeople).length;
+                        absentBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">✅</div><p>${absentCount > 0 ? absentCount + ' absent engineer(s) found but no matching vehicle journeys' : 'No absence records found for this date'}</p></div></td></tr>`;
+                    } else {
+                        absentSummRow.innerHTML = `
+                            <div class="chip" style="background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.2);color:var(--accent-violet);">⚠️ ${flaggedRows.length} Flagged Vehicle(s)</div>
+                            <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Journeys Whilst Off</div>
+                            <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
+                        `;
+                        absentBody.innerHTML = flaggedRows.map(g => `<tr>
+                            <td class="reg absent-table" style="color:var(--accent-violet)">${esc(g.reg)}</td>
+                            <td class="muted">${esc(g.driver)}</td>
+                            <td><span class="absent-status">${esc(g.status)}</span></td>
+                            <td class="${g.source.includes('OES') && g.source.includes('SP') ? 'muted' : g.source === 'OES' ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
+                            <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
+                            <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
+                            <td class="muted">${minsToHM(g.durationMins)}</td>
+                            <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
+                            <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
+                        </tr>`).join('');
+                    }
                 }
             }
 
@@ -953,7 +1220,6 @@
             return 0;
         });
 
-        // Update header indicators
         const cols = ['reg','journeys','miles','durationMins','idleMins'];
         cols.forEach(c => {
             const th = document.querySelector(`[data-col="${c}"]`);
@@ -999,7 +1265,6 @@
         setTimeout(() => { el.style.display = 'none'; }, 6000);
     }
 
-    // Expose globals
     window.uploadJourneyData = uploadJourneyData;
     window.loadJourneys      = loadJourneys;
 </script>
