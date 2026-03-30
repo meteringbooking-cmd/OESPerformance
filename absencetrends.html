@@ -102,6 +102,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .split-btn.active{background:rgba(59,130,246,.15);border-color:var(--accent);color:#93c5fd;}
 .split-btn:hover{border-color:var(--accent);color:var(--text);}
 
+/* LTS toggle bar */
+.lts-toggle-wrap{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;background:var(--panel);border:1px solid rgba(248,113,113,.2);border-radius:14px;padding:1.1rem 1.5rem;margin-bottom:2rem;}
+.lts-toggle-label{flex:1;min-width:200px;}
+.lts-toggle-label strong{display:block;font-size:.88rem;font-weight:700;color:#fca5a5;margin-bottom:.2rem;}
+.lts-toggle-label span{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);}
+.lts-badge{font-family:'JetBrains Mono',monospace;font-size:.7rem;padding:.25rem .65rem;border-radius:20px;white-space:nowrap;flex-shrink:0;}
+.lts-badge.included{background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:#f87171;}
+.lts-badge.excluded{background:rgba(90,113,148,.12);border:1px solid var(--border2);color:var(--muted);}
+.lts-switch{position:relative;width:48px;height:26px;flex-shrink:0;}
+.lts-switch input{opacity:0;width:0;height:0;}
+.lts-slider{position:absolute;cursor:pointer;inset:0;background:#1e2d44;border:1px solid #2d4060;border-radius:26px;transition:.3s;}
+.lts-slider:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#5a7194;border-radius:50%;transition:.3s;}
+.lts-switch input:checked + .lts-slider{background:rgba(248,113,113,.25);border-color:#f87171;}
+.lts-switch input:checked + .lts-slider:before{transform:translateX(22px);background:#f87171;}
+
 /* Stats */
 .stats-row{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:2rem;}
 .stat-tile{flex:1 1 140px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:1.2rem 1.4rem;display:flex;flex-direction:column;gap:.3rem;}
@@ -164,7 +179,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
   <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
 
-  <!-- Debug panel (shown after upload) -->
+  <!-- Debug panel -->
   <div class="debug-panel" id="debugPanel">
     <h4>Column mapping check — first 3 records</h4>
     <pre id="debugPre"></pre>
@@ -204,12 +219,29 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
   </div>
 
+  <!-- LTS Toggle -->
+  <div class="lts-toggle-wrap" id="ltsBar" style="display:none;">
+    <div class="lts-toggle-label">
+      <strong>🏥 Long Term Sickness (LTS)</strong>
+      <span>Absences with <strong>6+ working days</strong> — toggle off to exclude from all stats &amp; charts</span>
+    </div>
+    <span class="lts-badge included" id="ltsBadge">Included</span>
+    <label class="lts-switch" title="Toggle LTS inclusion">
+      <input type="checkbox" id="ltsToggle" checked>
+      <span class="lts-slider"></span>
+    </label>
+  </div>
+
   <!-- Stats -->
   <div class="stats-row" id="statsRow" style="display:none;">
     <div class="stat-tile"><div class="st-num" id="stDays" style="color:var(--accent)">—</div><div class="st-lbl">Working Days Lost</div></div>
     <div class="stat-tile"><div class="st-num" id="stEmployees" style="color:#34d399">—</div><div class="st-lbl">Employees Affected</div></div>
     <div class="stat-tile"><div class="st-num" id="stRecords" style="color:#fb923c">—</div><div class="st-lbl">Absence Records</div></div>
     <div class="stat-tile"><div class="st-num" id="stSickness" style="color:#f87171">—</div><div class="st-lbl">Sickness Days Lost</div></div>
+    <div class="stat-tile" id="stLtsTile" style="display:none;">
+      <div class="st-num" id="stLtsDays" style="color:#c084fc">—</div>
+      <div class="st-lbl">LTS Days (excluded)</div>
+    </div>
   </div>
 
   <!-- Charts -->
@@ -256,8 +288,9 @@ const app = initializeApp({
 const db = getFirestore(app);
 
 // ── Constants ──
-const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const HOURS_PER_DAY = 7.5; // Used to convert hours → days when working days column is 0
+const MONTH_NAMES   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const HOURS_PER_DAY = 7.5;
+const LTS_THRESHOLD = 6; // records with workingDays >= 6 are classified as Long Term Sickness
 
 const CAT = {
   SICKNESS:'sickness', GA:'ga', GA_AAUP:'ga_aaup', GA_JS:'ga_js',
@@ -291,7 +324,11 @@ function classifyRow(rawType) {
   return null;
 }
 
-// ── Parse date string to a local Date (no timezone shift) ──
+// ── LTS: any record whose total working days >= LTS_THRESHOLD ──
+function isLTS(record) {
+  return (record.workingDays || 0) >= LTS_THRESHOLD;
+}
+
 function parseLocalDate(s) {
   if (!s) return null;
   const str = s.toString().trim();
@@ -303,7 +340,6 @@ function parseLocalDate(s) {
   return null;
 }
 
-// ── Parse Excel cell value to YYYY-MM-DD string ──
 function parseExcelDate(v) {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'number') {
@@ -314,9 +350,7 @@ function parseExcelDate(v) {
   const str = v.toString().trim();
   if (!str) return '';
   const ukMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (ukMatch) {
-    return `${ukMatch[3]}-${ukMatch[2].padStart(2,'0')}-${ukMatch[1].padStart(2,'0')}`;
-  }
+  if (ukMatch) return `${ukMatch[3]}-${ukMatch[2].padStart(2,'0')}-${ukMatch[1].padStart(2,'0')}`;
   const ukShort = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (ukShort) {
     const yr = +ukShort[3] >= 50 ? '19'+ukShort[3] : '20'+ukShort[3];
@@ -327,18 +361,12 @@ function parseExcelDate(v) {
   return str;
 }
 
-// ── Parse a numeric cell value (working days or hours) ──
 function parseNumeric(v) {
   if (v === null || v === undefined || v === '') return 0;
   const n = parseFloat(v.toString().replace(/[^\d.-]/g,''));
-  return isNaN(n) ? 0 : Math.abs(n); // abs handles any negative entries
+  return isNaN(n) ? 0 : Math.abs(n);
 }
 
-// ── Resolve the working days value for a record:
-//    1. Use "No. working days off" column (G = index 6)
-//    2. If that is 0 or blank, use "No. working hours off" (H = index 7) ÷ HOURS_PER_DAY
-//    3. Minimum 0 (records with 0 days and 0 hours are kept but contribute 0 days)
-// ──
 function resolveWorkingDays(rawDays, rawHours) {
   const days  = parseNumeric(rawDays);
   const hours = parseNumeric(rawHours);
@@ -347,48 +375,18 @@ function resolveWorkingDays(rawDays, rawHours) {
   return 0;
 }
 
-// ── Count Mon–Fri working days between two date strings (inclusive) ──
-// Used only for calendar highlighting (dataMonthSet), NOT for day counts.
-function countWorkingDaysBetween(fromStr, toStr) {
-  const from = parseLocalDate(fromStr);
-  if (!from) return 0;
-  const hasTo = toStr && toStr.toString().trim() !== '';
-  if (!hasTo) return 1;
-  const to = parseLocalDate(toStr);
-  if (!to) return 1;
-  const start = from <= to ? from : to;
-  const end   = from <= to ? to   : from;
-  let count = 0;
-  const cur = new Date(start);
-  while (cur <= end) {
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) count++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return Math.max(count, 1);
-}
-
-// ── Split a record's working days across calendar months ──
-// Distributes `totalDays` proportionally based on Mon–Fri days in each month
-// within the [fromDate, toDate] range.
-// Returns { "YYYY-MM": days, ... }
 function splitDaysByMonth(fromStr, toStr, totalDays) {
   if (totalDays <= 0) return {};
-
   const from = parseLocalDate(fromStr);
   if (!from) return {};
-
   const hasTo = toStr && toStr.toString().trim() !== '';
   const to    = hasTo ? parseLocalDate(toStr) : from;
   if (!to) {
     const key = `${from.getFullYear()}-${String(from.getMonth()+1).padStart(2,'0')}`;
     return { [key]: totalDays };
   }
-
   const start = from <= to ? from : to;
   const end   = from <= to ? to   : from;
-
-  // Count Mon–Fri days per calendar month within the range
   const calBuckets = {};
   const cur = new Date(start);
   while (cur <= end) {
@@ -399,20 +397,13 @@ function splitDaysByMonth(fromStr, toStr, totalDays) {
     }
     cur.setDate(cur.getDate() + 1);
   }
-
   const calTotal = Object.values(calBuckets).reduce((a,b)=>a+b, 0);
-
   if (calTotal === 0) {
-    // Entire range is weekend — assign all days to the from-month
     const key = `${from.getFullYear()}-${String(from.getMonth()+1).padStart(2,'0')}`;
     return { [key]: totalDays };
   }
-
-  // Distribute totalDays proportionally across months
   const result = {};
-  for (const [k, v] of Object.entries(calBuckets)) {
-    result[k] = totalDays * (v / calTotal);
-  }
+  for (const [k, v] of Object.entries(calBuckets)) result[k] = totalDays * (v / calTotal);
   return result;
 }
 
@@ -423,6 +414,7 @@ let holSplit        = false;
 let hiddenCats      = new Set();
 let selectedPeriods = new Set();
 let calViewStart    = new Date().getFullYear() - 1;
+let includeLTS      = true;  // when false, records with workingDays >= LTS_THRESHOLD are excluded
 let barChartInst    = null;
 let doughnutInst    = null;
 
@@ -447,7 +439,6 @@ function fmt(n) {
   return n % 1 === 0 ? n.toString() : n.toFixed(1);
 }
 
-// ── Resolve display category given split settings ──
 function resolveDisplayCat(base) {
   if (base === CAT.SICKNESS) return CAT.SICKNESS;
   if ([CAT.GA_AAUP,CAT.GA_JS,CAT.GA_DEPEND,CAT.GA_PMPL,CAT.GA_AWOL].includes(base)) return gasSplit ? base : CAT.GA;
@@ -455,23 +446,34 @@ function resolveDisplayCat(base) {
   return null;
 }
 
-// ── Get filtered slices ──
-// For each record:
-//   1. Use the stored workingDays value (from col G, or hours÷7.5 from col H)
-//   2. Split that day count proportionally across calendar months using date range
-//   3. Emit one slice per (record × month) that falls in selectedPeriods
+// ── Get filtered slices (respects LTS toggle) ──
 function getFilteredSlices() {
   const slices = [];
   for (const r of allRecords) {
     if (!r.fromDate) continue;
     const displayCat = resolveDisplayCat(r.category);
     if (!displayCat || hiddenCats.has(displayCat)) continue;
-
+    // ── LTS filter: skip record entirely when LTS is excluded ──
+    if (!includeLTS && isLTS(r)) continue;
     const totalDays = r.workingDays || 0;
-
-    // Split days across months proportionally based on date range
     const monthDays = splitDaysByMonth(r.fromDate, r.toDate || '', totalDays);
+    for (const [monthKey, days] of Object.entries(monthDays)) {
+      if (!selectedPeriods.has(monthKey)) continue;
+      slices.push({ ...r, monthKey, sliceDays: days, displayCat });
+    }
+  }
+  return slices;
+}
 
+// ── Get LTS-only slices (used to show excluded days figure in stat tile) ──
+function getLTSOnlySlices() {
+  const slices = [];
+  for (const r of allRecords) {
+    if (!r.fromDate || !isLTS(r)) continue;
+    const displayCat = resolveDisplayCat(r.category);
+    if (!displayCat || hiddenCats.has(displayCat)) continue;
+    const totalDays = r.workingDays || 0;
+    const monthDays = splitDaysByMonth(r.fromDate, r.toDate || '', totalDays);
     for (const [monthKey, days] of Object.entries(monthDays)) {
       if (!selectedPeriods.has(monthKey)) continue;
       slices.push({ ...r, monthKey, sliceDays: days, displayCat });
@@ -484,14 +486,30 @@ function sumSliceDays(slices) {
   return slices.reduce((s, sl) => s + (sl.sliceDays || 0), 0);
 }
 
+// ── LTS toggle event ──
+document.getElementById('ltsToggle').addEventListener('change', e => {
+  includeLTS = e.target.checked;
+  const badge   = document.getElementById('ltsBadge');
+  const ltsTile = document.getElementById('stLtsTile');
+  if (includeLTS) {
+    badge.textContent = 'Included';
+    badge.className   = 'lts-badge included';
+    ltsTile.style.display = 'none';
+  } else {
+    badge.textContent = 'Excluded';
+    badge.className   = 'lts-badge excluded';
+    ltsTile.style.display = 'flex';
+  }
+  renderAll();
+});
+
 // ── Calendar builder ──
 function buildCalendar() {
   const hasData = dataMonthSet();
   const wrap = document.getElementById('calYearsWrap');
   wrap.innerHTML = '';
-
   for (let yi = 0; yi < 2; yi++) {
-    const year = calViewStart + yi;
+    const year  = calViewStart + yi;
     const block = document.createElement('div');
     block.className = 'cal-year-block';
     const grid = document.createElement('div');
@@ -499,7 +517,6 @@ function buildCalendar() {
     block.innerHTML = `<div class="cal-year-heading">${year}</div>`;
     block.appendChild(grid);
     wrap.appendChild(block);
-
     MONTH_NAMES.forEach((name, mi) => {
       const key  = periodKey(year, mi);
       const chip = document.createElement('div');
@@ -585,7 +602,6 @@ uploadBtn.addEventListener('click', async () => {
     const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
 
-    // ── Show column header debug info ──
     const debugPanel = document.getElementById('debugPanel');
     const debugPre   = document.getElementById('debugPre');
     if (rows[0]) {
@@ -607,24 +623,19 @@ uploadBtn.addEventListener('click', async () => {
       const rawType  = (row[3]||'').toString().trim();
       const fromDate = parseExcelDate(row[4]);
       const toDate   = parseExcelDate(row[5]);
-
-      // ── KEY FIX: read working days from col G (index 6) and hours from col H (index 7) ──
-      const rawDays  = row[6]; // "No. working days off"
-      const rawHours = row[7]; // "No. working hours off"
+      const rawDays  = row[6];
+      const rawHours = row[7];
       const workingDays = resolveWorkingDays(rawDays, rawHours);
-
       const cat = classifyRow(rawType);
       if (!employee || !fromDate || !cat) continue;
-
       const fp = makeFingerprint(employee, fromDate);
       if (existing.has(fp)) { dupes++; continue; }
       existing.add(fp);
-
       parsed.push({
         employee, rawType, category: cat,
         fromDate, toDate: toDate || '',
-        workingDays,       // ← actual value from spreadsheet columns G/H
-        rawDays: rawDays !== undefined ? rawDays.toString() : '',   // stored for reference
+        workingDays,
+        rawDays:  rawDays  !== undefined ? rawDays.toString()  : '',
         rawHours: rawHours !== undefined ? rawHours.toString() : '',
         notes: (row[8]||'').toString().trim(),
         submitted: parseExcelDate(row[9])
@@ -662,6 +673,7 @@ async function loadData() {
     buildCatBar(); buildCalendar();
     document.getElementById('controlsBar').style.display = 'block';
     document.getElementById('catBar').style.display      = 'block';
+    document.getElementById('ltsBar').style.display      = 'flex';
     renderAll();
   } catch(e) { toast('Error loading data: '+e.message,'error'); console.error(e); }
 }
@@ -736,14 +748,23 @@ function renderAll() {
 }
 
 function renderStats(slices) {
-  const total = sumSliceDays(slices);
-  const sick  = sumSliceDays(slices.filter(sl => sl.category === CAT.SICKNESS));
-  const uniqueEmployees = new Set(slices.map(sl => sl.employee)).size;
-  const uniqueRecordIds = new Set(slices.map(sl => sl.id)).size;
+  const total            = sumSliceDays(slices);
+  const sick             = sumSliceDays(slices.filter(sl => sl.category === CAT.SICKNESS));
+  const uniqueEmployees  = new Set(slices.map(sl => sl.employee)).size;
+  const uniqueRecordIds  = new Set(slices.map(sl => sl.id)).size;
   document.getElementById('stDays').textContent      = fmt(total);
   document.getElementById('stEmployees').textContent = uniqueEmployees;
   document.getElementById('stRecords').textContent   = uniqueRecordIds;
   document.getElementById('stSickness').textContent  = fmt(sick);
+
+  // When LTS is excluded, show the LTS days stat tile so users can see what was removed
+  if (!includeLTS) {
+    const ltsDays = sumSliceDays(getLTSOnlySlices());
+    document.getElementById('stLtsDays').textContent  = fmt(ltsDays);
+    document.getElementById('stLtsTile').style.display = 'flex';
+  } else {
+    document.getElementById('stLtsTile').style.display = 'none';
+  }
 }
 
 function renderBarChart(slices) {
@@ -759,7 +780,7 @@ function renderBarChart(slices) {
       borderRadius:5, borderSkipped:false, yAxisID:'y',
       data: periods.map(p => {
         const v = sumSliceDays(slices.filter(sl => sl.monthKey === p && sl.displayCat === cat));
-        return Math.round(v * 10) / 10; // 1 d.p.
+        return Math.round(v * 10) / 10;
       })
     };
   });
@@ -782,7 +803,7 @@ function renderBarChart(slices) {
       responsive:true, maintainAspectRatio:true,
       interaction: { mode:'index', intersect:false },
       plugins: {
-        legend: { labels: { color:'#8eaac8', font:{family:'JetBrains Mono',size:11}, usePointStyle:true, pointStyleWidth:14 } },
+        legend: { labels:{ color:'#8eaac8', font:{family:'JetBrains Mono',size:11}, usePointStyle:true, pointStyleWidth:14 } },
         tooltip: {
           backgroundColor:'#0e1420', borderColor:'#1e2d44', borderWidth:1,
           titleColor:'#e2eaf5', bodyColor:'#8eaac8', padding:12,
@@ -825,7 +846,7 @@ function renderDoughnut(slices) {
       responsive:true, maintainAspectRatio:false, cutout:'62%',
       plugins: {
         legend: { position:'bottom', labels:{color:'#8eaac8',font:{family:'JetBrains Mono',size:10},padding:12} },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} day${ctx.parsed!==1?'s':''}` } }
+        tooltip: { callbacks:{ label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} day${ctx.parsed!==1?'s':''}` } }
       }
     }
   });
@@ -835,9 +856,9 @@ function renderBreakdownTable(slices) {
   const cats      = activeCats().filter(c => !hiddenCats.has(c));
   const totalDays = sumSliceDays(slices);
   const rows = cats.map(cat => {
-    const m         = CAT_META[cat];
-    const catSlices = slices.filter(sl => sl.displayCat === cat);
-    const days      = sumSliceDays(catSlices);
+    const m          = CAT_META[cat];
+    const catSlices  = slices.filter(sl => sl.displayCat === cat);
+    const days       = sumSliceDays(catSlices);
     const uniqueRecs = new Set(catSlices.map(sl => sl.id)).size;
     return { cat, m, count:uniqueRecs, days, pct: totalDays>0 ? ((days/totalDays)*100).toFixed(1) : '0.0' };
   }).sort((a,b) => b.days - a.days);
