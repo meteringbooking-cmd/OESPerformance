@@ -938,12 +938,18 @@
         }
 
         try {
+            // ── EXCLUDED VEHICLES (manager/personal vehicles — hidden from all panels) ──
+            const EXCLUDED_REGS = new Set(['YF74RMY','WN25FCJ','HK25ZKO','YL74ETZ']);
+
             // ── Fetch journeys ──
             const snap = await window._getDocs(window._collection(window._db, 'Van Start and End'));
             const journeys = [];
             snap.forEach(doc => {
                 const d = doc.data();
-                if (d.journeyDate === dateVal) journeys.push(d);
+                if (d.journeyDate === dateVal) {
+                    const reg = (d.registration || '').trim().toUpperCase();
+                    if (!EXCLUDED_REGS.has(reg)) journeys.push(d);
+                }
             });
             journeys.sort((a,b) => {
                 const ta = a.startTime ? new Date(a.startTime) : 0;
@@ -980,7 +986,7 @@
                 renderUsageTable('miles', 'desc');
             }
 
-            // ── START OF DAY TABLE ──
+            // ── START OF DAY TABLE — only vehicles whose first journey is after 08:00 ──
             const sodSummRow = document.getElementById('sodSummaryRow');
             const sodBody    = document.getElementById('sodBody');
             sodSummRow.innerHTML = '';
@@ -1003,13 +1009,20 @@
                         sodByReg[r].driver = j.driver || sodByReg[r].driver;
                     }
                 });
-                window._sodData = Object.values(sodByReg);
-                const lateCount = window._sodData.filter(r => r.firstMins >= 8*60).length;
+                // Only keep vehicles whose first journey is AFTER 08:00
+                window._sodData = Object.values(sodByReg).filter(r => r.firstMins >= 8 * 60);
+                const totalVehicles = Object.keys(sodByReg).length;
+                const lateCount = window._sodData.length;
                 sodSummRow.innerHTML = `
-                    <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">🌅 ${window._sodData.length} Vehicles</div>
-                    ${lateCount > 0 ? `<div class="chip amber">⚠️ ${lateCount} First Journey After 08:00</div>` : '<div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ All Started Before 08:00</div>'}
+                    <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
+                    <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
+                    <div class="chip">🚐 ${totalVehicles} Total Vehicles</div>
                 `;
-                renderSodTable('firstMins', 'asc');
+                if (lateCount === 0) {
+                    sodBody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>`;
+                } else {
+                    renderSodTable('firstMins', 'asc');
+                }
             }
 
             // ── AFTER 5PM / ALL-DAY TABLE ──
@@ -1302,13 +1315,12 @@
             tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>No data</p></div></td></tr>';
             return;
         }
-        const LATE_MINS = 8 * 60; // 08:00
+        const LATE_MINS = 8 * 60;
         tbody.innerHTML = data.map(g => {
-            const isLate     = g.firstMins >= LATE_MINS;
-            const isVeryLate = g.firstMins >= 9 * 60; // 09:00+
-            const timeClass  = isVeryLate ? 'late-flag very-late' : isLate ? 'late-flag' : 'muted';
+            const isVeryLate = g.firstMins >= 9 * 60; // 09:00+ gets a stronger highlight
+            const timeClass  = isVeryLate ? 'late-flag very-late' : 'late-flag';
             const timeLabel  = g.firstTime ? timeStr(g.firstTime) : '—';
-            const lateTag    = isLate ? `<span style="margin-left:8px;font-size:0.72em;padding:2px 7px;border-radius:5px;background:${isVeryLate?'rgba(251,113,133,0.15)':'rgba(245,158,11,0.15)'};border:1px solid ${isVeryLate?'rgba(251,113,133,0.35)':'rgba(245,158,11,0.35)'};">${isVeryLate?'09:00+':'After 08:00'}</span>` : '';
+            const lateTag    = `<span style="margin-left:8px;font-size:0.72em;padding:2px 7px;border-radius:5px;background:${isVeryLate?'rgba(251,113,133,0.15)':'rgba(245,158,11,0.15)'};border:1px solid ${isVeryLate?'rgba(251,113,133,0.35)':'rgba(245,158,11,0.35)'};">${isVeryLate?'09:00+':'After 08:00'}</span>`;
             return `<tr>
                 <td class="reg" style="color:var(--success)">${esc(g.reg)}</td>
                 <td class="muted">${esc(g.driver) || '—'}</td>
