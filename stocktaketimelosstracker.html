@@ -20,6 +20,7 @@
             --success: #10B981;
             --amber: #F59E0B;
             --error: #EF4444;
+            --purple: #8B5CF6;
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
@@ -72,6 +73,8 @@
         }
         .badge-blue   { background:rgba(0,163,224,0.15);  color:var(--accent);  border:1px solid rgba(0,163,224,0.3); }
         .badge-amber  { background:rgba(245,158,11,0.15); color:var(--amber);   border:1px solid rgba(245,158,11,0.3); }
+        .badge-purple { background:rgba(139,92,246,0.15); color:var(--purple);  border:1px solid rgba(139,92,246,0.3); }
+        .badge-green  { background:rgba(16,185,129,0.15); color:var(--success); border:1px solid rgba(16,185,129,0.3); }
 
         /* Month nav */
         .month-nav-row { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
@@ -111,11 +114,11 @@
         .spinner { width:36px; height:36px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:1.5rem auto; }
 
         .issue-cell {
-            max-width:300px;
+            max-width:260px;
             transition:color 0.2s;
         }
         .issue-preview { 
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; display:block;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; display:block;
         }
         .click-hint {
             display:inline-flex; align-items:center; gap:0.3rem;
@@ -244,11 +247,12 @@
                             <th>Date</th>
                             <th>Engineer</th>
                             <th>Duration</th>
+                            <th>Bybox / Pudo</th>
                             <th>Issue / Description</th>
                         </tr>
                     </thead>
                     <tbody id="entriesTableBody">
-                        <tr><td colspan="4" class="empty-state">Loading entries...</td></tr>
+                        <tr><td colspan="5" class="empty-state">Loading entries...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -281,6 +285,16 @@
                             <option value="Half day">Half day</option>
                             <option value="Full day">Full day</option>
                             <option value="Multiple days">Multiple days</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="byboxPudo">Bybox / Pudo *</label>
+                        <select id="byboxPudo" class="form-select" required>
+                            <option value="">Select Type</option>
+                            <option value="Bybox">Bybox</option>
+                            <option value="Pudo">Pudo</option>
+                            <option value="Both">Both</option>
+                            <option value="N/A">N/A</option>
                         </select>
                     </div>
                     <div class="form-group full-width">
@@ -353,15 +367,27 @@
         return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
+    // Returns the appropriate badge class for Bybox/Pudo value
+    function byboxPudoBadgeClass(val) {
+        if (!val || val === 'N/A') return 'badge-amber';
+        if (val === 'Bybox') return 'badge-purple';
+        if (val === 'Pudo') return 'badge-green';
+        if (val === 'Both') return 'badge-blue';
+        return 'badge-amber';
+    }
+
     // ── Modal ─────────────────────────────────────────────────────────────────
     const modalOverlay = document.getElementById('modalOverlay');
     const modalClose   = document.getElementById('modalClose');
 
     function openModal(entry) {
         document.getElementById('modalTitle').textContent = entry.engineer || 'Unknown Engineer';
+        const bpVal = entry.byboxPudo || '—';
+        const bpClass = byboxPudoBadgeClass(entry.byboxPudo);
         document.getElementById('modalMeta').innerHTML = `
             <span class="badge badge-blue">${escHtml(entry.duration)}</span>
-            <span class="badge badge-amber">${formatDate(entry.date)}</span>`;
+            <span class="badge badge-amber">${formatDate(entry.date)}</span>
+            <span class="badge ${bpClass}">${escHtml(bpVal)}</span>`;
         document.getElementById('modalIssueText').textContent = entry.issue || '—';
         modalOverlay.classList.add('open');
         document.body.style.overflow = 'hidden';
@@ -444,7 +470,7 @@
 
             tbody.innerHTML = '';
             if (entries.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No entries found for ${monthNames[viewMonth]} ${viewYear}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No entries found for ${monthNames[viewMonth]} ${viewYear}</td></tr>`;
             } else {
                 entries.forEach(entry => {
                     const tr = document.createElement('tr');
@@ -462,10 +488,14 @@
                            </span>`
                         : '';
 
+                    const bpVal   = entry.byboxPudo || '—';
+                    const bpClass = byboxPudoBadgeClass(entry.byboxPudo);
+
                     tr.innerHTML = `
                         <td>${formatDate(entry.date)}</td>
                         <td><strong>${escHtml(entry.engineer)}</strong></td>
                         <td><span class="badge badge-blue">${escHtml(entry.duration)}</span></td>
+                        <td><span class="badge ${bpClass}">${escHtml(bpVal)}</span></td>
                         <td class="issue-cell">
                             <span class="issue-preview">${issueTrunc}</span>
                             ${clickHint}
@@ -476,7 +506,7 @@
                 });
             }
         } catch(err) {
-            tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color:#EF4444;">⚠ Failed to load: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:#EF4444;">⚠ Failed to load: ${err.message}</td></tr>`;
         }
         document.getElementById('loadingSpinner').style.display = 'none';
     }
@@ -484,12 +514,13 @@
     // ── Submit Form ───────────────────────────────────────────────────────────
     document.getElementById('stockForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const engineer = document.getElementById('engineerName').value;
-        const date     = document.getElementById('entryDate').value;
-        const duration = document.getElementById('duration').value;
-        const issue    = document.getElementById('issue').value.trim();
+        const engineer  = document.getElementById('engineerName').value;
+        const date      = document.getElementById('entryDate').value;
+        const duration  = document.getElementById('duration').value;
+        const byboxPudo = document.getElementById('byboxPudo').value;
+        const issue     = document.getElementById('issue').value.trim();
 
-        if (!engineer || !date || !duration || !issue) {
+        if (!engineer || !date || !duration || !byboxPudo || !issue) {
             showToast('Please fill in all required fields.', 'error');
             return;
         }
@@ -499,11 +530,12 @@
 
         try {
             await addDoc(collection(db, "Stock Take"), {
-                engineer, date, duration, issue, submittedAt: serverTimestamp()
+                engineer, date, duration, byboxPudo, issue, submittedAt: serverTimestamp()
             });
             showToast('✓ Entry submitted successfully.');
             document.getElementById('engineerName').value = '';
             document.getElementById('duration').value = '';
+            document.getElementById('byboxPudo').value = '';
             document.getElementById('issue').value = '';
             document.getElementById('entryDate').valueAsDate = new Date();
             const d = new Date(date + 'T00:00:00');
@@ -517,6 +549,7 @@
     document.getElementById('resetBtn').addEventListener('click', () => {
         document.getElementById('engineerName').value = '';
         document.getElementById('duration').value = '';
+        document.getElementById('byboxPudo').value = '';
         document.getElementById('issue').value = '';
         document.getElementById('entryDate').valueAsDate = new Date();
     });
