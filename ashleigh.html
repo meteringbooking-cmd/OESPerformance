@@ -409,6 +409,10 @@
             font-size: 0.85em;
             font-weight: 600;
             transition: all 0.2s ease;
+            width: auto;
+            margin-top: 0;
+            text-transform: none;
+            letter-spacing: normal;
         }
 
         .edit-btn:hover {
@@ -435,6 +439,7 @@
             box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
         }
 
+        /* Inline edit inputs inside table cells */
         .edit-input {
             padding: 6px 10px;
             background: rgba(255, 255, 255, 0.1);
@@ -442,7 +447,9 @@
             border-radius: 6px;
             color: white;
             font-size: 0.9em;
-            width: 120px;
+            width: 100%;
+            min-width: 80px;
+            margin-top: 0;
         }
 
         .edit-input:focus {
@@ -451,8 +458,33 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
         }
 
+        /* Inline selects inside table cells */
+        .edit-select {
+            padding: 6px 10px;
+            background: #1a1a2e;
+            border: 2px solid rgba(102, 126, 234, 0.5);
+            border-radius: 6px;
+            color: white;
+            font-size: 0.85em;
+            width: 100%;
+            min-width: 120px;
+            appearance: none;
+            margin-top: 0;
+            cursor: pointer;
+        }
+
+        .edit-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
         tr.editing {
-            background: rgba(102, 126, 234, 0.15);
+            background: rgba(102, 126, 234, 0.15) !important;
+        }
+
+        tr.editing td {
+            vertical-align: middle;
         }
 
         .action-cell {
@@ -666,9 +698,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <script type="module">
         import { getApps } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, collection, addDoc, query, where, getDocs, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, query, where, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-const db = getFirestore(getApps()[0]);
+        const db = getFirestore(getApps()[0]);
 
         const jobTypeValues = {
             'METERING_ELECTRICITY_METER_EXCHANGE': 113.3,
@@ -687,7 +719,27 @@ const db = getFirestore(getApps()[0]);
             'METERING_COMMUNICATIONS_HUB_EXCHANGE': 72.1
         };
 
+        // Human-readable job type labels
+        const jobTypeLabels = {
+            'METERING_ELECTRICITY_METER_EXCHANGE': 'Electricity Meter Exchange',
+            'METERING_DUAL_FUEL_METER_EXCHANGE': 'Dual Fuel Meter Exchange',
+            'METERING_SITE_INVESTIGATION': 'Site Investigation',
+            'METERING_GAS_METER_EXCHANGE': 'Gas Meter Exchange',
+            'METERING_GAS_METER_REMOVAL': 'Gas Meter Removal',
+            'METERING_ELECTRICITY_NEW_CONNECTION': 'Electricity New Connection',
+            'METERING_DUAL_FUEL_METER_COMMISSION': 'Dual Fuel Meter Commission',
+            'METERING_ELECTRICITY_METER_COMMISSION': 'Electricity Meter Commission',
+            'METERING_GAS_METER_COMMISSION': 'Gas Meter Commission',
+            'METERING_GAS_METER_NEW_CONNECTION': 'Gas Meter New Connection',
+            'METERING_INSTALL_ISOLATOR_SWITCH': 'Install Isolator Switch',
+            'METERING_INSTALL_CONSUMER_DEVICE': 'Install Consumer Device',
+            'METERING_TRACE_LABEL': 'Trace Label',
+            'METERING_COMMUNICATIONS_HUB_EXCHANGE': 'Communications Hub Exchange'
+        };
+
+        // ─────────────────────────────────────────────
         // SINGLE JOB DATA ENTRY FORM HANDLER
+        // ─────────────────────────────────────────────
         document.getElementById('singleJobDataForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const messageEl = document.getElementById('uploadMessage');
@@ -708,9 +760,7 @@ const db = getFirestore(getApps()[0]);
                 messageEl.style.display = 'block';
                 document.getElementById('singleJobDataForm').reset();
                 
-                setTimeout(() => {
-                    messageEl.style.display = 'none';
-                }, 3000);
+                setTimeout(() => { messageEl.style.display = 'none'; }, 3000);
                 
                 await loadWeekCommencingDates();
             } catch (error) {
@@ -720,39 +770,22 @@ const db = getFirestore(getApps()[0]);
             }
         });
 
-        // DUPLICATE CHECK FUNCTION
+        // ─────────────────────────────────────────────
+        // DUPLICATE CHECK
+        // ─────────────────────────────────────────────
         async function checkDuplicateJobNumber(jobNumber) {
-            if (!jobNumber || jobNumber.trim() === '') {
-                return [];
-            }
-
+            if (!jobNumber || jobNumber.trim() === '') return [];
             const trimmedJobNumber = jobNumber.trim();
-            
             try {
-                // Query all manual entries (work entries)
-                const q = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'manual')
-                );
-                
+                const q = query(collection(db, 'workEntries'), where('type', '==', 'manual'));
                 const snapshot = await getDocs(q);
                 const duplicates = [];
-                
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    const existingJobNumber = (data.jobNumber || '').trim();
-                    
-                    if (existingJobNumber === trimmedJobNumber) {
-                        duplicates.push({
-                            id: doc.id,
-                            name: data.name,
-                            workDate: data.workDate,
-                            postcode: data.postcode,
-                            address: data.address
-                        });
+                    if ((data.jobNumber || '').trim() === trimmedJobNumber) {
+                        duplicates.push({ id: doc.id, name: data.name, workDate: data.workDate, postcode: data.postcode, address: data.address });
                     }
                 });
-                
                 return duplicates;
             } catch (error) {
                 console.error("Error checking duplicate job number:", error);
@@ -760,156 +793,189 @@ const db = getFirestore(getApps()[0]);
             }
         }
 
-        // EDIT JOB NUMBER FUNCTION
+        // ─────────────────────────────────────────────
+        // FULL ROW EDIT
+        // ─────────────────────────────────────────────
         let currentlyEditingRow = null;
 
-        async function editJobNumber(entryId, currentJobNumber) {
-            // If already editing another row, cancel that first
-            if (currentlyEditingRow) {
-                cancelEdit();
-            }
+        // Builds the job type <select> options string
+        function jobTypeOptionsHTML(selectedValue) {
+            const opts = [
+                ['', '-- Select job type --'],
+                ['METERING_ELECTRICITY_METER_EXCHANGE', 'Electricity Meter Exchange'],
+                ['METERING_DUAL_FUEL_METER_EXCHANGE', 'Dual Fuel Meter Exchange'],
+                ['METERING_SITE_INVESTIGATION', 'Site Investigation'],
+                ['METERING_GAS_METER_EXCHANGE', 'Gas Meter Exchange'],
+                ['METERING_GAS_METER_REMOVAL', 'Gas Meter Removal'],
+                ['METERING_ELECTRICITY_NEW_CONNECTION', 'Electricity New Connection'],
+                ['METERING_DUAL_FUEL_METER_COMMISSION', 'Dual Fuel Meter Commission'],
+                ['METERING_ELECTRICITY_METER_COMMISSION', 'Electricity Meter Commission'],
+                ['METERING_GAS_METER_COMMISSION', 'Gas Meter Commission'],
+                ['METERING_GAS_METER_NEW_CONNECTION', 'Gas Meter New Connection'],
+                ['METERING_INSTALL_ISOLATOR_SWITCH', 'Install Isolator Switch'],
+                ['METERING_INSTALL_CONSUMER_DEVICE', 'Install Consumer Device'],
+                ['METERING_TRACE_LABEL', 'Trace Label'],
+                ['METERING_COMMUNICATIONS_HUB_EXCHANGE', 'Communications Hub Exchange'],
+            ];
+            return opts.map(([val, label]) =>
+                `<option value="${val}" ${val === selectedValue ? 'selected' : ''}>${label}</option>`
+            ).join('');
+        }
+
+        function statusOptionsHTML(selectedValue) {
+            const opts = ['Complete', 'Pending', 'In Progress', 'Cancelled', 'NOT FOUND'];
+            return opts.map(val =>
+                `<option value="${val}" ${val === selectedValue ? 'selected' : ''}>${val}</option>`
+            ).join('');
+        }
+
+        window.editRow = async function(entryId, originalData) {
+            // Cancel any in-progress edit first
+            if (currentlyEditingRow) cancelRowEdit();
 
             const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
             if (!row) return;
 
-            currentlyEditingRow = {
-                row: row,
-                entryId: entryId,
-                originalJobNumber: currentJobNumber
-            };
-
-            const jobNumberCell = row.querySelector('.job-number-cell');
-            const actionCell = row.querySelector('.action-cell');
-
-            // Add editing class to row
+            currentlyEditingRow = { row, entryId, originalData };
             row.classList.add('editing');
 
-            // Replace job number with input
-            jobNumberCell.innerHTML = `
-                <input type="text" 
-                       class="edit-input" 
-                       id="edit-input-${entryId}" 
-                       value="${currentJobNumber}" 
-                       placeholder="Enter new job number">
+            // Replace each editable cell with an input/select
+            row.querySelector('.cell-date').innerHTML =
+                `<input class="edit-input" id="edit-date-${entryId}" type="date" value="${originalData.workDate}">`;
+
+            row.querySelector('.cell-name').innerHTML =
+                `<input class="edit-input" id="edit-name-${entryId}" type="text" value="${escapeAttr(originalData.name)}" placeholder="Name">`;
+
+            row.querySelector('.cell-address').innerHTML =
+                `<input class="edit-input" id="edit-address-${entryId}" type="text" value="${escapeAttr(originalData.address)}" placeholder="Address">`;
+
+            row.querySelector('.cell-postcode').innerHTML =
+                `<input class="edit-input" id="edit-postcode-${entryId}" type="text" value="${escapeAttr(originalData.postcode)}" style="min-width:90px" placeholder="Postcode">`;
+
+            row.querySelector('.cell-jobnumber').innerHTML =
+                `<input class="edit-input" id="edit-jobnumber-${entryId}" type="text" value="${escapeAttr(originalData.jobNumber)}" style="min-width:100px" placeholder="Job #">`;
+
+            row.querySelector('.cell-jobtype').innerHTML =
+                `<select class="edit-select" id="edit-jobtype-${entryId}">${jobTypeOptionsHTML(originalData.jobType)}</select>`;
+
+            row.querySelector('.cell-status').innerHTML =
+                `<select class="edit-select" id="edit-status-${entryId}" style="min-width:120px">${statusOptionsHTML(originalData.bookingStatus)}</select>`;
+
+            // Value cell is read-only — will refresh after save
+            row.querySelector('.cell-value').textContent = '—';
+
+            row.querySelector('.action-cell').innerHTML = `
+                <button class="edit-btn save-btn" onclick="saveRow('${entryId}')">💾 Save</button>
+                <button class="edit-btn cancel-btn" onclick="cancelRowEdit()">✖</button>
             `;
+        };
 
-            // Replace edit button with save/cancel buttons
-            actionCell.innerHTML = `
-                <button class="edit-btn save-btn" onclick="saveJobNumber('${entryId}')">💾 Save</button>
-                <button class="edit-btn cancel-btn" onclick="cancelEdit()">✖ Cancel</button>
-            `;
+        window.saveRow = async function(entryId) {
+            if (!currentlyEditingRow) return;
 
-            // Focus the input
-            document.getElementById(`edit-input-${entryId}`).focus();
-            document.getElementById(`edit-input-${entryId}`).select();
-        }
+            const newWorkDate    = document.getElementById(`edit-date-${entryId}`).value;
+            const newName        = document.getElementById(`edit-name-${entryId}`).value.trim();
+            const newAddress     = document.getElementById(`edit-address-${entryId}`).value.trim();
+            const newPostcode    = document.getElementById(`edit-postcode-${entryId}`).value.trim();
+            const newJobNumber   = document.getElementById(`edit-jobnumber-${entryId}`).value.trim();
+            const newJobType     = document.getElementById(`edit-jobtype-${entryId}`).value;
+            const newStatus      = document.getElementById(`edit-status-${entryId}`).value;
 
-        window.editJobNumber = editJobNumber;
-
-        async function saveJobNumber(entryId) {
-            const input = document.getElementById(`edit-input-${entryId}`);
-            if (!input) return;
-
-            const newJobNumber = input.value.trim();
-
-            if (!newJobNumber) {
-                alert('Job number cannot be empty');
-                input.focus();
+            if (!newName || !newJobNumber || !newWorkDate) {
+                alert('Name, Job Number and Date are required.');
                 return;
             }
 
-            // Check if job number actually changed
-            if (newJobNumber === currentlyEditingRow.originalJobNumber) {
-                cancelEdit();
-                return;
-            }
-
-            // Check for duplicates (excluding the current entry)
-            const duplicates = await checkDuplicateJobNumber(newJobNumber);
-            const otherDuplicates = duplicates.filter(d => d.id !== entryId);
-
-            if (otherDuplicates.length > 0) {
-                const duplicate = otherDuplicates[0];
-                const warningMsg = `⚠️ WARNING: Job #${newJobNumber} already exists!\n\n` +
-                    `Previously submitted:\n` +
-                    `  Date: ${duplicate.workDate}\n` +
-                    `  Name: ${duplicate.name}\n` +
-                    `  Postcode: ${duplicate.postcode}\n\n` +
-                    `Do you want to use this job number anyway?`;
-
-                if (!confirm(warningMsg)) {
-                    input.focus();
-                    return;
+            // Duplicate check on job number if it changed
+            if (newJobNumber !== currentlyEditingRow.originalData.jobNumber) {
+                const duplicates = await checkDuplicateJobNumber(newJobNumber);
+                const others = duplicates.filter(d => d.id !== entryId);
+                if (others.length > 0) {
+                    const d = others[0];
+                    const warn = `⚠️ Job #${newJobNumber} already exists!\n\nPreviously submitted:\n  Date: ${d.workDate}\n  Name: ${d.name}\n  Postcode: ${d.postcode}\n\nContinue anyway?`;
+                    if (!confirm(warn)) return;
                 }
             }
 
             try {
-                // Update in Firebase
-                const { doc: docRef, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-                const entryRef = docRef(db, 'workEntries', entryId);
-                await updateDoc(entryRef, {
+                // Work out which collection(s) need updating.
+                // Manual entry fields are stored in the manual doc.
+                // Job type & status live in the CSV doc — find it and update too.
+                const weekCommencing = formatDate(getMonday(new Date(newWorkDate)));
+
+                // Update manual entry doc
+                const manualRef = doc(db, 'workEntries', entryId);
+                await updateDoc(manualRef, {
+                    name: newName,
+                    address: newAddress,
+                    postcode: newPostcode,
                     jobNumber: newJobNumber,
+                    workDate: newWorkDate,
+                    weekCommencing: weekCommencing,
                     lastModified: new Date().toISOString()
                 });
 
-                // Show success message
-                const messageEl = document.createElement('div');
-                messageEl.className = 'message success';
-                messageEl.textContent = `✓ Job number updated successfully!`;
-                messageEl.style.display = 'block';
-                messageEl.style.position = 'fixed';
-                messageEl.style.top = '20px';
-                messageEl.style.right = '20px';
-                messageEl.style.zIndex = '9999';
-                document.body.appendChild(messageEl);
+                // Find & update the matching CSV doc (by original job number)
+                const originalJobNum = currentlyEditingRow.originalData.jobNumber.trim();
+                const csvQuery = query(
+                    collection(db, 'workEntries'),
+                    where('type', '==', 'csv'),
+                    where('jobNumber', '==', originalJobNum)
+                );
+                const csvSnap = await getDocs(csvQuery);
+                if (!csvSnap.empty) {
+                    // Update first matching CSV doc
+                    const csvDocRef = doc(db, 'workEntries', csvSnap.docs[0].id);
+                    await updateDoc(csvDocRef, {
+                        jobNumber: newJobNumber,
+                        jobType: newJobType,
+                        bookingStatus: newStatus,
+                        lastModified: new Date().toISOString()
+                    });
+                }
 
-                setTimeout(() => {
-                    messageEl.remove();
-                }, 3000);
+                // Show toast
+                showToast('✓ Row updated successfully!', 'success');
 
-                // Reload the report
-                await loadWeeklyReport();
                 currentlyEditingRow = null;
+                await loadWeeklyReport();
+                await loadWeekCommencingDates();
 
             } catch (error) {
-                console.error('Error updating job number:', error);
-                alert('Error updating job number: ' + error.message);
+                console.error('Error saving row:', error);
+                alert('Error saving changes: ' + error.message);
             }
-        }
+        };
 
-        window.saveJobNumber = saveJobNumber;
-
-        function cancelEdit() {
+        window.cancelRowEdit = function() {
             if (!currentlyEditingRow) return;
-
-            const { row, originalJobNumber } = currentlyEditingRow;
-
-            // Remove editing class
-            row.classList.remove('editing');
-
-            // Restore original job number
-            const jobNumberCell = row.querySelector('.job-number-cell');
-            jobNumberCell.textContent = originalJobNumber;
-
-            // Restore edit button
-            const actionCell = row.querySelector('.action-cell');
-            actionCell.innerHTML = `
-                <button class="edit-btn" onclick="editJobNumber('${currentlyEditingRow.entryId}', '${originalJobNumber}')">✏️ Edit</button>
-            `;
-
             currentlyEditingRow = null;
+            // Simply reload the report to restore original state cleanly
+            loadWeeklyReport();
+        };
+
+        function showToast(text, type) {
+            const el = document.createElement('div');
+            el.className = `message ${type}`;
+            el.textContent = text;
+            el.style.cssText = 'display:block;position:fixed;top:20px;right:20px;z-index:9999;min-width:250px;';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
         }
 
-        window.cancelEdit = cancelEdit;
+        function escapeAttr(str) {
+            return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
 
-        // JOB NUMBER VALIDATION WITH VISUAL FEEDBACK
+        // ─────────────────────────────────────────────
+        // JOB NUMBER VALIDATION (entry form)
+        // ─────────────────────────────────────────────
         async function validateJobNumber(jobNumber, showConfirm = true) {
             const jobInput = document.getElementById('jobNumber');
             const duplicateIndicator = document.getElementById('duplicateIndicator');
             const duplicateText = document.getElementById('duplicateText');
             
             if (!jobNumber || jobNumber.trim() === '') {
-                // Clear any duplicate indicators
                 jobInput.classList.remove('duplicate-job');
                 duplicateIndicator.classList.remove('show');
                 return true;
@@ -919,54 +985,35 @@ const db = getFirestore(getApps()[0]);
             
             if (duplicates.length > 0) {
                 const duplicate = duplicates[0];
-                
-                // Show visual indicator
                 jobInput.classList.add('duplicate-job');
                 duplicateText.textContent = `This job was already submitted on ${duplicate.workDate} (${duplicate.name} - ${duplicate.postcode})`;
                 duplicateIndicator.classList.add('show');
                 
                 if (showConfirm) {
-                    // Create detailed warning message
                     let warningMsg = `⚠️ WARNING: Job #${jobNumber} has already been submitted!\n\n`;
-                    warningMsg += `Previously submitted:\n`;
-                    warningMsg += `  Date: ${duplicate.workDate}\n`;
-                    warningMsg += `  Name: ${duplicate.name}\n`;
-                    warningMsg += `  Address: ${duplicate.address}\n`;
-                    warningMsg += `  Postcode: ${duplicate.postcode}\n\n`;
-                    
-                    if (duplicates.length > 1) {
-                        warningMsg += `(This job appears in ${duplicates.length} previous submissions)\n\n`;
-                    }
-                    
+                    warningMsg += `Previously submitted:\n  Date: ${duplicate.workDate}\n  Name: ${duplicate.name}\n  Address: ${duplicate.address}\n  Postcode: ${duplicate.postcode}\n\n`;
+                    if (duplicates.length > 1) warningMsg += `(This job appears in ${duplicates.length} previous submissions)\n\n`;
                     warningMsg += `Do you want to submit this duplicate job anyway?`;
-                    
-                    // Ask for confirmation
-                    if (!confirm(warningMsg)) {
-                        jobInput.focus();
-                        return false;
-                    }
+                    if (!confirm(warningMsg)) { jobInput.focus(); return false; }
                 }
             } else {
-                // Clear duplicate indicator
                 jobInput.classList.remove('duplicate-job');
                 duplicateIndicator.classList.remove('show');
             }
-            
             return true;
         }
 
-        // Add event listener for job number input to check in real-time
         document.getElementById('jobNumber').addEventListener('blur', async function(e) {
-            await validateJobNumber(e.target.value, false); // Show indicator but don't confirm on blur
+            await validateJobNumber(e.target.value, false);
         });
-
-        // Clear duplicate indicator when user starts typing
         document.getElementById('jobNumber').addEventListener('input', function() {
-            const duplicateIndicator = document.getElementById('duplicateIndicator');
             this.classList.remove('duplicate-job');
-            duplicateIndicator.classList.remove('show');
+            document.getElementById('duplicateIndicator').classList.remove('show');
         });
 
+        // ─────────────────────────────────────────────
+        // HELPERS
+        // ─────────────────────────────────────────────
         function getMonday(d) {
             const date = new Date(d);
             const day = date.getDay();
@@ -980,25 +1027,9 @@ const db = getFirestore(getApps()[0]);
             return date.toISOString().split('T')[0];
         }
 
-        function parseDate(dateStr) {
-            // Handle DD/MM/YYYY format (UK format)
-            if (dateStr.includes('/')) {
-                const parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    const day = parseInt(parts[0]);
-                    const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
-                    const year = parseInt(parts[2]);
-                    return new Date(year, month, day);
-                }
-            }
-            // Handle other formats
-            return new Date(dateStr);
-        }
-
         window.updateFileName = function(type) {
             const fileInput = document.getElementById('csvFile');
             const fileNameDiv = document.getElementById('csvFileName');
-            
             if (fileInput.files.length > 0) {
                 fileNameDiv.textContent = `Selected: ${fileInput.files[0].name}`;
                 fileNameDiv.style.color = '#4ade80';
@@ -1007,17 +1038,15 @@ const db = getFirestore(getApps()[0]);
 
         document.getElementById('workDate').valueAsDate = new Date();
 
+        // ─────────────────────────────────────────────
+        // MANUAL ENTRY FORM
+        // ─────────────────────────────────────────────
         document.getElementById('manualEntryForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const messageEl = document.getElementById('manualMessage');
-            
-            // CHECK FOR DUPLICATE BEFORE SUBMITTING
             const jobNumber = document.getElementById('jobNumber').value;
             const isValid = await validateJobNumber(jobNumber, true);
-            
-            if (!isValid) {
-                return; // User cancelled due to duplicate
-            }
+            if (!isValid) return;
             
             try {
                 const workDate = new Date(document.getElementById('workDate').value);
@@ -1041,15 +1070,10 @@ const db = getFirestore(getApps()[0]);
                 messageEl.style.display = 'block';
                 document.getElementById('manualEntryForm').reset();
                 document.getElementById('workDate').valueAsDate = new Date();
-                
-                // Clear duplicate indicator
                 document.getElementById('jobNumber').classList.remove('duplicate-job');
                 document.getElementById('duplicateIndicator').classList.remove('show');
                 
-                setTimeout(() => {
-                    messageEl.style.display = 'none';
-                }, 3000);
-                
+                setTimeout(() => { messageEl.style.display = 'none'; }, 3000);
                 await loadWeekCommencingDates();
             } catch (error) {
                 messageEl.textContent = '✗ Error: ' + error.message;
@@ -1058,6 +1082,9 @@ const db = getFirestore(getApps()[0]);
             }
         });
 
+        // ─────────────────────────────────────────────
+        // CSV UPLOAD
+        // ─────────────────────────────────────────────
         window.uploadCSV = async function() {
             const fileInput = document.getElementById('csvFile');
             const messageEl = document.getElementById('uploadMessage');
@@ -1069,38 +1096,29 @@ const db = getFirestore(getApps()[0]);
                 return;
             }
 
-            const file = fileInput.files[0];
-            
-            Papa.parse(file, {
+            Papa.parse(fileInput.files[0], {
                 header: true,
                 complete: async (results) => {
                     try {
                         let count = 0;
                         for (const row of results.data) {
                             if (row['Booking Reference']) {
-                                const entry = {
+                                await addDoc(collection(db, 'workEntries'), {
                                     jobNumber: row['Booking Reference'],
                                     jobType: row['Job Type'] || '',
                                     bookingStatus: row['Booking Status'] || '',
                                     uploadedAt: new Date().toISOString(),
                                     type: 'csv'
-                                };
-
-                                await addDoc(collection(db, 'workEntries'), entry);
+                                });
                                 count++;
                             }
                         }
-                        
                         messageEl.textContent = `✓ Successfully uploaded ${count} job data entries`;
                         messageEl.className = 'message success';
                         messageEl.style.display = 'block';
                         fileInput.value = '';
                         document.getElementById('csvFileName').textContent = '';
-                        
-                        setTimeout(() => {
-                            messageEl.style.display = 'none';
-                        }, 3000);
-                        
+                        setTimeout(() => { messageEl.style.display = 'none'; }, 3000);
                         await loadWeekCommencingDates();
                     } catch (error) {
                         messageEl.textContent = '✗ Error: ' + error.message;
@@ -1116,49 +1134,42 @@ const db = getFirestore(getApps()[0]);
             });
         };
 
+        // ─────────────────────────────────────────────
+        // WEEK DROPDOWNS
+        // ─────────────────────────────────────────────
         async function loadWeekCommencingDates() {
             try {
                 const q = query(collection(db, 'workEntries'), where('type', '==', 'manual'));
                 const snapshot = await getDocs(q);
-                
                 const weeks = new Set();
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    if (data.weekCommencing) {
-                        weeks.add(data.weekCommencing);
-                    }
+                    if (data.weekCommencing) weeks.add(data.weekCommencing);
                 });
                 
                 const weekArray = Array.from(weeks).sort((a, b) => b.localeCompare(a));
                 
-                // Update weekly report dropdown
                 const select = document.getElementById('weekSelect');
                 select.innerHTML = '<option value="">Choose a week...</option>';
                 weekArray.forEach(week => {
-                    const option = document.createElement('option');
-                    option.value = week;
-                    option.textContent = `Week of ${week}`;
-                    select.appendChild(option);
+                    const opt = document.createElement('option');
+                    opt.value = week;
+                    opt.textContent = `Week of ${week}`;
+                    select.appendChild(opt);
                 });
                 
-                // Update summary dropdown
                 const summarySelect = document.getElementById('summaryWeekSelect');
                 summarySelect.innerHTML = '<option value="">All weeks</option>';
                 weekArray.forEach(week => {
-                    const option = document.createElement('option');
-                    option.value = week;
-                    option.textContent = `Week of ${week}`;
-                    summarySelect.appendChild(option);
+                    const opt = document.createElement('option');
+                    opt.value = week;
+                    opt.textContent = `Week of ${week}`;
+                    summarySelect.appendChild(opt);
                 });
                 
-                // Set to previous week (second most recent) if available
-                if (weekArray.length > 1) {
-                    summarySelect.value = weekArray[1]; // Second item (previous week)
-                } else if (weekArray.length === 1) {
-                    summarySelect.value = weekArray[0]; // If only one week, use that
-                }
+                if (weekArray.length > 1) summarySelect.value = weekArray[1];
+                else if (weekArray.length === 1) summarySelect.value = weekArray[0];
                 
-                // Load initial summary with selected week
                 await updateSummary();
             } catch (error) {
                 console.error('Error loading weeks:', error);
@@ -1169,61 +1180,37 @@ const db = getFirestore(getApps()[0]);
             const date = new Date(dateStr);
             const weekStart = new Date(weekCommencingStr);
             const weekEnd = new Date(weekStart);
-            weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
-            
+            weekEnd.setDate(weekEnd.getDate() + 6);
             return date >= weekStart && date <= weekEnd;
         }
 
+        // ─────────────────────────────────────────────
+        // SUMMARY
+        // ─────────────────────────────────────────────
         window.updateSummary = async function() {
             const weekCommencing = document.getElementById('summaryWeekSelect').value;
-            
             try {
-                // Get ALL CSV data first (no date filtering on CSV)
-                const allCsvQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'csv')
-                );
-                
-                const csvSnapshot = await getDocs(allCsvQuery);
+                const csvSnapshot = await getDocs(query(collection(db, 'workEntries'), where('type', '==', 'csv')));
                 const csvDataMap = {};
-                
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
-                    // Store by job number - normalize by trimming whitespace
                     const jobNum = (data.jobNumber || '').trim();
-                    if (jobNum) {
-                        csvDataMap[jobNum] = data;
-                    }
+                    if (jobNum) csvDataMap[jobNum] = data;
                 });
 
-                // Get ALL manual entries
-                const manualQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'manual')
-                );
-                
-                const manualSnapshot = await getDocs(manualQuery);
+                const manualSnapshot = await getDocs(query(collection(db, 'workEntries'), where('type', '==', 'manual')));
                 const manualJobNumbers = [];
-                
                 manualSnapshot.forEach(doc => {
                     const data = doc.data();
-                    // Filter by week if selected (using manual entry's work date)
                     if (!weekCommencing || isDateInWeek(data.workDate, weekCommencing)) {
                         const jobNum = (data.jobNumber || '').trim();
-                        if (jobNum) {
-                            manualJobNumbers.push({
-                                jobNumber: jobNum,
-                                workDate: data.workDate
-                            });
-                        }
+                        if (jobNum) manualJobNumbers.push({ jobNumber: jobNum, workDate: data.workDate });
                     }
                 });
 
-                // Match manual jobs with CSV data using job number only
                 const entries = [];
                 manualJobNumbers.forEach(manual => {
                     if (csvDataMap[manual.jobNumber]) {
-                        // Use manual entry's work date, not CSV date
                         entries.push({
                             jobNumber: manual.jobNumber,
                             workDate: manual.workDate,
@@ -1235,32 +1222,19 @@ const db = getFirestore(getApps()[0]);
 
                 const entriesByDate = {};
                 entries.forEach(entry => {
-                    if (!entriesByDate[entry.workDate]) {
-                        entriesByDate[entry.workDate] = [];
-                    }
+                    if (!entriesByDate[entry.workDate]) entriesByDate[entry.workDate] = [];
                     entriesByDate[entry.workDate].push(entry);
                 });
 
-                let totalCompleted = 0;
-                let totalIncome = 0;
-                let totalCommission = 0;
-
+                let totalCompleted = 0, totalIncome = 0, totalCommission = 0;
                 Object.keys(entriesByDate).forEach(date => {
                     const dayEntries = entriesByDate[date];
-                    const completedToday = dayEntries.filter(e => 
-                        e.bookingStatus && e.bookingStatus.toLowerCase().includes('complete')
-                    ).length;
-                    
-                    if (completedToday > 10) {
-                        totalCommission += (completedToday - 10) * 10;
-                    }
-                    
+                    const completedToday = dayEntries.filter(e => e.bookingStatus && e.bookingStatus.toLowerCase().includes('complete')).length;
+                    if (completedToday > 10) totalCommission += (completedToday - 10) * 10;
                     dayEntries.forEach(entry => {
-                        const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
-                        if (isComplete) {
+                        if (entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete')) {
                             totalCompleted++;
-                            const value = jobTypeValues[entry.jobType] || 0;
-                            totalIncome += value;
+                            totalIncome += jobTypeValues[entry.jobType] || 0;
                         }
                     });
                 });
@@ -1273,11 +1247,14 @@ const db = getFirestore(getApps()[0]);
             }
         };
 
+        // ─────────────────────────────────────────────
+        // WEEKLY REPORT
+        // ─────────────────────────────────────────────
         window.loadWeeklyReport = async function() {
             const weekCommencing = document.getElementById('weekSelect').value;
             const reportDiv = document.getElementById('weeklyReport');
             const debugDiv = document.getElementById('debugInfo');
-            
+
             if (!weekCommencing) {
                 reportDiv.innerHTML = '';
                 debugDiv.style.display = 'none';
@@ -1288,40 +1265,21 @@ const db = getFirestore(getApps()[0]);
             debugDiv.style.display = 'block';
 
             try {
-                // Get ALL CSV data first
-                const csvQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'csv')
-                );
-                
-                const csvSnapshot = await getDocs(csvQuery);
+                const csvSnapshot = await getDocs(query(collection(db, 'workEntries'), where('type', '==', 'csv')));
                 const csvData = {};
                 let csvCount = 0;
-                
                 csvSnapshot.forEach(doc => {
                     const data = doc.data();
                     const jobNum = (data.jobNumber || '').trim();
-                    if (jobNum) {
-                        csvData[jobNum] = data;
-                        csvCount++;
-                    }
+                    if (jobNum) { csvData[jobNum] = data; csvCount++; }
                 });
 
-                // Get ALL manual entries
-                const manualQuery = query(
-                    collection(db, 'workEntries'),
-                    where('type', '==', 'manual')
-                );
-                
-                const manualSnapshot = await getDocs(manualQuery);
+                const manualSnapshot = await getDocs(query(collection(db, 'workEntries'), where('type', '==', 'manual')));
                 const manualEntries = [];
-                let manualTotal = 0;
-                let manualInWeek = 0;
-                
+                let manualTotal = 0, manualInWeek = 0;
                 manualSnapshot.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
                     manualTotal++;
-                    // Filter by week date range (using manual entry's work date)
                     if (isDateInWeek(data.workDate, weekCommencing)) {
                         manualInWeek++;
                         manualEntries.push(data);
@@ -1330,10 +1288,7 @@ const db = getFirestore(getApps()[0]);
 
                 debugDiv.innerHTML = `
                     <strong>Debug Info:</strong><br>
-                    Total CSV entries in database: ${csvCount}<br>
-                    Total manual entries in database: ${manualTotal}<br>
-                    Manual entries in selected week: ${manualInWeek}<br>
-                    Week commencing: ${weekCommencing}
+                    Total CSV entries: ${csvCount} | Total manual entries: ${manualTotal} | In selected week: ${manualInWeek} | Week: ${weekCommencing}
                 `;
 
                 if (manualEntries.length === 0) {
@@ -1341,14 +1296,12 @@ const db = getFirestore(getApps()[0]);
                     return;
                 }
 
-                // Merge manual entries with CSV data (match by job number only)
                 const mergedEntries = manualEntries.map(manual => {
                     const jobNum = (manual.jobNumber || '').trim();
                     const csvMatch = csvData[jobNum];
-                    
                     return {
-                        id: manual.id,  // Include the document ID for editing
-                        jobNumber: manual.jobNumber,
+                        id: manual.id,
+                        jobNumber: manual.jobNumber || '',
                         name: manual.name || '-',
                         address: manual.address || '-',
                         postcode: manual.postcode || '-',
@@ -1359,39 +1312,67 @@ const db = getFirestore(getApps()[0]);
                     };
                 });
 
-                // Sort by date
                 mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
 
                 const matchedCount = mergedEntries.filter(e => e.matched).length;
-                debugDiv.innerHTML += `<br>Matched entries: ${matchedCount} / ${mergedEntries.length}`;
+                debugDiv.innerHTML += ` | Matched: ${matchedCount} / ${mergedEntries.length}`;
 
-                let html = '<table><thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Postcode</th><th>Job Number</th><th>Job Type</th><th>Status</th><th>Value</th><th>Actions</th></tr></thead><tbody>';
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Name</th>
+                                <th>Address</th>
+                                <th>Postcode</th>
+                                <th>Job Number</th>
+                                <th>Job Type</th>
+                                <th>Status</th>
+                                <th>Value</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
 
                 mergedEntries.forEach(entry => {
                     const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
                     const value = isComplete ? (jobTypeValues[entry.jobType] || 0) : 0;
                     const statusClass = isComplete ? 'status-complete' : 'status-pending';
-                    
-                    html += `<tr data-entry-id="${entry.id}">
-                        <td>${entry.workDate}</td>
-                        <td>${entry.name}</td>
-                        <td>${entry.address}</td>
-                        <td>${entry.postcode}</td>
-                        <td class="job-number-cell">${entry.jobNumber}</td>
-                        <td>${entry.jobType}</td>
-                        <td class="${statusClass}">${entry.bookingStatus}</td>
-                        <td>${isComplete ? '£' + value.toFixed(2) : '-'}</td>
-                        <td class="action-cell">
-                            <button class="edit-btn" onclick="editJobNumber('${entry.id}', '${entry.jobNumber}')">✏️ Edit</button>
-                        </td>
-                    </tr>`;
+                    // Readable job type label
+                    const jobTypeDisplay = jobTypeLabels[entry.jobType] || entry.jobType;
+
+                    // Encode original data for the edit button
+                    const originalData = JSON.stringify({
+                        workDate: entry.workDate,
+                        name: entry.name,
+                        address: entry.address,
+                        postcode: entry.postcode,
+                        jobNumber: entry.jobNumber,
+                        jobType: entry.jobType,
+                        bookingStatus: entry.bookingStatus
+                    }).replace(/"/g, '&quot;');
+
+                    html += `
+                        <tr data-entry-id="${entry.id}">
+                            <td class="cell-date">${entry.workDate}</td>
+                            <td class="cell-name">${entry.name}</td>
+                            <td class="cell-address">${entry.address}</td>
+                            <td class="cell-postcode">${entry.postcode}</td>
+                            <td class="cell-jobnumber">${entry.jobNumber}</td>
+                            <td class="cell-jobtype">${jobTypeDisplay}</td>
+                            <td class="cell-status ${statusClass}">${entry.bookingStatus}</td>
+                            <td class="cell-value">${isComplete ? '£' + value.toFixed(2) : '-'}</td>
+                            <td class="action-cell">
+                                <button class="edit-btn" onclick="editRow('${entry.id}', JSON.parse(this.dataset.original))" data-original="${originalData}">✏️ Edit</button>
+                            </td>
+                        </tr>`;
                 });
 
                 html += '</tbody></table>';
                 reportDiv.innerHTML = html;
             } catch (error) {
                 console.error('Error loading report:', error);
-                reportDiv.innerHTML = `<div class="loading" style="color: #f87171;">Error loading report: ${error.message}</div>`;
+                reportDiv.innerHTML = `<div class="loading" style="color:#f87171;">Error loading report: ${error.message}</div>`;
             }
         };
 
