@@ -487,7 +487,7 @@
                         <input type="file" id="emailAttachment" accept=".eml,.msg,.pdf,.png,.jpg,.jpeg">
                         <label for="emailAttachment" class="file-upload-label">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                            Click to attach email or file
+                            Click to attach email or file (max 500 KB)
                         </label>
                         <div class="file-name" id="fileName"></div>
                     </div>
@@ -526,10 +526,6 @@
         getFirestore, collection, addDoc, updateDoc, doc,
         query, orderBy, getDocs, serverTimestamp, getDoc
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-    import {
-        getStorage, ref, uploadBytes, getDownloadURL
-    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-
     const app = initializeApp({
         apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
         authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -539,8 +535,7 @@
         appId: "1:484894102454:web:17535ee497eac2d90d6717",
         measurementId: "G-R56BGZYV8N"
     });
-    const db      = getFirestore(app);
-    const storage = getStorage(app);
+    const db = getFirestore(app);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function esc(s){ if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -621,16 +616,33 @@
         else { box.classList.remove('visible'); box.value=''; }
     });
 
-    // ── File upload ───────────────────────────────────────────────────────────
+    // ── File upload (base64 into Firestore) ──────────────────────────────────
+    let attachmentData = null; // { name, type, base64 }
+
     document.getElementById('emailAttachment').addEventListener('change', function(){
         const area = document.getElementById('uploadArea');
         const fn   = document.getElementById('fileName');
-        if(this.files[0]){
-            area.classList.add('has-file');
-            fn.textContent = '📎 ' + this.files[0].name;
+        const file = this.files[0];
+        if(file){
+            if(file.size > 500 * 1024){
+                showToast('File too large — max 500 KB', 'error');
+                this.value = '';
+                area.classList.remove('has-file');
+                fn.textContent = '';
+                attachmentData = null;
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = e => {
+                attachmentData = { name: file.name, type: file.type, base64: e.target.result };
+                area.classList.add('has-file');
+                fn.textContent = '📎 ' + file.name;
+            };
+            reader.readAsDataURL(file);
         } else {
             area.classList.remove('has-file');
             fn.textContent = '';
+            attachmentData = null;
         }
     });
 
@@ -683,13 +695,13 @@
         }
 
         // Attachment
-        if(ticket.attachmentURL){
+        if(ticket.attachmentBase64){
             const as = document.createElement('div');
             as.className='modal-section';
             as.innerHTML=`<div class="modal-section-label">Attachment</div>
-                <a class="attachment-link" href="${esc(ticket.attachmentURL)}" target="_blank" rel="noopener">
+                <a class="attachment-link" href="${ticket.attachmentBase64}" download="${esc(ticket.attachmentName || 'attachment')}" target="_blank" rel="noopener">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                    ${esc(ticket.attachmentName || 'View Attachment')}
+                    ${esc(ticket.attachmentName || 'Download Attachment')}
                 </a>`;
             body.appendChild(as);
         }
@@ -854,19 +866,12 @@
             // If new issue type, save it
             if(issueVal==='__new__' && newIssue) await saveNewIssueType(newIssue);
 
-            // Upload attachment if present
-            let attachmentURL = null, attachmentName = null;
-            if(fileInput.files[0]){
-                const file = fileInput.files[0];
-                attachmentName = file.name;
-                const storageRef = ref(storage, `sesm-attachments/${Date.now()}_${file.name}`);
-                const snap = await uploadBytes(storageRef, file);
-                attachmentURL = await getDownloadURL(snap.ref);
-            }
-
             const payload = { dateSent, issue, comments, closed:false, submittedAt: serverTimestamp() };
-            if(attachmentURL)  payload.attachmentURL  = attachmentURL;
-            if(attachmentName) payload.attachmentName = attachmentName;
+            if(attachmentData){
+                payload.attachmentName = attachmentData.name;
+                payload.attachmentType = attachmentData.type;
+                payload.attachmentBase64 = attachmentData.base64;
+            }
 
             await addDoc(collection(db,'SESM Tickets'), payload);
             showToast('✓ Ticket submitted successfully.');
@@ -878,6 +883,7 @@
             document.getElementById('newIssueInput').classList.remove('visible');
             document.getElementById('comments').value='';
             fileInput.value='';
+            attachmentData = null;
             document.getElementById('uploadArea').classList.remove('has-file');
             document.getElementById('fileName').textContent='';
             loadTickets();
@@ -894,6 +900,7 @@
         document.getElementById('newIssueInput').classList.remove('visible');
         document.getElementById('comments').value='';
         document.getElementById('emailAttachment').value='';
+        attachmentData = null;
         document.getElementById('uploadArea').classList.remove('has-file');
         document.getElementById('fileName').textContent='';
     });
