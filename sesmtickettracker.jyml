@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SESM Ticket Tracker - OES Performance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #005EB8;
+            --primary-dark: #003d7a;
+            --accent: #00A3E0;
+            --teal: #0D9488;
+            --bg-dark: #080F1E;
+            --bg-mid: #0e1a2e;
+            --bg-card: #131f35;
+            --bg-input: #0a1220;
+            --text-light: #E8EDF5;
+            --text-muted: #7A8FA8;
+            --border: #1e3050;
+            --border-bright: #2a4570;
+            --success: #10B981;
+            --amber: #F59E0B;
+            --orange: #F97316;
+            --error: #EF4444;
+            --purple: #8B5CF6;
+            --red-urgent: #DC2626;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-light);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(ellipse 60% 40% at 10% 10%, rgba(0,94,184,0.12) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 60% at 90% 80%, rgba(13,148,136,0.08) 0%, transparent 60%),
+                radial-gradient(ellipse 30% 30% at 50% 50%, rgba(0,163,224,0.04) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        /* Grid lines background */
+        body::after {
+            content: '';
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                linear-gradient(rgba(0,163,224,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,163,224,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none; z-index: 0;
+        }
+
+        .container { max-width: 1300px; margin: 0 auto; position: relative; z-index: 1; }
+
+        /* ── Animations ── */
+        @keyframes slideDown  { from{opacity:0;transform:translateY(-24px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeInUp   { from{opacity:0;transform:translateY(20px)}  to{opacity:1;transform:translateY(0)} }
+        @keyframes spin       { to{transform:rotate(360deg)} }
+        @keyframes modalIn    { from{opacity:0;transform:translate(-50%,-46%) scale(0.95)} to{opacity:1;transform:translate(-50%,-50%) scale(1)} }
+        @keyframes overlayIn  { from{opacity:0} to{opacity:1} }
+        @keyframes pulse-dot  { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.7)} }
+        @keyframes countUp    { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes shimmer    { from{background-position:200% center} to{background-position:-200% center} }
+
+        /* ── Header ── */
+        header { margin-bottom: 2.5rem; animation: slideDown 0.5s ease-out; }
+        .header-top { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 0.5rem; }
+        .back-btn {
+            width: 44px; height: 44px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.25s; text-decoration: none; color: var(--text-light);
+            font-size: 1.2rem; flex-shrink: 0;
+        }
+        .back-btn:hover { background: var(--primary); border-color: var(--accent); transform: translateX(-3px); }
+
+        .header-title-block { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+        h1 {
+            font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em;
+            background: linear-gradient(120deg, #e8edf5 20%, var(--accent) 60%, var(--teal) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .header-tag {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600;
+            color: var(--teal); background: rgba(13,148,136,0.1); border: 1px solid rgba(13,148,136,0.3);
+            padding: 0.2rem 0.6rem; border-radius: 4px; letter-spacing: 0.1em;
+            -webkit-text-fill-color: var(--teal);
+        }
+        .subtitle {
+            font-family: 'JetBrains Mono', monospace; color: var(--text-muted);
+            font-size: 0.8rem; letter-spacing: 0.06em; margin-left: 60px;
+        }
+
+        /* ── Summary Bar ── */
+        .summary-bar {
+            display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem;
+            animation: fadeInUp 0.5s ease-out 0.1s both;
+        }
+        .summary-tile {
+            flex: 1; min-width: 130px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 1.1rem 1.4rem;
+            display: flex; flex-direction: column; gap: 0.3rem;
+            position: relative; overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .summary-tile::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        }
+        .summary-tile.open::before   { background: linear-gradient(90deg, var(--accent), var(--teal)); }
+        .summary-tile.pending::before{ background: linear-gradient(90deg, var(--amber), var(--orange)); }
+        .summary-tile.closed::before { background: linear-gradient(90deg, var(--success), #059669); }
+        .summary-tile.urgent::before { background: linear-gradient(90deg, var(--error), var(--red-urgent)); }
+        .summary-tile .t-num {
+            font-size: 2rem; font-weight: 800; line-height: 1;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .summary-tile.open   .t-num { color: var(--accent); }
+        .summary-tile.pending .t-num{ color: var(--amber); }
+        .summary-tile.closed .t-num { color: var(--success); }
+        .summary-tile.urgent .t-num { color: var(--error); }
+        .summary-tile .t-lbl { font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; letter-spacing: 0.05em; }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; padding: 2rem; margin-bottom: 1.75rem;
+            animation: fadeInUp 0.5s ease-out both;
+        }
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.75rem; flex-wrap: wrap; gap: 1rem; }
+        .card-title { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.75rem; }
+        .card-title-bar { width: 3px; height: 20px; background: linear-gradient(to bottom, var(--accent), var(--teal)); border-radius: 2px; }
+
+        /* ── Filter row ── */
+        .filter-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .toggle-pill {
+            display: flex; align-items: center; gap: 0.5rem;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;
+            font-size: 0.85rem; font-weight: 600; transition: all 0.2s;
+            user-select: none;
+        }
+        .toggle-pill input[type="checkbox"] { display: none; }
+        .toggle-pill .pill-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--border); transition: background 0.2s;
+        }
+        .toggle-pill.active { border-color: var(--accent); color: var(--accent); }
+        .toggle-pill.active .pill-dot { background: var(--accent); animation: pulse-dot 2s infinite; }
+
+        /* ── Ticket Cards (list) ── */
+        #ticketsList { display: flex; flex-direction: column; gap: 1rem; }
+
+        .ticket-card {
+            background: var(--bg-mid); border: 1px solid var(--border);
+            border-radius: 12px; padding: 1.25rem 1.5rem;
+            cursor: pointer; transition: all 0.2s;
+            position: relative; overflow: hidden;
+        }
+        .ticket-card::before {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+            width: 3px; border-radius: 3px 0 0 3px; transition: width 0.2s;
+        }
+        .ticket-card.status-open::before    { background: var(--accent); }
+        .ticket-card.status-responded::before { background: var(--amber); }
+        .ticket-card.status-replied::before { background: var(--purple); }
+        .ticket-card.status-closed::before  { background: var(--success); }
+
+        .ticket-card:hover { border-color: var(--border-bright); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+
+        .ticket-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+        .ticket-issue { font-weight: 700; font-size: 0.95rem; flex: 1; min-width: 0; }
+        .ticket-meta-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
+        .ticket-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+        .ticket-comment-preview {
+            font-size: 0.8rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px;
+        }
+
+        /* ── Day Counter ── */
+        .day-counter {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600;
+            padding: 0.3rem 0.7rem; border-radius: 6px;
+        }
+        .day-counter.urgent { background: rgba(220,38,38,0.15); color: #F87171; border: 1px solid rgba(220,38,38,0.3); }
+        .day-counter.warn   { background: rgba(249,115,22,0.15); color: #FB923C; border: 1px solid rgba(249,115,22,0.3); }
+        .day-counter.ok     { background: rgba(0,163,224,0.12);  color: var(--accent); border: 1px solid rgba(0,163,224,0.25); }
+        .day-counter.closed { background: rgba(16,185,129,0.12); color: var(--success); border: 1px solid rgba(16,185,129,0.25); }
+        .counter-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .day-counter.urgent .counter-dot { background: #F87171; animation: pulse-dot 1.2s infinite; }
+        .day-counter.warn   .counter-dot { background: #FB923C; animation: pulse-dot 1.8s infinite; }
+        .day-counter.ok     .counter-dot { background: var(--accent); }
+        .day-counter.closed .counter-dot { background: var(--success); }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.25rem 0.65rem; border-radius: 999px;
+            font-size: 0.72rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; white-space: nowrap;
+        }
+        .badge-blue   { background: rgba(0,163,224,0.12); color: var(--accent); border: 1px solid rgba(0,163,224,0.25); }
+        .badge-amber  { background: rgba(245,158,11,0.12); color: var(--amber);  border: 1px solid rgba(245,158,11,0.25); }
+        .badge-green  { background: rgba(16,185,129,0.12); color: var(--success);border: 1px solid rgba(16,185,129,0.25); }
+        .badge-purple { background: rgba(139,92,246,0.12); color: var(--purple); border: 1px solid rgba(139,92,246,0.25); }
+        .badge-teal   { background: rgba(13,148,136,0.12); color: #2DD4BF;       border: 1px solid rgba(13,148,136,0.25); }
+        .badge-red    { background: rgba(239,68,68,0.12);  color: #F87171;       border: 1px solid rgba(239,68,68,0.25); }
+
+        /* ── Spinner / empty ── */
+        .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 2rem auto; }
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+
+        /* ── Form ── */
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.25rem; }
+        .form-group { margin-bottom: 0; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group.half-width { grid-column: span 1; }
+
+        label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.85rem; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+        label span.req { color: var(--accent); }
+
+        input[type="date"],
+        input[type="text"],
+        select.form-select,
+        textarea {
+            width: 100%; padding: 0.8rem 1rem;
+            background: var(--bg-input); border: 1.5px solid var(--border);
+            border-radius: 9px; color: var(--text-light);
+            font-family: 'Syne', sans-serif; font-size: 0.9rem;
+            transition: all 0.25s;
+        }
+        input:focus, select.form-select:focus, textarea:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0,163,224,0.12);
+        }
+        textarea { resize: vertical; min-height: 90px; }
+        select.form-select option { background: var(--bg-card); }
+
+        /* Issue type row */
+        .issue-row { display: flex; flex-direction: column; gap: 0.75rem; }
+        #newIssueInput { display: none; }
+        #newIssueInput.visible { display: block; }
+
+        /* File upload */
+        .file-upload-area {
+            border: 1.5px dashed var(--border); border-radius: 9px;
+            padding: 1rem 1.25rem; background: var(--bg-input);
+            cursor: pointer; transition: all 0.25s; text-align: center;
+        }
+        .file-upload-area:hover { border-color: var(--accent); background: rgba(0,163,224,0.05); }
+        .file-upload-area.has-file { border-color: var(--teal); background: rgba(13,148,136,0.05); }
+        .file-upload-area input[type="file"] { display: none; }
+        .file-upload-label { font-size: 0.85rem; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .file-upload-label svg { opacity: 0.6; }
+        .file-name { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--teal); margin-top: 0.4rem; }
+
+        /* Buttons */
+        .btn { padding: 0.8rem 1.75rem; border: none; border-radius: 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: all 0.25s; font-family: 'Syne', sans-serif; }
+        .btn-primary { background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color: white; }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,163,224,0.25); }
+        .btn-secondary { background: var(--bg-input); color: var(--text-light); border: 1.5px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--accent); }
+        .btn-danger { background: rgba(239,68,68,0.1); color: #F87171; border: 1.5px solid rgba(239,68,68,0.3); }
+        .btn-danger:hover { background: rgba(239,68,68,0.2); }
+        .btn-sm { padding: 0.45rem 1rem; font-size: 0.8rem; border-radius: 7px; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .btn-group { display: flex; gap: 0.75rem; margin-top: 1.75rem; flex-wrap: wrap; }
+
+        /* ── Toast ── */
+        .toast { position: fixed; bottom: 1.75rem; right: 1.75rem; padding: 0.9rem 1.4rem; border-radius: 10px; font-weight: 600; font-size: 0.9rem; z-index: 400; display: none; max-width: 360px; }
+        .toast.show { display: block; animation: fadeInUp 0.35s ease-out; }
+        .toast-success { background: rgba(16,185,129,0.95); color: white; border: 1px solid var(--success); }
+        .toast-error   { background: rgba(239,68,68,0.95);  color: white; border: 1px solid var(--error); }
+
+        /* ── Modal ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(4,9,18,0.85); backdrop-filter: blur(8px);
+            z-index: 200;
+        }
+        .modal-overlay.open { display: block; animation: overlayIn 0.2s ease-out; }
+
+        .modal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            background: var(--bg-card); border: 1px solid var(--border-bright);
+            border-radius: 20px; padding: 0; width: 92%; max-width: 680px;
+            z-index: 201; animation: modalIn 0.3s cubic-bezier(0.34,1.2,0.64,1);
+            max-height: 88vh; overflow: hidden; display: flex; flex-direction: column;
+        }
+
+        .modal-topbar {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 1rem; padding: 1.75rem 1.75rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(135deg, rgba(0,94,184,0.08), rgba(13,148,136,0.05));
+        }
+        .modal-title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; }
+        .modal-badges { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+        .modal-close {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+            color: var(--text-muted); cursor: pointer; width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center; font-size: 1rem;
+            transition: all 0.2s; flex-shrink: 0;
+        }
+        .modal-close:hover { background: rgba(239,68,68,0.15); border-color: var(--error); color: var(--error); }
+
+        .modal-body { padding: 1.75rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 1.5rem; }
+
+        .modal-section { display: flex; flex-direction: column; gap: 0.6rem; }
+        .modal-section-label {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+            color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase;
+        }
+        .modal-text-box {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 9px;
+            padding: 1rem 1.1rem; font-size: 0.9rem; line-height: 1.65;
+            color: var(--text-light); white-space: pre-wrap; word-break: break-word;
+        }
+
+        /* Timeline in modal */
+        .timeline { display: flex; flex-direction: column; gap: 0; }
+        .tl-item { display: flex; gap: 1rem; position: relative; }
+        .tl-item:not(:last-child)::after {
+            content: ''; position: absolute; left: 11px; top: 26px; bottom: -8px;
+            width: 1px; background: var(--border);
+        }
+        .tl-dot {
+            width: 24px; height: 24px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.65rem; flex-shrink: 0; margin-top: 2px; border: 1px solid;
+        }
+        .tl-dot.sent   { background: rgba(0,163,224,0.15); color: var(--accent); border-color: rgba(0,163,224,0.4); }
+        .tl-dot.resp   { background: rgba(245,158,11,0.15); color: var(--amber); border-color: rgba(245,158,11,0.4); }
+        .tl-dot.reply  { background: rgba(139,92,246,0.15); color: var(--purple); border-color: rgba(139,92,246,0.4); }
+        .tl-dot.closed { background: rgba(16,185,129,0.15); color: var(--success); border-color: rgba(16,185,129,0.4); }
+        .tl-content { padding-bottom: 1.1rem; flex: 1; }
+        .tl-label { font-size: 0.8rem; font-weight: 700; margin-bottom: 0.15rem; }
+        .tl-date  { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted); }
+
+        /* Action buttons row in modal */
+        .modal-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; padding: 1.25rem 1.75rem; border-top: 1px solid var(--border); background: var(--bg-mid); border-radius: 0 0 20px 20px; }
+
+        /* Inline edit inputs in modal */
+        .inline-date-group { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+        .inline-date-group input[type="date"] { flex: 1; min-width: 140px; padding: 0.6rem 0.8rem; font-size: 0.85rem; }
+        .inline-date-group .btn { padding: 0.55rem 1rem; font-size: 0.8rem; }
+
+        /* Attachment link */
+        .attachment-link {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+            color: var(--accent); background: rgba(0,163,224,0.08);
+            border: 1px solid rgba(0,163,224,0.2); border-radius: 7px;
+            padding: 0.45rem 0.9rem; text-decoration: none; transition: all 0.2s;
+        }
+        .attachment-link:hover { background: rgba(0,163,224,0.15); }
+
+        @media(max-width:768px) {
+            body { padding: 1rem; }
+            h1 { font-size: 1.7rem; }
+            .subtitle { margin-left: 0; margin-top: 0.4rem; }
+            .card { padding: 1.25rem; }
+            .form-grid { grid-template-columns: 1fr; }
+            .btn-group { flex-direction: column; }
+            .modal { width: 96%; }
+            .modal-topbar, .modal-body { padding: 1.25rem; }
+            .modal-actions { padding: 1rem 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <header>
+        <div class="header-top">
+            <a href="index.html" class="back-btn">←</a>
+            <div class="header-title-block">
+                <h1>SESM Ticket Tracker</h1>
+                <span class="header-tag">LIVE</span>
+            </div>
+        </div>
+        <p class="subtitle">TRACK · MONITOR · RESOLVE SESM ISSUES</p>
+    </header>
+
+    <!-- ── Summary Bar ── -->
+    <div class="summary-bar">
+        <div class="summary-tile open">
+            <div class="t-num" id="sumOpen">—</div>
+            <div class="t-lbl">Open Tickets</div>
+        </div>
+        <div class="summary-tile pending">
+            <div class="t-num" id="sumPending">—</div>
+            <div class="t-lbl">Awaiting Response</div>
+        </div>
+        <div class="summary-tile urgent">
+            <div class="t-num" id="sumUrgent">—</div>
+            <div class="t-lbl">7+ Days Open</div>
+        </div>
+        <div class="summary-tile closed">
+            <div class="t-num" id="sumClosed">—</div>
+            <div class="t-lbl">Closed</div>
+        </div>
+    </div>
+
+    <!-- ── Tickets List ── -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <div class="card-title-bar"></div>
+                All Tickets
+            </div>
+            <div class="filter-row">
+                <label class="toggle-pill" id="unresolvedToggle">
+                    <input type="checkbox" id="unresolvedCheck">
+                    <span class="pill-dot"></span>
+                    Show Unresolved Only
+                </label>
+            </div>
+        </div>
+        <div id="loadingSpinner"><div class="spinner"></div></div>
+        <div id="ticketsList"></div>
+    </div>
+
+    <!-- ── Add Ticket Form ── -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">
+                <div class="card-title-bar"></div>
+                Raise New Ticket
+            </div>
+        </div>
+        <form id="ticketForm">
+            <div class="form-grid">
+
+                <div class="form-group">
+                    <label for="dateSent">Date Sent to SESM <span class="req">*</span></label>
+                    <input type="date" id="dateSent" required>
+                </div>
+
+                <div class="form-group full-width issue-row">
+                    <label for="issueSelect">Issue Type <span class="req">*</span></label>
+                    <select id="issueSelect" class="form-select" required>
+                        <option value="">Select Issue</option>
+                        <option value="__new__">+ New Issue (type manually)</option>
+                    </select>
+                    <input type="text" id="newIssueInput" placeholder="Type new issue name..." class="form-select">
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="comments">Comments</label>
+                    <textarea id="comments" placeholder="Add any relevant comments or context..."></textarea>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>Attach Email (optional)</label>
+                    <div class="file-upload-area" id="uploadArea">
+                        <input type="file" id="emailAttachment" accept=".eml,.msg,.pdf,.png,.jpg,.jpeg">
+                        <label for="emailAttachment" class="file-upload-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                            Click to attach email or file
+                        </label>
+                        <div class="file-name" id="fileName"></div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary" id="submitBtn">Submit Ticket</button>
+                <button type="button" class="btn btn-secondary" id="resetBtn">Clear Form</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<!-- ── Detail Modal ── -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-topbar">
+            <div>
+                <div class="modal-title" id="modalTitle">Ticket Detail</div>
+                <div class="modal-badges" id="modalBadges"></div>
+            </div>
+            <button class="modal-close" id="modalClose">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-actions" id="modalActions"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import {
+        getFirestore, collection, addDoc, updateDoc, doc,
+        query, orderBy, getDocs, serverTimestamp, getDoc
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import {
+        getStorage, ref, uploadBytes, getDownloadURL
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+
+    const app = initializeApp({
+        apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+        authDomain: "oesperformance-a54c0.firebaseapp.com",
+        projectId: "oesperformance-a54c0",
+        storageBucket: "oesperformance-a54c0.firebasestorage.app",
+        messagingSenderId: "484894102454",
+        appId: "1:484894102454:web:17535ee497eac2d90d6717",
+        measurementId: "G-R56BGZYV8N"
+    });
+    const db      = getFirestore(app);
+    const storage = getStorage(app);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function esc(s){ if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function fmtDate(s){ if(!s)return'—'; const[y,m,d]=s.split('-'); return`${d}/${m}/${y}`; }
+    function todayStr(){ const n=new Date(); return`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; }
+
+    function daysSince(dateStr){
+        if(!dateStr) return null;
+        const d = new Date(dateStr+'T00:00:00');
+        const now = new Date(); now.setHours(0,0,0,0);
+        return Math.floor((now - d) / 86400000);
+    }
+
+    function renderDayCounter(ticket){
+        if(ticket.closed){
+            return `<span class="day-counter closed"><span class="counter-dot"></span>Closed</span>`;
+        }
+        const days = daysSince(ticket.dateSent);
+        if(days === null) return '';
+        const cls = days >= 7 ? 'urgent' : days >= 3 ? 'warn' : 'ok';
+        const label = days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
+        return `<span class="day-counter ${cls}"><span class="counter-dot"></span>${label}</span>`;
+    }
+
+    function statusBadge(ticket){
+        if(ticket.closed)      return `<span class="badge badge-green">✓ Closed</span>`;
+        if(ticket.replySentAt) return `<span class="badge badge-purple">↩ Reply Sent</span>`;
+        if(ticket.responseAt)  return `<span class="badge badge-amber">↙ Response Received</span>`;
+        return `<span class="badge badge-blue">⬆ Sent to SESM</span>`;
+    }
+
+    function showToast(msg, type='success'){
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.className=`toast toast-${type} show`;
+        setTimeout(()=>t.classList.remove('show'), 3500);
+    }
+
+    // ── Issue Types (dynamic list) ─────────────────────────────────────────
+    let knownIssues = [];
+
+    async function loadIssueTypes(){
+        try {
+            const snap = await getDocs(collection(db, 'SESM Issue Types'));
+            knownIssues = [];
+            snap.forEach(d => { if(d.data().name) knownIssues.push(d.data().name); });
+            knownIssues.sort((a,b)=>a.localeCompare(b));
+        } catch(e){ knownIssues = []; }
+        rebuildIssueSelect();
+    }
+
+    function rebuildIssueSelect(){
+        const sel = document.getElementById('issueSelect');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">Select Issue</option>';
+        knownIssues.forEach(name => {
+            const o = document.createElement('option');
+            o.value = name; o.textContent = name; sel.appendChild(o);
+        });
+        const newOpt = document.createElement('option');
+        newOpt.value = '__new__'; newOpt.textContent = '+ New Issue (type manually)';
+        sel.appendChild(newOpt);
+        if(current && current !== '__new__') sel.value = current;
+    }
+
+    async function saveNewIssueType(name){
+        if(!name || knownIssues.includes(name)) return;
+        try {
+            await addDoc(collection(db,'SESM Issue Types'), { name });
+            knownIssues.push(name);
+            knownIssues.sort((a,b)=>a.localeCompare(b));
+            rebuildIssueSelect();
+        } catch(e){}
+    }
+
+    document.getElementById('issueSelect').addEventListener('change', function(){
+        const box = document.getElementById('newIssueInput');
+        if(this.value === '__new__'){ box.classList.add('visible'); box.focus(); }
+        else { box.classList.remove('visible'); box.value=''; }
+    });
+
+    // ── File upload ───────────────────────────────────────────────────────────
+    document.getElementById('emailAttachment').addEventListener('change', function(){
+        const area = document.getElementById('uploadArea');
+        const fn   = document.getElementById('fileName');
+        if(this.files[0]){
+            area.classList.add('has-file');
+            fn.textContent = '📎 ' + this.files[0].name;
+        } else {
+            area.classList.remove('has-file');
+            fn.textContent = '';
+        }
+    });
+
+    // ── Modal ─────────────────────────────────────────────────────────────────
+    let currentTicketId = null;
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalClose   = document.getElementById('modalClose');
+
+    function closeModal(){ modalOverlay.classList.remove('open'); document.body.style.overflow=''; currentTicketId=null; }
+    modalClose.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', e=>{ if(e.target===modalOverlay) closeModal(); });
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+    function openTicketModal(ticket){
+        currentTicketId = ticket.id;
+        document.getElementById('modalTitle').textContent = ticket.issue || 'Ticket Detail';
+        document.getElementById('modalBadges').innerHTML  = `${statusBadge(ticket)} ${renderDayCounter(ticket)} <span class="badge badge-teal">${fmtDate(ticket.dateSent)}</span>`;
+
+        // Body
+        const body = document.getElementById('modalBody');
+        body.innerHTML = '';
+
+        // Timeline
+        const tlItems = [];
+        tlItems.push({ cls:'sent', icon:'↑', label:'Sent to SESM', date: ticket.dateSent });
+        if(ticket.responseAt)  tlItems.push({ cls:'resp',  icon:'↙', label:'Response Received from SESM', date: ticket.responseAt });
+        if(ticket.replySentAt) tlItems.push({ cls:'reply', icon:'↩', label:'Reply Sent Back to SESM',     date: ticket.replySentAt });
+        if(ticket.closedAt)    tlItems.push({ cls:'closed',icon:'✓', label:'Ticket Closed',               date: ticket.closedAt });
+
+        const tlHtml = tlItems.map(i=>`
+            <div class="tl-item">
+                <div class="tl-dot ${i.cls}">${i.icon}</div>
+                <div class="tl-content">
+                    <div class="tl-label">${i.label}</div>
+                    <div class="tl-date">${fmtDate(i.date)}</div>
+                </div>
+            </div>`).join('');
+
+        const tlSection = document.createElement('div');
+        tlSection.className = 'modal-section';
+        tlSection.innerHTML = `<div class="modal-section-label">Timeline</div><div class="timeline">${tlHtml}</div>`;
+        body.appendChild(tlSection);
+
+        // Comments
+        if(ticket.comments){
+            const cs = document.createElement('div');
+            cs.className='modal-section';
+            cs.innerHTML=`<div class="modal-section-label">Comments</div><div class="modal-text-box">${esc(ticket.comments)}</div>`;
+            body.appendChild(cs);
+        }
+
+        // Attachment
+        if(ticket.attachmentURL){
+            const as = document.createElement('div');
+            as.className='modal-section';
+            as.innerHTML=`<div class="modal-section-label">Attachment</div>
+                <a class="attachment-link" href="${esc(ticket.attachmentURL)}" target="_blank" rel="noopener">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    ${esc(ticket.attachmentName || 'View Attachment')}
+                </a>`;
+            body.appendChild(as);
+        }
+
+        // Action area
+        const actions = document.getElementById('modalActions');
+        actions.innerHTML = '';
+
+        if(!ticket.closed){
+            // Response received
+            if(!ticket.responseAt){
+                const div = document.createElement('div');
+                div.className='inline-date-group';
+                div.innerHTML=`
+                    <input type="date" id="responseDateInput" value="${todayStr()}" title="Date response received">
+                    <button class="btn btn-sm btn-secondary" id="btnResponseReceived">↙ Response Received</button>`;
+                actions.appendChild(div);
+                div.querySelector('#btnResponseReceived').addEventListener('click', async ()=>{
+                    const d = div.querySelector('#responseDateInput').value;
+                    if(!d){ showToast('Please select a date','error'); return; }
+                    await updateTicketField(ticket.id, { responseAt: d });
+                });
+            }
+
+            // Reply sent back
+            if(ticket.responseAt && !ticket.replySentAt){
+                const div = document.createElement('div');
+                div.className='inline-date-group';
+                div.innerHTML=`
+                    <input type="date" id="replyDateInput" value="${todayStr()}" title="Date reply sent">
+                    <button class="btn btn-sm btn-secondary" id="btnReplySent">↩ Reply Sent to SESM</button>`;
+                actions.appendChild(div);
+                div.querySelector('#btnReplySent').addEventListener('click', async ()=>{
+                    const d = div.querySelector('#replyDateInput').value;
+                    if(!d){ showToast('Please select a date','error'); return; }
+                    await updateTicketField(ticket.id, { replySentAt: d });
+                });
+            }
+
+            // Close ticket
+            const closeDiv = document.createElement('div');
+            closeDiv.className='inline-date-group';
+            closeDiv.innerHTML=`
+                <input type="date" id="closeDateInput" value="${todayStr()}" title="Date closed">
+                <button class="btn btn-sm btn-danger" id="btnCloseTicket">✓ Close Ticket</button>`;
+            actions.appendChild(closeDiv);
+            closeDiv.querySelector('#btnCloseTicket').addEventListener('click', async ()=>{
+                const d = closeDiv.querySelector('#closeDateInput').value;
+                if(!d){ showToast('Please select a date','error'); return; }
+                if(!confirm('Mark this ticket as closed?')) return;
+                await updateTicketField(ticket.id, { closed: true, closedAt: d });
+            });
+        } else {
+            const p = document.createElement('p');
+            p.style.cssText='color:var(--text-muted);font-size:0.85rem;font-family:JetBrains Mono,monospace;';
+            p.textContent='This ticket is closed.';
+            actions.appendChild(p);
+        }
+
+        modalOverlay.classList.add('open');
+        document.body.style.overflow='hidden';
+    }
+
+    async function updateTicketField(id, fields){
+        try {
+            await updateDoc(doc(db,'SESM Tickets',id), fields);
+            showToast('✓ Ticket updated');
+            closeModal();
+            loadTickets();
+        } catch(e){
+            showToast('Error: '+e.message, 'error');
+        }
+    }
+
+    // ── Load Tickets ──────────────────────────────────────────────────────────
+    let allTickets = [];
+    let showUnresolvedOnly = false;
+
+    document.getElementById('unresolvedCheck').addEventListener('change', function(){
+        showUnresolvedOnly = this.checked;
+        const pill = document.getElementById('unresolvedToggle');
+        if(showUnresolvedOnly) pill.classList.add('active'); else pill.classList.remove('active');
+        renderTickets();
+    });
+
+    async function loadTickets(){
+        document.getElementById('loadingSpinner').style.display='block';
+        document.getElementById('ticketsList').innerHTML='';
+        try {
+            const q = query(collection(db,'SESM Tickets'), orderBy('dateSent','desc'));
+            const snap = await getDocs(q);
+            allTickets = [];
+            snap.forEach(d => allTickets.push({ id:d.id, ...d.data() }));
+            updateSummary();
+            renderTickets();
+        } catch(e){
+            document.getElementById('ticketsList').innerHTML=`<div class="empty-state" style="color:#F87171;">⚠ Failed to load: ${e.message}</div>`;
+        }
+        document.getElementById('loadingSpinner').style.display='none';
+    }
+
+    function updateSummary(){
+        const open    = allTickets.filter(t=>!t.closed).length;
+        const closed  = allTickets.filter(t=> t.closed).length;
+        const pending = allTickets.filter(t=>!t.closed && !t.responseAt).length;
+        const urgent  = allTickets.filter(t=>!t.closed && daysSince(t.dateSent)>=7).length;
+        document.getElementById('sumOpen').textContent    = open;
+        document.getElementById('sumClosed').textContent  = closed;
+        document.getElementById('sumPending').textContent = pending;
+        document.getElementById('sumUrgent').textContent  = urgent;
+    }
+
+    function renderTickets(){
+        const list = document.getElementById('ticketsList');
+        let tickets = showUnresolvedOnly ? allTickets.filter(t=>!t.closed) : allTickets;
+        if(tickets.length===0){
+            list.innerHTML=`<div class="empty-state">${showUnresolvedOnly?'No unresolved tickets.':'No tickets found.'}</div>`;
+            return;
+        }
+        list.innerHTML='';
+        tickets.forEach(ticket=>{
+            const statusClass = ticket.closed ? 'status-closed'
+                : ticket.replySentAt ? 'status-replied'
+                : ticket.responseAt  ? 'status-responded'
+                : 'status-open';
+
+            const div = document.createElement('div');
+            div.className=`ticket-card ${statusClass}`;
+            div.innerHTML=`
+                <div class="ticket-top">
+                    <div class="ticket-issue">${esc(ticket.issue)}</div>
+                    <div class="ticket-meta-row">
+                        ${renderDayCounter(ticket)}
+                        ${statusBadge(ticket)}
+                    </div>
+                </div>
+                <div class="ticket-bottom">
+                    <span class="ticket-comment-preview">${ticket.comments ? '💬 '+esc(ticket.comments.substring(0,80))+(ticket.comments.length>80?'…':'') : '<em style="opacity:0.5">No comments</em>'}</span>
+                    <span style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:var(--text-muted)">Sent ${fmtDate(ticket.dateSent)}</span>
+                </div>`;
+            div.addEventListener('click', ()=>openTicketModal(ticket));
+            list.appendChild(div);
+        });
+    }
+
+    // ── Submit Form ───────────────────────────────────────────────────────────
+    document.getElementById('ticketForm').addEventListener('submit', async e=>{
+        e.preventDefault();
+        const dateSent   = document.getElementById('dateSent').value;
+        const issueVal   = document.getElementById('issueSelect').value;
+        const newIssue   = document.getElementById('newIssueInput').value.trim();
+        const comments   = document.getElementById('comments').value.trim();
+        const fileInput  = document.getElementById('emailAttachment');
+
+        let issue = issueVal === '__new__' ? newIssue : issueVal;
+        if(!dateSent || !issue){ showToast('Please fill in required fields.','error'); return; }
+
+        const btn = document.getElementById('submitBtn');
+        btn.disabled=true; btn.textContent='Submitting...';
+
+        try {
+            // If new issue type, save it
+            if(issueVal==='__new__' && newIssue) await saveNewIssueType(newIssue);
+
+            // Upload attachment if present
+            let attachmentURL = null, attachmentName = null;
+            if(fileInput.files[0]){
+                const file = fileInput.files[0];
+                attachmentName = file.name;
+                const storageRef = ref(storage, `sesm-attachments/${Date.now()}_${file.name}`);
+                const snap = await uploadBytes(storageRef, file);
+                attachmentURL = await getDownloadURL(snap.ref);
+            }
+
+            const payload = { dateSent, issue, comments, closed:false, submittedAt: serverTimestamp() };
+            if(attachmentURL)  payload.attachmentURL  = attachmentURL;
+            if(attachmentName) payload.attachmentName = attachmentName;
+
+            await addDoc(collection(db,'SESM Tickets'), payload);
+            showToast('✓ Ticket submitted successfully.');
+
+            // Reset
+            document.getElementById('dateSent').value='';
+            document.getElementById('issueSelect').value='';
+            document.getElementById('newIssueInput').value='';
+            document.getElementById('newIssueInput').classList.remove('visible');
+            document.getElementById('comments').value='';
+            fileInput.value='';
+            document.getElementById('uploadArea').classList.remove('has-file');
+            document.getElementById('fileName').textContent='';
+            loadTickets();
+        } catch(err){
+            showToast('Error: '+err.message,'error');
+        }
+        btn.disabled=false; btn.textContent='Submit Ticket';
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+        document.getElementById('dateSent').value='';
+        document.getElementById('issueSelect').value='';
+        document.getElementById('newIssueInput').value='';
+        document.getElementById('newIssueInput').classList.remove('visible');
+        document.getElementById('comments').value='';
+        document.getElementById('emailAttachment').value='';
+        document.getElementById('uploadArea').classList.remove('has-file');
+        document.getElementById('fileName').textContent='';
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    document.getElementById('dateSent').valueAsDate = new Date();
+    loadIssueTypes();
+    loadTickets();
+</script>
+</body>
+</html>
