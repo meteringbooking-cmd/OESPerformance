@@ -869,41 +869,43 @@
             }
 
             // ── START OF DAY ──
-            const sodSummRow = document.getElementById('sodSummaryRow');
-            const sodBody    = document.getElementById('sodBody');
-            sodSummRow.innerHTML = '';
-            if (journeys.length === 0) {
-                sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
-            } else {
-                const sodByReg = {};
-                journeys.forEach(j => {
-                    const r = j.registration || 'Unknown';
-                    const st = j.startTime ? new Date(j.startTime) : null;
-                    if (!sodByReg[r]) {
-                        sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: st, firstMins: st ? st.getHours()*60+st.getMinutes() : 9999, journeys: 0, miles: 0 };
-                    }
-                    sodByReg[r].journeys++;
-                    sodByReg[r].miles += j.miles;
-                    if (st && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
-                        sodByReg[r].firstTime = st;
-                        sodByReg[r].firstMins = st.getHours()*60 + st.getMinutes();
-                        sodByReg[r].driver = j.driver || sodByReg[r].driver;
-                    }
-                });
-                window._sodData = Object.values(sodByReg).filter(r => r.firstMins >= 8 * 60);
-                const totalVehicles = Object.keys(sodByReg).length;
-                const lateCount = window._sodData.length;
-                sodSummRow.innerHTML = `
-                    <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
-                    <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
-                    <div class="chip">🚐 ${totalVehicles} Total Vehicles</div>
-                `;
-                if (lateCount === 0) {
-                    sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>`;
-                } else {
-                    renderSodTable('firstMins', 'asc');
-                }
-            }
+// ── START OF DAY ──
+const sodSummRow = document.getElementById('sodSummaryRow');
+const sodBody    = document.getElementById('sodBody');
+sodSummRow.innerHTML = '';
+if (journeys.length === 0) {
+    sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
+} else {
+    const sodByReg = {};
+    journeys.forEach(j => {
+        const r = j.registration || 'Unknown';
+        const st = j.startTime ? new Date(j.startTime) : null;
+        if (!sodByReg[r]) {
+            sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: null, firstMins: 9999, journeys: 0, miles: 0 };
+        }
+        sodByReg[r].journeys++;
+        sodByReg[r].miles += j.miles;
+        if (st && j.miles > 0.1 && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
+            sodByReg[r].firstTime = st;
+            sodByReg[r].firstMins = st.getHours() * 60 + st.getMinutes();
+            sodByReg[r].driver = j.driver || sodByReg[r].driver;
+        }
+    });
+    // Only flag vehicles where we have a valid start time AND it's after 08:00
+    window._sodData = Object.values(sodByReg).filter(r => r.firstTime !== null && r.firstMins >= 8 * 60);
+    const totalVehicles = Object.keys(sodByReg).length;
+    const lateCount = window._sodData.length;
+    sodSummRow.innerHTML = `
+        <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
+        <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
+        <div class="chip">🚐 ${totalVehicles} Total Vehicles</div>
+    `;
+    if (lateCount === 0) {
+        sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>`;
+    } else {
+        renderSodTable('firstMins', 'asc');
+    }
+}
 
             // ── AFTER 5PM / ALL-DAY ──
             const relevantJourneys = nwdInfo.isNonWorkingDay
