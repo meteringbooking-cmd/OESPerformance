@@ -570,25 +570,48 @@
         return { isNonWorkingDay, isWeekend, isBankHoliday, label, dayName };
     }
 
-    // ── FIXED: handles Excel serial numbers, DD/MM/YYYY strings, and ISO strings ──
-    function parseDDMMYYYY(str) {
-        if (str === null || str === undefined || str === '') return null;
+    /**
+     * Parse a time/datetime cell from the spreadsheet.
+     * Always grafts onto uploadDate when the value has no date component.
+     *
+     * Supported formats:
+     *   - Excel time fraction  (0 <= n < 1)  e.g. 0.29236
+     *   - Excel datetime serial (n >= 1)      e.g. 46113.29236
+     *   - "HH:MM:SS" or "HH:MM"              (time-only string)
+     *   - "DD/MM/YYYY HH:MM:SS" or "DD/MM/YYYY HH:MM"
+     *   - ISO 8601 / anything JS Date can parse
+     */
+    function parseTimeWithDate(raw, uploadDate) {
+        if (raw === null || raw === undefined || raw === '') return null;
 
-        // Excel serial number — SheetJS returns date cells as numbers when raw:true
-        if (typeof str === 'number') {
-            const parsed = XLSX.SSF.parse_date_code(str);
-            if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H, parsed.M, Math.floor(parsed.S));
-            return null;
+        // ── Excel serial number ──────────────────────────────────────────
+        if (typeof raw === 'number') {
+            const parsed = XLSX.SSF.parse_date_code(raw);
+            if (!parsed) return null;
+            if (raw < 1) {
+                // Pure time fraction — graft date from uploadDate
+                const [y, mo, dy] = uploadDate.split('-').map(Number);
+                return new Date(y, mo - 1, dy, parsed.H, parsed.M, Math.floor(parsed.S));
+            }
+            // Full datetime serial
+            return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H, parsed.M, Math.floor(parsed.S));
         }
 
-        str = str.toString().trim();
+        const s = raw.toString().trim();
 
-        // DD/MM/YYYY HH:MM or DD/MM/YYYY HH:MM:SS
-        const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-        if (m) return new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5], m[6] ? +m[6] : 0);
+        // ── HH:MM:SS or HH:MM (no date) — graft uploadDate ──────────────
+        const timeOnly = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (timeOnly) {
+            const [y, mo, dy] = uploadDate.split('-').map(Number);
+            return new Date(y, mo - 1, dy, +timeOnly[1], +timeOnly[2], timeOnly[3] ? +timeOnly[3] : 0);
+        }
 
-        // Fallback: let JS try to parse (handles ISO 8601 etc.)
-        const d = new Date(str);
+        // ── DD/MM/YYYY HH:MM or DD/MM/YYYY HH:MM:SS ─────────────────────
+        const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (dmy) return new Date(+dmy[3], +dmy[2]-1, +dmy[1], +dmy[4], +dmy[5], dmy[6] ? +dmy[6] : 0);
+
+        // ── Fallback: ISO / JS-native ────────────────────────────────────
+        const d = new Date(s);
         return isNaN(d) ? null : d;
     }
 
@@ -631,10 +654,10 @@
         if (!fileInput.files.length) { showStatus('Please select a file', 'error', 'uploadStatus'); return; }
 
         const btn = document.getElementById('uploadBtn');
-        const progressWrap = document.getElementById('uploadProgress');
-        const progressBar  = document.getElementById('uploadProgressBar');
+        const progressWrap  = document.getElementById('uploadProgress');
+        const progressBar   = document.getElementById('uploadProgressBar');
         const progressLabel = document.getElementById('uploadProgressLabel');
-        const setProgress = (pct, label) => { progressBar.style.width = pct + '%'; progressLabel.textContent = label; };
+        const setProgress   = (pct, label) => { progressBar.style.width = pct + '%'; progressLabel.textContent = label; };
 
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span>Reading file…';
@@ -648,7 +671,7 @@
                 const data = new Uint8Array(e.target.result);
                 const wb = XLSX.read(data, { type:'array' });
 
-                // raw:true keeps date cells as Excel serial numbers so parseDDMMYYYY handles them correctly
+                // raw:true → dates stay as Excel serial numbers; we handle them in parseTimeWithDate
                 const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true });
 
                 let headerIdx = 0;
@@ -661,8 +684,8 @@
                 const col = name => {
                     const aliases = {
                         registration: ['registration','reg','vehicle'],
-                        starttime:    ['start time','starttime','start_time'],
-                        endtime:      ['end time','endtime','end_time'],
+                        starttime:    ['start time','starttime','start_time','start'],
+                        endtime:      ['end time','endtime','end_time','end'],
                         startlocation:['start location','startlocation'],
                         endlocation:  ['end location','endlocation'],
                         startpoi:     ['start poi','startpoi'],
@@ -708,15 +731,10 @@
                     const { row, milesVal } = validRows[vi];
                     const startTimeRaw = C.startTime >= 0 ? row[C.startTime] : null;
                     const endTimeRaw   = C.endTime   >= 0 ? row[C.endTime]   : null;
-                    const startDt = parseDDMMYYYY(startTimeRaw);
-                    const endDt   = parseDDMMYYYY(endTimeRaw);
 
-                    let journeyDateStr = dateVal;
-                    if (startDt) {
-                        journeyDateStr = startDt.getFullYear() + '-'
-                            + String(startDt.getMonth()+1).padStart(2,'0') + '-'
-                            + String(startDt.getDate()).padStart(2,'0');
-                    }
+                    // Use uploadDate to fill in date for time-only values
+                    const startDt = parseTimeWithDate(startTimeRaw, dateVal);
+                    const endDt   = parseTimeWithDate(endTimeRaw,   dateVal);
 
                     const rec = {
                         registration:  C.reg      >= 0 ? (row[C.reg]||'').toString().trim()   : '',
@@ -735,7 +753,7 @@
                         maxSpeed:      C.maxSpeed >= 0 ? (row[C.maxSpeed]||'').toString().trim() : '',
                         startPostcode: C.startPC  >= 0 ? (row[C.startPC]||'').toString().trim()  : '',
                         endPostcode:   C.endPC    >= 0 ? (row[C.endPC]||'').toString().trim()    : '',
-                        journeyDate:   journeyDateStr,
+                        journeyDate:   dateVal,   // always the selected upload date
                         uploadDate:    dateVal,
                         timestamp:     window._serverTimestamp(),
                     };
@@ -771,11 +789,11 @@
 
         const nwdInfo = getNonWorkingDayInfo(dateVal);
 
-        const tbody      = document.getElementById('journeyBody');
-        const a5tbody    = document.getElementById('after5Body');
-        const absentBody = document.getElementById('absentBody');
-        const summRow    = document.getElementById('summaryRow');
-        const a5SummRow  = document.getElementById('after5SummaryRow');
+        const tbody         = document.getElementById('journeyBody');
+        const a5tbody       = document.getElementById('after5Body');
+        const absentBody    = document.getElementById('absentBody');
+        const summRow       = document.getElementById('summaryRow');
+        const a5SummRow     = document.getElementById('after5SummaryRow');
         const absentSummRow = document.getElementById('absentSummaryRow');
 
         tbody.innerHTML      = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
@@ -843,7 +861,7 @@
                 return ta - tb;
             });
 
-            // ── DAY'S USAGE ──
+            // ── DAY'S USAGE ──────────────────────────────────────────────────
             summRow.innerHTML = '';
             window._usageData = [];
             if (journeys.length === 0) {
@@ -868,46 +886,48 @@
                 renderUsageTable('miles', 'desc');
             }
 
-            // ── START OF DAY ──
-// ── START OF DAY ──
-const sodSummRow = document.getElementById('sodSummaryRow');
-const sodBody    = document.getElementById('sodBody');
-sodSummRow.innerHTML = '';
-if (journeys.length === 0) {
-    sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
-} else {
-    const sodByReg = {};
-    journeys.forEach(j => {
-        const r = j.registration || 'Unknown';
-        const st = j.startTime ? new Date(j.startTime) : null;
-        if (!sodByReg[r]) {
-            sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: null, firstMins: 9999, journeys: 0, miles: 0 };
-        }
-        sodByReg[r].journeys++;
-        sodByReg[r].miles += j.miles;
-        if (st && j.miles > 0.1 && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
-            sodByReg[r].firstTime = st;
-            sodByReg[r].firstMins = st.getHours() * 60 + st.getMinutes();
-            sodByReg[r].driver = j.driver || sodByReg[r].driver;
-        }
-    });
-    // Only flag vehicles where we have a valid start time AND it's after 08:00
-    window._sodData = Object.values(sodByReg).filter(r => r.firstTime !== null && r.firstMins >= 8 * 60);
-    const totalVehicles = Object.keys(sodByReg).length;
-    const lateCount = window._sodData.length;
-    sodSummRow.innerHTML = `
-        <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
-        <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
-        <div class="chip">🚐 ${totalVehicles} Total Vehicles</div>
-    `;
-    if (lateCount === 0) {
-        sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>`;
-    } else {
-        renderSodTable('firstMins', 'asc');
-    }
-}
+            // ── START OF DAY ─────────────────────────────────────────────────
+            const sodSummRow = document.getElementById('sodSummaryRow');
+            const sodBody    = document.getElementById('sodBody');
+            sodSummRow.innerHTML = '';
+            if (journeys.length === 0) {
+                sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
+            } else {
+                const sodByReg = {};
+                journeys.forEach(j => {
+                    const r  = j.registration || 'Unknown';
+                    const st = j.startTime ? new Date(j.startTime) : null;
+                    if (!sodByReg[r]) {
+                        sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: null, firstMins: 9999, journeys: 0, miles: 0 };
+                    }
+                    sodByReg[r].journeys++;
+                    sodByReg[r].miles += j.miles;
+                    // Only update firstTime for journeys with a valid start AND > 0.1 miles
+                    if (st && j.miles > 0.1 && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
+                        sodByReg[r].firstTime = st;
+                        sodByReg[r].firstMins = st.getHours() * 60 + st.getMinutes();
+                        sodByReg[r].driver    = j.driver || sodByReg[r].driver;
+                    }
+                });
 
-            // ── AFTER 5PM / ALL-DAY ──
+                // Flag only vehicles with a valid start time that is after 08:00
+                window._sodData = Object.values(sodByReg).filter(r => r.firstTime !== null && r.firstMins >= 8 * 60);
+                const totalVehicles = Object.keys(sodByReg).length;
+                const lateCount     = window._sodData.length;
+
+                sodSummRow.innerHTML = `
+                    <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
+                    <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
+                    <div class="chip">🚐 ${totalVehicles} Total Vehicles</div>
+                `;
+                if (lateCount === 0) {
+                    sodBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>`;
+                } else {
+                    renderSodTable('firstMins', 'asc');
+                }
+            }
+
+            // ── AFTER 5PM / ALL-DAY ──────────────────────────────────────────
             const relevantJourneys = nwdInfo.isNonWorkingDay
                 ? journeys
                 : journeys.filter(j => j.startTime && new Date(j.startTime).getHours() >= 17);
@@ -924,13 +944,13 @@ if (journeys.length === 0) {
                     if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null, latestMins:0 };
                     const g = byReg[r];
                     g.journeys++;
-                    g.miles += j.miles;
+                    g.miles        += j.miles;
                     g.durationMins += parseDurationToMins(j.duration);
                     g.idleMins     += parseDurationToMins(j.idle);
                     const st = j.startTime ? new Date(j.startTime) : null;
                     if (st) {
                         if (!g.earliest || st < g.earliest) g.earliest = st;
-                        if (!g.latest || st > g.latest) { g.latest = st; g.latestMins = st.getHours()*60 + st.getMinutes(); }
+                        if (!g.latest   || st > g.latest)  { g.latest = st; g.latestMins = st.getHours()*60 + st.getMinutes(); }
                     }
                 });
                 window._after5Data = Object.values(byReg);
@@ -951,14 +971,14 @@ if (journeys.length === 0) {
                 renderAfter5Table('latestMins', 'desc');
             }
 
-            // ── MOVEMENT WHILST OFF ──
+            // ── MOVEMENT WHILST OFF ──────────────────────────────────────────
             absentSummRow.innerHTML = '';
             if (journeys.length === 0) {
                 absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No journey data for this date</p></div></td></tr>';
             } else {
                 const oesSnap = await window._getDocs(window._collection(window._db, 'attendance'));
                 const spSnap  = await window._getDocs(window._collection(window._db, 'SP Attendance'));
-                const absentCodes = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
+                const absentCodes  = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
                 const absentPeople = {};
 
                 oesSnap.forEach(doc => {
@@ -1002,13 +1022,13 @@ if (journeys.length === 0) {
                                 journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null
                             };
                         }
-                        const g = flagged[key];
-                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
+                        const g  = flagged[key];
                         const st = j.startTime ? new Date(j.startTime) : null;
+                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
                         if (st) { if (!g.earliest || st < g.earliest) g.earliest = st; if (!g.latest || st > g.latest) g.latest = st; }
                     });
 
-                    const flaggedRows = Object.values(flagged).sort((a,b) => a.isAbsent !== b.isAbsent ? (a.isAbsent ? -1 : 1) : b.miles - a.miles);
+                    const flaggedRows   = Object.values(flagged).sort((a,b) => a.isAbsent !== b.isAbsent ? (a.isAbsent ? -1 : 1) : b.miles - a.miles);
                     const absentMatched = flaggedRows.filter(r => r.isAbsent).length;
 
                     absentSummRow.innerHTML = `
@@ -1031,7 +1051,7 @@ if (journeys.length === 0) {
                         <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
                         <td class="muted">${minsToHM(g.durationMins)}</td>
                         <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
-                        <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
+                        <td class="muted">${g.latest   ? timeStr(g.latest)   : '—'}</td>
                     </tr>`).join('');
 
                 } else {
@@ -1062,9 +1082,9 @@ if (journeys.length === 0) {
                         if (!flagged[key]) {
                             flagged[key] = { reg: regRaw, driver: driverRaw, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
                         }
-                        const g = flagged[key];
-                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
+                        const g  = flagged[key];
                         const st = j.startTime ? new Date(j.startTime) : null;
+                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
                         if (st) { if (!g.earliest || st < g.earliest) g.earliest = st; if (!g.latest || st > g.latest) g.latest = st; }
                     });
 
@@ -1087,7 +1107,7 @@ if (journeys.length === 0) {
                             <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
                             <td class="muted">${minsToHM(g.durationMins)}</td>
                             <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
-                            <td class="muted">${g.latest ? timeStr(g.latest) : '—'}</td>
+                            <td class="muted">${g.latest   ? timeStr(g.latest)   : '—'}</td>
                         </tr>`).join('');
                     }
                 }
