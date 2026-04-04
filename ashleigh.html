@@ -509,6 +509,20 @@
             font-weight: 600;
             font-size: 0.85em;
         }
+
+        /* Filter row layout */
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+        }
         
         @media (max-width: 768px) {
             .grid {
@@ -684,12 +698,25 @@
 
         <div class="report-section">
             <h2 style="color: white; margin-bottom: 25px;"><span class="emoji">📅</span> Weekly Report</h2>
-            <div class="form-group">
-                <label for="weekSelect">Select Week Commencing</label>
-                <select id="weekSelect" onchange="loadWeeklyReport()">
-                    <option value="">Choose a week...</option>
-                </select>
+
+            <!-- Week selector and Job Number filter side by side -->
+            <div class="filter-row">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="weekSelect">Select Week Commencing</label>
+                    <select id="weekSelect" onchange="loadWeeklyReport()">
+                        <option value="">Choose a week...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="jobNumberFilter">Filter by Job Number Prefix</label>
+                    <select id="jobNumberFilter" onchange="loadWeeklyReport()">
+                        <option value="">All jobs</option>
+                        <option value="J">J... jobs only</option>
+                        <option value="E">E... jobs only</option>
+                    </select>
+                </div>
             </div>
+
             <div id="debugInfo" class="debug-info" style="display: none;"></div>
             <div id="weeklyReport"></div>
         </div>
@@ -719,7 +746,6 @@
             'METERING_COMMUNICATIONS_HUB_EXCHANGE': 72.1
         };
 
-        // Human-readable job type labels
         const jobTypeLabels = {
             'METERING_ELECTRICITY_METER_EXCHANGE': 'Electricity Meter Exchange',
             'METERING_DUAL_FUEL_METER_EXCHANGE': 'Dual Fuel Meter Exchange',
@@ -798,7 +824,6 @@
         // ─────────────────────────────────────────────
         let currentlyEditingRow = null;
 
-        // Builds the job type <select> options string
         function jobTypeOptionsHTML(selectedValue) {
             const opts = [
                 ['', '-- Select job type --'],
@@ -830,7 +855,6 @@
         }
 
         window.editRow = async function(entryId, originalData) {
-            // Cancel any in-progress edit first
             if (currentlyEditingRow) cancelRowEdit();
 
             const row = document.querySelector(`tr[data-entry-id="${entryId}"]`);
@@ -839,31 +863,21 @@
             currentlyEditingRow = { row, entryId, originalData };
             row.classList.add('editing');
 
-            // Replace each editable cell with an input/select
             row.querySelector('.cell-date').innerHTML =
                 `<input class="edit-input" id="edit-date-${entryId}" type="date" value="${originalData.workDate}">`;
-
             row.querySelector('.cell-name').innerHTML =
                 `<input class="edit-input" id="edit-name-${entryId}" type="text" value="${escapeAttr(originalData.name)}" placeholder="Name">`;
-
             row.querySelector('.cell-address').innerHTML =
                 `<input class="edit-input" id="edit-address-${entryId}" type="text" value="${escapeAttr(originalData.address)}" placeholder="Address">`;
-
             row.querySelector('.cell-postcode').innerHTML =
                 `<input class="edit-input" id="edit-postcode-${entryId}" type="text" value="${escapeAttr(originalData.postcode)}" style="min-width:90px" placeholder="Postcode">`;
-
             row.querySelector('.cell-jobnumber').innerHTML =
                 `<input class="edit-input" id="edit-jobnumber-${entryId}" type="text" value="${escapeAttr(originalData.jobNumber)}" style="min-width:100px" placeholder="Job #">`;
-
             row.querySelector('.cell-jobtype').innerHTML =
                 `<select class="edit-select" id="edit-jobtype-${entryId}">${jobTypeOptionsHTML(originalData.jobType)}</select>`;
-
             row.querySelector('.cell-status').innerHTML =
                 `<select class="edit-select" id="edit-status-${entryId}" style="min-width:120px">${statusOptionsHTML(originalData.bookingStatus)}</select>`;
-
-            // Value cell is read-only — will refresh after save
             row.querySelector('.cell-value').textContent = '—';
-
             row.querySelector('.action-cell').innerHTML = `
                 <button class="edit-btn save-btn" onclick="saveRow('${entryId}')">💾 Save</button>
                 <button class="edit-btn cancel-btn" onclick="cancelRowEdit()">✖</button>
@@ -873,20 +887,19 @@
         window.saveRow = async function(entryId) {
             if (!currentlyEditingRow) return;
 
-            const newWorkDate    = document.getElementById(`edit-date-${entryId}`).value;
-            const newName        = document.getElementById(`edit-name-${entryId}`).value.trim();
-            const newAddress     = document.getElementById(`edit-address-${entryId}`).value.trim();
-            const newPostcode    = document.getElementById(`edit-postcode-${entryId}`).value.trim();
-            const newJobNumber   = document.getElementById(`edit-jobnumber-${entryId}`).value.trim();
-            const newJobType     = document.getElementById(`edit-jobtype-${entryId}`).value;
-            const newStatus      = document.getElementById(`edit-status-${entryId}`).value;
+            const newWorkDate  = document.getElementById(`edit-date-${entryId}`).value;
+            const newName      = document.getElementById(`edit-name-${entryId}`).value.trim();
+            const newAddress   = document.getElementById(`edit-address-${entryId}`).value.trim();
+            const newPostcode  = document.getElementById(`edit-postcode-${entryId}`).value.trim();
+            const newJobNumber = document.getElementById(`edit-jobnumber-${entryId}`).value.trim();
+            const newJobType   = document.getElementById(`edit-jobtype-${entryId}`).value;
+            const newStatus    = document.getElementById(`edit-status-${entryId}`).value;
 
             if (!newName || !newJobNumber || !newWorkDate) {
                 alert('Name, Job Number and Date are required.');
                 return;
             }
 
-            // Duplicate check on job number if it changed
             if (newJobNumber !== currentlyEditingRow.originalData.jobNumber) {
                 const duplicates = await checkDuplicateJobNumber(newJobNumber);
                 const others = duplicates.filter(d => d.id !== entryId);
@@ -898,12 +911,8 @@
             }
 
             try {
-                // Work out which collection(s) need updating.
-                // Manual entry fields are stored in the manual doc.
-                // Job type & status live in the CSV doc — find it and update too.
                 const weekCommencing = formatDate(getMonday(new Date(newWorkDate)));
 
-                // Update manual entry doc
                 const manualRef = doc(db, 'workEntries', entryId);
                 await updateDoc(manualRef, {
                     name: newName,
@@ -915,7 +924,6 @@
                     lastModified: new Date().toISOString()
                 });
 
-                // Find & update the matching CSV doc (by original job number)
                 const originalJobNum = currentlyEditingRow.originalData.jobNumber.trim();
                 const csvQuery = query(
                     collection(db, 'workEntries'),
@@ -924,7 +932,6 @@
                 );
                 const csvSnap = await getDocs(csvQuery);
                 if (!csvSnap.empty) {
-                    // Update first matching CSV doc
                     const csvDocRef = doc(db, 'workEntries', csvSnap.docs[0].id);
                     await updateDoc(csvDocRef, {
                         jobNumber: newJobNumber,
@@ -934,9 +941,7 @@
                     });
                 }
 
-                // Show toast
                 showToast('✓ Row updated successfully!', 'success');
-
                 currentlyEditingRow = null;
                 await loadWeeklyReport();
                 await loadWeekCommencingDates();
@@ -950,7 +955,6 @@
         window.cancelRowEdit = function() {
             if (!currentlyEditingRow) return;
             currentlyEditingRow = null;
-            // Simply reload the report to restore original state cleanly
             loadWeeklyReport();
         };
 
@@ -1150,6 +1154,7 @@
                 const weekArray = Array.from(weeks).sort((a, b) => b.localeCompare(a));
                 
                 const select = document.getElementById('weekSelect');
+                const currentWeek = select.value;
                 select.innerHTML = '<option value="">Choose a week...</option>';
                 weekArray.forEach(week => {
                     const opt = document.createElement('option');
@@ -1157,6 +1162,7 @@
                     opt.textContent = `Week of ${week}`;
                     select.appendChild(opt);
                 });
+                if (currentWeek) select.value = currentWeek;
                 
                 const summarySelect = document.getElementById('summaryWeekSelect');
                 summarySelect.innerHTML = '<option value="">All weeks</option>';
@@ -1252,6 +1258,7 @@
         // ─────────────────────────────────────────────
         window.loadWeeklyReport = async function() {
             const weekCommencing = document.getElementById('weekSelect').value;
+            const prefixFilter = document.getElementById('jobNumberFilter').value;
             const reportDiv = document.getElementById('weeklyReport');
             const debugDiv = document.getElementById('debugInfo');
 
@@ -1289,6 +1296,7 @@
                 debugDiv.innerHTML = `
                     <strong>Debug Info:</strong><br>
                     Total CSV entries: ${csvCount} | Total manual entries: ${manualTotal} | In selected week: ${manualInWeek} | Week: ${weekCommencing}
+                    ${prefixFilter ? ` | Filtering by prefix: "${prefixFilter}"` : ''}
                 `;
 
                 if (manualEntries.length === 0) {
@@ -1296,7 +1304,7 @@
                     return;
                 }
 
-                const mergedEntries = manualEntries.map(manual => {
+                let mergedEntries = manualEntries.map(manual => {
                     const jobNum = (manual.jobNumber || '').trim();
                     const csvMatch = csvData[jobNum];
                     return {
@@ -1312,10 +1320,22 @@
                     };
                 });
 
+                // Apply job number prefix filter
+                if (prefixFilter) {
+                    mergedEntries = mergedEntries.filter(e =>
+                        (e.jobNumber || '').trim().toUpperCase().startsWith(prefixFilter.toUpperCase())
+                    );
+                }
+
                 mergedEntries.sort((a, b) => a.workDate.localeCompare(b.workDate));
 
                 const matchedCount = mergedEntries.filter(e => e.matched).length;
-                debugDiv.innerHTML += ` | Matched: ${matchedCount} / ${mergedEntries.length}`;
+                debugDiv.innerHTML += ` | Showing: ${mergedEntries.length} rows | Matched: ${matchedCount}`;
+
+                if (mergedEntries.length === 0) {
+                    reportDiv.innerHTML = `<div class="loading">No jobs found starting with "${prefixFilter}" for this week</div>`;
+                    return;
+                }
 
                 let html = `
                     <table>
@@ -1338,10 +1358,8 @@
                     const isComplete = entry.bookingStatus && entry.bookingStatus.toLowerCase().includes('complete');
                     const value = isComplete ? (jobTypeValues[entry.jobType] || 0) : 0;
                     const statusClass = isComplete ? 'status-complete' : 'status-pending';
-                    // Readable job type label
                     const jobTypeDisplay = jobTypeLabels[entry.jobType] || entry.jobType;
 
-                    // Encode original data for the edit button
                     const originalData = JSON.stringify({
                         workDate: entry.workDate,
                         name: entry.name,
