@@ -515,6 +515,16 @@
 
         document.addEventListener('keypress', e => { if (e.key === 'Enter' && !document.getElementById('loginScreen').classList.contains('hidden')) handleLogin(); });
 
+        // ── Normalise any Firestore date field to a plain "YYYY-MM-DD" string.
+        // Handles: plain string, Firestore Timestamp, JS Date object.
+        function normDate(val) {
+            if (!val) return null;
+            if (typeof val === 'string') return val.slice(0, 10);
+            if (typeof val.toDate === 'function') return val.toDate().toISOString().slice(0, 10);
+            if (val instanceof Date) return val.toISOString().slice(0, 10);
+            return String(val).slice(0, 10);
+        }
+
         function calcPayBreakdown(payment, dateObj) {
             const dow = dateObj.getDay(), isSat = dow===6, isSun = dow===0, isWknd = isSat||isSun;
             const m = dateObj.getMonth()+1, d = dateObj.getDate();
@@ -558,34 +568,71 @@
             ['additionalPaymentBtn','bonusPolicyBtn','quarterlyBonusBtn','mainFooter'].forEach(id=>document.getElementById(id).style.display='none');
 
             try {
+                // ── Fetch additional payments and normalise dates ──────────────────
+                // We fetch all payments for this engineer then filter client-side
+                // so we don't need a composite Firestore index.
                 const pmQ = query(collection(db,"additionalPayments"),where("engineerName","==",currentEngineer));
                 const pmSnap = await getDocs(pmQ);
                 additionalPayments = {};
                 const weekendWithPay = new Set();
                 pmSnap.forEach(doc=>{
-                    const d=doc.data(); const pd=d.date;
-                    if(pd>=startDate&&pd<=endDate){
-                        if(!additionalPayments[pd]) additionalPayments[pd]=[];
-                        additionalPayments[pd].push(d);
-                        const dow=new Date(pd+'T00:00:00').getDay();
-                        if(dow===0||dow===6) weekendWithPay.add(pd);
+                    const d = doc.data();
+                    const pd = normDate(d.date);          // normalise in case stored as Timestamp
+                    if (!pd) return;
+                    if (pd >= startDate && pd <= endDate) {
+                        if (!additionalPayments[pd]) additionalPayments[pd] = [];
+                        additionalPayments[pd].push({...d, date: pd});
+                        const dow = new Date(pd+'T00:00:00').getDay();
+                        if (dow===0||dow===6) weekendWithPay.add(pd);
                     }
                 });
 
-                const allDates=[];
-                for(let d=new Date(startDate+'T00:00:00');d<=new Date(endDate+'T00:00:00');d.setDate(d.getDate()+1)){
-                    const ds=d.toISOString().split('T')[0], dow=d.getDay();
-                    if((dow!==0&&dow!==6)||weekendWithPay.has(ds)) allDates.push(ds);
-                }
-
-                const [perfSnap,attSnap] = await Promise.all([
+                // ── Fetch performance and attendance, normalising dates ────────────
+                const [perfSnap, attSnap] = await Promise.all([
                     getDocs(query(collection(db,"performance"),where("engineerName","==",currentEngineer))),
                     getDocs(query(collection(db,"attendance"),where("engineerName","==",currentEngineer)))
                 ]);
-                const perfData={}, attData={};
-                perfSnap.forEach(doc=>{const d=doc.data();if(d.date>=startDate&&d.date<=endDate)perfData[d.date]=d;});
-                attSnap.forEach(doc=>{const d=doc.data();if(d.date>=startDate&&d.date<=endDate)attData[d.date]=d;});
 
+                const perfData={}, attData={};
+
+                perfSnap.forEach(doc=>{
+                    const d = doc.data();
+                    const pd = normDate(d.date);
+                    if (pd && pd>=startDate && pd<=endDate) perfData[pd] = {...d, date: pd};
+                });
+
+                attSnap.forEach(doc=>{
+                    const d = doc.data();
+                    const pd = normDate(d.date);
+                    if (pd && pd>=startDate && pd<=endDate) attData[pd] = {...d, date: pd};
+                });
+
+                // ── Build allDates ────────────────────────────────────────────────
+                // Start with every weekday (Mon-Fri) in the range.
+                // Then union in:
+                //   • weekend dates that have an additional payment
+                //   • any date with an attendance record  ← catches bank holidays like
+                //     Good Friday which are weekdays but may ONLY have att data
+                //   • any date with a performance record
+                // This ensures no date with real data is ever silently dropped.
+                const allDatesSet = new Set();
+
+                for (let d=new Date(startDate+'T00:00:00'); d<=new Date(endDate+'T00:00:00'); d.setDate(d.getDate()+1)) {
+                    const ds = d.toISOString().split('T')[0];
+                    const dow = d.getDay();
+                    if (dow!==0 && dow!==6) allDatesSet.add(ds);   // every weekday
+                }
+
+                weekendWithPay.forEach(ds => allDatesSet.add(ds));
+                Object.keys(attData).forEach(ds => allDatesSet.add(ds));
+                Object.keys(perfData).forEach(ds => allDatesSet.add(ds));
+
+                // Safety: strip anything outside the chosen range, then sort
+                const allDates = [...allDatesSet]
+                    .filter(ds => ds >= startDate && ds <= endDate)
+                    .sort();
+
+                // ── Bonus and jobs data ───────────────────────────────────────────
                 let bonusData={}, jobsData={};
                 let avgBonusByMonth = {};
 
@@ -801,21 +848,20 @@
             const year = new Date().getFullYear();
 
             try {
-                // ── Fetch quarterly figures and attendance in parallel ──
                 const [snap, attSnap] = await Promise.all([
                     getDocs(query(collection(db, 'Quarterly Figures'), where('engineerName', '==', currentEngineer))),
                     getDocs(query(collection(db, 'attendance'), where('engineerName', '==', currentEngineer)))
                 ]);
 
-                // Build a Set of holiday dates within Q1 of this year
                 const q1Start = `${year}-01-01`;
                 const q1End   = `${year}-03-31`;
                 const holidayDates = new Set();
                 attSnap.forEach(doc => {
                     const d = doc.data();
-                    if (d.date >= q1Start && d.date <= q1End) {
+                    const pd = normDate(d.date);
+                    if (pd && pd >= q1Start && pd <= q1End) {
                         if (d.attendance === 'H' || d.attendance === 'H/H') {
-                            holidayDates.add(d.date);
+                            holidayDates.add(pd);
                         }
                     }
                 });
@@ -828,9 +874,7 @@
                     const [docYear, docMonth] = (d.month || '').split('-').map(Number);
                     if (docYear === year && monthData[docMonth] !== undefined) {
                         (d.entries || []).forEach(e => {
-                            // ── Skip days where the engineer was on holiday ──
                             if (holidayDates.has(e.date)) return;
-
                             const m = parseFloat(e.meters) || 0;
                             if (!(e.date in monthData[docMonth])) {
                                 monthData[docMonth][e.date] = 0;
