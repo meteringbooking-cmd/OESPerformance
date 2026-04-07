@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Capacity Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #151b2e;
+            --bg-card: #1a2235;
+            --accent-primary: #00d4ff;
+            --accent-secondary: #7c3aed;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #2d3748;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow: rgba(0, 212, 255, 0.1);
+            --six-weeks: #ff4d4d;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #0f1425 50%, var(--bg-primary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(124, 58, 237, 0.03) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+        header {
+            margin-bottom: 3rem;
+            animation: slideDown 0.6s ease-out;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+            animation: fadeIn 0.6s ease-out 0.2s both;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: var(--bg-card);
+            padding: 1rem 1.5rem;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        .month-nav button {
+            background: transparent;
+            border: none;
+            color: var(--accent-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .month-nav button:hover {
+            background: rgba(0, 212, 255, 0.1);
+            transform: scale(1.1);
+        }
+        .current-month {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.3rem;
+            font-weight: 600;
+            min-width: 200px;
+            text-align: center;
+            letter-spacing: 0.02em;
+        }
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        select {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 0.75rem 1.25rem;
+            border-radius: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+        select:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-secondary);
+        }
+        /* Legend pill */
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid rgba(255,77,77,0.3);
+            border-radius: 12px;
+            font-size: 0.82rem;
+            color: var(--six-weeks);
+            font-weight: 500;
+        }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--six-weeks);
+            box-shadow: 0 0 6px rgba(255,77,77,0.6);
+            flex-shrink: 0;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+            animation: fadeIn 0.6s ease-out 0.4s both;
+        }
+        .day-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            cursor: default;
+        }
+        .day-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+        }
+
+        /* ── Next-6-weeks highlight ── */
+        .day-card.next-six-weeks {
+            border-color: rgba(255, 77, 77, 0.45);
+            box-shadow: 0 0 14px rgba(255, 77, 77, 0.18), inset 0 0 18px rgba(255, 77, 77, 0.04);
+            background: linear-gradient(145deg, #1a2235 70%, rgba(255,77,77,0.06) 100%);
+        }
+        .day-card.next-six-weeks::before {
+            background: linear-gradient(90deg, var(--six-weeks), #ff8080);
+        }
+        .six-weeks-badge {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: rgba(255, 77, 77, 0.15);
+            border: 1px solid rgba(255, 77, 77, 0.4);
+            color: var(--six-weeks);
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.15rem 0.4rem;
+            border-radius: 6px;
+            line-height: 1.4;
+        }
+        .day-name {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+            font-weight: 600;
+        }
+        .day-number {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .capacity-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .capacity-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        .capacity-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success), var(--accent-primary));
+            border-radius: 10px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .capacity-fill.medium {
+            background: linear-gradient(90deg, var(--warning), #fbbf24);
+        }
+        .capacity-fill.high {
+            background: linear-gradient(90deg, var(--danger), #f87171);
+        }
+        .capacity-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, var(--accent-primary), transparent);
+            opacity: 0.05;
+            transform: translate(30%, -30%);
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            background: linear-gradient(135deg, var(--accent-primary), var(--text-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+        .spinner {
+            border: 3px solid var(--bg-secondary);
+            border-top: 3px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-primary);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-secondary);
+        }
+        @media (max-width: 768px) {
+            h1 { font-size: 2rem; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .calendar-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const _cfg = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717"
+        };
+        const _app  = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(_cfg);
+        const _auth = getAuth(_app);
+        const _db   = getFirestore(_app);
+        document.documentElement.style.visibility = 'hidden';
+        onAuthStateChanged(_auth, async (user) => {
+            if (!user) { window.location.href = 'login.html'; return; }
+            const snap = await getDoc(doc(_db, 'users', user.uid));
+            if (!snap.exists()) { await _auth.signOut(); window.location.href = 'login.html'; return; }
+            document.documentElement.style.visibility = 'visible';
+            window.currentUser     = user;
+            window.currentUserRole = snap.data().role || 'viewer';
+            window.currentUserName = snap.data().name || user.email;
+        });
+    </script>
+
+    <div class="container">
+        <header>
+            <h1>Team Capacity</h1>
+            <div class="subtitle">Engineer availability across teams and contracts</div>
+        </header>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-label">Total Engineers</div>
+                <div class="stat-value" id="totalEngineers">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">On Holiday Today</div>
+                <div class="stat-value" id="holidayToday">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Capacity</div>
+                <div class="stat-value" id="avgCapacity">100%</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="month-nav">
+                <button id="prevMonth">‹</button>
+                <div class="current-month" id="currentMonth"></div>
+                <button id="nextMonth">›</button>
+            </div>
+            <div class="filter-group">
+                <select id="teamFilter">
+                    <option value="all">All Teams</option>
+                    <option value="Richard Wiecko">Richard Wiecko</option>
+                    <option value="Scott Carson - NE">Scott Carson - NE</option>
+                    <option value="Scott Carson - Scot">Scott Carson - Scot</option>
+                    <option value="Stuart Whyte">Stuart Whyte</option>
+                    <option value="FTL 4">FTL 4</option>
+                </select>
+                <select id="contractFilter">
+                    <option value="all">All Contracts</option>
+                    <option value="EDF">EDF</option>
+                    <option value="Scottish Power">Scottish Power</option>
+                    <option value="OES">OES</option>
+                </select>
+            </div>
+            <div class="legend">
+                <div class="legend-dot"></div>
+                Within next 6 weeks
+            </div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading calendar...
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const db = getFirestore(getApps()[0]);
+
+        function displayDate(str) {
+            return new Date(str);
+        }
+
+        function compareDate(str) {
+            return new Date(str + "T00:00:00Z");
+        }
+
+        function getSixWeekWindow() {
+            const today = new Date();
+            const start = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+            const end   = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 42);
+            return { start, end };
+        }
+
+        function isWithinSixWeeks(dateStr) {
+            const { start, end } = getSixWeekWindow();
+            const d = compareDate(dateStr);
+            return d >= start && d <= end;
+        }
+
+        let currentDate = new Date();
+        let engineers = [];
+        let holidays = [];
+
+        async function loadData() {
+            const engineersSnap = await getDocs(collection(db, 'capacity', 'data', 'engineers'));
+            engineers = engineersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            engineers.sort((a, b) => a.name.localeCompare(b.name));
+
+            const holidaysSnap = await getDocs(collection(db, 'capacity', 'data', 'holidays'));
+            holidays = holidaysSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+
+            const year  = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            document.getElementById('currentMonth').textContent = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            const lastDay = new Date(year, month + 1, 0);
+
+            const teamFilter     = document.getElementById('teamFilter').value;
+            const contractFilter = document.getElementById('contractFilter').value;
+            let filteredEngineers = engineers;
+            if (teamFilter     !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team     === teamFilter);
+            if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+
+            const totalEngineers = filteredEngineers.length;
+
+            for (let day = 1; day <= lastDay.getDate(); day++) {
+                const d          = new Date(year, month, day);
+                const dayOfWeek  = d.getDay();
+                const isWeekend  = dayOfWeek === 0 || dayOfWeek === 6;
+                const dateStr    = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const currentComp = compareDate(dateStr);
+                const inSixWeeks = !isWeekend && isWithinSixWeeks(dateStr);
+
+                const onHolidayCount = holidays.reduce((count, h) => {
+                    const start = compareDate(h.startDate);
+                    const end   = compareDate(h.endDate);
+                    const on    = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                    return on ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                }, 0);
+
+                const availablePercentage = totalEngineers > 0
+                    ? Math.round(((totalEngineers - onHolidayCount) / totalEngineers) * 100)
+                    : 100;
+
+                const dayCard = document.createElement('div');
+                dayCard.className = 'day-card';
+
+                let capacityClass = '';
+                let inlineStyle   = '';
+
+                if (isWeekend) {
+                    inlineStyle = 'background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); cursor: default;';
+                } else {
+                    if (availablePercentage < 85) {
+                        capacityClass = 'high';
+                        inlineStyle   = 'border: 2px solid var(--danger); box-shadow: 0 0 20px rgba(239,68,68,0.3);';
+                    } else if (availablePercentage < 90) {
+                        capacityClass = 'medium';
+                        inlineStyle   = 'border: 2px solid var(--warning); box-shadow: 0 0 20px rgba(245,158,11,0.3);';
+                    }
+                }
+
+                dayCard.setAttribute('style', inlineStyle);
+
+                if (inSixWeeks) {
+                    dayCard.classList.add('next-six-weeks');
+                    if (capacityClass) {
+                        const glowColor     = 'rgba(255,77,77,0.25)';
+                        const existingColor = capacityClass === 'high' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)';
+                        dayCard.setAttribute('style', inlineStyle.replace(
+                            /box-shadow:[^;]+/,
+                            `box-shadow: 0 0 20px ${existingColor}, 0 0 12px ${glowColor}`
+                        ));
+                    }
+                }
+
+                if (isWeekend) {
+                    dayCard.innerHTML = `
+                        <div class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                        <div class="day-number">${d.getDate()}</div>
+                    `;
+                } else {
+                    dayCard.innerHTML = `
+                        ${inSixWeeks ? '<span class="six-weeks-badge">6 wks</span>' : ''}
+                        <div class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                        <div class="day-number">${d.getDate()}</div>
+                        <div class="capacity-info">
+                            <div class="capacity-bar">
+                                <div class="capacity-fill ${capacityClass}" style="width: ${availablePercentage}%"></div>
+                            </div>
+                            <div class="capacity-text">${availablePercentage}% available</div>
+                        </div>
+                    `;
+                }
+
+                grid.appendChild(dayCard);
+            }
+        }
+
+        function updateStats() {
+            const teamFilter     = document.getElementById('teamFilter').value;
+            const contractFilter = document.getElementById('contractFilter').value;
+            let filteredEngineers = engineers;
+            if (teamFilter     !== 'all') filteredEngineers = filteredEngineers.filter(e => e.team     === teamFilter);
+            if (contractFilter !== 'all') filteredEngineers = filteredEngineers.filter(e => e.contract === contractFilter);
+
+            document.getElementById('totalEngineers').textContent = filteredEngineers.length;
+
+            const todayStr  = new Date().toISOString().split('T')[0];
+            const todayComp = compareDate(todayStr);
+
+            const holidayToday = holidays.reduce((count, h) => {
+                const start = compareDate(h.startDate);
+                const end   = compareDate(h.endDate);
+                const on    = todayComp >= start && todayComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                return on ? count + (h.type === 'half' ? 0.5 : 1) : count;
+            }, 0);
+            document.getElementById('holidayToday').textContent = holidayToday;
+
+            const year    = currentDate.getFullYear();
+            const month   = currentDate.getMonth();
+            const lastDay = new Date(year, month + 1, 0);
+
+            let totalCapacity = 0;
+            let workingDays   = 0;
+
+            for (let day = 1; day <= lastDay.getDate(); day++) {
+                const d          = new Date(year, month, day);
+                const dayOfWeek  = d.getDay();
+                if (dayOfWeek < 1 || dayOfWeek > 5) continue;
+
+                workingDays++;
+                const dateStr     = d.toISOString().split('T')[0];
+                const currentComp = compareDate(dateStr);
+
+                const onHolidayCount = holidays.reduce((count, h) => {
+                    const start = compareDate(h.startDate);
+                    const end   = compareDate(h.endDate);
+                    const on    = currentComp >= start && currentComp <= end && filteredEngineers.some(e => e.id === h.engineerId);
+                    return on ? count + (h.type === 'half' ? 0.5 : 1) : count;
+                }, 0);
+
+                const capacity = filteredEngineers.length > 0
+                    ? ((filteredEngineers.length - onHolidayCount) / filteredEngineers.length) * 100
+                    : 100;
+                totalCapacity += capacity;
+            }
+
+            const avgCapacity = workingDays > 0 ? Math.round(totalCapacity / workingDays) : 100;
+            document.getElementById('avgCapacity').textContent = avgCapacity + '%';
+        }
+
+        function setupEventListeners() {
+            document.getElementById('prevMonth').addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() - 1);
+                renderCalendar();
+                updateStats();
+            });
+
+            document.getElementById('nextMonth').addEventListener('click', () => {
+                currentDate.setMonth(currentDate.getMonth() + 1);
+                renderCalendar();
+                updateStats();
+            });
+
+            document.getElementById('teamFilter').addEventListener('change', () => {
+                renderCalendar();
+                updateStats();
+            });
+
+            document.getElementById('contractFilter').addEventListener('change', () => {
+                renderCalendar();
+                updateStats();
+            });
+        }
+
+        async function init() {
+            await loadData();
+            renderCalendar();
+            setupEventListeners();
+            updateStats();
+        }
+
+        init();
+    </script>
+</body>
+</html>
