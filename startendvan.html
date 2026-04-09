@@ -927,31 +927,40 @@
             const EXCLUDED_PLATES = ['YF74RMY','WN25FCJ','HK25ZKO','YL74ETZ'];
             function isExcluded(registration) {
                 const regUp = (registration || '').toUpperCase();
-                return EXCLUDED_PLATES.some(plate => regUp.includes(plate));
+                return EXCLUDED_PLATES.some(plate => regUp.startsWith(plate));
             }
 
             /**
-             * Strip a leading UK-style registration plate from a driver string.
-             * e.g. "BT25UWM Daniel Nally" → "Daniel Nally"
-             *      "Daniel Nally"         → "Daniel Nally"  (unchanged)
-             * Handles plates like AB12 CDE, AB12CDE, AB12 CDE 123 etc.
+             * The van data stores "YE74BUU Richard Lang" in j.registration
+             * and leaves j.driver empty. Strip the plate prefix to get the name.
              */
-            function stripPlate(driverStr) {
-                if (!driverStr) return '';
-                // UK plate pattern: 2 letters, 2 digits, optional space, 3 letters
-                // (covers current and older formats)
-                const platePrefixRe = /^[A-Z]{1,3}\s*\d{1,4}\s*[A-Z]{0,3}\s+/i;
-                return driverStr.replace(platePrefixRe, '').trim();
+            function stripPlate(str) {
+                if (!str) return '';
+                return str.replace(/^[A-Z]{1,3}\d{2,4}\s*[A-Z]{2,3}\s+/i, '').trim();
+            }
+
+            /** Return just the plate token from a "PLATE Name" string */
+            function getPlateOnly(regStr) {
+                if (!regStr) return regStr;
+                const m = regStr.match(/^([A-Z]{1,3}\d{2,4}\s*[A-Z]{2,3})/i);
+                return m ? m[1].toUpperCase() : regStr;
             }
 
             /**
-             * Match a driver string against the absentPeople lookup.
-             * Strips any plate prefix first, then does fuzzy name matching.
+             * Get the driver name from a journey record.
+             * Name is embedded in j.registration ("YE74BUU Richard Lang").
+             * Falls back to j.driver if it ever has content.
              */
-            function matchDriver(driverRaw, absentPeople) {
-                if (!driverRaw) return null;
-                const driverName  = stripPlate(driverRaw);
-                const dLower      = driverName.toLowerCase();
+            function getDriverName(j) {
+                return stripPlate((j.registration || '').trim())
+                    || stripPlate((j.driver || '').trim())
+                    || '';
+            }
+
+            /** Fuzzy match a plain name string against the absentPeople map. */
+            function matchName(nameStr, absentPeople) {
+                if (!nameStr) return null;
+                const dLower = nameStr.toLowerCase().trim();
                 if (!dLower) return null;
                 for (const [k, v] of Object.entries(absentPeople)) {
                     if (
@@ -1095,32 +1104,6 @@
                 const absentCodes  = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
                 const absentPeople = {};
 
-                // ── DEBUG: log ALL attendance docs for this date (not just absent) ──
-                console.group(`%c[MWO DEBUG] Date: ${dateVal}`, 'color:#f59e0b;font-weight:bold');
-                console.log('OES attendance total docs:', oesSnap.size);
-                console.log('SP attendance total docs:', spSnap.size);
-
-                let oesDateMatches = 0, spDateMatches = 0;
-                oesSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.date === dateVal) {
-                        oesDateMatches++;
-                        console.log(`  OES match → engineerName: "${d.engineerName}" | attendance: "${d.attendance}" | date: "${d.date}"`);
-                    }
-                });
-                spSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.date === dateVal) {
-                        spDateMatches++;
-                        console.log(`  SP match  → engineerName: "${d.engineerName}" | attendance: "${d.attendance}" | date: "${d.date}"`);
-                    }
-                });
-                console.log(`OES records on ${dateVal}: ${oesDateMatches} | SP records: ${spDateMatches}`);
-
-                // Sample a few journey driver fields so we can see the raw format
-                console.log('Sample journey driver fields (first 10):');
-                journeys.slice(0, 10).forEach(j => console.log(`  reg: "${j.registration}" | driver raw: "${j.driver}"`));
-
                 oesSnap.forEach(doc => {
                     const d = doc.data();
                     if (d.date !== dateVal) return;
@@ -1139,19 +1122,17 @@
                     }
                 });
 
-                console.log('absentPeople built (absent codes only):', Object.keys(absentPeople).length, absentPeople);
-                console.groupEnd();
-
                 if (nwdInfo.isNonWorkingDay) {
                     const flagged = {};
                     journeys.forEach(j => {
-                        const driverRaw = (j.driver || '').trim();
-                        const regRaw    = (j.registration || '').trim();
-                        const key = regRaw || 'Unknown';
+                        const regRaw     = (j.registration || '').trim();
+                        const plateOnly  = getPlateOnly(regRaw);
+                        const driverName = getDriverName(j);
+                        const key = plateOnly || 'Unknown';
                         if (!flagged[key]) {
-                            const match = matchDriver(driverRaw, absentPeople);
+                            const match = matchName(driverName, absentPeople);
                             flagged[key] = {
-                                reg: regRaw, driver: stripPlate(driverRaw) || driverRaw,
+                                reg: plateOnly, driver: driverName,
                                 status: match ? match.status : nwdInfo.label,
                                 source: match ? match.source : '—',
                                 isAbsent: !!match,
@@ -1198,13 +1179,14 @@
                     `;
                     const flagged = {};
                     journeys.forEach(j => {
-                        const driverRaw = (j.driver || '').trim();
                         const regRaw    = (j.registration || '').trim();
-                        const match = matchDriver(driverRaw, absentPeople);
+                        const plateOnly = getPlateOnly(regRaw);
+                        const driverName = getDriverName(j);
+                        const match = matchName(driverName, absentPeople);
                         if (!match) return;
-                        const key = regRaw || 'Unknown';
+                        const key = plateOnly || 'Unknown';
                         if (!flagged[key]) {
-                            flagged[key] = { reg: regRaw, driver: stripPlate(driverRaw) || driverRaw, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
+                            flagged[key] = { reg: plateOnly, driver: driverName, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
                         }
                         const g  = flagged[key];
                         const st = j.startTime ? new Date(j.startTime) : null;
