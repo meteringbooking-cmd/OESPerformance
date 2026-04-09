@@ -128,12 +128,6 @@
         .nwd-banner { display: none; align-items: center; gap: 12px; background: linear-gradient(135deg, rgba(167,139,250,0.1), rgba(251,113,133,0.1)); border: 1px solid rgba(167,139,250,0.3); border-radius: 12px; padding: 14px 20px; margin-bottom: 20px; font-size: 0.9em; font-weight: 600; color: var(--accent-violet); }
         .nwd-banner.visible { display: flex; }
         .nwd-banner .nwd-icon { font-size: 1.3em; }
-        .att-preview-wrap { margin-top: 20px; display: none; }
-        .att-preview-wrap.visible { display: block; }
-        .att-preview-title { font-family: 'DM Mono', monospace; font-size: 0.75em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--success); margin-bottom: 10px; }
-        .att-preview-table thead tr { background: rgba(52,211,153,0.06); }
-        .att-preview-table th { color: var(--success); opacity: 0.8; }
-        .att-preview-table tbody tr:hover { background: rgba(52,211,153,0.04); }
     </style>
 </head>
 <body>
@@ -188,15 +182,6 @@
             <strong>Engineer Name</strong> — full name &nbsp;|&nbsp;
             <strong>Attendance</strong> — e.g. <code>Sick</code>, <code>H</code>, <code>AAUP</code>, <code>X</code><br>
             Rows with <code>X</code> (present) are stored but won't trigger the Movement Whilst Off alert.
-        </div>
-        <div class="att-preview-wrap" id="attPreviewWrap">
-            <div class="att-preview-title" id="attPreviewTitle">Loaded attendance</div>
-            <div class="table-wrap">
-                <table class="att-preview-table">
-                    <thead><tr><th>Registration</th><th>Engineer Name</th><th>Attendance</th><th>Source</th></tr></thead>
-                    <tbody id="attPreviewBody"></tbody>
-                </table>
-            </div>
         </div>
     </div>
 
@@ -359,7 +344,6 @@ function getNonWorkingDayInfo(ds) {
     return {isNonWorkingDay:isNWD,isWeekend,isBankHoliday:isBH,label,dayName:names[dow]};
 }
 
-/** Extract clean UK plate (no spaces, uppercase) from any string e.g. "YE74BUU Richard Lang" → "YE74BUU" */
 function extractPlate(str) {
     if (!str) return '';
     const s = str.toString().trim().toUpperCase();
@@ -410,26 +394,14 @@ async function batchDelete(dateVal, coll, field) {
 async function checkAttExisting() {
     const dv=document.getElementById('attDate').value;
     const banner=document.getElementById('attReplaceBanner');
-    const preview=document.getElementById('attPreviewWrap');
     if(!dv||!window._db){banner.classList.remove('visible');return;}
     try {
         const snap=await window._getDocs(window._query(window._collection(window._db,'Van Attendance'),window._where('date','==',dv)));
         if(snap.size>0){
             document.getElementById('attReplaceBannerText').innerHTML=`⚠️ <strong>${snap.size} attendance record${snap.size!==1?'s':''}</strong> already exist for <strong>${dv}</strong> — uploading will replace them.`;
             banner.classList.add('visible');
-            const rows=[];snap.forEach(d=>rows.push(d.data()));
-            rows.sort((a,b)=>a.registration.localeCompare(b.registration));
-            document.getElementById('attPreviewTitle').textContent=`${rows.length} attendance record(s) loaded for ${dv}`;
-            document.getElementById('attPreviewBody').innerHTML=rows.map(r=>`<tr>
-                <td style="font-weight:700;color:var(--success);font-family:'DM Mono',monospace">${esc(r.registration)}</td>
-                <td class="muted">${esc(r.engineerName)}</td>
-                <td style="color:${ABSENT_CODES.has((r.attendance||'').toLowerCase())?'var(--accent-rose)':'var(--success)'};font-weight:600">${esc(r.attendance)}</td>
-                <td class="source-oes">${esc(r.source)}</td>
-            </tr>`).join('');
-            preview.classList.add('visible');
         } else {
             banner.classList.remove('visible');
-            preview.classList.remove('visible');
         }
     } catch(e){banner.classList.remove('visible');}
 }
@@ -465,7 +437,6 @@ async function uploadAttendance() {
 
             const records=[];
             rows.forEach(row=>{
-                // Registration column may contain "YE74BUU Richard Lang" or just "YE74BUU"
                 const rawReg=(row[colReg]||'').toString().trim();
                 const plate=extractPlate(rawReg);
                 const name=colName?(row[colName]||'').toString().trim():'';
@@ -587,7 +558,6 @@ async function loadJourneys(){
     ['summaryRow','after5SummaryRow','absentSummaryRow','sodSummaryRow'].forEach(id=>document.getElementById(id).innerHTML='');
     window._sodData=[]; window._after5Data=[]; window._usageData=[];
 
-    // Panel mode UI
     const aIcon=document.getElementById('after5PanelIcon'), aTitle=document.getElementById('after5PanelTitle'), aSub=document.getElementById('after5PanelSubtitle');
     const aTbl=document.getElementById('after5Table'), aLCol=document.getElementById('after5LastCol');
     const aNwdB=document.getElementById('after5NwdBanner'), aNwdT=document.getElementById('after5NwdText');
@@ -614,7 +584,6 @@ async function loadJourneys(){
     }
 
     try {
-        // Fetch journeys
         const jSnap=await window._getDocs(window._collection(window._db,'Van Start and End'));
         const journeys=[];
         jSnap.forEach(d=>{
@@ -625,9 +594,7 @@ async function loadJourneys(){
         });
         journeys.sort((a,b)=>(a.startTime?new Date(a.startTime):0)-(b.startTime?new Date(b.startTime):0));
 
-        // Fetch Van Attendance for this date → plate map
         const attSnap=await window._getDocs(window._query(window._collection(window._db,'Van Attendance'),window._where('date','==',dv)));
-        // plateMap[PLATE] = { engineerName, attendance, source }
         const plateMap={};
         attSnap.forEach(d=>{
             const r=d.data();
@@ -675,7 +642,7 @@ async function loadJourneys(){
             renderAfter5Table('latestMins','desc');
         }
 
-        // ══ MOVEMENT WHILST OFF — EXACT PLATE MATCH ══
+        // ══ MOVEMENT WHILST OFF ══
         const abBody=document.getElementById('absentBody');
         const abSumm=document.getElementById('absentSummaryRow');
 
@@ -684,7 +651,6 @@ async function loadJourneys(){
         } else if(!journeys.length){
             abBody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No journey data for this date</p></div></td></tr>';
         } else {
-            // Group journeys by plate
             const byPlate={};
             journeys.forEach(j=>{
                 const p=j._plate||'?';
@@ -695,7 +661,6 @@ async function loadJourneys(){
             });
 
             if(nwd.isNonWorkingDay){
-                // Weekend/BH: show ALL vehicles, annotate with attendance info
                 const rows=Object.values(byPlate).map(g=>{
                     const att=plateMap[g.reg]||null;
                     return{...g,att,isAbsent:att?ABSENT_CODES.has(att.attendance.toLowerCase()):false};
@@ -713,7 +678,6 @@ async function loadJourneys(){
                 }).join('');
 
             } else {
-                // Weekday: only show plates that are in attendance AND absent
                 document.getElementById('absentTableHead').innerHTML='<th>Registration</th><th>Engineer Name</th><th>Attendance</th><th>Source</th><th>Journeys</th><th>Total Miles</th><th>Total Duration</th><th>First Journey</th><th>Last Journey</th>';
                 const flagged=Object.values(byPlate).map(g=>{
                     const att=plateMap[g.reg];
