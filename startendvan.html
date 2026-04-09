@@ -217,6 +217,24 @@
         .progress-track { height: 6px; background: rgba(148,163,184,0.1); border-radius: 99px; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--gradient-btn); border-radius: 99px; width: 0%; transition: width 0.15s ease; }
 
+        /* Replace-mode banner */
+        .replace-banner {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(251,113,133,0.1));
+            border: 1px solid rgba(245,158,11,0.35);
+            border-radius: 10px;
+            padding: 12px 18px;
+            margin-top: 14px;
+            font-size: 0.88em;
+            font-weight: 600;
+            color: var(--accent-amber);
+            animation: fadeSlide 0.3s ease-out;
+        }
+        .replace-banner.visible { display: flex; }
+        .replace-banner .rb-icon { font-size: 1.2em; }
+
         .status-message {
             padding: 14px 20px;
             border-radius: 10px;
@@ -357,7 +375,7 @@
         <div class="upload-grid">
             <div class="form-group">
                 <label class="form-label">Date</label>
-                <input type="date" id="uploadDate">
+                <input type="date" id="uploadDate" onchange="checkExistingData()">
             </div>
             <div class="form-group">
                 <label class="form-label">Journey File (.xlsx / .xls / .csv)</label>
@@ -365,6 +383,13 @@
             </div>
             <button class="btn" id="uploadBtn" onclick="uploadJourneyData()">Upload</button>
         </div>
+
+        <!-- Replace-mode warning banner -->
+        <div class="replace-banner" id="replaceBanner">
+            <span class="rb-icon">🔄</span>
+            <span id="replaceBannerText">Existing data found for this date — uploading will <strong>replace</strong> all current records.</span>
+        </div>
+
         <div class="progress-wrap" id="uploadProgress">
             <div class="progress-label" id="uploadProgressLabel">Uploading…</div>
             <div class="progress-track"><div class="progress-bar" id="uploadProgressBar"></div></div>
@@ -510,7 +535,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import {
+        getFirestore, collection, addDoc, serverTimestamp,
+        getDocs, query, where, deleteDoc, doc, writeBatch
+    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -525,20 +553,25 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    window._db = db;
-    window._addDoc = addDoc;
-    window._collection = collection;
+    window._db             = db;
+    window._addDoc         = addDoc;
+    window._collection     = collection;
     window._serverTimestamp = serverTimestamp;
-    window._getDocs = getDocs;
-    window._query = query;
-    window._where = where;
+    window._getDocs        = getDocs;
+    window._query          = query;
+    window._where          = where;
+    window._deleteDoc      = deleteDoc;
+    window._doc            = doc;
+    window._writeBatch     = writeBatch;
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fmt = d => d.toISOString().split('T')[0];
     document.getElementById('uploadDate').value = fmt(yesterday);
-    document.getElementById('viewDate').value = fmt(yesterday);
+    document.getElementById('viewDate').value   = fmt(yesterday);
 
+    // Check for existing data on the default date
+    checkExistingData();
     loadJourneys();
 </script>
 
@@ -570,47 +603,25 @@
         return { isNonWorkingDay, isWeekend, isBankHoliday, label, dayName };
     }
 
-    /**
-     * Parse a time/datetime cell from the spreadsheet.
-     * Always grafts onto uploadDate when the value has no date component.
-     *
-     * Supported formats:
-     *   - Excel time fraction  (0 <= n < 1)  e.g. 0.29236
-     *   - Excel datetime serial (n >= 1)      e.g. 46113.29236
-     *   - "HH:MM:SS" or "HH:MM"              (time-only string)
-     *   - "DD/MM/YYYY HH:MM:SS" or "DD/MM/YYYY HH:MM"
-     *   - ISO 8601 / anything JS Date can parse
-     */
     function parseTimeWithDate(raw, uploadDate) {
         if (raw === null || raw === undefined || raw === '') return null;
-
-        // ── Excel serial number ──────────────────────────────────────────
         if (typeof raw === 'number') {
             const parsed = XLSX.SSF.parse_date_code(raw);
             if (!parsed) return null;
             if (raw < 1) {
-                // Pure time fraction — graft date from uploadDate
                 const [y, mo, dy] = uploadDate.split('-').map(Number);
                 return new Date(y, mo - 1, dy, parsed.H, parsed.M, Math.floor(parsed.S));
             }
-            // Full datetime serial
             return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H, parsed.M, Math.floor(parsed.S));
         }
-
         const s = raw.toString().trim();
-
-        // ── HH:MM:SS or HH:MM (no date) — graft uploadDate ──────────────
         const timeOnly = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
         if (timeOnly) {
             const [y, mo, dy] = uploadDate.split('-').map(Number);
             return new Date(y, mo - 1, dy, +timeOnly[1], +timeOnly[2], timeOnly[3] ? +timeOnly[3] : 0);
         }
-
-        // ── DD/MM/YYYY HH:MM or DD/MM/YYYY HH:MM:SS ─────────────────────
         const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
         if (dmy) return new Date(+dmy[3], +dmy[2]-1, +dmy[1], +dmy[4], +dmy[5], dmy[6] ? +dmy[6] : 0);
-
-        // ── Fallback: ISO / JS-native ────────────────────────────────────
         const d = new Date(s);
         return isNaN(d) ? null : d;
     }
@@ -647,31 +658,83 @@
         return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
     }
 
-    async function uploadJourneyData() {
+    // ── CHECK FOR EXISTING DATA (shows replace banner) ────────────────────
+    async function checkExistingData() {
         const dateVal = document.getElementById('uploadDate').value;
+        const banner  = document.getElementById('replaceBanner');
+        const bannerText = document.getElementById('replaceBannerText');
+        if (!dateVal || !window._db) { banner.classList.remove('visible'); return; }
+        try {
+            const snap = await window._getDocs(
+                window._query(
+                    window._collection(window._db, 'Van Start and End'),
+                    window._where('journeyDate', '==', dateVal)
+                )
+            );
+            if (snap.size > 0) {
+                bannerText.innerHTML = `⚠️ <strong>${snap.size} existing record${snap.size !== 1 ? 's' : ''}</strong> found for <strong>${dateVal}</strong> — uploading will <strong>replace</strong> all of them with the new file.`;
+                banner.classList.add('visible');
+            } else {
+                banner.classList.remove('visible');
+            }
+        } catch (e) {
+            banner.classList.remove('visible');
+        }
+    }
+    window.checkExistingData = checkExistingData;
+
+    // ── DELETE ALL RECORDS FOR A DATE (batched) ───────────────────────────
+    async function deleteRecordsForDate(dateVal, setProgress) {
+        const snap = await window._getDocs(
+            window._query(
+                window._collection(window._db, 'Van Start and End'),
+                window._where('journeyDate', '==', dateVal)
+            )
+        );
+        if (snap.empty) return 0;
+
+        const docs = [];
+        snap.forEach(d => docs.push(d));
+        const BATCH_SIZE = 400; // Firestore limit is 500 per batch
+        let deleted = 0;
+
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+            const batch = window._writeBatch(window._db);
+            docs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+            await batch.commit();
+            deleted += Math.min(BATCH_SIZE, docs.length - i);
+            if (setProgress) setProgress(deleted, docs.length);
+        }
+        return deleted;
+    }
+
+    // ── UPLOAD (delete-then-replace) ─────────────────────────────────────
+    async function uploadJourneyData() {
+        const dateVal   = document.getElementById('uploadDate').value;
         const fileInput = document.getElementById('journeyFile');
         if (!dateVal) { showStatus('Please select a date', 'error', 'uploadStatus'); return; }
         if (!fileInput.files.length) { showStatus('Please select a file', 'error', 'uploadStatus'); return; }
 
-        const btn = document.getElementById('uploadBtn');
+        const btn          = document.getElementById('uploadBtn');
         const progressWrap  = document.getElementById('uploadProgress');
         const progressBar   = document.getElementById('uploadProgressBar');
         const progressLabel = document.getElementById('uploadProgressLabel');
+        const replaceBanner = document.getElementById('replaceBanner');
         const setProgress   = (pct, label) => { progressBar.style.width = pct + '%'; progressLabel.textContent = label; };
 
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span>Reading file…';
         progressWrap.classList.add('visible');
-        setProgress(5, 'Reading file…');
+        replaceBanner.classList.remove('visible');
+        setProgress(2, 'Reading file…');
 
         const reader = new FileReader();
         reader.onload = async function(e) {
             try {
-                setProgress(15, 'Parsing spreadsheet…');
+                setProgress(8, 'Parsing spreadsheet…');
                 const data = new Uint8Array(e.target.result);
-                const wb = XLSX.read(data, { type:'array' });
+                const wb   = XLSX.read(data, { type:'array' });
 
-                // raw:true → dates stay as Excel serial numbers; we handle them in parseTimeWithDate
                 const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true });
 
                 let headerIdx = 0;
@@ -723,18 +786,32 @@
                     if (milesVal > 0.1) validRows.push({ row, milesVal });
                 }
 
-                setProgress(20, `Uploading 0 of ${validRows.length}…`);
-                const db = window._db;
-                let saved = 0, skipped = rows.length - 1 - validRows.length;
+                // ── STEP 1: Delete existing records for this date ──────────
+                setProgress(12, 'Checking for existing records…');
+                btn.innerHTML = '<span class="spinner"></span>Removing old data…';
+
+                const deleted = await deleteRecordsForDate(dateVal, (done, total) => {
+                    const pct = 12 + Math.round((done / total) * 8);
+                    setProgress(pct, `Removing ${done} of ${total} old records…`);
+                });
+
+                if (deleted > 0) {
+                    setProgress(20, `Removed ${deleted} old records — uploading fresh data…`);
+                } else {
+                    setProgress(20, `No existing records — uploading ${validRows.length} journeys…`);
+                }
+
+                // ── STEP 2: Upload fresh records ───────────────────────────
+                btn.innerHTML = `<span class="spinner"></span>0 / ${validRows.length}`;
+                let saved = 0;
+                const skipped = rows.length - 1 - validRows.length;
 
                 for (let vi = 0; vi < validRows.length; vi++) {
                     const { row, milesVal } = validRows[vi];
                     const startTimeRaw = C.startTime >= 0 ? row[C.startTime] : null;
                     const endTimeRaw   = C.endTime   >= 0 ? row[C.endTime]   : null;
-
-                    // Use uploadDate to fill in date for time-only values
-                    const startDt = parseTimeWithDate(startTimeRaw, dateVal);
-                    const endDt   = parseTimeWithDate(endTimeRaw,   dateVal);
+                    const startDt      = parseTimeWithDate(startTimeRaw, dateVal);
+                    const endDt        = parseTimeWithDate(endTimeRaw,   dateVal);
 
                     const rec = {
                         registration:  C.reg      >= 0 ? (row[C.reg]||'').toString().trim()   : '',
@@ -753,31 +830,35 @@
                         maxSpeed:      C.maxSpeed >= 0 ? (row[C.maxSpeed]||'').toString().trim() : '',
                         startPostcode: C.startPC  >= 0 ? (row[C.startPC]||'').toString().trim()  : '',
                         endPostcode:   C.endPC    >= 0 ? (row[C.endPC]||'').toString().trim()    : '',
-                        journeyDate:   dateVal,   // always the selected upload date
+                        journeyDate:   dateVal,
                         uploadDate:    dateVal,
                         timestamp:     window._serverTimestamp(),
                     };
 
-                    await window._addDoc(window._collection(db, 'Van Start and End'), rec);
+                    await window._addDoc(window._collection(window._db, 'Van Start and End'), rec);
                     saved++;
-                    const pct = 20 + Math.round((saved / validRows.length) * 75);
+                    const pct = 20 + Math.round((saved / validRows.length) * 78);
                     setProgress(pct, `Uploading ${saved} of ${validRows.length}…`);
                     btn.innerHTML = `<span class="spinner"></span>${saved} / ${validRows.length}`;
                 }
 
                 setProgress(100, `✓ Complete — ${saved} journeys uploaded`);
                 btn.innerHTML = 'Upload';
-                btn.disabled = false;
-                setTimeout(() => { progressWrap.classList.remove('visible'); progressBar.style.width = '0%'; }, 3000);
-                showStatus(`✓ Uploaded ${saved} journeys (${skipped} skipped — ≤0.1 miles)`, 'success', 'uploadStatus');
+                btn.disabled  = false;
+                setTimeout(() => { progressWrap.classList.remove('visible'); progressBar.style.width = '0%'; }, 3500);
+
+                const replaceMsg = deleted > 0 ? ` (replaced ${deleted} old records)` : '';
+                showStatus(`✓ Uploaded ${saved} journeys${replaceMsg} — ${skipped} skipped (≤0.1 miles)`, 'success', 'uploadStatus');
                 fileInput.value = '';
+
                 if (document.getElementById('viewDate').value === dateVal) loadJourneys();
 
             } catch (err) {
                 btn.innerHTML = 'Upload';
-                btn.disabled = false;
+                btn.disabled  = false;
                 progressWrap.classList.remove('visible');
                 showStatus('Error: ' + err.message, 'error', 'uploadStatus');
+                console.error(err);
             }
         };
         reader.readAsArrayBuffer(fileInput.files[0]);
@@ -902,7 +983,6 @@
                     }
                     sodByReg[r].journeys++;
                     sodByReg[r].miles += j.miles;
-                    // Only update firstTime for journeys with a valid start AND > 0.1 miles
                     if (st && j.miles > 0.1 && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
                         sodByReg[r].firstTime = st;
                         sodByReg[r].firstMins = st.getHours() * 60 + st.getMinutes();
@@ -910,7 +990,6 @@
                     }
                 });
 
-                // Flag only vehicles with a valid start time that is after 08:00
                 window._sodData = Object.values(sodByReg).filter(r => r.firstTime !== null && r.firstMins >= 8 * 60);
                 const totalVehicles = Object.keys(sodByReg).length;
                 const lateCount     = window._sodData.length;
