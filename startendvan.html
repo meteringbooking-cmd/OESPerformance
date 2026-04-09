@@ -930,6 +930,41 @@
                 return EXCLUDED_PLATES.some(plate => regUp.includes(plate));
             }
 
+            /**
+             * Strip a leading UK-style registration plate from a driver string.
+             * e.g. "BT25UWM Daniel Nally" → "Daniel Nally"
+             *      "Daniel Nally"         → "Daniel Nally"  (unchanged)
+             * Handles plates like AB12 CDE, AB12CDE, AB12 CDE 123 etc.
+             */
+            function stripPlate(driverStr) {
+                if (!driverStr) return '';
+                // UK plate pattern: 2 letters, 2 digits, optional space, 3 letters
+                // (covers current and older formats)
+                const platePrefixRe = /^[A-Z]{1,3}\s*\d{1,4}\s*[A-Z]{0,3}\s+/i;
+                return driverStr.replace(platePrefixRe, '').trim();
+            }
+
+            /**
+             * Match a driver string against the absentPeople lookup.
+             * Strips any plate prefix first, then does fuzzy name matching.
+             */
+            function matchDriver(driverRaw, absentPeople) {
+                if (!driverRaw) return null;
+                const driverName  = stripPlate(driverRaw);
+                const dLower      = driverName.toLowerCase();
+                if (!dLower) return null;
+                for (const [k, v] of Object.entries(absentPeople)) {
+                    if (
+                        dLower === k ||
+                        dLower.includes(k) ||
+                        k.includes(dLower) ||
+                        k.split(' ').some(part => part.length > 2 && dLower.includes(part)) ||
+                        dLower.split(' ').some(part => part.length > 2 && k.includes(part))
+                    ) { return v; }
+                }
+                return null;
+            }
+
             const snap = await window._getDocs(window._collection(window._db, 'Van Start and End'));
             const journeys = [];
             snap.forEach(doc => {
@@ -1085,16 +1120,9 @@
                         const regRaw    = (j.registration || '').trim();
                         const key = regRaw || 'Unknown';
                         if (!flagged[key]) {
-                            let match = null;
-                            if (driverRaw) {
-                                const dLower = driverRaw.toLowerCase();
-                                for (const [k, v] of Object.entries(absentPeople)) {
-                                    if (dLower.includes(k) || k.includes(dLower) ||
-                                        k.split(' ').some(part => part.length > 2 && dLower.includes(part))) { match = v; break; }
-                                }
-                            }
+                            const match = matchDriver(driverRaw, absentPeople);
                             flagged[key] = {
-                                reg: regRaw, driver: driverRaw,
+                                reg: regRaw, driver: stripPlate(driverRaw) || driverRaw,
                                 status: match ? match.status : nwdInfo.label,
                                 source: match ? match.source : '—',
                                 isAbsent: !!match,
@@ -1143,23 +1171,11 @@
                     journeys.forEach(j => {
                         const driverRaw = (j.driver || '').trim();
                         const regRaw    = (j.registration || '').trim();
-                        let match = null;
-                        if (driverRaw) {
-                            const dLower = driverRaw.toLowerCase();
-                            for (const [k, v] of Object.entries(absentPeople)) {
-                                if (dLower.includes(k) || k.includes(dLower) ||
-                                    k.split(' ').some(part => part.length > 2 && dLower.includes(part))) { match = v; break; }
-                            }
-                        }
-                        if (!match) {
-                            for (const [k, v] of Object.entries(absentPeople)) {
-                                if (k.includes(regRaw.toLowerCase())) { match = v; break; }
-                            }
-                        }
+                        const match = matchDriver(driverRaw, absentPeople);
                         if (!match) return;
                         const key = regRaw || 'Unknown';
                         if (!flagged[key]) {
-                            flagged[key] = { reg: regRaw, driver: driverRaw, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
+                            flagged[key] = { reg: regRaw, driver: stripPlate(driverRaw) || driverRaw, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
                         }
                         const g  = flagged[key];
                         const st = j.startTime ? new Date(j.startTime) : null;
