@@ -211,13 +211,61 @@
             margin-right: 7px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Debug panel */
+        .debug-panel {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(167,139,250,0.25);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .debug-panel.visible { display: block; }
+        .debug-title {
+            font-size: 0.75em; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.8px; color: var(--accent-violet); margin-bottom: 10px;
+        }
+        .debug-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 768px) { .debug-grid { grid-template-columns: 1fr; } }
+        .debug-col-title {
+            font-size: 0.72em; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.6px; color: var(--text-secondary); margin-bottom: 6px;
+        }
+        .debug-list {
+            font-family: 'DM Mono', monospace;
+            font-size: 0.72em;
+            color: var(--text-secondary);
+            max-height: 180px;
+            overflow-y: auto;
+            line-height: 1.8;
+        }
+        .debug-list .matched { color: var(--success); }
+        .debug-list .unmatched { color: var(--accent-rose); opacity: 0.7; }
+        .debug-toggle {
+            font-family: 'DM Mono', monospace;
+            font-size: 0.72em;
+            color: var(--accent-violet);
+            background: none;
+            border: 1px solid rgba(167,139,250,0.3);
+            border-radius: 6px;
+            padding: 4px 12px;
+            cursor: pointer;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .debug-toggle:hover { background: rgba(167,139,250,0.1); }
+
         .progress-wrap { margin-top: 14px; display: none; flex-direction: column; gap: 6px; }
         .progress-wrap.visible { display: flex; }
         .progress-label { font-size: 0.82em; color: var(--text-secondary); font-weight: 500; }
         .progress-track { height: 6px; background: rgba(148,163,184,0.1); border-radius: 99px; overflow: hidden; }
         .progress-bar { height: 100%; background: var(--gradient-btn); border-radius: 99px; width: 0%; transition: width 0.15s ease; }
 
-        /* Replace-mode banner */
         .replace-banner {
             display: none;
             align-items: center;
@@ -384,7 +432,6 @@
             <button class="btn" id="uploadBtn" onclick="uploadJourneyData()">Upload</button>
         </div>
 
-        <!-- Replace-mode warning banner -->
         <div class="replace-banner" id="replaceBanner">
             <span class="rb-icon">🔄</span>
             <span id="replaceBannerText">Existing data found for this date — uploading will <strong>replace</strong> all current records.</span>
@@ -480,6 +527,23 @@
             <span id="absentNwdText"></span>
         </div>
         <div class="summary-row" id="absentSummaryRow"></div>
+
+        <!-- Name-matching debug panel -->
+        <button class="debug-toggle" id="debugToggleBtn" onclick="toggleDebug()" style="display:none;">🔍 Show Name Matching Debug</button>
+        <div class="debug-panel" id="debugPanel">
+            <div class="debug-title">🔍 Name Matching Diagnostics</div>
+            <div class="debug-grid">
+                <div>
+                    <div class="debug-col-title">Names extracted from van file</div>
+                    <div class="debug-list" id="debugVanNames"></div>
+                </div>
+                <div>
+                    <div class="debug-col-title">Absent engineers (from attendance)</div>
+                    <div class="debug-list" id="debugAbsentNames"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="table-wrap">
             <table class="absent-table" id="absentTable">
                 <thead>
@@ -551,18 +615,18 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db  = getFirestore(app);
 
-    window._db             = db;
-    window._addDoc         = addDoc;
-    window._collection     = collection;
+    window._db              = db;
+    window._addDoc          = addDoc;
+    window._collection      = collection;
     window._serverTimestamp = serverTimestamp;
-    window._getDocs        = getDocs;
-    window._query          = query;
-    window._where          = where;
-    window._deleteDoc      = deleteDoc;
-    window._doc            = doc;
-    window._writeBatch     = writeBatch;
+    window._getDocs         = getDocs;
+    window._query           = query;
+    window._where           = where;
+    window._deleteDoc       = deleteDoc;
+    window._doc             = doc;
+    window._writeBatch      = writeBatch;
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -570,7 +634,6 @@
     document.getElementById('uploadDate').value = fmt(yesterday);
     document.getElementById('viewDate').value   = fmt(yesterday);
 
-    // Check for existing data on the default date
     checkExistingData();
     loadJourneys();
 </script>
@@ -589,17 +652,17 @@
 
     function getNonWorkingDayInfo(dateStr) {
         if (!dateStr) return { isNonWorkingDay: false };
-        const d = new Date(dateStr + 'T12:00:00');
-        const dow = d.getDay();
-        const isWeekend = dow === 0 || dow === 6;
+        const d    = new Date(dateStr + 'T12:00:00');
+        const dow  = d.getDay();
+        const isWeekend     = dow === 0 || dow === 6;
         const isBankHoliday = UK_BANK_HOLIDAYS.has(dateStr);
         const isNonWorkingDay = isWeekend || isBankHoliday;
         const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-        const dayName = dayNames[dow];
+        const dayName  = dayNames[dow];
         let label = '';
         if (isBankHoliday && isWeekend) label = `Bank Holiday ${dayName}`;
-        else if (isBankHoliday) label = 'Bank Holiday';
-        else if (isWeekend) label = dayName;
+        else if (isBankHoliday)         label = 'Bank Holiday';
+        else if (isWeekend)             label = dayName;
         return { isNonWorkingDay, isWeekend, isBankHoliday, label, dayName };
     }
 
@@ -614,7 +677,7 @@
             }
             return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H, parsed.M, Math.floor(parsed.S));
         }
-        const s = raw.toString().trim();
+        const s       = raw.toString().trim();
         const timeOnly = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
         if (timeOnly) {
             const [y, mo, dy] = uploadDate.split('-').map(Number);
@@ -633,11 +696,11 @@
 
     function parseDurationToMins(val) {
         if (!val && val !== 0) return 0;
-        const s = val.toString().trim();
+        const s   = val.toString().trim();
         const hms = s.match(/^(\d+):(\d{2}):(\d{2})$/);
         if (hms) return parseInt(hms[1]) * 60 + parseInt(hms[2]) + parseInt(hms[3]) / 60;
         const ms = s.match(/^(\d+):(\d{2})$/);
-        if (ms) return parseInt(ms[1]) + parseInt(ms[2]) / 60;
+        if (ms)  return parseInt(ms[1]) + parseInt(ms[2]) / 60;
         let total = 0;
         const hm = s.match(/(\d+)\s*h/i);
         const mm = s.match(/(\d+)\s*m/i);
@@ -658,7 +721,160 @@
         return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
     }
 
-    // ── CHECK FOR EXISTING DATA (shows replace banner) ────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    //  NAME EXTRACTION — handles both "PLATE Name" and standalone names
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Standard UK plate pattern: 2 letters, 2 digits, 3 letters  e.g. AB12CDE
+     * Also matches older-style plates like A123BCD, B1234CD etc.
+     * Returns the plate portion (uppercased) or null if no plate found.
+     */
+    function extractPlate(str) {
+        if (!str) return null;
+        // New-style: AB12 CDE (with or without space)
+        const newStyle = str.match(/\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b/i);
+        if (newStyle) return newStyle[1].replace(/\s/g,'').toUpperCase();
+        // Older style: A123BCD or AB1234C
+        const oldStyle = str.match(/\b([A-Z]{1,3}\d{2,4}[A-Z]{1,3})\b/i);
+        if (oldStyle) return oldStyle[1].toUpperCase();
+        return null;
+    }
+
+    /**
+     * Strip any leading plate token from a string to get the name portion.
+     * e.g. "YE74BUU Richard Lang" → "Richard Lang"
+     *      "Richard Lang"         → "Richard Lang"
+     */
+    function extractDriverName(regField, driverField) {
+        // 1. Try stripping plate from registration field
+        if (regField) {
+            const cleaned = regField.trim().replace(/^[A-Z]{1,3}\d{2,4}\s?[A-Z]{2,3}\s+/i, '').trim();
+            if (cleaned && cleaned !== regField.trim()) return cleaned;
+        }
+        // 2. Fall back to driver field
+        if (driverField) {
+            const cleaned = driverField.trim().replace(/^[A-Z]{1,3}\d{2,4}\s?[A-Z]{2,3}\s+/i, '').trim();
+            if (cleaned) return cleaned;
+        }
+        return '';
+    }
+
+    /**
+     * Get just the plate token from a field that may contain "PLATE Name".
+     */
+    function getPlateOnly(regStr) {
+        if (!regStr) return '';
+        const plate = extractPlate(regStr);
+        if (plate) return plate;
+        // If no recognisable plate, return the first whitespace-delimited token uppercased
+        return regStr.trim().split(/\s+/)[0].toUpperCase();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  NAME MATCHING — robust multi-strategy comparison
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Normalise a name for comparison:
+     * - lowercase, trim
+     * - remove punctuation
+     * - split into sorted tokens (so "Lang Richard" matches "Richard Lang")
+     */
+    function normalise(name) {
+        return (name || '')
+            .toLowerCase()
+            .replace(/[^a-z\s]/g, '')
+            .trim()
+            .split(/\s+/)
+            .filter(t => t.length > 0);
+    }
+
+    /**
+     * Score how well two name strings match. Returns 0–3:
+     *   3 = exact normalised match
+     *   2 = all tokens of shorter name found in longer name (subset match)
+     *   1 = at least 2 significant tokens overlap
+     *   0 = no meaningful match
+     */
+    function nameMatchScore(a, b) {
+        const ta = normalise(a);
+        const tb = normalise(b);
+        if (!ta.length || !tb.length) return 0;
+
+        // Exact match (order-insensitive)
+        if (ta.sort().join(' ') === tb.sort().join(' ')) return 3;
+
+        // Sorted join exact
+        const setA = new Set(ta);
+        const setB = new Set(tb);
+
+        // Subset: all tokens in shorter appear in longer
+        const [shorter, longer] = ta.length <= tb.length ? [ta, setB] : [tb, setA];
+        const longerSet = ta.length <= tb.length ? setB : setA;
+        if (shorter.every(t => longerSet.has(t))) return 2;
+
+        // Count significant overlapping tokens (length > 2)
+        const sig = ta.filter(t => t.length > 2);
+        const overlap = sig.filter(t => setB.has(t)).length;
+        if (overlap >= 2) return 1;
+        // Single significant long token (>3 chars) — e.g. matching by surname alone
+        if (overlap === 1 && sig.find(t => t.length > 3 && setB.has(t))) return 1;
+
+        return 0;
+    }
+
+    /**
+     * Try to match a driver name string against the absentPeople map.
+     * Returns the matched attendance record or null.
+     * absentPeople: { "john smith": { name, status, source }, ... }
+     */
+    function matchDriverToAbsent(driverName, absentPeople) {
+        if (!driverName || !driverName.trim()) return null;
+
+        let bestScore = 0;
+        let bestMatch = null;
+
+        for (const [key, record] of Object.entries(absentPeople)) {
+            const score = nameMatchScore(driverName, key);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = record;
+            }
+        }
+
+        // Only accept matches with score ≥ 1 (at least some meaningful overlap)
+        return bestScore >= 1 ? bestMatch : null;
+    }
+
+    // Debug state
+    let _debugVanNames    = [];
+    let _debugAbsentNames = [];
+    let _debugVisible     = false;
+
+    function toggleDebug() {
+        _debugVisible = !_debugVisible;
+        document.getElementById('debugPanel').classList.toggle('visible', _debugVisible);
+        document.getElementById('debugToggleBtn').textContent =
+            _debugVisible ? '🔍 Hide Name Matching Debug' : '🔍 Show Name Matching Debug';
+    }
+    window.toggleDebug = toggleDebug;
+
+    function renderDebug(vanNames, absentPeople, matches) {
+        const matchedVanNames = new Set(matches.map(m => m.driverName));
+        document.getElementById('debugVanNames').innerHTML = vanNames.map(n =>
+            `<div class="${matchedVanNames.has(n) ? 'matched' : 'unmatched'}">${esc(n) || '(empty)'}</div>`
+        ).join('') || '<div class="unmatched">No names extracted</div>';
+
+        document.getElementById('debugAbsentNames').innerHTML =
+            Object.entries(absentPeople).map(([k, v]) =>
+                `<div class="${matches.some(m => m.matchedKey === k) ? 'matched' : ''}">${esc(v.name)} [${esc(v.status)}] (${esc(v.source)})</div>`
+            ).join('') || '<div class="unmatched">No absent engineers found</div>';
+
+        document.getElementById('debugToggleBtn').style.display = '';
+    }
+
+    // ── CHECK FOR EXISTING DATA ────────────────────────────────────────────
     async function checkExistingData() {
         const dateVal = document.getElementById('uploadDate').value;
         const banner  = document.getElementById('replaceBanner');
@@ -677,7 +893,7 @@
             } else {
                 banner.classList.remove('visible');
             }
-        } catch (e) {
+        } catch(e) {
             banner.classList.remove('visible');
         }
     }
@@ -692,12 +908,10 @@
             )
         );
         if (snap.empty) return 0;
-
         const docs = [];
         snap.forEach(d => docs.push(d));
-        const BATCH_SIZE = 400; // Firestore limit is 500 per batch
+        const BATCH_SIZE = 400;
         let deleted = 0;
-
         for (let i = 0; i < docs.length; i += BATCH_SIZE) {
             const batch = window._writeBatch(window._db);
             docs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
@@ -708,14 +922,14 @@
         return deleted;
     }
 
-    // ── UPLOAD (delete-then-replace) ─────────────────────────────────────
+    // ── UPLOAD ────────────────────────────────────────────────────────────
     async function uploadJourneyData() {
         const dateVal   = document.getElementById('uploadDate').value;
         const fileInput = document.getElementById('journeyFile');
-        if (!dateVal) { showStatus('Please select a date', 'error', 'uploadStatus'); return; }
+        if (!dateVal)             { showStatus('Please select a date', 'error', 'uploadStatus'); return; }
         if (!fileInput.files.length) { showStatus('Please select a file', 'error', 'uploadStatus'); return; }
 
-        const btn          = document.getElementById('uploadBtn');
+        const btn           = document.getElementById('uploadBtn');
         const progressWrap  = document.getElementById('uploadProgress');
         const progressBar   = document.getElementById('uploadProgressBar');
         const progressLabel = document.getElementById('uploadProgressLabel');
@@ -734,7 +948,6 @@
                 setProgress(8, 'Parsing spreadsheet…');
                 const data = new Uint8Array(e.target.result);
                 const wb   = XLSX.read(data, { type:'array' });
-
                 const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:true });
 
                 let headerIdx = 0;
@@ -746,20 +959,20 @@
 
                 const col = name => {
                     const aliases = {
-                        registration: ['registration','reg','vehicle'],
-                        starttime:    ['start time','starttime','start_time','start'],
-                        endtime:      ['end time','endtime','end_time','end'],
-                        startlocation:['start location','startlocation'],
-                        endlocation:  ['end location','endlocation'],
-                        startpoi:     ['start poi','startpoi'],
-                        endpoi:       ['end poi','endpoi'],
-                        driver:       ['driver','operator'],
-                        duration:     ['duration'],
-                        idle:         ['idle'],
-                        miles:        ['miles','distance'],
-                        maxspeed:     ['max speed','maxspeed','max_speed'],
-                        startpostcode:['start postcode','startpostcode'],
-                        endpostcode:  ['end postcode','endpostcode'],
+                        registration:  ['registration','reg','vehicle'],
+                        starttime:     ['start time','starttime','start_time','start'],
+                        endtime:       ['end time','endtime','end_time','end'],
+                        startlocation: ['start location','startlocation'],
+                        endlocation:   ['end location','endlocation'],
+                        startpoi:      ['start poi','startpoi'],
+                        endpoi:        ['end poi','endpoi'],
+                        driver:        ['driver','operator'],
+                        duration:      ['duration'],
+                        idle:          ['idle'],
+                        miles:         ['miles','distance'],
+                        maxspeed:      ['max speed','maxspeed','max_speed'],
+                        startpostcode: ['start postcode','startpostcode'],
+                        endpostcode:   ['end postcode','endpostcode'],
                     };
                     const keys = aliases[name] || [name];
                     for (const k of keys) {
@@ -786,22 +999,17 @@
                     if (milesVal > 0.1) validRows.push({ row, milesVal });
                 }
 
-                // ── STEP 1: Delete existing records for this date ──────────
                 setProgress(12, 'Checking for existing records…');
                 btn.innerHTML = '<span class="spinner"></span>Removing old data…';
-
                 const deleted = await deleteRecordsForDate(dateVal, (done, total) => {
                     const pct = 12 + Math.round((done / total) * 8);
                     setProgress(pct, `Removing ${done} of ${total} old records…`);
                 });
 
-                if (deleted > 0) {
-                    setProgress(20, `Removed ${deleted} old records — uploading fresh data…`);
-                } else {
-                    setProgress(20, `No existing records — uploading ${validRows.length} journeys…`);
-                }
+                setProgress(20, deleted > 0
+                    ? `Removed ${deleted} old records — uploading fresh data…`
+                    : `No existing records — uploading ${validRows.length} journeys…`);
 
-                // ── STEP 2: Upload fresh records ───────────────────────────
                 btn.innerHTML = `<span class="spinner"></span>0 / ${validRows.length}`;
                 let saved = 0;
                 const skipped = rows.length - 1 - validRows.length;
@@ -850,7 +1058,6 @@
                 const replaceMsg = deleted > 0 ? ` (replaced ${deleted} old records)` : '';
                 showStatus(`✓ Uploaded ${saved} journeys${replaceMsg} — ${skipped} skipped (≤0.1 miles)`, 'success', 'uploadStatus');
                 fileInput.value = '';
-
                 if (document.getElementById('viewDate').value === dateVal) loadJourneys();
 
             } catch (err) {
@@ -864,6 +1071,7 @@
         reader.readAsArrayBuffer(fileInput.files[0]);
     }
 
+    // ── LOAD JOURNEYS ─────────────────────────────────────────────────────
     async function loadJourneys() {
         const dateVal = document.getElementById('viewDate').value;
         if (!dateVal) return;
@@ -877,13 +1085,18 @@
         const a5SummRow     = document.getElementById('after5SummaryRow');
         const absentSummRow = document.getElementById('absentSummaryRow');
 
-        tbody.innerHTML      = '<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        tbody.innerHTML      = '<tr><td colspan="5"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         a5tbody.innerHTML    = '<tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
         document.getElementById('sodBody').innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>';
+        document.getElementById('debugToggleBtn').style.display = 'none';
+        document.getElementById('debugPanel').classList.remove('visible');
+        _debugVisible = false;
+
         window._sodData    = [];
         window._after5Data = [];
 
+        // Panel UI refs
         const after5PanelIcon     = document.getElementById('after5PanelIcon');
         const after5PanelTitle    = document.getElementById('after5PanelTitle');
         const after5PanelSubtitle = document.getElementById('after5PanelSubtitle');
@@ -898,27 +1111,27 @@
 
         if (nwdInfo.isNonWorkingDay) {
             after5PanelIcon.textContent = '📅';
-            after5PanelIcon.className = 'panel-icon weekend-mode';
+            after5PanelIcon.className   = 'panel-icon weekend-mode';
             const nwdTypeLabel = nwdInfo.isBankHoliday ? 'Bank Holiday' : 'Weekend';
-            after5PanelTitle.innerHTML = `All Journeys <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
+            after5PanelTitle.innerHTML    = `All Journeys <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
             after5PanelSubtitle.textContent = `All vehicle journeys shown — ${nwdTypeLabel} date, no 5pm filter applied`;
-            after5Table.className = 'after5-table weekend-table';
+            after5Table.className  = 'after5-table weekend-table';
             after5LastCol.textContent = 'Latest Journey';
             after5NwdText.textContent = `${nwdInfo.label} — showing all journeys for this date (5pm filter removed)`;
             after5NwdBanner.classList.add('visible');
-            absentPanelTitle.innerHTML = `Movement Whilst Off <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
+            absentPanelTitle.innerHTML    = `Movement Whilst Off <span class="day-badge ${nwdInfo.isBankHoliday ? 'bankholiday' : 'weekend'}">${nwdInfo.label}</span>`;
             absentPanelSubtitle.textContent = `All vehicles with any journeys on this ${nwdInfo.isBankHoliday ? 'bank holiday' : 'weekend'} — cross-referenced with absence records`;
             absentNwdText.textContent = `${nwdInfo.label} — all vehicle movement shown alongside any absence records`;
             absentNwdBanner.classList.add('visible');
         } else {
-            after5PanelIcon.textContent = '🌙';
-            after5PanelIcon.className = 'panel-icon after5';
-            after5PanelTitle.textContent = 'After-Hours Journeys (after 5:00 PM)';
+            after5PanelIcon.textContent   = '🌙';
+            after5PanelIcon.className     = 'panel-icon after5';
+            after5PanelTitle.textContent  = 'After-Hours Journeys (after 5:00 PM)';
             after5PanelSubtitle.textContent = 'Consolidated miles and duration per registration';
-            after5Table.className = 'after5-table';
-            after5LastCol.textContent = 'Latest Journey';
+            after5Table.className         = 'after5-table';
+            after5LastCol.textContent     = 'Latest Journey';
             after5NwdBanner.classList.remove('visible');
-            absentPanelTitle.textContent = 'Movement Whilst Off';
+            absentPanelTitle.textContent  = 'Movement Whilst Off';
             absentPanelSubtitle.textContent = 'Vehicles linked to engineers marked absent in OES or SP attendance for the selected date';
             absentNwdBanner.classList.remove('visible');
         }
@@ -926,69 +1139,26 @@
         try {
             const EXCLUDED_PLATES = ['YF74RMY','WN25FCJ','HK25ZKO','YL74ETZ'];
             function isExcluded(registration) {
-                const regUp = (registration || '').toUpperCase();
-                return EXCLUDED_PLATES.some(plate => regUp.startsWith(plate));
+                const plate = getPlateOnly(registration || '');
+                return EXCLUDED_PLATES.some(p => plate.startsWith(p));
             }
 
-            /**
-             * The van data stores "YE74BUU Richard Lang" in j.registration
-             * and leaves j.driver empty. Strip the plate prefix to get the name.
-             */
-            function stripPlate(str) {
-                if (!str) return '';
-                return str.replace(/^[A-Z]{1,3}\d{2,4}\s*[A-Z]{2,3}\s+/i, '').trim();
-            }
-
-            /** Return just the plate token from a "PLATE Name" string */
-            function getPlateOnly(regStr) {
-                if (!regStr) return regStr;
-                const m = regStr.match(/^([A-Z]{1,3}\d{2,4}\s*[A-Z]{2,3})/i);
-                return m ? m[1].toUpperCase() : regStr;
-            }
-
-            /**
-             * Get the driver name from a journey record.
-             * Name is embedded in j.registration ("YE74BUU Richard Lang").
-             * Falls back to j.driver if it ever has content.
-             */
-            function getDriverName(j) {
-                return stripPlate((j.registration || '').trim())
-                    || stripPlate((j.driver || '').trim())
-                    || '';
-            }
-
-            /** Fuzzy match a plain name string against the absentPeople map. */
-            function matchName(nameStr, absentPeople) {
-                if (!nameStr) return null;
-                const dLower = nameStr.toLowerCase().trim();
-                if (!dLower) return null;
-                for (const [k, v] of Object.entries(absentPeople)) {
-                    if (
-                        dLower === k ||
-                        dLower.includes(k) ||
-                        k.includes(dLower) ||
-                        k.split(' ').some(part => part.length > 2 && dLower.includes(part)) ||
-                        dLower.split(' ').some(part => part.length > 2 && k.includes(part))
-                    ) { return v; }
-                }
-                return null;
-            }
-
+            // Fetch journey data
             const snap = await window._getDocs(window._collection(window._db, 'Van Start and End'));
             const journeys = [];
-            snap.forEach(doc => {
-                const d = doc.data();
+            snap.forEach(docSnap => {
+                const d = docSnap.data();
                 if (d.journeyDate === dateVal && !isExcluded(d.registration)) journeys.push(d);
             });
-            journeys.sort((a,b) => {
+            journeys.sort((a, b) => {
                 const ta = a.startTime ? new Date(a.startTime) : 0;
                 const tb = b.startTime ? new Date(b.startTime) : 0;
                 return ta - tb;
             });
 
-            // ── DAY'S USAGE ──────────────────────────────────────────────────
-            summRow.innerHTML = '';
-            window._usageData = [];
+            // ── DAY'S USAGE ───────────────────────────────────────────────
+            summRow.innerHTML  = '';
+            window._usageData  = [];
             if (journeys.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ${dateVal}</p></div></td></tr>`;
             } else {
@@ -1002,7 +1172,7 @@
                     byReg[r].idleMins     += parseDurationToMins(j.idle);
                 });
                 window._usageData = Object.values(byReg);
-                const totalMiles = journeys.reduce((s,j) => s + j.miles, 0);
+                const totalMiles  = journeys.reduce((s,j) => s + j.miles, 0);
                 summRow.innerHTML = `
                     <div class="chip">🚐 ${journeys.length} Journeys</div>
                     <div class="chip amber">📍 ${totalMiles.toFixed(1)} Total Miles</div>
@@ -1011,7 +1181,7 @@
                 renderUsageTable('miles', 'desc');
             }
 
-            // ── START OF DAY ─────────────────────────────────────────────────
+            // ── START OF DAY ──────────────────────────────────────────────
             const sodSummRow = document.getElementById('sodSummaryRow');
             const sodBody    = document.getElementById('sodBody');
             sodSummRow.innerHTML = '';
@@ -1022,9 +1192,7 @@
                 journeys.forEach(j => {
                     const r  = j.registration || 'Unknown';
                     const st = j.startTime ? new Date(j.startTime) : null;
-                    if (!sodByReg[r]) {
-                        sodByReg[r] = { reg: r, driver: j.driver || '', firstTime: null, firstMins: 9999, journeys: 0, miles: 0 };
-                    }
+                    if (!sodByReg[r]) sodByReg[r] = { reg:r, driver:j.driver||'', firstTime:null, firstMins:9999, journeys:0, miles:0 };
                     sodByReg[r].journeys++;
                     sodByReg[r].miles += j.miles;
                     if (st && j.miles > 0.1 && (!sodByReg[r].firstTime || st < sodByReg[r].firstTime)) {
@@ -1033,11 +1201,9 @@
                         sodByReg[r].driver    = j.driver || sodByReg[r].driver;
                     }
                 });
-
                 window._sodData = Object.values(sodByReg).filter(r => r.firstTime !== null && r.firstMins >= 8 * 60);
                 const totalVehicles = Object.keys(sodByReg).length;
                 const lateCount     = window._sodData.length;
-
                 sodSummRow.innerHTML = `
                     <div class="chip amber">⚠️ ${lateCount} Vehicle${lateCount !== 1 ? 's' : ''} First Journey After 08:00</div>
                     <div class="chip" style="background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.2);color:var(--success);">✅ ${totalVehicles - lateCount} Started Before 08:00</div>
@@ -1050,7 +1216,7 @@
                 }
             }
 
-            // ── AFTER 5PM / ALL-DAY ──────────────────────────────────────────
+            // ── AFTER 5PM / ALL-DAY ───────────────────────────────────────
             const relevantJourneys = nwdInfo.isNonWorkingDay
                 ? journeys
                 : journeys.filter(j => j.startTime && new Date(j.startTime).getHours() >= 17);
@@ -1058,19 +1224,21 @@
             a5SummRow.innerHTML = '';
             if (relevantJourneys.length === 0) {
                 const emptyIcon = nwdInfo.isNonWorkingDay ? '📅' : '✅';
-                const emptyMsg  = nwdInfo.isNonWorkingDay ? `No journeys recorded on this ${nwdInfo.label}` : `No after-hours journeys on ${dateVal}`;
+                const emptyMsg  = nwdInfo.isNonWorkingDay
+                    ? `No journeys recorded on this ${nwdInfo.label}`
+                    : `No after-hours journeys on ${dateVal}`;
                 a5tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">${emptyIcon}</div><p>${emptyMsg}</p></div></td></tr>`;
             } else {
                 const byReg = {};
                 relevantJourneys.forEach(j => {
                     const r = j.registration || 'Unknown';
                     if (!byReg[r]) byReg[r] = { reg:r, journeys:0, miles:0, durationMins:0, idleMins:0, earliest:null, latest:null, latestMins:0 };
-                    const g = byReg[r];
+                    const g  = byReg[r];
+                    const st = j.startTime ? new Date(j.startTime) : null;
                     g.journeys++;
                     g.miles        += j.miles;
                     g.durationMins += parseDurationToMins(j.duration);
                     g.idleMins     += parseDurationToMins(j.idle);
-                    const st = j.startTime ? new Date(j.startTime) : null;
                     if (st) {
                         if (!g.earliest || st < g.earliest) g.earliest = st;
                         if (!g.latest   || st > g.latest)  { g.latest = st; g.latestMins = st.getHours()*60 + st.getMinutes(); }
@@ -1094,133 +1262,188 @@
                 renderAfter5Table('latestMins', 'desc');
             }
 
-            // ── MOVEMENT WHILST OFF ──────────────────────────────────────────
+            // ── MOVEMENT WHILST OFF ───────────────────────────────────────
             absentSummRow.innerHTML = '';
+
             if (journeys.length === 0) {
                 absentBody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="icon">⚠️</div><p>No journey data for this date</p></div></td></tr>';
-            } else {
-                const oesSnap = await window._getDocs(window._collection(window._db, 'attendance'));
-                const spSnap  = await window._getDocs(window._collection(window._db, 'SP Attendance'));
-                const absentCodes  = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
-                const absentPeople = {};
+                return;
+            }
 
-                oesSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.date !== dateVal) return;
-                    if (absentCodes.has((d.attendance||'').toLowerCase())) {
-                        const k = (d.engineerName||'').toLowerCase().trim();
-                        if (k) absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'OES' };
-                    }
+            // Fetch attendance from both collections
+            const oesSnap = await window._getDocs(window._collection(window._db, 'attendance'));
+            const spSnap  = await window._getDocs(window._collection(window._db, 'SP Attendance'));
+
+            // Codes that mean the engineer is NOT at work
+            const absentCodes  = new Set(['h','h/h','sick','aaup','tofd','aap','training']);
+
+            /**
+             * absentPeople key = normalised full name (lowercase)
+             * value = { name: original, status, source }
+             */
+            const absentPeople = {};
+
+            oesSnap.forEach(docSnap => {
+                const d = docSnap.data();
+                if (d.date !== dateVal) return;
+                if (!absentCodes.has((d.attendance||'').toLowerCase())) return;
+                const k = (d.engineerName||'').toLowerCase().trim();
+                if (k) absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'OES' };
+            });
+
+            spSnap.forEach(docSnap => {
+                const d = docSnap.data();
+                if (d.date !== dateVal) return;
+                if (!absentCodes.has((d.attendance||'').toLowerCase())) return;
+                const k = (d.engineerName||'').toLowerCase().trim();
+                if (!k) return;
+                if (!absentPeople[k]) {
+                    absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'SP' };
+                } else {
+                    absentPeople[k].source = absentPeople[k].source.includes('SP')
+                        ? absentPeople[k].source
+                        : absentPeople[k].source + ' + SP';
+                }
+            });
+
+            // Build unique plate → { driverName, journeys… } map
+            // We use the PLATE as the grouping key (stripped of embedded name)
+            const plateGroups = {};
+            journeys.forEach(j => {
+                const rawReg     = (j.registration || '').trim();
+                const plateKey   = getPlateOnly(rawReg);
+                const driverName = extractDriverName(rawReg, j.driver);
+
+                if (!plateGroups[plateKey]) {
+                    plateGroups[plateKey] = {
+                        reg: plateKey,
+                        driver: driverName,
+                        journeys: 0, miles: 0, durationMins: 0,
+                        earliest: null, latest: null
+                    };
+                }
+
+                const g  = plateGroups[plateKey];
+                // Keep the most specific driver name we find
+                if (driverName && driverName.length > g.driver.length) g.driver = driverName;
+
+                const st = j.startTime ? new Date(j.startTime) : null;
+                g.journeys++;
+                g.miles        += j.miles;
+                g.durationMins += parseDurationToMins(j.duration);
+                if (st) {
+                    if (!g.earliest || st < g.earliest) g.earliest = st;
+                    if (!g.latest   || st > g.latest)   g.latest   = st;
+                }
+            });
+
+            // Collect unique driver names for debug
+            const allVanNames = [...new Set(Object.values(plateGroups).map(g => g.driver).filter(Boolean))];
+
+            if (nwdInfo.isNonWorkingDay) {
+                // Weekend / bank holiday: show ALL vehicles, flag those also absent
+                const allPlates = Object.values(plateGroups);
+
+                const matchResults = [];
+                allPlates.forEach(g => {
+                    const match = matchDriverToAbsent(g.driver, absentPeople);
+                    if (match) matchResults.push({ driverName: g.driver, matchedKey: match.name.toLowerCase().trim() });
                 });
-                spSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.date !== dateVal) return;
-                    if (absentCodes.has((d.attendance||'').toLowerCase())) {
-                        const k = (d.engineerName||'').toLowerCase().trim();
-                        if (k && !absentPeople[k]) absentPeople[k] = { name: d.engineerName, status: d.attendance, source: 'SP' };
-                        else if (k) absentPeople[k].source = absentPeople[k].source + ' + SP';
-                    }
-                });
+                renderDebug(allVanNames, absentPeople, matchResults);
 
-                if (nwdInfo.isNonWorkingDay) {
-                    const flagged = {};
-                    journeys.forEach(j => {
-                        const regRaw     = (j.registration || '').trim();
-                        const plateOnly  = getPlateOnly(regRaw);
-                        const driverName = getDriverName(j);
-                        const key = plateOnly || 'Unknown';
-                        if (!flagged[key]) {
-                            const match = matchName(driverName, absentPeople);
-                            flagged[key] = {
-                                reg: plateOnly, driver: driverName,
-                                status: match ? match.status : nwdInfo.label,
-                                source: match ? match.source : '—',
-                                isAbsent: !!match,
-                                journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null
-                            };
-                        }
-                        const g  = flagged[key];
-                        const st = j.startTime ? new Date(j.startTime) : null;
-                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
-                        if (st) { if (!g.earliest || st < g.earliest) g.earliest = st; if (!g.latest || st > g.latest) g.latest = st; }
-                    });
+                const rows = allPlates
+                    .map(g => {
+                        const match = matchDriverToAbsent(g.driver, absentPeople);
+                        return { ...g, absentInfo: match, isAbsent: !!match };
+                    })
+                    .sort((a, b) => a.isAbsent !== b.isAbsent ? (a.isAbsent ? -1 : 1) : b.miles - a.miles);
 
-                    const flaggedRows   = Object.values(flagged).sort((a,b) => a.isAbsent !== b.isAbsent ? (a.isAbsent ? -1 : 1) : b.miles - a.miles);
-                    const absentMatched = flaggedRows.filter(r => r.isAbsent).length;
+                const absentMatched = rows.filter(r => r.isAbsent).length;
+                absentSummRow.innerHTML = `
+                    <div class="chip violet">📅 ${rows.length} Vehicle(s) Active on ${nwdInfo.label}</div>
+                    <div class="chip rose">${rows.reduce((s,r)=>s+r.journeys,0)} Total Journeys</div>
+                    <div class="chip amber">📍 ${rows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
+                    ${absentMatched > 0 ? `<div class="chip rose">⚠️ ${absentMatched} Also Marked Absent</div>` : ''}
+                `;
 
-                    absentSummRow.innerHTML = `
-                        <div class="chip violet">📅 ${flaggedRows.length} Vehicle(s) Active on ${nwdInfo.label}</div>
-                        <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Total Journeys</div>
-                        <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
-                        ${absentMatched > 0 ? `<div class="chip rose">⚠️ ${absentMatched} Also Marked Absent</div>` : ''}
-                    `;
-                    document.getElementById('absentTableHead').innerHTML = `
-                        <th>Registration</th><th>Driver (from file)</th><th>Status / Day Type</th>
-                        <th>Absence Source</th><th>Journeys</th><th>Total Miles</th>
-                        <th>Total Duration</th><th>First Journey</th><th>Last Journey</th>
-                    `;
-                    absentBody.innerHTML = flaggedRows.map(g => `<tr>
+                document.getElementById('absentTableHead').innerHTML = `
+                    <th>Registration</th><th>Driver (from file)</th><th>Status / Day Type</th>
+                    <th>Absence Source</th><th>Journeys</th><th>Total Miles</th>
+                    <th>Total Duration</th><th>First Journey</th><th>Last Journey</th>
+                `;
+                absentBody.innerHTML = rows.map(g => {
+                    const status = g.absentInfo ? g.absentInfo.status : nwdInfo.label;
+                    const source = g.absentInfo ? g.absentInfo.source : '—';
+                    const srcClass = source === '—' ? 'muted' : source.includes('OES') && source.includes('SP') ? 'muted' : source.includes('OES') ? 'source-oes' : 'source-sp';
+                    return `<tr>
                         <td class="reg" style="color:var(--accent-violet)">${esc(g.reg)}</td>
                         <td class="muted">${esc(g.driver)}</td>
-                        <td><span class="${g.isAbsent ? 'absent-status' : 'weekend-status'}">${esc(g.status)}</span></td>
-                        <td class="${g.source === '—' ? 'muted' : g.source.includes('OES') ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
+                        <td><span class="${g.isAbsent ? 'absent-status' : 'weekend-status'}">${esc(status)}</span></td>
+                        <td class="${srcClass}">${esc(source)}</td>
                         <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
                         <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
                         <td class="muted">${minsToHM(g.durationMins)}</td>
                         <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
                         <td class="muted">${g.latest   ? timeStr(g.latest)   : '—'}</td>
-                    </tr>`).join('');
+                    </tr>`;
+                }).join('');
 
+            } else {
+                // Weekday: only show vehicles where driver matches an absent engineer
+                document.getElementById('absentTableHead').innerHTML = `
+                    <th>Registration</th><th>Driver (from file)</th><th>Attendance Status</th>
+                    <th>Source</th><th>Journeys</th><th>Total Miles</th>
+                    <th>Total Duration</th><th>First Journey</th><th>Last Journey</th>
+                `;
+
+                const flaggedRows = [];
+                const matchResults = [];
+
+                Object.values(plateGroups).forEach(g => {
+                    const match = matchDriverToAbsent(g.driver, absentPeople);
+                    if (match) {
+                        flaggedRows.push({ ...g, absentInfo: match });
+                        matchResults.push({ driverName: g.driver, matchedKey: match.name.toLowerCase().trim() });
+                    }
+                });
+
+                renderDebug(allVanNames, absentPeople, matchResults);
+                flaggedRows.sort((a, b) => b.miles - a.miles);
+
+                if (flaggedRows.length === 0) {
+                    const absentCount = Object.keys(absentPeople).length;
+                    absentBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">✅</div><p>${
+                        absentCount > 0
+                            ? `${absentCount} absent engineer(s) found but no matching vehicle journeys`
+                            : 'No absence records found for this date'
+                    }</p></div></td></tr>`;
                 } else {
-                    document.getElementById('absentTableHead').innerHTML = `
-                        <th>Registration</th><th>Driver (from file)</th><th>Attendance Status</th>
-                        <th>Source</th><th>Journeys</th><th>Total Miles</th>
-                        <th>Total Duration</th><th>First Journey</th><th>Last Journey</th>
+                    absentSummRow.innerHTML = `
+                        <div class="chip violet">⚠️ ${flaggedRows.length} Flagged Vehicle(s)</div>
+                        <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Journeys Whilst Off</div>
+                        <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
                     `;
-                    const flagged = {};
-                    journeys.forEach(j => {
-                        const regRaw    = (j.registration || '').trim();
-                        const plateOnly = getPlateOnly(regRaw);
-                        const driverName = getDriverName(j);
-                        const match = matchName(driverName, absentPeople);
-                        if (!match) return;
-                        const key = plateOnly || 'Unknown';
-                        if (!flagged[key]) {
-                            flagged[key] = { reg: plateOnly, driver: driverName, status: match.status, source: match.source, journeys: 0, miles: 0, durationMins: 0, earliest: null, latest: null };
-                        }
-                        const g  = flagged[key];
-                        const st = j.startTime ? new Date(j.startTime) : null;
-                        g.journeys++; g.miles += j.miles; g.durationMins += parseDurationToMins(j.duration);
-                        if (st) { if (!g.earliest || st < g.earliest) g.earliest = st; if (!g.latest || st > g.latest) g.latest = st; }
-                    });
-
-                    const flaggedRows = Object.values(flagged).sort((a,b) => b.miles - a.miles);
-                    if (flaggedRows.length === 0) {
-                        const absentCount = Object.keys(absentPeople).length;
-                        absentBody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">✅</div><p>${absentCount > 0 ? absentCount + ' absent engineer(s) found but no matching vehicle journeys' : 'No absence records found for this date'}</p></div></td></tr>`;
-                    } else {
-                        absentSummRow.innerHTML = `
-                            <div class="chip" style="background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.2);color:var(--accent-violet);">⚠️ ${flaggedRows.length} Flagged Vehicle(s)</div>
-                            <div class="chip rose">${flaggedRows.reduce((s,r)=>s+r.journeys,0)} Journeys Whilst Off</div>
-                            <div class="chip amber">📍 ${flaggedRows.reduce((s,r)=>s+r.miles,0).toFixed(1)} Miles</div>
-                        `;
-                        absentBody.innerHTML = flaggedRows.map(g => `<tr>
+                    absentBody.innerHTML = flaggedRows.map(g => {
+                        const src = g.absentInfo.source;
+                        const srcClass = src.includes('OES') && src.includes('SP') ? 'muted' : src === 'OES' ? 'source-oes' : 'source-sp';
+                        return `<tr>
                             <td class="reg" style="color:var(--accent-violet)">${esc(g.reg)}</td>
                             <td class="muted">${esc(g.driver)}</td>
-                            <td><span class="absent-status">${esc(g.status)}</span></td>
-                            <td class="${g.source.includes('OES') && g.source.includes('SP') ? 'muted' : g.source === 'OES' ? 'source-oes' : 'source-sp'}">${esc(g.source)}</td>
+                            <td><span class="absent-status">${esc(g.absentInfo.status)}</span></td>
+                            <td class="${srcClass}">${esc(src)}</td>
                             <td style="color:var(--accent-violet);font-weight:600;">${g.journeys}</td>
                             <td class="miles" style="color:var(--accent-amber)">${g.miles.toFixed(1)}</td>
                             <td class="muted">${minsToHM(g.durationMins)}</td>
                             <td class="muted">${g.earliest ? timeStr(g.earliest) : '—'}</td>
                             <td class="muted">${g.latest   ? timeStr(g.latest)   : '—'}</td>
-                        </tr>`).join('');
-                    }
+                        </tr>`;
+                    }).join('');
                 }
             }
 
         } catch (err) {
-            document.getElementById('journeyBody').innerHTML = `<tr><td colspan="12"><div class="empty-state"><p style="color:var(--error)">Error loading data: ${esc(err.message)}</p></div></td></tr>`;
+            document.getElementById('journeyBody').innerHTML =
+                `<tr><td colspan="5"><div class="empty-state"><p style="color:var(--error)">Error loading data: ${esc(err.message)}</p></div></td></tr>`;
             console.error(err);
         }
     }
@@ -1238,7 +1461,6 @@
             if (av > bv) return dir === 'asc' ? 1 : -1;
             return 0;
         });
-
         ['reg','firstMins','miles','journeys'].forEach(c => {
             const si = document.getElementById(`sod-si-${c}`);
             const th = document.querySelector(`[data-sod-col="${c}"]`);
@@ -1246,7 +1468,6 @@
             th.classList.toggle('active', c === col);
             si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
         });
-
         const tbody = document.getElementById('sodBody');
         if (!data.length) {
             tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No data</p></div></td></tr>';
@@ -1285,7 +1506,6 @@
             if (av > bv) return dir === 'asc' ? 1 : -1;
             return 0;
         });
-
         ['reg','journeys','miles','durationMins','idleMins','latestMins'].forEach(c => {
             const si = document.getElementById(`a5-si-${c}`);
             const th = document.querySelector(`[data-a5-col="${c}"]`);
@@ -1293,7 +1513,6 @@
             th.classList.toggle('active', c === col);
             si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
         });
-
         const a5tbody = document.getElementById('after5Body');
         if (!data.length) {
             a5tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">🌙</div><p>No data</p></div></td></tr>';
@@ -1328,7 +1547,6 @@
             if (av > bv) return dir === 'asc' ? 1 : -1;
             return 0;
         });
-
         ['reg','journeys','miles','durationMins','idleMins'].forEach(c => {
             const th = document.querySelector(`[data-col="${c}"]`);
             const si = document.getElementById(`si-${c}`);
@@ -1336,7 +1554,6 @@
             th.classList.toggle('active', c === col);
             si.textContent = c === col ? (dir === 'desc' ? '▼' : '▲') : '⇅';
         });
-
         const tbody = document.getElementById('journeyBody');
         if (!data.length) {
             tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No data</p></div></td></tr>';
@@ -1357,6 +1574,7 @@
     }
     window.sortUsage = sortUsage;
 
+    // ── UTILS ──────────────────────────────────────────────────────────────
     function esc(str) {
         if (!str) return '—';
         return str.toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1364,8 +1582,8 @@
 
     function showStatus(msg, type, id) {
         const el = document.getElementById(id);
-        el.textContent = msg;
-        el.className = 'status-message ' + type;
+        el.textContent   = msg;
+        el.className     = 'status-message ' + type;
         el.style.display = 'block';
         setTimeout(() => { el.style.display = 'none'; }, 6000);
     }
