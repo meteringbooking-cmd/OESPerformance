@@ -162,6 +162,29 @@
             font-size: 0.68rem; font-weight: 500; white-space: nowrap;
         }
 
+        /* ── DUPLICATE WARNING BANNER ── */
+        .duplicate-banner {
+            display: none;
+            align-items: center; gap: 12px;
+            background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.35);
+            border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;
+            animation: fadeUp 0.4s ease both;
+        }
+        .duplicate-banner.show { display: flex; }
+        .dup-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .dup-text {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            color: var(--amber); line-height: 1.5; flex: 1;
+        }
+        .dup-text strong { font-weight: 600; }
+        .dup-badge {
+            background: var(--amber); color: #080C14;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; padding: 0.25rem 0.7rem; border-radius: 4px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
         .message {
             padding: 12px 16px; border-radius: 8px;
             font-family: 'DM Mono', monospace; font-size: 0.8rem;
@@ -191,6 +214,7 @@
         tbody tr:last-child { border-bottom: none; }
         tbody tr:hover { background: rgba(245,166,35,0.04); }
         tbody tr.row-missing { background: rgba(245,166,35,0.07) !important; border-left: 3px solid var(--amber); }
+        tbody tr.row-prefilled { border-left: 3px solid rgba(43,228,195,0.4); }
 
         td { padding: 12px 20px; vertical-align: middle; }
         .eng-name { font-weight: 600; color: var(--text); font-size: 0.88rem; }
@@ -204,11 +228,17 @@
         }
         .attendance-select:focus { outline: none; border-color: var(--amber); }
         .attendance-select option { background: var(--surface); }
+        .attendance-select.prefilled { border-color: rgba(43,228,195,0.35); color: var(--cyan); }
 
         .save-footer {
             background: var(--surface); border-top: 1px solid var(--border);
-            padding: 16px 24px; display: flex; align-items: center; justify-content: flex-end;
+            padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+            gap: 12px;
         }
+        .footer-note {
+            font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--text-dim);
+        }
+        .footer-note span { color: var(--cyan); }
 
         .loading-state {
             padding: 60px; text-align: center;
@@ -258,8 +288,18 @@
             <div class="ctrl-actions">
                 <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFileUpload(event)">
                 <button class="btn-upload" onclick="document.getElementById('fileInput').click()">📁 Upload Excel</button>
-                <button class="btn-save" onclick="saveData()" id="quickSaveBtn">💾 Save Attendance</button>
+                <button class="btn-save" onclick="saveData(event)" id="quickSaveBtn">💾 Save Attendance</button>
             </div>
+        </div>
+
+        <!-- Duplicate date warning banner -->
+        <div class="duplicate-banner" id="duplicateBanner">
+            <div class="dup-icon">⚠️</div>
+            <div class="dup-text">
+                <strong>Existing records found for this date.</strong><br>
+                Saving will <strong>replace</strong> all <span id="dupCount">0</span> existing entries for <span id="dupDate">—</span> with the values below.
+            </div>
+            <div class="dup-badge">Will Overwrite</div>
         </div>
 
         <div class="codes-panel">
@@ -293,7 +333,8 @@
                     <tbody id="engineersBody"></tbody>
                 </table>
                 <div class="save-footer">
-                    <button class="btn-save" onclick="saveData()">💾 Save Attendance</button>
+                    <div class="footer-note" id="footerNote"></div>
+                    <button class="btn-save" onclick="saveData(event)">💾 Save Attendance</button>
                 </div>
             </div>
         </div>
@@ -302,7 +343,10 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import {
+            getFirestore, collection, getDocs, addDoc,
+            query, where, deleteDoc, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs';
 
         const firebaseConfig = {
@@ -318,11 +362,13 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // ── Set default date to yesterday ──
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         document.getElementById('dataDate').valueAsDate = yesterday;
 
         let engineers = [];
+        let duplicateDocIds = []; // IDs of existing docs for the selected date
 
         const attendanceOptions = [
             { value: '', label: '-- Select Status --' },
@@ -336,6 +382,7 @@
             { value: 'Training', label: 'Training' }
         ];
 
+        // ── Load engineers from Firestore ──
         async function loadEngineers() {
             try {
                 const querySnapshot = await getDocs(collection(db, "engineers"));
@@ -346,6 +393,8 @@
                     return l !== 0 ? l : a.engineerName.localeCompare(b.engineerName);
                 });
                 displayEngineers();
+                // Check for duplicates on the default date
+                await checkForDuplicates(document.getElementById('dataDate').value);
             } catch (error) {
                 console.error(error);
                 document.getElementById('loadingDiv').innerHTML = 'Error loading engineers.';
@@ -387,9 +436,74 @@
             document.getElementById('tableContainer').style.display = 'block';
         }
 
+        // ── Check Firestore for existing records on a given date ──
+        async function checkForDuplicates(date) {
+            duplicateDocIds = [];
+            if (!date) return;
+
+            try {
+                const q = query(collection(db, "attendance"), where("date", "==", date));
+                const snap = await getDocs(q);
+
+                duplicateDocIds = snap.docs.map(d => d.id);
+
+                const banner = document.getElementById('duplicateBanner');
+                if (duplicateDocIds.length > 0) {
+                    document.getElementById('dupCount').textContent = duplicateDocIds.length;
+                    document.getElementById('dupDate').textContent = formatDate(date);
+                    banner.classList.add('show');
+
+                    // Pre-fill existing values into the dropdowns
+                    snap.docs.forEach(d => {
+                        const data = d.data();
+                        const idx = engineers.findIndex(e => e.id === data.engineerId);
+                        if (idx !== -1) {
+                            const sel = document.getElementById(`attendance_${idx}`);
+                            if (sel) {
+                                const opt = Array.from(sel.options).find(o => o.value === data.attendance);
+                                if (opt) {
+                                    sel.value = opt.value;
+                                    sel.classList.add('prefilled');
+                                    const row = document.querySelector(`tr[data-index="${idx}"]`);
+                                    if (row) row.classList.add('row-prefilled');
+                                }
+                            }
+                        }
+                    });
+
+                    const filled = engineers.filter((_, i) => document.getElementById(`attendance_${i}`)?.value).length;
+                    document.getElementById('footerNote').innerHTML =
+                        `<span>${filled}</span> of ${engineers.length} engineers pre-filled from existing records`;
+                } else {
+                    banner.classList.remove('show');
+                    document.getElementById('footerNote').innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Duplicate check failed:', error);
+            }
+        }
+
+        // ── Date change → re-check duplicates & reset selects ──
+        document.getElementById('dataDate').addEventListener('change', async function () {
+            // Clear all selects
+            engineers.forEach((_, i) => {
+                const sel = document.getElementById(`attendance_${i}`);
+                if (sel) {
+                    sel.value = '';
+                    sel.classList.remove('prefilled');
+                }
+                const row = document.querySelector(`tr[data-index="${i}"]`);
+                if (row) row.classList.remove('row-missing', 'row-prefilled');
+            });
+            await checkForDuplicates(this.value);
+        });
+
         function updateRowHighlight(el) {
             const row = document.querySelector(`tr[data-index="${el.getAttribute('data-row-index')}"]`);
-            if (row) row.classList.toggle('row-missing', el.value === '');
+            if (row) {
+                row.classList.toggle('row-missing', el.value === '');
+                if (el.value !== '') row.classList.remove('row-missing');
+            }
         }
 
         function highlightMissing() {
@@ -400,45 +514,73 @@
             });
         }
 
-        window.saveData = async function () {
+        // ── SAVE (upsert: delete existing then add new) ──
+        window.saveData = async function (event) {
             const date = document.getElementById('dataDate').value;
             if (!date) return showMessage('Please select a date', 'error');
 
             const clickedBtn = event.target;
             clickedBtn.disabled = true;
-            const orig = clickedBtn.textContent;
-            clickedBtn.textContent = 'Saving…';
+            const orig = clickedBtn.innerHTML;
+            clickedBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
 
             try {
-                const batch = [];
+                // 1. Build new records from current dropdown values
+                const newRecords = [];
                 for (let i = 0; i < engineers.length; i++) {
                     const attendance = document.getElementById(`attendance_${i}`).value;
                     if (attendance) {
-                        batch.push(addDoc(collection(db, "attendance"), {
+                        newRecords.push({
                             engineerId: engineers[i].id,
                             engineerName: engineers[i].engineerName,
                             teamLeader: engineers[i].teamLeader,
-                            date, attendance, submittedAt: serverTimestamp()
-                        }));
+                            date,
+                            attendance
+                        });
                     }
                 }
 
-                if (!batch.length) {
+                if (!newRecords.length) {
                     showMessage('No attendance to save. Please select at least one status.', 'error');
-                    clickedBtn.disabled = false; clickedBtn.textContent = orig; return;
+                    clickedBtn.disabled = false; clickedBtn.innerHTML = orig; return;
                 }
 
-                await Promise.all(batch);
-                showMessage('Attendance saved successfully!', 'success');
+                // 2. Delete all existing records for this date (if any)
+                if (duplicateDocIds.length > 0) {
+                    const deletions = duplicateDocIds.map(id => deleteDoc(doc(db, "attendance", id)));
+                    await Promise.all(deletions);
+                }
 
-                for (let i = 0; i < engineers.length; i++) document.getElementById(`attendance_${i}`).value = '';
-                document.querySelectorAll('tr[data-index]').forEach(r => r.classList.remove('row-missing'));
+                // 3. Add the new records
+                const additions = newRecords.map(record =>
+                    addDoc(collection(db, "attendance"), { ...record, submittedAt: serverTimestamp() })
+                );
+                await Promise.all(additions);
+
+                const wasOverwrite = duplicateDocIds.length > 0;
+                showMessage(
+                    wasOverwrite
+                        ? `Replaced ${duplicateDocIds.length} existing record(s) with ${newRecords.length} updated entries for ${formatDate(date)}.`
+                        : `Attendance saved successfully! ${newRecords.length} record(s) added for ${formatDate(date)}.`,
+                    'success'
+                );
+
+                // Reset UI
+                for (let i = 0; i < engineers.length; i++) {
+                    const sel = document.getElementById(`attendance_${i}`);
+                    sel.value = '';
+                    sel.classList.remove('prefilled');
+                }
+                document.querySelectorAll('tr[data-index]').forEach(r => r.classList.remove('row-missing', 'row-prefilled'));
+                document.getElementById('duplicateBanner').classList.remove('show');
+                document.getElementById('footerNote').innerHTML = '';
+                duplicateDocIds = [];
 
             } catch (error) {
                 console.error(error);
                 showMessage('Error saving attendance. Please try again.', 'error');
             } finally {
-                clickedBtn.disabled = false; clickedBtn.textContent = orig;
+                clickedBtn.disabled = false; clickedBtn.innerHTML = orig;
             }
         };
 
@@ -446,9 +588,16 @@
             const el = document.getElementById('message');
             el.textContent = text;
             el.className = `message ${type} show`;
-            setTimeout(() => { el.className = 'message'; }, 5000);
+            setTimeout(() => { el.className = 'message'; }, 6000);
         }
 
+        function formatDate(dateStr) {
+            if (!dateStr) return '—';
+            const [y, m, d] = dateStr.split('-');
+            return `${d}/${m}/${y}`;
+        }
+
+        // ── Excel upload ──
         window.handleFileUpload = async function (event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -467,7 +616,13 @@
                         const val = (row['Attendance'] || row['attendance'] || row['Status'] || '').toString().trim();
                         const sel = document.getElementById(`attendance_${idx}`);
                         const opt = Array.from(sel.options).find(o => o.value.toLowerCase() === val.toLowerCase());
-                        if (opt) { sel.value = opt.value; matchedCount++; }
+                        if (opt) {
+                            sel.value = opt.value;
+                            sel.classList.remove('prefilled');
+                            const row2 = document.querySelector(`tr[data-index="${idx}"]`);
+                            if (row2) row2.classList.remove('row-prefilled');
+                            matchedCount++;
+                        }
                     }
                 });
 
