@@ -410,12 +410,14 @@
     </div>
 
     <div class="save-meta">
-      <span class="meta-label">Label</span>
-      <input class="meta-input" id="snap-label" placeholder="e.g. 1pm snapshot, 4pm run..." style="width: 260px;">
-      <span class="meta-label" style="margin-left: 12px;">Snapshot Time</span>
+      <span class="meta-label">Operational Date</span>
+      <input class="meta-input" id="snap-opdate" type="date" title="The date this data relates to">
+      <span class="meta-label" style="margin-left: 12px;">Label</span>
+      <input class="meta-input" id="snap-label" placeholder="e.g. 1pm snapshot, 4pm run..." style="width: 220px;">
+      <span class="meta-label" style="margin-left: 12px;">Saved At</span>
       <input class="meta-input" id="snap-time" type="datetime-local">
       <span style="margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim);">
-        Timestamp auto-set on save if blank
+        "Saved At" auto-set if blank
       </span>
     </div>
 
@@ -593,6 +595,7 @@ window.saveSnapshot = async function() {
   const ts = timeEl.value
     ? Timestamp.fromDate(new Date(timeEl.value))
     : Timestamp.now();
+  const opDate = document.getElementById('snap-opdate').value || null;
 
   // Build flat engineer array for easy querying
   const engineers = Object.entries(parsed).map(([name, jobs]) => ({ name, jobs, jobCount: jobs.length }));
@@ -601,6 +604,7 @@ window.saveSnapshot = async function() {
     await addDoc(collection(db, 'Region Comparison'), {
       label,
       savedAt: ts,
+      operationalDate: opDate,
       engineerCount: engineers.length,
       engineers
     });
@@ -618,6 +622,7 @@ window.clearSave = function() {
   document.getElementById('paste-input').value = '';
   document.getElementById('snap-label').value  = '';
   document.getElementById('snap-time').value   = '';
+  document.getElementById('snap-opdate').value = '';
   document.getElementById('save-btn').disabled = true;
   document.getElementById('preview-count').textContent = '0 engineers';
   document.getElementById('live-preview').innerHTML = '<span style="color:var(--text-dim);">Paste data on the left to preview…</span>';
@@ -682,6 +687,7 @@ window.renderTable = function() {
       <th>Engineer</th>
       <th class="sortable" onclick="document.getElementById('view-sort').value='jobs-desc';renderTable()">Jobs ↕</th>
       <th>Job Numbers</th>
+      <th>Op. Date</th>
       <th>Snapshot</th>
       <th>Saved At</th>
       <th></th>
@@ -703,6 +709,7 @@ window.renderTable = function() {
           ${isExp && eng.jobs.length > 5 ? `<button class="expand-btn" onclick="toggleExpand('${rowId}')">Show less</button>` : ''}
         </div>
       </td>
+      <td class="ts-cell">${snap.operationalDate ? fmtDate(snap.operationalDate) : '<span style="color:var(--text-dim);">—</span>'}</td>
       <td class="ts-cell">${escHtml(snap.label)}</td>
       <td class="ts-cell">${fmtTs(snap.savedAt)}</td>
       <td><button class="delete-snap-btn" title="Delete this snapshot" onclick="deleteSnapshot('${snap.id}', '${escHtml(snap.label).replace(/'/g,"\\'")}')">🗑</button></td>
@@ -753,9 +760,10 @@ function populateMovementSelects() {
   const toSel   = document.getElementById('mvt-to');
   const fromVal = fromSel.value, toVal = toSel.value;
 
-  const opts = snapshots.map(s =>
-    `<option value="${s.id}">${fmtTs(s.savedAt)} — ${escHtml(s.label)}</option>`
-  ).join('');
+  const opts = snapshots.map(s => {
+    const opPart = s.operationalDate ? ` [${fmtDate(s.operationalDate)}]` : '';
+    return `<option value="${s.id}">${fmtTs(s.savedAt)}${opPart} — ${escHtml(s.label)}</option>`;
+  }).join('');
 
   fromSel.innerHTML = '<option value="">Select baseline…</option>' + opts;
   toSel.innerHTML   = '<option value="">Select comparison…</option>' + opts;
@@ -848,9 +856,15 @@ window.renderMovement = function() {
       </div>
     </div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted);margin-bottom:20px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
-      Comparing <strong style="color:var(--amber)">${escHtml(snapFrom.label)}</strong>
-      <span style="margin:0 8px;">→</span>
-      <strong style="color:var(--green)">${escHtml(snapTo.label)}</strong>
+      <div style="margin-bottom:4px;">
+        Comparing <strong style="color:var(--amber)">${escHtml(snapFrom.label)}</strong>
+        <span style="margin:0 8px;">→</span>
+        <strong style="color:var(--green)">${escHtml(snapTo.label)}</strong>
+      </div>
+      ${(snapFrom.operationalDate || snapTo.operationalDate) ? `<div style="color:var(--text-dim);">
+        Op. date: <span style="color:var(--amber);">${snapFrom.operationalDate ? fmtDate(snapFrom.operationalDate) : '—'}</span>
+        → <span style="color:var(--green);">${snapTo.operationalDate ? fmtDate(snapTo.operationalDate) : '—'}</span>
+      </div>` : ''}
     </div>
   `;
 
@@ -955,6 +969,12 @@ function fmtTs(ts) {
   });
 }
 
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+
 function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -985,6 +1005,8 @@ const now = new Date();
 const pad = n => String(n).padStart(2,'0');
 document.getElementById('snap-time').value =
   `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+document.getElementById('snap-opdate').value =
+  `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
 
 // ── init ────────────────────────────────────────────────
 loadSnapshots();
