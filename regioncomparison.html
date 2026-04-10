@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Region Comparison</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Cabinet+Grotesk:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #12151c;
+    --surface2: #191d28;
+    --border: #252a38;
+    --border2: #2e3448;
+    --accent: #5b8af0;
+    --accent-soft: rgba(91,138,240,0.12);
+    --accent-glow: rgba(91,138,240,0.3);
+    --green: #3ecf8e;
+    --green-soft: rgba(62,207,142,0.12);
+    --amber: #f5a623;
+    --amber-soft: rgba(245,166,35,0.12);
+    --red: #f06565;
+    --red-soft: rgba(240,101,101,0.12);
+    --purple: #a78bfa;
+    --purple-soft: rgba(167,139,250,0.12);
+    --text: #e2e8f8;
+    --text-muted: #6b7599;
+    --text-dim: #3d4566;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Cabinet Grotesk', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(91,138,240,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(91,138,240,0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { max-width: 1440px; margin: 0 auto; padding: 28px 24px; position: relative; z-index: 1; }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 32px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand-name {
+    font-size: 22px; font-weight: 900; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .brand-tag {
+    font-family: var(--mono); font-size: 10px; color: var(--text-muted);
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+
+  .tab-group { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .tab {
+    font-family: var(--sans); font-weight: 700; font-size: 13px;
+    padding: 8px 18px; border-radius: 7px; border: none; cursor: pointer;
+    color: var(--text-muted); background: transparent;
+    transition: all 0.2s; letter-spacing: 0.2px;
+  }
+  .tab.active { background: var(--accent); color: #fff; }
+  .tab:hover:not(.active) { color: var(--text); background: var(--surface2); }
+
+  /* ── VIEWS ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── SAVE PANEL ── */
+  .save-panel {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;
+  }
+
+  .input-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+
+  .input-block-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-blue { background: var(--accent); }
+  .dot-green { background: var(--green); }
+
+  .input-block-header h3 {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted);
+  }
+
+  .input-block-header .slot-badge {
+    margin-left: auto; font-family: var(--mono); font-size: 10px;
+    padding: 2px 8px; border-radius: 4px; letter-spacing: 1px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+
+  textarea {
+    width: 100%; height: 200px; background: transparent; border: none;
+    padding: 14px 16px; color: var(--text); font-family: var(--mono);
+    font-size: 11px; line-height: 1.7; resize: none; outline: none;
+  }
+  textarea::placeholder { color: var(--text-dim); }
+
+  .save-meta {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px;
+    display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .meta-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  .meta-input {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 14px;
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    outline: none; transition: border 0.2s;
+  }
+  .meta-input:focus { border-color: var(--accent); }
+
+  .actions { display: flex; gap: 12px; margin-bottom: 32px; }
+
+  .btn {
+    font-family: var(--sans); font-weight: 800; font-size: 13px;
+    letter-spacing: 0.3px; padding: 11px 26px; border-radius: 9px;
+    border: none; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #7aa0f5; transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); }
+  .btn-ghost:hover { border-color: var(--text-muted); color: var(--text); }
+  .btn-danger { background: var(--red-soft); border: 1px solid rgba(240,101,101,0.3); color: var(--red); }
+  .btn-danger:hover { background: rgba(240,101,101,0.2); }
+  .btn-sm { padding: 7px 14px; font-size: 11px; }
+
+  /* Feedback toast */
+  .toast {
+    position: fixed; bottom: 28px; right: 28px; z-index: 999;
+    background: var(--green); color: #0a1a0f; font-family: var(--sans);
+    font-weight: 800; font-size: 13px; padding: 12px 22px; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(62,207,142,0.35);
+    transform: translateY(80px); opacity: 0; transition: all 0.3s;
+    pointer-events: none;
+  }
+  .toast.error { background: var(--red); color: #fff; box-shadow: 0 8px 24px rgba(240,101,101,0.35); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* ── VIEWER ── */
+  .viewer-controls {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+
+  .search-input {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 9px; padding: 10px 14px;
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    outline: none; transition: border 0.2s; width: 280px;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-dim); }
+
+  .select-input {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 9px; padding: 10px 14px;
+    color: var(--text); font-family: var(--sans); font-size: 12px; font-weight: 600;
+    outline: none; cursor: pointer; transition: border 0.2s;
+    -webkit-appearance: none; appearance: none;
+    padding-right: 32px;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7599' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 8px center; background-repeat: no-repeat; background-size: 16px;
+  }
+  .select-input:focus { border-color: var(--accent); }
+
+  /* Snapshots table */
+  .snapshots-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+
+  .snap-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+
+  .snap-table thead { background: var(--surface2); }
+  .snap-table th {
+    padding: 11px 16px; text-align: left; font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-muted); font-weight: 500;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .snap-table th.sortable { cursor: pointer; user-select: none; }
+  .snap-table th.sortable:hover { color: var(--text); }
+
+  .snap-table tbody tr { border-bottom: 1px solid rgba(37,42,56,0.6); transition: background 0.1s; }
+  .snap-table tbody tr:last-child { border-bottom: none; }
+  .snap-table tbody tr:hover { background: var(--surface2); }
+  .snap-table td { padding: 11px 16px; vertical-align: middle; }
+
+  .name-cell { font-weight: 700; color: var(--text); font-family: var(--sans); font-size: 13px; }
+
+  .ts-cell { color: var(--text-muted); font-size: 11px; }
+
+  .count-pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid rgba(91,138,240,0.2); border-radius: 6px;
+    font-weight: 500; font-size: 12px; padding: 3px 10px; min-width: 40px;
+    font-family: var(--mono);
+  }
+
+  .jobs-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .job-chip {
+    font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+    border-radius: 4px; background: var(--surface2); color: var(--accent);
+    border: 1px solid rgba(91,138,240,0.15);
+  }
+
+  .expand-btn {
+    background: none; border: none; cursor: pointer; color: var(--accent);
+    font-family: var(--mono); font-size: 11px; padding: 3px 8px;
+    border-radius: 4px; transition: background 0.15s;
+  }
+  .expand-btn:hover { background: var(--accent-soft); }
+
+  /* Expanded row */
+  .expanded-row { background: var(--surface2); }
+  .expanded-row td { padding: 14px 20px 18px; }
+  .expanded-content { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ── MOVEMENT PANEL ── */
+  .movement-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+
+  .movement-controls { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .movement-empty {
+    text-align: center; padding: 60px 20px;
+    font-family: var(--mono); font-size: 13px; color: var(--text-dim);
+  }
+
+  .movement-summary {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;
+  }
+
+  .msummary-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; text-align: center;
+  }
+  .msummary-card.moved { border-color: rgba(245,166,35,0.3); background: var(--amber-soft); }
+  .msummary-card.gained { border-color: rgba(62,207,142,0.3); background: var(--green-soft); }
+  .msummary-card.lost { border-color: rgba(240,101,101,0.3); background: var(--red-soft); }
+
+  .msummary-val { font-family: var(--mono); font-size: 28px; font-weight: 500; margin-bottom: 4px; }
+  .msummary-card.moved .msummary-val { color: var(--amber); }
+  .msummary-card.gained .msummary-val { color: var(--green); }
+  .msummary-card.lost .msummary-val { color: var(--red); }
+  .msummary-lbl { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); font-family: var(--mono); }
+
+  /* Movement table */
+  .mvt-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .mvt-table thead { background: var(--surface2); }
+  .mvt-table th {
+    padding: 11px 16px; text-align: left; font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-muted); font-weight: 500;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .mvt-table tbody tr { border-bottom: 1px solid rgba(37,42,56,0.6); transition: background 0.1s; }
+  .mvt-table tbody tr:last-child { border-bottom: none; }
+  .mvt-table tbody tr:hover { background: var(--surface2); }
+  .mvt-table td { padding: 11px 16px; vertical-align: middle; }
+
+  .from-badge { background: var(--red-soft); color: var(--red); border: 1px solid rgba(240,101,101,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; white-space: nowrap; }
+  .to-badge { background: var(--green-soft); color: var(--green); border: 1px solid rgba(62,207,142,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; white-space: nowrap; }
+  .new-badge { background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(91,138,240,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; }
+  .gone-badge { background: rgba(107,117,153,0.15); color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; font-size: 11px; }
+  .arrow { color: var(--text-dim); margin: 0 6px; }
+
+  .section-head {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-muted);
+    margin: 24px 0 12px; display: flex; align-items: center; gap: 12px;
+  }
+  .section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .no-snapshots {
+    text-align: center; padding: 80px 20px;
+    font-family: var(--mono); font-size: 13px; color: var(--text-dim);
+    line-height: 2;
+  }
+
+  .loading-state {
+    text-align: center; padding: 60px 20px;
+    font-family: var(--mono); font-size: 13px; color: var(--text-muted);
+  }
+  .spinner {
+    display: inline-block; width: 20px; height: 20px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    margin-right: 10px; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .parsed-preview {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin-top: 14px;
+    display: none;
+  }
+  .parsed-preview.visible { display: block; }
+  .parsed-preview-title {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+  }
+  .parsed-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .parsed-item {
+    font-family: var(--mono); font-size: 11px; padding: 4px 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text);
+  }
+  .parsed-item .pcount { color: var(--accent); margin-left: 6px; }
+
+  .delete-snap-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font-size: 16px; padding: 4px;
+    border-radius: 4px; transition: color 0.15s, background 0.15s;
+    line-height: 1;
+  }
+  .delete-snap-btn:hover { color: var(--red); background: var(--red-soft); }
+
+  .snap-id { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+
+  /* Pager */
+  .pager { display: flex; align-items: center; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  .pager-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); border-radius: 7px; padding: 6px 14px; font-family: var(--mono); font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .pager-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .pager-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pager-info { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+
+  @media (max-width: 768px) {
+    .save-panel { grid-template-columns: 1fr; }
+    .movement-summary { grid-template-columns: 1fr; }
+    .topbar { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .search-input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-name">Region Comparison</div>
+      <div class="brand-tag">Job Snapshot Tracker</div>
+    </div>
+    <div class="tab-group">
+      <button class="tab active" onclick="switchTab('save')">▶ Save Snapshot</button>
+      <button class="tab" onclick="switchTab('view')">◉ View All</button>
+      <button class="tab" onclick="switchTab('movement')">⇄ Job Movement</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SAVE TAB
+  ══════════════════════════════════════════ -->
+  <div id="tab-save" class="view active">
+
+    <div class="save-panel">
+      <div class="input-block">
+        <div class="input-block-header">
+          <div class="dot dot-blue"></div>
+          <h3>Snapshot Data</h3>
+          <span class="slot-badge">PASTE RAW</span>
+        </div>
+        <textarea id="paste-input" placeholder="Paste engineer data here...&#10;&#10;e.g.&#10;Bilal AminMG68 0HY | PVD | LIVE...J-ACE997AE...&#10;Bryan McCabeSOL10 2AE | PVD | LIVE...J-40AE1FCD..."></textarea>
+      </div>
+
+      <div class="input-block">
+        <div class="input-block-header">
+          <div class="dot dot-green"></div>
+          <h3>Live Preview</h3>
+          <span class="slot-badge" id="preview-count">0 engineers</span>
+        </div>
+        <div style="padding: 14px 16px; height: 200px; overflow-y: auto;">
+          <div id="live-preview" style="font-family: var(--mono); font-size: 11px; color: var(--text-dim); line-height: 1.8;">
+            Paste data on the left to preview...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-meta">
+      <span class="meta-label">Label</span>
+      <input class="meta-input" id="snap-label" placeholder="e.g. 1pm snapshot, 4pm run..." style="width: 260px;">
+      <span class="meta-label" style="margin-left: 12px;">Snapshot Time</span>
+      <input class="meta-input" id="snap-time" type="datetime-local">
+      <span style="margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim);">
+        Timestamp auto-set on save if blank
+      </span>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="save-btn" onclick="saveSnapshot()" disabled>💾 Save Snapshot</button>
+      <button class="btn btn-ghost" onclick="clearSave()">✕ Clear</button>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       VIEW TAB
+  ══════════════════════════════════════════ -->
+  <div id="tab-view" class="view">
+
+    <div class="viewer-controls">
+      <input class="search-input" id="view-search" placeholder="🔍  Search engineer or job…" oninput="renderTable()">
+      <select class="select-input" id="view-sort" onchange="renderTable()">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="name">Name A→Z</option>
+        <option value="jobs-desc">Most jobs</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadSnapshots()">↻ Refresh</button>
+      <span style="margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-muted);" id="view-count-label"></span>
+    </div>
+
+    <div id="view-content">
+      <div class="loading-state"><span class="spinner"></span>Loading…</div>
+    </div>
+
+    <div class="pager" id="pager" style="display:none;">
+      <button class="pager-btn" id="pager-prev" onclick="changePage(-1)">← Prev</button>
+      <span class="pager-info" id="pager-info"></span>
+      <button class="pager-btn" id="pager-next" onclick="changePage(1)">Next →</button>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       MOVEMENT TAB
+  ══════════════════════════════════════════ -->
+  <div id="tab-movement" class="view">
+
+    <div class="movement-header">
+      <div style="flex: 1;">
+        <div style="font-size: 15px; font-weight: 800; margin-bottom: 4px;">Job Movement Analysis</div>
+        <div style="font-family: var(--mono); font-size: 11px; color: var(--text-muted);">Compare two snapshots to see which jobs moved between engineers</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px;">
+      <div>
+        <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Baseline Snapshot (Earlier)</div>
+        <select class="select-input" id="mvt-from" style="width: 100%;" onchange="renderMovement()">
+          <option value="">Select snapshot…</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Comparison Snapshot (Later)</div>
+        <select class="select-input" id="mvt-to" style="width: 100%;" onchange="renderMovement()">
+          <option value="">Select snapshot…</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="renderMovement()">Analyse →</button>
+    </div>
+
+    <div id="movement-content">
+      <div class="movement-empty">Select two snapshots above to see job movement</div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, getDocs, deleteDoc, doc,
+  query, orderBy, Timestamp
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+  authDomain: "oesperformance-a54c0.firebaseapp.com",
+  projectId: "oesperformance-a54c0",
+  storageBucket: "oesperformance-a54c0.firebasestorage.app",
+  messagingSenderId: "484894102454",
+  appId: "1:484894102454:web:17535ee497eac2d90d6717",
+  measurementId: "G-R56BGZYV8N"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── state ──────────────────────────────────────────────
+let snapshots   = [];   // all loaded from Firestore
+let parsed      = {};   // currently parsed from textarea
+let currentPage = 1;
+const PAGE_SIZE = 30;
+let expandedRows = new Set();
+
+// ── parser (from jobschecker) ───────────────────────────
+function parseData(text) {
+  if (!text.trim()) return {};
+  text = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const rawLines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const engineerLines = [];
+  let current = '';
+  for (const line of rawLines) {
+    const startsNew = /^[A-Za-z].*?[A-Z]{1,4}\d{1,2}\s\d[A-Z]{2}/.test(line);
+    if (startsNew) { if (current) engineerLines.push(current); current = line; }
+    else { current += ' ' + line; }
+  }
+  if (current) engineerLines.push(current);
+
+  const engineers = {};
+  for (const line of engineerLines) {
+    const nm = line.match(/^(.*?)([A-Z]{1,4}\d{1,2}\s\d[A-Z]{2})/);
+    const name = nm ? nm[1].trim() : null;
+    if (!name || name.length < 3) continue;
+    const jobs = [];
+    const re = /J-([A-Z0-9]{8})/gi;
+    let m;
+    while ((m = re.exec(line)) !== null) jobs.push('J-'+m[1].toUpperCase());
+    const unique = [...new Set(jobs)];
+    if (!unique.length) continue;
+    if (!engineers[name]) engineers[name] = new Set();
+    unique.forEach(j => engineers[name].add(j));
+  }
+
+  const result = {};
+  for (const [name, jobs] of Object.entries(engineers))
+    result[name] = [...jobs].sort();
+  return result;
+}
+
+// ── live preview ────────────────────────────────────────
+document.getElementById('paste-input').addEventListener('input', () => {
+  const text = document.getElementById('paste-input').value;
+  parsed = parseData(text);
+  const names = Object.keys(parsed);
+  const btn = document.getElementById('save-btn');
+  const countBadge = document.getElementById('preview-count');
+  countBadge.textContent = `${names.length} engineer${names.length!==1?'s':''}`;
+  if (names.length > 0) {
+    btn.disabled = false;
+    document.getElementById('live-preview').innerHTML =
+      names.sort().map(n => {
+        const cnt = parsed[n].length;
+        return `<div style="margin-bottom:3px;">
+          <span style="color:var(--text);font-weight:500;">${n}</span>
+          <span style="color:var(--accent);margin-left:8px;">${cnt} job${cnt!==1?'s':''}</span>
+        </div>`;
+      }).join('');
+  } else {
+    btn.disabled = true;
+    document.getElementById('live-preview').innerHTML = '<span style="color:var(--text-dim);">No engineers detected…</span>';
+  }
+});
+
+// ── save ────────────────────────────────────────────────
+window.saveSnapshot = async function() {
+  if (!Object.keys(parsed).length) { showToast('Nothing to save — paste data first', true); return; }
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = '⏳ Saving…';
+
+  const labelEl = document.getElementById('snap-label');
+  const timeEl  = document.getElementById('snap-time');
+
+  const label = labelEl.value.trim() || 'Snapshot';
+  const ts = timeEl.value
+    ? Timestamp.fromDate(new Date(timeEl.value))
+    : Timestamp.now();
+
+  // Build flat engineer array for easy querying
+  const engineers = Object.entries(parsed).map(([name, jobs]) => ({ name, jobs, jobCount: jobs.length }));
+
+  try {
+    await addDoc(collection(db, 'Region Comparison'), {
+      label,
+      savedAt: ts,
+      engineerCount: engineers.length,
+      engineers
+    });
+    showToast(`✓ Saved "${label}" — ${engineers.length} engineers`);
+    clearSave();
+    loadSnapshots();
+  } catch(e) {
+    console.error(e);
+    showToast('Error saving: ' + e.message, true);
+  }
+  btn.disabled = false; btn.textContent = '💾 Save Snapshot';
+};
+
+window.clearSave = function() {
+  document.getElementById('paste-input').value = '';
+  document.getElementById('snap-label').value  = '';
+  document.getElementById('snap-time').value   = '';
+  document.getElementById('save-btn').disabled = true;
+  document.getElementById('preview-count').textContent = '0 engineers';
+  document.getElementById('live-preview').innerHTML = '<span style="color:var(--text-dim);">Paste data on the left to preview…</span>';
+  parsed = {};
+};
+
+// ── load from Firestore ─────────────────────────────────
+window.loadSnapshots = async function() {
+  document.getElementById('view-content').innerHTML = '<div class="loading-state"><span class="spinner"></span>Loading…</div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'Region Comparison'), orderBy('savedAt', 'desc')));
+    snapshots = [];
+    snap.forEach(d => snapshots.push({ id: d.id, ...d.data() }));
+    populateMovementSelects();
+    renderTable();
+  } catch(e) {
+    document.getElementById('view-content').innerHTML =
+      `<div class="loading-state" style="color:var(--red);">Error: ${e.message}</div>`;
+  }
+};
+
+// ── render table ────────────────────────────────────────
+window.renderTable = function() {
+  const search  = (document.getElementById('view-search').value || '').toLowerCase();
+  const sortBy  = document.getElementById('view-sort').value;
+
+  // Flatten: one row per engineer per snapshot
+  let rows = [];
+  snapshots.forEach(snap => {
+    (snap.engineers || []).forEach(eng => {
+      if (search && !eng.name.toLowerCase().includes(search) &&
+          !eng.jobs.some(j => j.toLowerCase().includes(search))) return;
+      rows.push({ snap, eng });
+    });
+  });
+
+  // Sort
+  if (sortBy === 'oldest')    rows.sort((a,b) => toMs(a.snap.savedAt) - toMs(b.snap.savedAt));
+  else if (sortBy === 'name') rows.sort((a,b) => a.eng.name.localeCompare(b.eng.name));
+  else if (sortBy === 'jobs-desc') rows.sort((a,b) => b.eng.jobCount - a.eng.jobCount);
+  else                        rows.sort((a,b) => toMs(b.snap.savedAt) - toMs(a.snap.savedAt));
+
+  // Paging
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (currentPage > pages) currentPage = 1;
+  const paged = rows.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+
+  document.getElementById('view-count-label').textContent = `${total} row${total!==1?'s':''}`;
+
+  if (!rows.length) {
+    document.getElementById('view-content').innerHTML =
+      `<div class="no-snapshots">${snapshots.length === 0 ? 'No snapshots saved yet.\nSave your first snapshot using the Save tab.' : 'No results match your search.'}</div>`;
+    document.getElementById('pager').style.display = 'none';
+    return;
+  }
+
+  // Group by snapshot for header rows
+  let lastSnapId = null;
+  let html = `<div class="snapshots-wrap"><table class="snap-table">
+    <thead><tr>
+      <th>Engineer</th>
+      <th class="sortable" onclick="document.getElementById('view-sort').value='jobs-desc';renderTable()">Jobs ↕</th>
+      <th>Job Numbers</th>
+      <th>Snapshot</th>
+      <th>Saved At</th>
+      <th></th>
+    </tr></thead><tbody>`;
+
+  paged.forEach(({ snap, eng }, idx) => {
+    const rowId = `${snap.id}_${eng.name.replace(/\s/g,'_')}`;
+    const isExp = expandedRows.has(rowId);
+    const visJobs = isExp ? eng.jobs : eng.jobs.slice(0, 5);
+    const more    = eng.jobs.length - 5;
+
+    html += `<tr>
+      <td class="name-cell">${escHtml(eng.name)}</td>
+      <td><span class="count-pill">${eng.jobCount}</span></td>
+      <td>
+        <div class="jobs-chips">
+          ${visJobs.map(j=>`<span class="job-chip">${j}</span>`).join('')}
+          ${!isExp && more > 0 ? `<button class="expand-btn" onclick="toggleExpand('${rowId}')">+${more} more</button>` : ''}
+          ${isExp && eng.jobs.length > 5 ? `<button class="expand-btn" onclick="toggleExpand('${rowId}')">Show less</button>` : ''}
+        </div>
+      </td>
+      <td class="ts-cell">${escHtml(snap.label)}</td>
+      <td class="ts-cell">${fmtTs(snap.savedAt)}</td>
+      <td><button class="delete-snap-btn" title="Delete this snapshot" onclick="deleteSnapshot('${snap.id}', '${escHtml(snap.label).replace(/'/g,"\\'")}')">🗑</button></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('view-content').innerHTML = html;
+
+  // Pager
+  if (pages > 1) {
+    document.getElementById('pager').style.display = 'flex';
+    document.getElementById('pager-info').textContent = `Page ${currentPage} / ${pages}`;
+    document.getElementById('pager-prev').disabled = currentPage <= 1;
+    document.getElementById('pager-next').disabled = currentPage >= pages;
+  } else {
+    document.getElementById('pager').style.display = 'none';
+  }
+};
+
+window.toggleExpand = function(rowId) {
+  if (expandedRows.has(rowId)) expandedRows.delete(rowId);
+  else expandedRows.add(rowId);
+  renderTable();
+};
+
+window.changePage = function(delta) {
+  currentPage += delta;
+  renderTable();
+};
+
+window.deleteSnapshot = async function(snapId, label) {
+  if (!confirm(`Delete snapshot "${label}"?\nThis cannot be undone.`)) return;
+  try {
+    await deleteDoc(doc(db, 'Region Comparison', snapId));
+    snapshots = snapshots.filter(s => s.id !== snapId);
+    populateMovementSelects();
+    renderTable();
+    showToast('Snapshot deleted');
+  } catch(e) {
+    showToast('Error deleting: '+e.message, true);
+  }
+};
+
+// ── movement selects ────────────────────────────────────
+function populateMovementSelects() {
+  const fromSel = document.getElementById('mvt-from');
+  const toSel   = document.getElementById('mvt-to');
+  const fromVal = fromSel.value, toVal = toSel.value;
+
+  const opts = snapshots.map(s =>
+    `<option value="${s.id}">${fmtTs(s.savedAt)} — ${escHtml(s.label)}</option>`
+  ).join('');
+
+  fromSel.innerHTML = '<option value="">Select baseline…</option>' + opts;
+  toSel.innerHTML   = '<option value="">Select comparison…</option>' + opts;
+
+  if (fromVal) fromSel.value = fromVal;
+  if (toVal)   toSel.value   = toVal;
+}
+
+// ── render movement ─────────────────────────────────────
+window.renderMovement = function() {
+  const fromId = document.getElementById('mvt-from').value;
+  const toId   = document.getElementById('mvt-to').value;
+  const cont   = document.getElementById('movement-content');
+
+  if (!fromId || !toId) {
+    cont.innerHTML = '<div class="movement-empty">Select two snapshots above to begin</div>';
+    return;
+  }
+  if (fromId === toId) {
+    cont.innerHTML = '<div class="movement-empty">Please select two different snapshots</div>';
+    return;
+  }
+
+  const snapFrom = snapshots.find(s => s.id === fromId);
+  const snapTo   = snapshots.find(s => s.id === toId);
+  if (!snapFrom || !snapTo) return;
+
+  // Build maps: jobId → engineerName
+  const mapFrom = {}; // job → engineer at baseline
+  const mapTo   = {}; // job → engineer at comparison
+  const engFrom = {}; // engineer → Set of jobs at baseline
+  const engTo   = {}; // engineer → Set of jobs at comparison
+
+  (snapFrom.engineers || []).forEach(eng => {
+    engFrom[eng.name] = new Set(eng.jobs);
+    eng.jobs.forEach(j => { mapFrom[j] = eng.name; });
+  });
+
+  (snapTo.engineers || []).forEach(eng => {
+    engTo[eng.name] = new Set(eng.jobs);
+    eng.jobs.forEach(j => { mapTo[j] = eng.name; });
+  });
+
+  // All jobs across both
+  const allJobs = new Set([...Object.keys(mapFrom), ...Object.keys(mapTo)]);
+
+  const moved   = [];  // was on A, now on B under different engineer
+  const dropped = [];  // was on A, not on B at all
+  const newJobs = [];  // on B but not on A
+
+  allJobs.forEach(job => {
+    const from = mapFrom[job] || null;
+    const to   = mapTo[job]   || null;
+    if (from && to && from !== to) moved.push({ job, from, to });
+    else if (from && !to)           dropped.push({ job, from });
+    else if (!from && to)           newJobs.push({ job, to });
+  });
+
+  // Per-engineer gain/loss
+  const allEngs = new Set([...Object.keys(engFrom), ...Object.keys(engTo)]);
+  const engChanges = {};
+  allEngs.forEach(eng => {
+    const before = engFrom[eng] || new Set();
+    const after  = engTo[eng]   || new Set();
+    const gained = [...after].filter(j => !before.has(j));
+    const lost   = [...before].filter(j => !after.has(j));
+    if (gained.length || lost.length) {
+      engChanges[eng] = { gained, lost, before: before.size, after: after.size };
+    }
+  });
+
+  // Summary cards
+  const movedCount   = moved.length;
+  const gainedUniq   = newJobs.length;
+  const droppedUniq  = dropped.length;
+
+  let html = `
+    <div class="movement-summary">
+      <div class="msummary-card moved">
+        <div class="msummary-val">${movedCount}</div>
+        <div class="msummary-lbl">Jobs Moved</div>
+      </div>
+      <div class="msummary-card gained">
+        <div class="msummary-val">${gainedUniq}</div>
+        <div class="msummary-lbl">New Jobs</div>
+      </div>
+      <div class="msummary-card lost">
+        <div class="msummary-val">${droppedUniq}</div>
+        <div class="msummary-lbl">Dropped Jobs</div>
+      </div>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted);margin-bottom:20px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+      Comparing <strong style="color:var(--amber)">${escHtml(snapFrom.label)}</strong>
+      <span style="margin:0 8px;">→</span>
+      <strong style="color:var(--green)">${escHtml(snapTo.label)}</strong>
+    </div>
+  `;
+
+  // Per-engineer breakdown
+  if (Object.keys(engChanges).length) {
+    html += `<div class="section-head">Per Engineer Changes</div>
+      <div class="snapshots-wrap" style="margin-bottom:24px;">
+      <table class="mvt-table">
+        <thead><tr>
+          <th>Engineer</th>
+          <th>Before</th>
+          <th>After</th>
+          <th>Jobs Gained</th>
+          <th>Jobs Lost</th>
+        </tr></thead><tbody>`;
+
+    Object.entries(engChanges).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([eng, ch]) => {
+      const gainedHtml = ch.gained.length
+        ? ch.gained.map(j=>`<span class="to-badge" style="margin:2px;">${j}</span>`).join('')
+        : '<span style="color:var(--text-dim);font-size:11px;">—</span>';
+      const lostHtml = ch.lost.length
+        ? ch.lost.map(j=>`<span class="from-badge" style="margin:2px;">${j}</span>`).join('')
+        : '<span style="color:var(--text-dim);font-size:11px;">—</span>';
+
+      html += `<tr>
+        <td class="name-cell">${escHtml(eng)}</td>
+        <td><span class="count-pill">${ch.before}</span></td>
+        <td><span class="count-pill" style="background:var(--green-soft);color:var(--green);border-color:rgba(62,207,142,0.2);">${ch.after}</span></td>
+        <td><div style="display:flex;flex-wrap:wrap;gap:4px;">${gainedHtml}</div></td>
+        <td><div style="display:flex;flex-wrap:wrap;gap:4px;">${lostHtml}</div></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Job-level movement table
+  if (moved.length) {
+    html += `<div class="section-head">Job Movement Detail (Reassigned Jobs)</div>
+      <div class="snapshots-wrap" style="margin-bottom:24px;">
+      <table class="mvt-table">
+        <thead><tr><th>Job</th><th>From Engineer</th><th></th><th>To Engineer</th></tr></thead><tbody>`;
+    moved.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,from,to}) => {
+      html += `<tr>
+        <td style="font-family:var(--mono);color:var(--accent);">${job}</td>
+        <td><span class="from-badge">${escHtml(from)}</span></td>
+        <td style="text-align:center;color:var(--text-dim);">→</td>
+        <td><span class="to-badge">${escHtml(to)}</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  if (dropped.length) {
+    html += `<div class="section-head">Dropped Jobs (in baseline, not in comparison)</div>
+      <div class="snapshots-wrap" style="margin-bottom:24px;">
+      <table class="mvt-table">
+        <thead><tr><th>Job</th><th>Was Assigned To</th></tr></thead><tbody>`;
+    dropped.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,from}) => {
+      html += `<tr>
+        <td style="font-family:var(--mono);color:var(--red);">${job}</td>
+        <td><span class="gone-badge">${escHtml(from)}</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  if (newJobs.length) {
+    html += `<div class="section-head">New Jobs (in comparison, not in baseline)</div>
+      <div class="snapshots-wrap" style="margin-bottom:24px;">
+      <table class="mvt-table">
+        <thead><tr><th>Job</th><th>Assigned To</th></tr></thead><tbody>`;
+    newJobs.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,to}) => {
+      html += `<tr>
+        <td style="font-family:var(--mono);color:var(--green);">${job}</td>
+        <td><span class="new-badge">${escHtml(to)}</span></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  if (!movedCount && !gainedUniq && !droppedUniq && !Object.keys(engChanges).length) {
+    html += '<div class="movement-empty">No differences found between these two snapshots.</div>';
+  }
+
+  cont.innerHTML = html;
+};
+
+// ── helpers ─────────────────────────────────────────────
+function toMs(ts) {
+  if (!ts) return 0;
+  if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+  if (ts instanceof Date) return ts.getTime();
+  return new Date(ts).getTime();
+}
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  const d = typeof ts.toDate === 'function' ? ts.toDate() : new Date(ts);
+  return d.toLocaleString('en-GB', {
+    day:'2-digit', month:'short', year:'numeric',
+    hour:'2-digit', minute:'2-digit', hour12: false
+  });
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError?' error':'') + ' show';
+  setTimeout(() => t.className = 'toast' + (isError?' error':''), 3000);
+}
+
+// ── tab switching ────────────────────────────────────────
+window.switchTab = function(tab) {
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    const tabs = ['save','view','movement'];
+    el.classList.toggle('active', tabs[i] === tab);
+  });
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if (tab === 'view' || tab === 'movement') {
+    if (!snapshots.length) loadSnapshots();
+    else { renderTable(); if (tab==='movement') populateMovementSelects(); }
+  }
+};
+
+// ── default datetime ─────────────────────────────────────
+const now = new Date();
+const pad = n => String(n).padStart(2,'0');
+document.getElementById('snap-time').value =
+  `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+// ── init ────────────────────────────────────────────────
+loadSnapshots();
+</script>
+</body>
+</html>
