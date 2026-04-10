@@ -218,6 +218,16 @@
 
   .name-cell { font-weight: 700; color: var(--text); font-family: var(--sans); font-size: 13px; }
 
+  /* OES engineer highlight */
+  tr.oes-row { background: rgba(62,207,142,0.05); }
+  tr.oes-row:hover { background: rgba(62,207,142,0.1) !important; }
+  .oes-name { color: var(--green) !important; display: flex; align-items: center; gap: 8px; }
+  .oes-badge { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; background: var(--green-soft); color: var(--green); border: 1px solid rgba(62,207,142,0.3); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+  tr.oes-row .count-pill { background: var(--green-soft); color: var(--green); border-color: rgba(62,207,142,0.25); }
+  tr.oes-row .job-chip { background: rgba(62,207,142,0.08); color: var(--green); border-color: rgba(62,207,142,0.2); }
+  .oes-eng-label { color: var(--green); font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+  .oes-eng-label::after { content: 'OES'; font-family: var(--mono); font-size: 9px; font-weight: 500; background: var(--green-soft); color: var(--green); border: 1px solid rgba(62,207,142,0.3); border-radius: 3px; padding: 1px 5px; letter-spacing: 1px; }
+
   .ts-cell { color: var(--text-muted); font-size: 11px; }
 
   .count-pill {
@@ -516,6 +526,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
 
+// ── OES engineers ─────────────────────────────────────
+const OES_ENGINEERS = new Set([
+  "Bilal Amin", "Calum Ballingal", "Christopher Stein", "Clayton Spink",
+  "Daniel Nally", "David Thompson (EH)", "James Mclean", "Jamie Longland",
+  "Morris Dow", "Paul Davidson", "Richard Lang"
+]);
+const isOES = name => OES_ENGINEERS.has(name);
+
 // ── state ──────────────────────────────────────────────
 let snapshots   = [];   // all loaded from Firestore
 let parsed      = {};   // currently parsed from textarea
@@ -698,9 +716,13 @@ window.renderTable = function() {
     const isExp = expandedRows.has(rowId);
     const visJobs = isExp ? eng.jobs : eng.jobs.slice(0, 5);
     const more    = eng.jobs.length - 5;
+    const oes = isOES(eng.name);
+    const nameHtml = oes
+      ? `<span class="oes-name">${escHtml(eng.name)}<span class="oes-badge">OES</span></span>`
+      : escHtml(eng.name);
 
-    html += `<tr>
-      <td class="name-cell">${escHtml(eng.name)}</td>
+    html += `<tr${oes ? ' class="oes-row"' : ''}>
+      <td class="name-cell">${nameHtml}</td>
       <td><span class="count-pill">${eng.jobCount}</span></td>
       <td>
         <div class="jobs-chips">
@@ -712,7 +734,7 @@ window.renderTable = function() {
       <td class="ts-cell">${snap.operationalDate ? fmtDate(snap.operationalDate) : '<span style="color:var(--text-dim);">—</span>'}</td>
       <td class="ts-cell">${escHtml(snap.label)}</td>
       <td class="ts-cell">${fmtTs(snap.savedAt)}</td>
-      <td><button class="delete-snap-btn" title="Delete this snapshot" onclick="deleteSnapshot('${snap.id}', '${escHtml(snap.label).replace(/'/g,"\\'")}')">🗑</button></td>
+      <td><button class="delete-snap-btn" title="Delete this snapshot" onclick="deleteSnapshot('${snap.id}', '${escHtml(snap.label).replace(/'/g,"\'")}')">🗑</button></td>
     </tr>`;
   });
 
@@ -888,9 +910,13 @@ window.renderMovement = function() {
       const lostHtml = ch.lost.length
         ? ch.lost.map(j=>`<span class="from-badge" style="margin:2px;">${j}</span>`).join('')
         : '<span style="color:var(--text-dim);font-size:11px;">—</span>';
+      const oesEng = isOES(eng);
+      const engNameHtml = oesEng
+        ? `<span class="oes-eng-label">${escHtml(eng)}</span>`
+        : escHtml(eng);
 
-      html += `<tr>
-        <td class="name-cell">${escHtml(eng)}</td>
+      html += `<tr${oesEng ? ' class="oes-row"' : ''}>
+        <td class="name-cell">${engNameHtml}</td>
         <td><span class="count-pill">${ch.before}</span></td>
         <td><span class="count-pill" style="background:var(--green-soft);color:var(--green);border-color:rgba(62,207,142,0.2);">${ch.after}</span></td>
         <td><div style="display:flex;flex-wrap:wrap;gap:4px;">${gainedHtml}</div></td>
@@ -907,11 +933,13 @@ window.renderMovement = function() {
       <table class="mvt-table">
         <thead><tr><th>Job</th><th>From Engineer</th><th></th><th>To Engineer</th></tr></thead><tbody>`;
     moved.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,from,to}) => {
+      const fromHtml = isOES(from) ? `<span class="from-badge oes-eng-label" style="font-weight:700;">${escHtml(from)}</span>` : `<span class="from-badge">${escHtml(from)}</span>`;
+      const toHtml   = isOES(to)   ? `<span class="to-badge oes-eng-label" style="font-weight:700;">${escHtml(to)}</span>`   : `<span class="to-badge">${escHtml(to)}</span>`;
       html += `<tr>
         <td style="font-family:var(--mono);color:var(--accent);">${job}</td>
-        <td><span class="from-badge">${escHtml(from)}</span></td>
+        <td>${fromHtml}</td>
         <td style="text-align:center;color:var(--text-dim);">→</td>
-        <td><span class="to-badge">${escHtml(to)}</span></td>
+        <td>${toHtml}</td>
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -923,9 +951,10 @@ window.renderMovement = function() {
       <table class="mvt-table">
         <thead><tr><th>Job</th><th>Was Assigned To</th></tr></thead><tbody>`;
     dropped.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,from}) => {
+      const badge = isOES(from) ? `<span class="gone-badge oes-eng-label" style="font-weight:700;">${escHtml(from)}</span>` : `<span class="gone-badge">${escHtml(from)}</span>`;
       html += `<tr>
         <td style="font-family:var(--mono);color:var(--red);">${job}</td>
-        <td><span class="gone-badge">${escHtml(from)}</span></td>
+        <td>${badge}</td>
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -937,12 +966,14 @@ window.renderMovement = function() {
       <table class="mvt-table">
         <thead><tr><th>Job</th><th>Assigned To</th></tr></thead><tbody>`;
     newJobs.sort((a,b)=>a.job.localeCompare(b.job)).forEach(({job,to}) => {
+      const badge = isOES(to) ? `<span class="new-badge oes-eng-label" style="font-weight:700;">${escHtml(to)}</span>` : `<span class="new-badge">${escHtml(to)}</span>`;
       html += `<tr>
         <td style="font-family:var(--mono);color:var(--green);">${job}</td>
-        <td><span class="new-badge">${escHtml(to)}</span></td>
+        <td>${badge}</td>
       </tr>`;
     });
     html += '</tbody></table></div>';
+  }
   }
 
   if (!movedCount && !gainedUniq && !droppedUniq && !Object.keys(engChanges).length) {
