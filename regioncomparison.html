@@ -206,6 +206,13 @@
   .btn-danger { background: var(--red-soft); border: 1px solid rgba(240,101,101,0.3); color: var(--red); }
   .btn-danger:hover { background: rgba(240,101,101,0.2); }
   .btn-sm { padding: 7px 14px; font-size: 11px; }
+  .btn-export {
+    background: var(--green-soft); border: 1px solid rgba(62,207,142,0.3);
+    color: var(--green); font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800;
+    font-size: 11px; padding: 7px 14px; border-radius: 9px; cursor: pointer;
+    transition: all 0.15s; letter-spacing: 0.3px;
+  }
+  .btn-export:hover { background: rgba(62,207,142,0.2); transform: translateY(-1px); }
 
   /* Feedback toast */
   .toast {
@@ -561,6 +568,9 @@
         <button class="view-mode-btn" id="btn-grid-mode" onclick="switchViewMode('grid')" title="Grid view">⊞ Grid</button>
       </div>
 
+      <!-- Export button (shown only in grid mode) -->
+      <button class="btn-export" id="export-btn" style="display:none;" onclick="exportGridToExcel()">⬇ Export to Excel</button>
+
       <button class="btn btn-ghost btn-sm" onclick="loadSnapshots()">↻ Refresh</button>
       <span style="margin-left: auto; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted);" id="view-count-label"></span>
     </div>
@@ -616,6 +626,9 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- SheetJS for Excel export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
@@ -657,6 +670,9 @@ const PAGE_SIZE  = 30;
 let expandedRows = new Set();
 let viewMode     = 'list'; // 'list' | 'grid'
 
+// ── Holds the deduplicated, sorted columns used in the last grid render ──
+let lastGridCols = [];
+
 // ── theme ──────────────────────────────────────────────
 window.setTheme = function(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -679,6 +695,8 @@ window.switchViewMode = function(mode) {
   // Sort dropdown only useful in list mode
   document.getElementById('view-sort').style.opacity = mode === 'grid' ? '0.4' : '1';
   document.getElementById('view-sort').style.pointerEvents = mode === 'grid' ? 'none' : '';
+  // Show export button only in grid mode
+  document.getElementById('export-btn').style.display = mode === 'grid' ? 'inline-flex' : 'none';
   if (mode === 'grid') renderGrid();
   else renderTable();
 };
@@ -884,21 +902,46 @@ window.renderTable = function() {
   }
 };
 
+// ── build grid columns ─────────────────────────────────
+// Rules:
+//  1. Sort all snapshots oldest → newest by savedAt.
+//  2. Group by operationalDate (or by id if no opDate).
+//     For each op-date group, keep only the snapshot with the EARLIEST savedAt.
+//  3. Result is ordered: earliest date/snapshot on the LEFT, latest on the RIGHT.
+function buildGridCols() {
+  // Work from oldest → newest
+  const sorted = [...snapshots].sort((a, b) => toMs(a.savedAt) - toMs(b.savedAt));
+
+  // Deduplicate: key = operationalDate (YYYY-MM-DD) if present, otherwise the snap id.
+  // Because sorted oldest→newest, the first occurrence per key is the earliest saved snapshot.
+  const seen = new Map(); // key → snapshot
+  sorted.forEach(s => {
+    const key = s.operationalDate ? s.operationalDate : s.id;
+    if (!seen.has(key)) seen.set(key, s);
+    // else: already have the earliest for this date — skip later ones
+  });
+
+  // Return in insertion order = oldest first
+  return [...seen.values()];
+}
+
 // ── render grid view ───────────────────────────────────
 window.renderGrid = function() {
   document.getElementById('pager').style.display = 'none';
 
   if (!snapshots.length) {
     document.getElementById('view-content').innerHTML = '<div class="no-snapshots">No snapshots saved yet.<br>Save your first snapshot using the Save tab.</div>';
+    lastGridCols = [];
     return;
   }
 
   const search = (document.getElementById('view-search').value || '').toLowerCase();
 
-  // Columns = snapshots in current order (newest first by default)
-  const cols = [...snapshots]; // already sorted newest-first from Firestore
+  // Columns = deduplicated, oldest-first
+  const cols = buildGridCols();
+  lastGridCols = cols; // store for export
 
-  // All engineer names across all snapshots
+  // All engineer names across ALL snapshots (not just deduped cols)
   const allNames = new Set();
   snapshots.forEach(s => (s.engineers || []).forEach(e => allNames.add(e.name)));
   let sortedNames = [...allNames].sort((a, b) => a.localeCompare(b));
@@ -948,6 +991,70 @@ window.renderGrid = function() {
 
   html += '</tbody></table></div>';
   document.getElementById('view-content').innerHTML = html;
+};
+
+// ── Export grid to Excel ───────────────────────────────
+window.exportGridToExcel = function() {
+  if (!lastGridCols.length) {
+    showToast('No grid data to export', true);
+    return;
+  }
+
+  const search = (document.getElementById('view-search').value || '').toLowerCase();
+
+  // Collect all engineer names (same logic as renderGrid)
+  const allNames = new Set();
+  snapshots.forEach(s => (s.engineers || []).forEach(e => allNames.add(e.name)));
+  let sortedNames = [...allNames].sort((a, b) => a.localeCompare(b));
+  if (search) sortedNames = sortedNames.filter(n => n.toLowerCase().includes(search));
+
+  // Build lookup
+  const lookup = {};
+  snapshots.forEach(s => {
+    lookup[s.id] = {};
+    (s.engineers || []).forEach(e => { lookup[s.id][e.name] = e.jobCount; });
+  });
+
+  const cols = lastGridCols;
+
+  // Build header row
+  const headerRow = ['Engineer', 'OES'];
+  cols.forEach(c => {
+    const dateLabel = c.operationalDate ? fmtDatePlain(c.operationalDate) : fmtTsPlain(c.savedAt);
+    headerRow.push(`${dateLabel} — ${c.label}`);
+  });
+
+  const rows = [headerRow];
+
+  sortedNames.forEach(name => {
+    const row = [name, isOES(name) ? 'OES' : ''];
+    cols.forEach(c => {
+      const count = lookup[c.id]?.[name];
+      row.push(count != null ? count : '');
+    });
+    rows.push(row);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Basic column widths
+  ws['!cols'] = [
+    { wch: 28 }, // Engineer
+    { wch: 6  }, // OES
+    ...cols.map(() => ({ wch: 22 }))
+  ];
+
+  // Style header row bold (SheetJS community edition supports limited styling via cell_styles hack)
+  // We'll just freeze the top row and first column for usability
+  ws['!freeze'] = { xSplit: 2, ySplit: 1 };
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Region Comparison');
+
+  const today = new Date();
+  const fname = `region-comparison-${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  showToast('✓ Exported to Excel');
 };
 
 window.toggleExpand = function(rowId) {
@@ -1140,7 +1247,18 @@ function fmtTs(ts) {
   return d.toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12: false });
 }
 
+function fmtTsPlain(ts) {
+  if (!ts) return '—';
+  const d = typeof ts.toDate === 'function' ? ts.toDate() : new Date(ts);
+  return d.toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12: false });
+}
+
 function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function fmtDatePlain(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
 }
@@ -1155,6 +1273,8 @@ function showToast(msg, isError=false) {
   t.className = 'toast' + (isError?' error':'') + ' show';
   setTimeout(() => t.className = 'toast' + (isError?' error':''), 3000);
 }
+
+const pad = n => String(n).padStart(2,'0');
 
 // ── tab switching ──────────────────────────────────────
 window.switchTab = function(tab) {
@@ -1174,7 +1294,6 @@ window.switchTab = function(tab) {
 
 // ── default datetime ───────────────────────────────────
 const now = new Date();
-const pad = n => String(n).padStart(2,'0');
 document.getElementById('snap-time').value =
   `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 document.getElementById('snap-opdate').value =
