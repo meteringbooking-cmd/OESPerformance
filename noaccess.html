@@ -89,8 +89,8 @@
         .na-card:hover { border-color: rgba(56,189,248,0.3); background: rgba(56,189,248,0.02); }
         .na-card.expanded { border-color: rgba(56,189,248,0.45); background: rgba(56,189,248,0.04); cursor: default; }
         .na-card-header { display: flex; align-items: center; gap: 16px; padding: 16px 20px; }
-        .na-card-header-main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 16px; align-items: center; }
-        @media (max-width: 768px) { .na-card-header-main { grid-template-columns: 1fr 1fr; } }
+        .na-card-header-main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; gap: 16px; align-items: center; }
+        @media (max-width: 900px) { .na-card-header-main { grid-template-columns: 1fr 1fr; } }
         .na-field-label { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 3px; font-weight: 600; }
         .na-field-value { font-size: 0.92em; font-weight: 600; color: var(--text-primary); font-family: 'DM Mono', monospace; }
         .na-field-value.name { color: var(--accent-cyan); }
@@ -170,7 +170,7 @@
                 <div class="panel-subtitle">Record date, engineer name and job number — then add attempt outcomes below</div>
             </div>
         </div>
-        <div class="form-grid">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:20px;align-items:end">
             <div class="form-group">
                 <label class="form-label">Date</label>
                 <input type="date" id="naDate">
@@ -183,7 +183,15 @@
                 <label class="form-label">Job Number</label>
                 <input type="text" id="naJob" placeholder="e.g. 12345678">
             </div>
-            <button class="btn rose" id="addBtn" onclick="addNoAccess()">+ Log No Access</button>
+            <div class="form-group">
+                <label class="form-label">Postcode</label>
+                <input type="text" id="naPostcode" placeholder="e.g. SW1A 1AA" style="text-transform:uppercase">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Engineer Booked On</label>
+                <input type="text" id="naBookedOn" placeholder="e.g. Jane Doe">
+            </div>
+            <button class="btn rose" id="addBtn" onclick="addNoAccess()" style="height:50px">+ Log No Access</button>
         </div>
     </div>
 
@@ -305,9 +313,11 @@ window.loadAll = loadAll;
 
 /* ── ADD NEW ── */
 async function addNoAccess() {
-    const dateVal  = document.getElementById('naDate').value;
-    const nameVal  = document.getElementById('naName').value.trim();
-    const jobVal   = document.getElementById('naJob').value.trim();
+    const dateVal     = document.getElementById('naDate').value;
+    const nameVal     = document.getElementById('naName').value.trim();
+    const jobVal      = document.getElementById('naJob').value.trim();
+    const postcodeVal = document.getElementById('naPostcode').value.trim().toUpperCase();
+    const bookedOnVal = document.getElementById('naBookedOn').value.trim();
     if (!dateVal) { toast('Please select a date', 'error'); return; }
     if (!nameVal) { toast('Please enter a name', 'error'); return; }
     if (!jobVal)  { toast('Please enter a job number', 'error'); return; }
@@ -316,12 +326,15 @@ async function addNoAccess() {
     try {
         const ref = await window._addDoc(window._collection(window._db, 'No Accesses'), {
             date: dateVal, name: nameVal, jobNumber: jobVal,
+            postcode: postcodeVal, bookedOn: bookedOnVal,
             attempts: [{}, {}, {}],
             createdAt: window._serverTimestamp()
         });
         toast('✓ No access logged');
         document.getElementById('naName').value = '';
         document.getElementById('naJob').value = '';
+        document.getElementById('naPostcode').value = '';
+        document.getElementById('naBookedOn').value = '';
         await loadAll();
         window._expandedId = ref.id;
         renderCards();
@@ -397,6 +410,14 @@ function buildCard(r) {
                 <div class="na-field-label">Job Number</div>
                 <div class="na-field-value job">${esc(r.jobNumber)}</div>
             </div>
+            <div>
+                <div class="na-field-label">Postcode</div>
+                <div class="na-field-value" style="color:var(--accent-violet)">${esc(r.postcode||'—')}</div>
+            </div>
+            <div>
+                <div class="na-field-label">Booked On</div>
+                <div class="na-field-value" style="color:var(--accent-amber)">${esc(r.bookedOn||'—')}</div>
+            </div>
             <div style="display:flex;align-items:center;gap:10px">
                 ${statusBadge}
             </div>
@@ -417,16 +438,18 @@ function buildCard(r) {
 
 function buildAttemptBox(docId, att, index, allAttempts) {
     const prevFilled = index === 0 || (allAttempts[index-1] && allAttempts[index-1].outcome);
-    const locked = index > 0 && !prevFilled;
+    const anyRebooked = allAttempts.slice(0, index).some(a => a && a.outcome === 'rebooked');
+    const locked = (index > 0 && !prevFilled) || anyRebooked;
     const filled = att && att.outcome;
 
     let boxClass = 'attempt-box';
     if (filled) boxClass += ' filled ' + att.outcome;
 
     if (locked) {
-        return `<div class="${boxClass}" style="opacity:0.4;cursor:not-allowed">
+        const lockMsg = anyRebooked ? 'Rebooked — no further attempts needed' : `Complete attempt ${index} first`;
+        return `<div class="${boxClass}" style="opacity:0.35;cursor:not-allowed">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
-            <div class="locked-hint">Complete attempt ${index} first</div>
+            <div class="locked-hint">${lockMsg}</div>
         </div>`;
     }
 
