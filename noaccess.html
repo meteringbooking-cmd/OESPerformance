@@ -89,7 +89,7 @@
         .na-card:hover { border-color: rgba(56,189,248,0.3); background: rgba(56,189,248,0.02); }
         .na-card.expanded { border-color: rgba(56,189,248,0.45); background: rgba(56,189,248,0.04); cursor: default; }
         .na-card-header { display: flex; align-items: center; gap: 16px; padding: 16px 20px; }
-        .na-card-header-main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; gap: 16px; align-items: center; }
+        .na-card-header-main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 16px; align-items: center; }
         @media (max-width: 900px) { .na-card-header-main { grid-template-columns: 1fr 1fr; } }
         .na-field-label { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 3px; font-weight: 600; }
         .na-field-value { font-size: 0.92em; font-weight: 600; color: var(--text-primary); font-family: 'DM Mono', monospace; }
@@ -186,10 +186,6 @@
             <div class="form-group">
                 <label class="form-label">Postcode</label>
                 <input type="text" id="naPostcode" placeholder="e.g. SW1A 1AA" style="text-transform:uppercase">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Engineer Booked On</label>
-                <input type="text" id="naBookedOn" placeholder="e.g. Jane Doe">
             </div>
             <button class="btn rose" id="addBtn" onclick="addNoAccess()" style="height:50px">+ Log No Access</button>
         </div>
@@ -317,7 +313,6 @@ async function addNoAccess() {
     const nameVal     = document.getElementById('naName').value.trim();
     const jobVal      = document.getElementById('naJob').value.trim();
     const postcodeVal = document.getElementById('naPostcode').value.trim().toUpperCase();
-    const bookedOnVal = document.getElementById('naBookedOn').value.trim();
     if (!dateVal) { toast('Please select a date', 'error'); return; }
     if (!nameVal) { toast('Please enter a name', 'error'); return; }
     if (!jobVal)  { toast('Please enter a job number', 'error'); return; }
@@ -326,7 +321,7 @@ async function addNoAccess() {
     try {
         const ref = await window._addDoc(window._collection(window._db, 'No Accesses'), {
             date: dateVal, name: nameVal, jobNumber: jobVal,
-            postcode: postcodeVal, bookedOn: bookedOnVal,
+            postcode: postcodeVal,
             attempts: [{}, {}, {}],
             createdAt: window._serverTimestamp()
         });
@@ -334,7 +329,6 @@ async function addNoAccess() {
         document.getElementById('naName').value = '';
         document.getElementById('naJob').value = '';
         document.getElementById('naPostcode').value = '';
-        document.getElementById('naBookedOn').value = '';
         await loadAll();
         window._expandedId = ref.id;
         renderCards();
@@ -414,10 +408,6 @@ function buildCard(r) {
                 <div class="na-field-label">Postcode</div>
                 <div class="na-field-value" style="color:var(--accent-violet)">${esc(r.postcode||'—')}</div>
             </div>
-            <div>
-                <div class="na-field-label">Booked On</div>
-                <div class="na-field-value" style="color:var(--accent-amber)">${esc(r.bookedOn||'—')}</div>
-            </div>
             <div style="display:flex;align-items:center;gap:10px">
                 ${statusBadge}
             </div>
@@ -457,6 +447,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
         const rebookInfo = att.outcome === 'rebooked' ? `
             <div class="attempt-row"><span class="attempt-row-label">Rebooked Date</span><span class="attempt-row-val">${esc(fmtDate(att.rebookDate||''))}</span></div>
             ${att.newJobNumber ? `<div class="attempt-row"><span class="attempt-row-label">New Job No.</span><span class="attempt-row-val">${esc(att.newJobNumber)}</span></div>` : ''}
+            ${att.bookedOn ? `<div class="attempt-row"><span class="attempt-row-label">Engineer Booked On</span><span class="attempt-row-val" style="color:var(--accent-amber)">${esc(att.bookedOn)}</span></div>` : ''}
         ` : '';
         return `<div class="${boxClass}">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
@@ -474,6 +465,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
     const dateVal = att._editing ? (att.date||today) : today;
     const rebookDate = att._editing ? (att.rebookDate||'') : '';
     const newJob = att._editing ? (att.newJobNumber||'') : '';
+    const bookedOn = att._editing ? (att.bookedOn||'') : '';
 
     return `<div class="${boxClass}">
         <div class="attempt-number">Attempt <span>${index+1}</span></div>
@@ -498,6 +490,10 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                 <div class="form-group">
                     <label class="form-label">New Job Number (optional)</label>
                     <input type="text" id="att-newjob-${docId}-${index}" placeholder="e.g. 87654321" value="${newJob}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Engineer Booked On</label>
+                    <input type="text" id="att-bookedon-${docId}-${index}" placeholder="e.g. Jane Doe" value="${bookedOn}">
                 </div>
             </div>
             <button class="btn btn-sm green" onclick="saveAttempt('${docId}',${index})">Save Attempt</button>
@@ -538,6 +534,8 @@ async function saveAttempt(docId, index) {
     if (outcome === 'rebooked') {
         attemptData.rebookDate   = rbDateEl ? rbDateEl.value : '';
         attemptData.newJobNumber = newJobEl  ? newJobEl.value.trim() : '';
+        const bookedOnEl = document.getElementById(`att-bookedon-${docId}-${index}`);
+        attemptData.bookedOn = bookedOnEl ? bookedOnEl.value.trim() : '';
     }
 
     const rec = window._naData.find(r => r.id === docId);
