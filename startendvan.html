@@ -298,12 +298,13 @@
         <div class="table-wrap">
             <table id="journeyTable"><thead><tr>
                 <th class="sort-th" data-col="reg"          onclick="sortUsage('reg')">Registration <span class="sort-icon" id="si-reg"></span></th>
+                <th class="sort-th" data-col="name"         onclick="sortUsage('name')">Engineer Name <span class="sort-icon" id="si-name"></span></th>
                 <th class="sort-th" data-col="journeys"     onclick="sortUsage('journeys')">Journeys <span class="sort-icon" id="si-journeys"></span></th>
                 <th class="sort-th" data-col="miles"        onclick="sortUsage('miles')">Total Miles <span class="sort-icon" id="si-miles"></span></th>
                 <th class="sort-th" data-col="durationMins" onclick="sortUsage('durationMins')">Total Duration <span class="sort-icon" id="si-durationMins"></span></th>
                 <th class="sort-th" data-col="idleMins"     onclick="sortUsage('idleMins')">Total Idle <span class="sort-icon" id="si-idleMins"></span></th>
             </tr></thead>
-            <tbody id="journeyBody"><tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>Select a date and click Refresh</p></div></td></tr></tbody>
+            <tbody id="journeyBody"><tr><td colspan="6"><div class="empty-state"><div class="icon">📊</div><p>Select a date and click Refresh</p></div></td></tr></tbody>
             </table>
         </div>
     </div>
@@ -554,7 +555,7 @@ async function loadJourneys(){
     const nwd=getNonWorkingDayInfo(dv);
 
     ['journeyBody','after5Body','absentBody','sodBody'].forEach(id=>{
-        const cols={'journeyBody':5,'after5Body':7,'absentBody':9,'sodBody':6};
+        const cols={'journeyBody':6,'after5Body':7,'absentBody':9,'sodBody':6};
         document.getElementById(id).innerHTML=`<tr><td colspan="${cols[id]}"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>`;
     });
     ['summaryRow','after5SummaryRow','absentSummaryRow','sodSummaryRow'].forEach(id=>document.getElementById(id).innerHTML='');
@@ -606,10 +607,11 @@ async function loadJourneys(){
 
         // ── DAY'S USAGE ──
         if(!journeys.length){
-            document.getElementById('journeyBody').innerHTML=`<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ${dv}</p></div></td></tr>`;
+            document.getElementById('journeyBody').innerHTML=`<tr><td colspan="6"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for ${dv}</p></div></td></tr>`;
         } else {
             const byP={};
-            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,journeys:0,miles:0,durationMins:0,idleMins:0};byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
+            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
+            Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
             window._usageData=Object.values(byP);
             const tm=journeys.reduce((s,j)=>s+j.miles,0);
             document.getElementById('summaryRow').innerHTML=`<div class="chip">🚐 ${journeys.length} Journeys</div><div class="chip amber">📍 ${tm.toFixed(1)} Total Miles</div><div class="chip">${window._usageData.length} Vehicles</div>`;
@@ -702,7 +704,7 @@ async function loadJourneys(){
             }
         }
     } catch(err){
-        document.getElementById('journeyBody').innerHTML=`<tr><td colspan="5"><div class="empty-state"><p style="color:var(--error)">Error: ${esc(err.message)}</p></div></td></tr>`;
+        document.getElementById('journeyBody').innerHTML=`<tr><td colspan="6"><div class="empty-state"><p style="color:var(--error)">Error: ${esc(err.message)}</p></div></td></tr>`;
         console.error(err);
     }
 }
@@ -734,10 +736,10 @@ window.sortAfter5=sortAfter5;
 let _uSC='miles',_uSD='desc';
 function renderUsageTable(col,dir){_uSC=col;_uSD=dir;
     const data=(window._usageData||[]).slice().sort((a,b)=>{const av=typeof a[col]==='string'?a[col].toLowerCase():a[col],bv=typeof b[col]==='string'?b[col].toLowerCase():b[col];return av<bv?(dir==='asc'?-1:1):av>bv?(dir==='asc'?1:-1):0;});
-    ['reg','journeys','miles','durationMins','idleMins'].forEach(c=>{const th=document.querySelector(`[data-col="${c}"]`),si=document.getElementById(`si-${c}`);if(th&&si){th.classList.toggle('active',c===col);si.textContent=c===col?(dir==='desc'?'▼':'▲'):'⇅';}});
+    ['reg','name','journeys','miles','durationMins','idleMins'].forEach(c=>{const th=document.querySelector(`[data-col="${c}"]`),si=document.getElementById(`si-${c}`);if(th&&si){th.classList.toggle('active',c===col);si.textContent=c===col?(dir==='desc'?'▼':'▲'):'⇅';}});
     const tbody=document.getElementById('journeyBody');
-    if(!data.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">📊</div><p>No data</p></div></td></tr>';return;}
-    tbody.innerHTML=data.map(g=>`<tr><td class="reg">${esc(g.reg)}</td><td style="color:var(--accent-violet);font-weight:600">${g.journeys}</td><td class="miles">${g.miles.toFixed(1)}</td><td class="muted">${minsToHM(g.durationMins)}</td><td class="muted">${minsToHM(g.idleMins)}</td></tr>`).join('');
+    if(!data.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="icon">📊</div><p>No data</p></div></td></tr>';return;}
+    tbody.innerHTML=data.map(g=>`<tr><td class="reg">${esc(g.reg)}</td><td class="muted">${esc(g.name||'—')}</td><td style="color:var(--accent-violet);font-weight:600">${g.journeys}</td><td class="miles">${g.miles.toFixed(1)}</td><td class="muted">${minsToHM(g.durationMins)}</td><td class="muted">${minsToHM(g.idleMins)}</td></tr>`).join('');
 }
 function sortUsage(col){renderUsageTable(col,(_uSC===col&&_uSD==='desc')?'asc':'desc');}
 window.sortUsage=sortUsage;
