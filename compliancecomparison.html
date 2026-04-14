@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compliance Audit Matcher</title>
+    <title>Compliance Audit Matcher & Exporter</title>
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
-            background-color: #f8f9fa;
+            background-color: #f0f4f8;
             margin: 0;
             padding: 20px;
         }
@@ -26,6 +26,7 @@
             border-radius: 6px;
             margin-bottom: 20px;
             font-size: 0.9em;
+            border-left: 4px solid #007bff;
         }
         .grid {
             display: grid;
@@ -42,9 +43,14 @@
             box-sizing: border-box;
             font-family: monospace;
             white-space: pre;
+            font-size: 12px;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
         }
         button {
-            width: 100%;
+            flex: 2;
             padding: 15px;
             background-color: #007bff;
             color: white;
@@ -55,6 +61,13 @@
             cursor: pointer;
         }
         button:hover { background-color: #0056b3; }
+        button.export-btn {
+            flex: 1;
+            background-color: #28a745;
+            display: none; /* Hidden until results exist */
+        }
+        button.export-btn:hover { background-color: #218838; }
+        
         #results { margin-top: 30px; }
         .result-table {
             width: 100%;
@@ -64,30 +77,35 @@
         }
         .result-table th, .result-table td {
             border: 1px solid #dee2e6;
-            padding: 12px;
+            padding: 10px;
             text-align: left;
-            font-size: 0.9em;
+            font-size: 0.85em;
         }
-        .result-table th { background-color: #f1f3f5; font-weight: bold; }
+        .result-table th { background-color: #f8f9fa; color: #495057; }
+        
         .match-group {
-            border: 2px solid #ffc107;
+            border: 1px solid #ffeeba;
             margin-bottom: 20px;
             border-radius: 6px;
             overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         .match-header {
             background: #fff3cd;
-            padding: 10px 15px;
+            padding: 8px 15px;
             font-weight: bold;
             color: #856404;
             display: flex;
             justify-content: space-between;
+            font-size: 0.9em;
         }
         .no-matches {
             text-align: center;
             color: #28a745;
-            padding: 20px;
+            padding: 30px;
             font-weight: bold;
+            background: #e9f7ef;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -96,32 +114,35 @@
 <div class="container">
     <h2>Engineer Compliance Comparison</h2>
     <div class="instructions">
-        <strong>Expected Order:</strong> Name, Date, Audit Outcome, Job Number <br>
-        <em>Note: You can use spaces, tabs, or commas to separate the fields.</em>
+        <strong>Required Order:</strong> Name, Date, Audit Outcome, Job Number <br>
+        <em>The tool matches the name and checks if dates are within 3 days of each other.</em>
     </div>
 
     <div class="grid">
         <div>
             <label><strong>Box 1 (Reference)</strong></label>
-            <textarea id="box1" placeholder="John Doe  14/04/2026  Pass  JOB123"></textarea>
+            <textarea id="box1" placeholder="John Doe 14/04/2026 Pass JOB123"></textarea>
         </div>
         <div>
             <label><strong>Box 2 (Comparison)</strong></label>
-            <textarea id="box2" placeholder="John Doe  16/04/2026  Fail  JOB456"></textarea>
+            <textarea id="box2" placeholder="John Doe 16/04/2026 Fail JOB456"></textarea>
         </div>
     </div>
 
-    <button onclick="compareData()">Compare Records</button>
+    <div class="actions">
+        <button onclick="compareData()">Compare Records</button>
+        <button id="exportBtn" class="export-btn" onclick="exportToCSV()">Download CSV Report</button>
+    </div>
 
     <div id="results"></div>
 </div>
 
 <script>
+    let globalMatches = [];
+
     function parseData(text) {
         const lines = text.split('\n');
         const results = [];
-        
-        // Matches common date formats DD/MM/YYYY or DD-MM-YYYY
         const dateRegex = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/;
 
         lines.forEach(line => {
@@ -129,23 +150,17 @@
             if (!trimmed) return;
 
             const dateMatch = trimmed.match(dateRegex);
-            
             if (dateMatch) {
                 const dateStr = dateMatch[0];
                 const dateIndex = trimmed.indexOf(dateStr);
-                
-                // 1. Name is everything before the date
                 const name = trimmed.substring(0, dateIndex).trim();
-                
-                // 2. The rest is everything after the date
                 const rest = trimmed.substring(dateIndex + dateStr.length).trim();
                 
-                // Try to split the "rest" into Outcome and Job Number (assuming space or tab)
-                const partsAfterDate = rest.split(/\s{2,}|[,\t]|(?<=\D)\s(?=\D)/).filter(p => p.trim() !== "");
-                const outcome = partsAfterDate[0] || "N/A";
-                const jobNo = partsAfterDate[1] || "N/A";
+                // Split remaining text by tabs or multiple spaces
+                const partsAfterDate = rest.split(/\s{2,}|[,\t]/).filter(p => p.trim() !== "");
+                const outcome = partsAfterDate[0] || "Unknown";
+                const jobNo = partsAfterDate[1] || "Unknown";
 
-                // Parse the Date Object
                 const d = dateStr.split(/[/-]/);
                 const dateObj = new Date(
                     d[2].length === 2 ? "20"+d[2] : d[2], 
@@ -154,14 +169,7 @@
                 );
 
                 if (!isNaN(dateObj)) {
-                    results.push({
-                        name: name,
-                        date: dateObj,
-                        dateStr: dateStr,
-                        outcome: outcome,
-                        jobNo: jobNo,
-                        fullLine: trimmed
-                    });
+                    results.push({ name, date: dateObj, dateStr, outcome, jobNo });
                 }
             }
         });
@@ -172,55 +180,92 @@
         const box1 = parseData(document.getElementById('box1').value);
         const box2 = parseData(document.getElementById('box2').value);
         const container = document.getElementById('results');
+        const exportBtn = document.getElementById('exportBtn');
+        
         container.innerHTML = '';
-
-        let foundMatch = false;
+        globalMatches = [];
 
         box2.forEach(b2 => {
             box1.forEach(b1 => {
-                // Check name match (case insensitive) and 3-day window
                 if (b1.name.toLowerCase() === b2.name.toLowerCase()) {
                     const diffDays = Math.ceil(Math.abs(b2.date - b1.date) / (1000 * 60 * 60 * 24));
 
                     if (diffDays <= 3) {
-                        foundMatch = true;
-                        const div = document.createElement('div');
-                        div.className = 'match-group';
-                        div.innerHTML = `
-                            <div class="match-header">
-                                <span>Engineer: ${b1.name}</span>
-                                <span>Difference: ${diffDays} Day(s)</span>
-                            </div>
-                            <table class="result-table">
-                                <tr>
-                                    <th>Source</th>
-                                    <th>Date</th>
-                                    <th>Audit Outcome</th>
-                                    <th>Job Number</th>
-                                </tr>
-                                <tr>
-                                    <td>Box 1</td>
-                                    <td>${b1.dateStr}</td>
-                                    <td>${b1.outcome}</td>
-                                    <td>${b1.jobNo}</td>
-                                </tr>
-                                <tr>
-                                    <td>Box 2</td>
-                                    <td>${b2.dateStr}</td>
-                                    <td>${b2.outcome}</td>
-                                    <td>${b2.jobNo}</td>
-                                </tr>
-                            </table>
-                        `;
-                        container.appendChild(div);
+                        const matchObj = {
+                            engineer: b1.name,
+                            daysDiff: diffDays,
+                            b1Date: b1.dateStr,
+                            b1Outcome: b1.outcome,
+                            b1Job: b1.jobNo,
+                            b2Date: b2.dateStr,
+                            b2Outcome: b2.outcome,
+                            b2Job: b2.jobNo
+                        };
+                        globalMatches.push(matchObj);
+                        renderMatch(matchObj, container);
                     }
                 }
             });
         });
 
-        if (!foundMatch) {
+        if (globalMatches.length > 0) {
+            exportBtn.style.display = 'block';
+        } else {
+            exportBtn.style.display = 'none';
             container.innerHTML = '<div class="no-matches">✅ No overlapping engineer dates found.</div>';
         }
+    }
+
+    function renderMatch(m, container) {
+        const div = document.createElement('div');
+        div.className = 'match-group';
+        div.innerHTML = `
+            <div class="match-header">
+                <span>Engineer: ${m.engineer}</span>
+                <span>Overlap: ${m.daysDiff} Day(s)</span>
+            </div>
+            <table class="result-table">
+                <tr>
+                    <th>Source</th><th>Date</th><th>Outcome</th><th>Job Number</th>
+                </tr>
+                <tr>
+                    <td>Box 1</td><td>${m.b1Date}</td><td>${m.b1Outcome}</td><td>${m.b1Job}</td>
+                </tr>
+                <tr>
+                    <td>Box 2</td><td>${m.b2Date}</td><td>${m.b2Outcome}</td><td>${m.b2Job}</td>
+                </tr>
+            </table>
+        `;
+        container.appendChild(div);
+    }
+
+    function exportToCSV() {
+        if (globalMatches.length === 0) return;
+
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Engineer,Days Difference,Box 1 Date,Box 1 Outcome,Box 1 Job,Box 2 Date,Box 2 Outcome,Box 2 Job\n";
+
+        globalMatches.forEach(m => {
+            const row = [
+                `"${m.engineer}"`,
+                m.daysDiff,
+                `"${m.b1Date}"`,
+                `"${m.b1Outcome}"`,
+                `"${m.b1Job}"`,
+                `"${m.b2Date}"`,
+                `"${m.b2Outcome}"`,
+                `"${m.b2Job}"`
+            ].join(",");
+            csvContent += row + "\n";
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "compliance_matches.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
 
