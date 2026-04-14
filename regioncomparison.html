@@ -349,7 +349,7 @@
     border-right: 2px solid var(--border2) !important;
   }
   .grid-th-snap {
-    padding: 10px 14px; text-align: center; min-width: 100px;
+    padding: 10px 14px; text-align: center; min-width: 120px;
     vertical-align: bottom;
   }
   .grid-th-snap .snap-date {
@@ -357,8 +357,28 @@
   }
   .grid-th-snap .snap-label {
     font-size: 9px; letter-spacing: 1px; color: var(--text-dim); display: block;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;
     margin-top: 2px;
+  }
+  /* Two-snap column header sub-labels */
+  .grid-th-snap .snap-sublabels {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; margin-top: 5px;
+  }
+  .snap-sub {
+    font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.5px;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .snap-sub-earlier {
+    background: var(--amber-soft); color: var(--amber);
+    border: 1px solid rgba(245,166,35,0.2);
+  }
+  .snap-sub-later {
+    background: var(--green-soft); color: var(--green);
+    border: 1px solid rgba(62,207,142,0.2);
+  }
+  .snap-sub-arrow {
+    color: var(--text-dim); font-size: 10px;
   }
 
   .grid-name-cell {
@@ -379,6 +399,8 @@
   .grid-table tbody tr.oes-grid-row:hover { background: rgba(62,207,142,0.08); }
 
   .grid-td { padding: 8px 10px; text-align: center; }
+
+  /* Single-value pill (only one snapshot for this date) */
   .cell-pill {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 38px; height: 28px; border-radius: 7px;
@@ -389,6 +411,25 @@
   .cell-pill.has-val { background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(91,138,240,0.2); }
   .cell-pill.has-val-oes { background: var(--green-soft); color: var(--green); border: 1px solid rgba(62,207,142,0.2); }
   .cell-pill.no-val { color: var(--text-dim); font-size: 14px; }
+
+  /* Two-value delta pill: shows "earlier → later" */
+  .delta-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    height: 28px; border-radius: 7px; padding: 0 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    border: 1px solid var(--border2); background: var(--surface2);
+    transition: transform 0.1s; white-space: nowrap;
+  }
+  .delta-pill:hover { transform: scale(1.05); }
+  .delta-val-earlier { color: var(--amber); }
+  .delta-val-later   { color: var(--green); }
+  .delta-arrow       { color: var(--text-dim); font-size: 10px; }
+
+  /* OES tint for delta pill */
+  .delta-pill.oes-delta {
+    background: rgba(62,207,142,0.05);
+    border-color: rgba(62,207,142,0.18);
+  }
 
   /* ── MOVEMENT PANEL ── */
   .movement-header {
@@ -670,7 +711,8 @@ const PAGE_SIZE  = 30;
 let expandedRows = new Set();
 let viewMode     = 'list'; // 'list' | 'grid'
 
-// ── Holds the deduplicated, sorted columns used in the last grid render ──
+// ── Holds the column definitions used in the last grid render ──
+// Each entry: { key, date, earlier: snap|null, later: snap|null }
 let lastGridCols = [];
 
 // ── theme ──────────────────────────────────────────────
@@ -681,7 +723,6 @@ window.setTheme = function(theme) {
   localStorage.setItem('rc-theme', theme);
 };
 
-// Restore saved theme
 (function() {
   const saved = localStorage.getItem('rc-theme') || 'dark';
   setTheme(saved);
@@ -692,10 +733,8 @@ window.switchViewMode = function(mode) {
   viewMode = mode;
   document.getElementById('btn-list-mode').classList.toggle('active', mode === 'list');
   document.getElementById('btn-grid-mode').classList.toggle('active', mode === 'grid');
-  // Sort dropdown only useful in list mode
   document.getElementById('view-sort').style.opacity = mode === 'grid' ? '0.4' : '1';
   document.getElementById('view-sort').style.pointerEvents = mode === 'grid' ? 'none' : '';
-  // Show export button only in grid mode
   document.getElementById('export-btn').style.display = mode === 'grid' ? 'inline-flex' : 'none';
   if (mode === 'grid') renderGrid();
   else renderTable();
@@ -903,26 +942,43 @@ window.renderTable = function() {
 };
 
 // ── build grid columns ─────────────────────────────────
-// Rules:
-//  1. Sort all snapshots oldest → newest by savedAt.
-//  2. Group by operationalDate (or by id if no opDate).
-//     For each op-date group, keep only the snapshot with the EARLIEST savedAt.
-//  3. Result is ordered: earliest date/snapshot on the LEFT, latest on the RIGHT.
+// For each operational date (or lone snapshot without one):
+//   - Sort all snapshots for that date oldest → newest
+//   - Keep the 2 most recent (2nd-to-last = "earlier", last = "later")
+//   - If only 1 snapshot exists for that date, earlier=null, later=that snap
+// Columns are ordered: earliest date on the left, latest on the right.
 function buildGridCols() {
-  // Work from oldest → newest
-  const sorted = [...snapshots].sort((a, b) => toMs(a.savedAt) - toMs(b.savedAt));
+  // Group snapshots by op-date key
+  const groups = new Map(); // key → [snap, ...]
 
-  // Deduplicate: key = operationalDate (YYYY-MM-DD) if present, otherwise the snap id.
-  // Because sorted oldest→newest, the first occurrence per key is the earliest saved snapshot.
-  const seen = new Map(); // key → snapshot
-  sorted.forEach(s => {
-    const key = s.operationalDate ? s.operationalDate : s.id;
-    if (!seen.has(key)) seen.set(key, s);
-    // else: already have the earliest for this date — skip later ones
+  snapshots.forEach(s => {
+    const key = s.operationalDate ? s.operationalDate : ('__noid__' + s.id);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
   });
 
-  // Return in insertion order = oldest first
-  return [...seen.values()];
+  // Sort each group oldest → newest by savedAt
+  groups.forEach((arr) => arr.sort((a, b) => toMs(a.savedAt) - toMs(b.savedAt)));
+
+  // Build column definitions, sorted by the key (date string sorts correctly for YYYY-MM-DD)
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    // For __noid__ keys, use the savedAt of the first snap in the group
+    const getMs = (key) => toMs(groups.get(key)[0].savedAt);
+    const aMs = a.startsWith('__noid__') ? getMs(a) : new Date(a + 'T00:00:00').getTime();
+    const bMs = b.startsWith('__noid__') ? getMs(b) : new Date(b + 'T00:00:00').getTime();
+    return aMs - bMs;
+  });
+
+  const cols = [];
+  sortedKeys.forEach(key => {
+    const arr = groups.get(key);
+    // Take the 2 most recent snapshots
+    const later   = arr[arr.length - 1];           // newest
+    const earlier = arr.length >= 2 ? arr[arr.length - 2] : null; // 2nd newest (or null)
+    cols.push({ key, earlier, later });
+  });
+
+  return cols;
 }
 
 // ── render grid view ───────────────────────────────────
@@ -937,11 +993,11 @@ window.renderGrid = function() {
 
   const search = (document.getElementById('view-search').value || '').toLowerCase();
 
-  // Columns = deduplicated, oldest-first
+  // Columns = one per op-date, oldest-first
   const cols = buildGridCols();
   lastGridCols = cols; // store for export
 
-  // All engineer names across ALL snapshots (not just deduped cols)
+  // All engineer names across ALL snapshots
   const allNames = new Set();
   snapshots.forEach(s => (s.engineers || []).forEach(e => allNames.add(e.name)));
   let sortedNames = [...allNames].sort((a, b) => a.localeCompare(b));
@@ -955,16 +1011,34 @@ window.renderGrid = function() {
   });
 
   document.getElementById('view-count-label').textContent =
-    `${sortedNames.length} engineer${sortedNames.length!==1?'s':''} × ${cols.length} snapshot${cols.length!==1?'s':''}`;
+    `${sortedNames.length} engineer${sortedNames.length!==1?'s':''} × ${cols.length} date${cols.length!==1?'s':''}`;
 
   // Header row
   let html = `<div class="grid-outer"><table class="grid-table"><thead><tr>
     <th class="grid-th-name">Engineer</th>
     ${cols.map(c => {
-      const dateLabel = c.operationalDate ? fmtDate(c.operationalDate) : fmtTs(c.savedAt);
-      return `<th class="grid-th-snap" title="${escHtml(c.label)} — ${escHtml(dateLabel)}">
+      const dateLabel = c.later.operationalDate
+        ? fmtDate(c.later.operationalDate)
+        : fmtTs(c.later.savedAt);
+
+      const hasDual = c.earlier !== null;
+
+      let subLabelsHtml = '';
+      if (hasDual) {
+        const eLbl = escHtml(c.earlier.label);
+        const lLbl = escHtml(c.later.label);
+        subLabelsHtml = `<div class="snap-sublabels">
+          <span class="snap-sub snap-sub-earlier" title="${eLbl}">${eLbl.length > 10 ? eLbl.slice(0,10)+'…' : eLbl}</span>
+          <span class="snap-sub-arrow">→</span>
+          <span class="snap-sub snap-sub-later" title="${lLbl}">${lLbl.length > 10 ? lLbl.slice(0,10)+'…' : lLbl}</span>
+        </div>`;
+      } else {
+        subLabelsHtml = `<span class="snap-label">${escHtml(c.later.label)}</span>`;
+      }
+
+      return `<th class="grid-th-snap">
         <span class="snap-date">${escHtml(dateLabel)}</span>
-        <span class="snap-label">${escHtml(c.label)}</span>
+        ${subLabelsHtml}
       </th>`;
     }).join('')}
   </tr></thead><tbody>`;
@@ -979,12 +1053,31 @@ window.renderGrid = function() {
         </div>
       </td>
       ${cols.map(c => {
-        const count = lookup[c.id]?.[name];
-        if (count == null) {
-          return `<td class="grid-td"><span class="cell-pill no-val">—</span></td>`;
+        const laterCount   = lookup[c.later.id]?.[name];
+        const earlierCount = c.earlier ? lookup[c.earlier.id]?.[name] : undefined;
+        const hasDual = c.earlier !== null;
+
+        // Both snapshots present → show delta pill
+        if (hasDual && (earlierCount != null || laterCount != null)) {
+          const eVal = earlierCount != null ? earlierCount : '—';
+          const lVal = laterCount   != null ? laterCount   : '—';
+          const deltaCls = oes ? 'delta-pill oes-delta' : 'delta-pill';
+          return `<td class="grid-td">
+            <span class="${deltaCls}">
+              <span class="delta-val-earlier">${eVal}</span>
+              <span class="delta-arrow">→</span>
+              <span class="delta-val-later">${lVal}</span>
+            </span>
+          </td>`;
         }
-        const cls = oes ? 'has-val-oes' : 'has-val';
-        return `<td class="grid-td"><span class="cell-pill ${cls}">${count}</span></td>`;
+
+        // Single snapshot only
+        if (laterCount != null) {
+          const cls = oes ? 'has-val-oes' : 'has-val';
+          return `<td class="grid-td"><span class="cell-pill ${cls}">${laterCount}</span></td>`;
+        }
+
+        return `<td class="grid-td"><span class="cell-pill no-val">—</span></td>`;
       }).join('')}
     </tr>`;
   });
@@ -1002,13 +1095,11 @@ window.exportGridToExcel = function() {
 
   const search = (document.getElementById('view-search').value || '').toLowerCase();
 
-  // Collect all engineer names (same logic as renderGrid)
   const allNames = new Set();
   snapshots.forEach(s => (s.engineers || []).forEach(e => allNames.add(e.name)));
   let sortedNames = [...allNames].sort((a, b) => a.localeCompare(b));
   if (search) sortedNames = sortedNames.filter(n => n.toLowerCase().includes(search));
 
-  // Build lookup
   const lookup = {};
   snapshots.forEach(s => {
     lookup[s.id] = {};
@@ -1017,11 +1108,19 @@ window.exportGridToExcel = function() {
 
   const cols = lastGridCols;
 
-  // Build header row
+  // Header row
   const headerRow = ['Engineer', 'OES'];
   cols.forEach(c => {
-    const dateLabel = c.operationalDate ? fmtDatePlain(c.operationalDate) : fmtTsPlain(c.savedAt);
-    headerRow.push(`${dateLabel} — ${c.label}`);
+    const dateLabel = c.later.operationalDate
+      ? fmtDatePlain(c.later.operationalDate)
+      : fmtTsPlain(c.later.savedAt);
+    if (c.earlier) {
+      // Two sub-columns for dual snapshots
+      headerRow.push(`${dateLabel} — ${c.earlier.label} (earlier)`);
+      headerRow.push(`${dateLabel} — ${c.later.label} (later)`);
+    } else {
+      headerRow.push(`${dateLabel} — ${c.later.label}`);
+    }
   });
 
   const rows = [headerRow];
@@ -1029,8 +1128,14 @@ window.exportGridToExcel = function() {
   sortedNames.forEach(name => {
     const row = [name, isOES(name) ? 'OES' : ''];
     cols.forEach(c => {
-      const count = lookup[c.id]?.[name];
-      row.push(count != null ? count : '');
+      const laterCount   = lookup[c.later.id]?.[name];
+      const earlierCount = c.earlier ? lookup[c.earlier.id]?.[name] : undefined;
+      if (c.earlier) {
+        row.push(earlierCount != null ? earlierCount : '');
+        row.push(laterCount   != null ? laterCount   : '');
+      } else {
+        row.push(laterCount != null ? laterCount : '');
+      }
     });
     rows.push(row);
   });
@@ -1038,15 +1143,12 @@ window.exportGridToExcel = function() {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Basic column widths
   ws['!cols'] = [
-    { wch: 28 }, // Engineer
-    { wch: 6  }, // OES
-    ...cols.map(() => ({ wch: 22 }))
+    { wch: 28 },
+    { wch: 6  },
+    ...cols.flatMap(c => c.earlier ? [{ wch: 28 }, { wch: 28 }] : [{ wch: 22 }])
   ];
 
-  // Style header row bold (SheetJS community edition supports limited styling via cell_styles hack)
-  // We'll just freeze the top row and first column for usability
   ws['!freeze'] = { xSplit: 2, ySplit: 1 };
 
   XLSX.utils.book_append_sheet(wb, ws, 'Region Comparison');
