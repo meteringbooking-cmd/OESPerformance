@@ -1106,76 +1106,75 @@ window.exportGridToExcel = function() {
   });
 
   const cols = lastGridCols;
-  const dataRows = [];
-  
-  // 1. Create Header Row
-  const headerRow = ['Engineer', 'OES Status'];
-  cols.forEach(c => {
-    const dateLabel = c.later.operationalDate ? fmtDatePlain(c.later.operationalDate) : fmtTsPlain(c.later.savedAt);
-    if (c.earlier) {
-      headerRow.push(`${dateLabel} (Earlier: ${c.earlier.label})`);
-      headerRow.push(`${dateLabel} (Later: ${c.later.label})`);
-    } else {
-      headerRow.push(`${dateLabel} (${c.later.label})`);
-    }
-  });
-  dataRows.push(headerRow);
+  const rows = [];
 
-  // 2. Create Data Rows
+  // 1. Header Row
+  const headerRow = ['Engineer', 'OES'];
+  cols.forEach(c => {
+    const dateLabel = c.later.operationalDate 
+      ? fmtDatePlain(c.later.operationalDate) 
+      : fmtTsPlain(c.later.savedAt);
+    headerRow.push(dateLabel);
+  });
+  rows.push(headerRow);
+
+  // 2. Data Rows
   sortedNames.forEach(name => {
-    const row = [name, isOES(name) ? 'OES' : ''];
+    const excelRow = [name, isOES(name) ? 'OES' : ''];
+    
     cols.forEach(c => {
       const laterCount = lookup[c.later.id]?.[name];
       const earlierCount = c.earlier ? lookup[c.earlier.id]?.[name] : undefined;
 
-      if (c.earlier) {
-        row.push(earlierCount != null ? earlierCount : '');
-        row.push(laterCount != null ? laterCount : '');
+      if (c.earlier !== null) {
+        // Both exist: Show "Earlier → Later"
+        const eVal = earlierCount != null ? earlierCount : '—';
+        const lVal = laterCount != null ? laterCount : '—';
+        excelRow.push(`${eVal} → ${lVal}`);
       } else {
-        row.push(laterCount != null ? laterCount : '');
+        // Only one exists
+        excelRow.push(laterCount != null ? laterCount : '—');
       }
     });
-    dataRows.push(row);
+    rows.push(excelRow);
   });
 
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(dataRows);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // 3. Apply Styling (Red Highlight for drops)
-  // Range: R=1 (skip header), C=2 (skip Eng/OES)
+  // 3. Styling & Red Highlight for Drops
   const range = XLSX.utils.decode_range(ws['!ref']);
-  
   for (let R = 1; R <= range.e.r; ++R) {
-    let colPtr = 2; // Starting after Engineer & OES
-    cols.forEach(c => {
-      if (c.earlier) {
-        const earlierCellRef = XLSX.utils.encode_cell({r: R, c: colPtr});
-        const laterCellRef = XLSX.utils.encode_cell({r: R, c: colPtr + 1});
-        
-        const earlierVal = ws[earlierCellRef]?.v;
-        const laterVal = ws[laterCellRef]?.v;
+    for (let C = 2; C <= range.e.c; ++C) {
+      const cellRef = XLSX.utils.encode_cell({r: R, c: C});
+      if (!ws[cellRef]) continue;
 
-        // Check if jobs dropped
-        if (typeof earlierVal === 'number' && typeof laterVal === 'number' && laterVal < earlierVal) {
-          // Highlight the "Later" cell in light red
-          if (!ws[laterCellRef].s) ws[laterCellRef].s = {};
-          ws[laterCellRef].s = {
-            fill: { fgColor: { rgb: "FFC7CE" } }, // Light Red
-            font: { color: { rgb: "9C0006" }, bold: true } // Dark Red Text
+      const cellValue = String(ws[cellRef].v);
+
+      // Check for the "Earlier → Later" format
+      if (cellValue.includes('→')) {
+        const parts = cellValue.split('→').map(p => p.trim());
+        const eNum = parseInt(parts[0]);
+        const lNum = parseInt(parts[1]);
+
+        // Highlight RED if the second number is smaller than the first
+        if (!isNaN(eNum) && !isNaN(lNum) && lNum < eNum) {
+          if (!ws[cellRef].s) ws[cellRef].s = {};
+          ws[cellRef].s = {
+            fill: { fgColor: { rgb: "FFC7CE" } }, // Light Red background
+            font: { color: { rgb: "9C0006" }, bold: true }, // Dark Red text
+            alignment: { horizontal: "center" }
           };
         }
-        colPtr += 2;
-      } else {
-        colPtr += 1;
       }
-    });
+    }
   }
 
   // Column Widths
   ws['!cols'] = [
     { wch: 25 }, // Engineer
-    { wch: 10 }, // OES
-    ...cols.flatMap(c => c.earlier ? [{ wch: 22 }, { wch: 22 }] : [{ wch: 22 }])
+    { wch: 6  }, // OES
+    ...cols.map(() => ({ wch: 18 })) // Date columns
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'Region Comparison');
@@ -1183,9 +1182,9 @@ window.exportGridToExcel = function() {
   const today = new Date();
   const fname = `region-comparison-${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}.xlsx`;
   XLSX.writeFile(wb, fname);
-  showToast('✓ Exported with movement highlights');
+  showToast('✓ Exported Grid (with drop highlights)');
 };
-
+  
 window.toggleExpand = function(rowId) {
   if (expandedRows.has(rowId)) expandedRows.delete(rowId);
   else expandedRows.add(rowId);
