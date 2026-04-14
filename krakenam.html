@@ -301,48 +301,38 @@
             const endDate = document.getElementById('endDate').value;
             const teamFilter = document.getElementById('teamFilter').value;
 
-            // Build totals from loaded records
-            let totals = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
+            // Group records by date
+            const dateGroups = {};
             loadedRecords.forEach(r => {
-                totals.jobs += r.totalJobs || 0;
-                totals.dual += r.dual || 0;
-                totals.single += r.single || 0;
-                totals.comms += r.comms || 0;
-                totals.removal += r.removal || 0;
-                totals.meters += r.totalMeters || 0;
+                const date = r.date || 'Unknown';
+                if (!dateGroups[date]) dateGroups[date] = [];
+                dateGroups[date].push(r);
             });
-            const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
-            const pct = (val) => totalJobTypes > 0 ? (val / totalJobTypes * 100).toFixed(1) + '%' : '0.0%';
 
-            const jobsPerHead = (currentHeadcount && currentHeadcount > 0) ? (totals.jobs / currentHeadcount).toFixed(1) : '-';
-            const metersPerHead = (currentHeadcount && currentHeadcount > 0) ? (totals.meters / currentHeadcount).toFixed(1) : '-';
-            const teamLabel = teamFilter || 'All Teams';
+            const sortedDates = Object.keys(dateGroups).sort();
 
-            const rows = [
-                ['Kraken AM - Performance Summary'],
-                [],
-                ['Date Range', `${startDate} to ${endDate}`],
-                ['Team', teamLabel],
-                [],
-                ['--- Summary Statistics ---'],
-                ['Total Jobs', totals.jobs],
-                ['Total Dual', totals.dual],
-                ['Total Single', totals.single],
-                ['Total Comms', totals.comms],
-                ['Total Removal', totals.removal],
-                ['Total Meters', Math.round(totals.meters)],
-                ['Engineers Available', currentHeadcount !== null ? currentHeadcount : '-'],
-                ['Jobs Per Head', jobsPerHead],
-                ['Meters Per Head', metersPerHead],
-                [],
-                ['--- Job Type Distribution ---'],
-                ['Dual %', pct(totals.dual)],
-                ['Single %', pct(totals.single)],
-                ['Comms %', pct(totals.comms)],
-                ['Removal %', pct(totals.removal)],
-            ];
+            const headers = ['Date', 'Total Jobs', 'Total Dual', 'Total Single', 'Total Comms', 'Total Removal', 'Total Meters', 'Engineers Available', 'Jobs Per Head', 'Meters Per Head', 'Dual %', 'Single %', 'Comms %', 'Removal %'];
 
-            const csvContent = rows
+            const dataRows = sortedDates.map(date => {
+                const recs = dateGroups[date];
+                let t = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
+                recs.forEach(r => {
+                    t.jobs += r.totalJobs || 0;
+                    t.dual += r.dual || 0;
+                    t.single += r.single || 0;
+                    t.comms += r.comms || 0;
+                    t.removal += r.removal || 0;
+                    t.meters += r.totalMeters || 0;
+                });
+                const totalTypes = t.dual + t.single + t.comms + t.removal;
+                const pct = (val) => totalTypes > 0 ? (val / totalTypes * 100).toFixed(1) + '%' : '0.0%';
+                const hc = headcountByDate[date] != null ? headcountByDate[date] : '';
+                const jobsPH = hc > 0 ? (t.jobs / hc).toFixed(1) : '-';
+                const metersPH = hc > 0 ? (t.meters / hc).toFixed(1) : '-';
+                return [date, t.jobs, t.dual, t.single, t.comms, t.removal, Math.round(t.meters), hc !== '' ? hc : '-', jobsPH, metersPH, pct(t.dual), pct(t.single), pct(t.comms), pct(t.removal)];
+            });
+
+            const csvContent = [headers, ...dataRows]
                 .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
                 .join('\n');
 
@@ -357,7 +347,7 @@
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
 
-            showMessage('Summary statistics exported to CSV successfully!', 'success');
+            showMessage(`Exported summary for ${sortedDates.length} date(s) successfully!`, 'success');
         });
 
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
@@ -551,13 +541,21 @@
             } catch (err) { showMessage('Error fetching data: ' + err.message, 'error'); }
         });
 
+        let headcountByDate = {};
+
         async function fetchHeadcountForRange(startDate, endDate) {
+            headcountByDate = {};
             try {
                 const q = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
                 const querySnapshot = await getDocs(q);
                 if (!querySnapshot.empty) {
                     let totalHeadcount = 0, count = 0;
-                    querySnapshot.forEach((doc) => { totalHeadcount += doc.data().headcount || 0; count++; });
+                    querySnapshot.forEach((doc) => {
+                        const d = doc.data();
+                        headcountByDate[d.date] = d.headcount || 0;
+                        totalHeadcount += d.headcount || 0;
+                        count++;
+                    });
                     const avgHeadcount = count > 0 ? Math.round(totalHeadcount / count) : 0;
                     currentHeadcount = avgHeadcount;
                     document.getElementById('engineersAvailable').textContent = avgHeadcount;
