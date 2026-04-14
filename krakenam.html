@@ -301,44 +301,63 @@
             const endDate = document.getElementById('endDate').value;
             const teamFilter = document.getElementById('teamFilter').value;
 
-            // Sort records: by date asc, then team, then engineer
-            const sorted = [...loadedRecords].sort((a, b) => {
-                if (a.date < b.date) return -1;
-                if (a.date > b.date) return 1;
-                if ((a.team || '') < (b.team || '')) return -1;
-                if ((a.team || '') > (b.team || '')) return 1;
-                return (a.engineer || '').localeCompare(b.engineer || '');
+            // Build totals from loaded records
+            let totals = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
+            loadedRecords.forEach(r => {
+                totals.jobs += r.totalJobs || 0;
+                totals.dual += r.dual || 0;
+                totals.single += r.single || 0;
+                totals.comms += r.comms || 0;
+                totals.removal += r.removal || 0;
+                totals.meters += r.totalMeters || 0;
             });
+            const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
+            const pct = (val) => totalJobTypes > 0 ? (val / totalJobTypes * 100).toFixed(1) + '%' : '0.0%';
 
-            const headers = ['Date', 'Team', 'Engineer', 'Total Jobs', 'Dual', 'Single', 'Comms', 'Removal', 'Total Meters'];
-            const rows = sorted.map(r => [
-                r.date || '',
-                r.team || '',
-                r.engineer || '',
-                r.totalJobs || 0,
-                r.dual || 0,
-                r.single || 0,
-                r.comms || 0,
-                r.removal || 0,
-                Math.round(r.totalMeters || 0)
-            ]);
+            const jobsPerHead = (currentHeadcount && currentHeadcount > 0) ? (totals.jobs / currentHeadcount).toFixed(1) : '-';
+            const metersPerHead = (currentHeadcount && currentHeadcount > 0) ? (totals.meters / currentHeadcount).toFixed(1) : '-';
+            const teamLabel = teamFilter || 'All Teams';
 
-            const csvContent = [headers, ...rows]
+            const rows = [
+                ['Kraken AM - Performance Summary'],
+                [],
+                ['Date Range', `${startDate} to ${endDate}`],
+                ['Team', teamLabel],
+                [],
+                ['--- Summary Statistics ---'],
+                ['Total Jobs', totals.jobs],
+                ['Total Dual', totals.dual],
+                ['Total Single', totals.single],
+                ['Total Comms', totals.comms],
+                ['Total Removal', totals.removal],
+                ['Total Meters', Math.round(totals.meters)],
+                ['Engineers Available', currentHeadcount !== null ? currentHeadcount : '-'],
+                ['Jobs Per Head', jobsPerHead],
+                ['Meters Per Head', metersPerHead],
+                [],
+                ['--- Job Type Distribution ---'],
+                ['Dual %', pct(totals.dual)],
+                ['Single %', pct(totals.single)],
+                ['Comms %', pct(totals.comms)],
+                ['Removal %', pct(totals.removal)],
+            ];
+
+            const csvContent = rows
                 .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
                 .join('\n');
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            const teamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
+            const fileTeamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
             link.href = url;
-            link.download = `KrakenAM_${startDate}_to_${endDate}${teamLabel}.csv`;
+            link.download = `KrakenAM_Summary_${startDate}_to_${endDate}${fileTeamLabel}.csv`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
 
-            showMessage(`Exported ${sorted.length} records to CSV successfully!`, 'success');
+            showMessage('Summary statistics exported to CSV successfully!', 'success');
         });
 
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
