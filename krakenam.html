@@ -43,6 +43,8 @@
         .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: 0 4px 15px rgba(0, 153, 255, 0.2); }
         .btn-secondary { background: linear-gradient(135deg, #6c757d 0%, #495057 100%); box-shadow: 0 8px 25px rgba(108, 117, 125, 0.3); }
         .btn-secondary:hover { box-shadow: 0 15px 40px rgba(108, 117, 125, 0.4); }
+        .btn-export { background: linear-gradient(135deg, #00b894 0%, #00a381 50%, #007a60 100%); box-shadow: 0 8px 25px rgba(0, 184, 148, 0.3); }
+        .btn-export:hover { box-shadow: 0 15px 40px rgba(0, 184, 148, 0.5); }
         .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
         .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -82,7 +84,9 @@
         .headcount-display.show { display: block; }
         .headcount-value { font-size: 3em; font-weight: 900; background: linear-gradient(135deg, #00d4ff 0%, #8a2be2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-top: 10px; }
         .headcount-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .container { padding: 20px; } .date-range-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr; } .percentage-grid { grid-template-columns: 1fr 1fr; } .headcount-input-grid { grid-template-columns: 1fr; } }
+        .view-btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .view-btn-group .btn { flex: 1; }
+        @media (max-width: 768px) { .container { padding: 20px; } .date-range-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr; } .percentage-grid { grid-template-columns: 1fr 1fr; } .headcount-input-grid { grid-template-columns: 1fr; } .view-btn-group { flex-direction: column; } }
     </style>
 </head>
 <body>
@@ -117,7 +121,10 @@
                         <option value="">All Teams</option>
                     </select>
                 </div>
-                <button type="submit" class="btn">View Data</button>
+                <div class="view-btn-group">
+                    <button type="submit" class="btn">View Data</button>
+                    <button type="button" class="btn btn-export" id="exportBtn" style="display:none;">⬇ Export CSV</button>
+                </div>
             </form>
             
             <div class="stats-container" id="statsContainer">
@@ -254,6 +261,9 @@
         document.getElementById('endDate').valueAsDate = today;
         document.getElementById('headcountDate').valueAsDate = yesterday;
 
+        // Store loaded records globally for export
+        let loadedRecords = [];
+
         // Auto-load today's data on page open
         (async () => {
             const startDate = document.getElementById('startDate').value;
@@ -264,11 +274,12 @@
                 const records = [];
                 querySnapshot.forEach((doc) => { records.push(doc.data()); });
                 if (records.length > 0) {
+                    loadedRecords = records;
                     await fetchHeadcountForRange(startDate, endDate);
                     displayStatistics(records);
                     displayDataTable(records);
                     document.getElementById('statsContainer').classList.add('show');
-                    // Populate team filter from loaded records
+                    document.getElementById('exportBtn').style.display = '';
                     records.forEach(r => { if (r.team) allTeams.add(r.team); });
                     updateTeamFilter();
                 }
@@ -278,6 +289,57 @@
         let uploadData = [];
         let allTeams = new Set();
         let currentHeadcount = null;
+
+        // Export button handler
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (!loadedRecords || loadedRecords.length === 0) {
+                showMessage('No data loaded to export. Please view data first.', 'error');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const teamFilter = document.getElementById('teamFilter').value;
+
+            // Sort records: by date asc, then team, then engineer
+            const sorted = [...loadedRecords].sort((a, b) => {
+                if (a.date < b.date) return -1;
+                if (a.date > b.date) return 1;
+                if ((a.team || '') < (b.team || '')) return -1;
+                if ((a.team || '') > (b.team || '')) return 1;
+                return (a.engineer || '').localeCompare(b.engineer || '');
+            });
+
+            const headers = ['Date', 'Team', 'Engineer', 'Total Jobs', 'Dual', 'Single', 'Comms', 'Removal', 'Total Meters'];
+            const rows = sorted.map(r => [
+                r.date || '',
+                r.team || '',
+                r.engineer || '',
+                r.totalJobs || 0,
+                r.dual || 0,
+                r.single || 0,
+                r.comms || 0,
+                r.removal || 0,
+                Math.round(r.totalMeters || 0)
+            ]);
+
+            const csvContent = [headers, ...rows]
+                .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+                .join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const teamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
+            link.href = url;
+            link.download = `KrakenAM_${startDate}_to_${endDate}${teamLabel}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showMessage(`Exported ${sorted.length} records to CSV successfully!`, 'success');
+        });
 
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -456,12 +518,16 @@
                 if (records.length === 0) {
                     showMessage('No data found for the selected date range and team', 'error');
                     document.getElementById('statsContainer').classList.remove('show');
+                    document.getElementById('exportBtn').style.display = 'none';
+                    loadedRecords = [];
                     return;
                 }
+                loadedRecords = records;
                 await fetchHeadcountForRange(startDate, endDate);
                 displayStatistics(records);
                 displayDataTable(records);
                 document.getElementById('statsContainer').classList.add('show');
+                document.getElementById('exportBtn').style.display = '';
                 showMessage(`Displaying ${records.length} records`, 'success');
             } catch (err) { showMessage('Error fetching data: ' + err.message, 'error'); }
         });
@@ -579,7 +645,6 @@
                     dateHeaderRow.innerHTML = `<td colspan="3" style="padding: 10px; color: #0099ff;">📅 ${date}</td><td style="padding: 10px;">${dateSubtotals.jobs}</td><td style="padding: 10px;">${dateSubtotals.dual}</td><td style="padding: 10px;">${dateSubtotals.single}</td><td style="padding: 10px;">${dateSubtotals.comms}</td><td style="padding: 10px;">${dateSubtotals.removal}</td><td style="padding: 10px;">${Math.round(dateSubtotals.meters)}</td>`;
                     tbody.appendChild(dateHeaderRow);
 
-                    // *** Sort engineers alphabetically within each date group ***
                     dateRecords.sort((a, b) => (a.engineer || '').localeCompare(b.engineer || ''));
 
                     dateRecords.forEach(record => {
