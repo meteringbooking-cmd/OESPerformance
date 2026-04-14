@@ -1094,7 +1094,6 @@ window.exportGridToExcel = function() {
   }
 
   const search = (document.getElementById('view-search').value || '').toLowerCase();
-
   const allNames = new Set();
   snapshots.forEach(s => (s.engineers || []).forEach(e => allNames.add(e.name)));
   let sortedNames = [...allNames].sort((a, b) => a.localeCompare(b));
@@ -1107,56 +1106,84 @@ window.exportGridToExcel = function() {
   });
 
   const cols = lastGridCols;
-
-  // Header row
-  const headerRow = ['Engineer', 'OES'];
+  const dataRows = [];
+  
+  // 1. Create Header Row
+  const headerRow = ['Engineer', 'OES Status'];
   cols.forEach(c => {
-    const dateLabel = c.later.operationalDate
-      ? fmtDatePlain(c.later.operationalDate)
-      : fmtTsPlain(c.later.savedAt);
+    const dateLabel = c.later.operationalDate ? fmtDatePlain(c.later.operationalDate) : fmtTsPlain(c.later.savedAt);
     if (c.earlier) {
-      // Two sub-columns for dual snapshots
-      headerRow.push(`${dateLabel} — ${c.earlier.label} (earlier)`);
-      headerRow.push(`${dateLabel} — ${c.later.label} (later)`);
+      headerRow.push(`${dateLabel} (Earlier: ${c.earlier.label})`);
+      headerRow.push(`${dateLabel} (Later: ${c.later.label})`);
     } else {
-      headerRow.push(`${dateLabel} — ${c.later.label}`);
+      headerRow.push(`${dateLabel} (${c.later.label})`);
     }
   });
+  dataRows.push(headerRow);
 
-  const rows = [headerRow];
-
+  // 2. Create Data Rows
   sortedNames.forEach(name => {
     const row = [name, isOES(name) ? 'OES' : ''];
     cols.forEach(c => {
-      const laterCount   = lookup[c.later.id]?.[name];
+      const laterCount = lookup[c.later.id]?.[name];
       const earlierCount = c.earlier ? lookup[c.earlier.id]?.[name] : undefined;
+
       if (c.earlier) {
         row.push(earlierCount != null ? earlierCount : '');
-        row.push(laterCount   != null ? laterCount   : '');
+        row.push(laterCount != null ? laterCount : '');
       } else {
         row.push(laterCount != null ? laterCount : '');
       }
     });
-    rows.push(row);
+    dataRows.push(row);
   });
 
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet(dataRows);
 
+  // 3. Apply Styling (Red Highlight for drops)
+  // Range: R=1 (skip header), C=2 (skip Eng/OES)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  
+  for (let R = 1; R <= range.e.r; ++R) {
+    let colPtr = 2; // Starting after Engineer & OES
+    cols.forEach(c => {
+      if (c.earlier) {
+        const earlierCellRef = XLSX.utils.encode_cell({r: R, c: colPtr});
+        const laterCellRef = XLSX.utils.encode_cell({r: R, c: colPtr + 1});
+        
+        const earlierVal = ws[earlierCellRef]?.v;
+        const laterVal = ws[laterCellRef]?.v;
+
+        // Check if jobs dropped
+        if (typeof earlierVal === 'number' && typeof laterVal === 'number' && laterVal < earlierVal) {
+          // Highlight the "Later" cell in light red
+          if (!ws[laterCellRef].s) ws[laterCellRef].s = {};
+          ws[laterCellRef].s = {
+            fill: { fgColor: { rgb: "FFC7CE" } }, // Light Red
+            font: { color: { rgb: "9C0006" }, bold: true } // Dark Red Text
+          };
+        }
+        colPtr += 2;
+      } else {
+        colPtr += 1;
+      }
+    });
+  }
+
+  // Column Widths
   ws['!cols'] = [
-    { wch: 28 },
-    { wch: 6  },
-    ...cols.flatMap(c => c.earlier ? [{ wch: 28 }, { wch: 28 }] : [{ wch: 22 }])
+    { wch: 25 }, // Engineer
+    { wch: 10 }, // OES
+    ...cols.flatMap(c => c.earlier ? [{ wch: 22 }, { wch: 22 }] : [{ wch: 22 }])
   ];
 
-  ws['!freeze'] = { xSplit: 2, ySplit: 1 };
-
   XLSX.utils.book_append_sheet(wb, ws, 'Region Comparison');
-
+  
   const today = new Date();
   const fname = `region-comparison-${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}.xlsx`;
   XLSX.writeFile(wb, fname);
-  showToast('✓ Exported to Excel');
+  showToast('✓ Exported with movement highlights');
 };
 
 window.toggleExpand = function(rowId) {
