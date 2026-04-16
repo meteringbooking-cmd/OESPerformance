@@ -1386,9 +1386,30 @@ lastWeek.setDate(lastWeek.getDate() - 7);
 document.getElementById('endDate').valueAsDate   = today;
 document.getElementById('startDate').valueAsDate = lastWeek;
 
-// ── Session restore ──
-const saved = sessionStorage.getItem('ngu_username');
-if (saved) { currentEngineer = saved; showHub(); }
+// ── Session restore & Daily Check ──
+const saved = localStorage.getItem('ngu_username');
+const savedDate = localStorage.getItem('ngu_login_date');
+const todayStr = new Date().toDateString();
+
+if (saved && savedDate === todayStr) { 
+    currentEngineer = saved; 
+    showHub(); 
+} else {
+    // If it's a new day or no data exists, clear memory so they must log in
+    localStorage.removeItem('ngu_username');
+    localStorage.removeItem('ngu_login_date');
+}
+
+// ── Check if day has changed when user returns to the open tab ──
+window.addEventListener('focus', () => {
+    if (currentEngineer) {
+        const checkDate = localStorage.getItem('ngu_login_date');
+        if (checkDate && checkDate !== new Date().toDateString()) {
+            alert("Session expired. It's a new day! Please log in again.");
+            handleLogout();
+        }
+    }
+});
 
 // ── Load engineers ──
 async function loadEngineers() {
@@ -1436,8 +1457,13 @@ window.handleLogin = async function() {
     if (!eng) { showLoginError('Username not found. Please check and try again.'); return; }
     if (!eng.password) { showLoginError('No password set. Contact your administrator.'); return; }
     if (password !== eng.password) { showLoginError('Incorrect password. Please try again.'); return; }
+    
     currentEngineer = username;
-    sessionStorage.setItem('ngu_username', username);
+    
+    // Save login details to LocalStorage with today's date stamp
+    localStorage.setItem('ngu_username', username);
+    localStorage.setItem('ngu_login_date', new Date().toDateString());
+    
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
     document.getElementById('loginError').style.display = 'none';
@@ -1524,7 +1550,8 @@ window.showHub = showHub;
 // ── LOGOUT ──
 window.handleLogout = function() {
     currentEngineer = '';
-    sessionStorage.removeItem('ngu_username');
+    localStorage.removeItem('ngu_username');
+    localStorage.removeItem('ngu_login_date');
     additionalPayments = {};
     document.getElementById('breakdownSection').style.display = 'none';
     document.getElementById('submitPayBtn').style.display = 'none';
