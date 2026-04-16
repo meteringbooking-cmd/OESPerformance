@@ -946,7 +946,6 @@
 </head>
 <body>
 
-<!-- ── TOP BAR ── -->
 <header class="top-bar">
     <div class="top-bar-left">
         <div class="portal-wordmark">NGU <span>ENGINEER</span> PORTAL</div>
@@ -961,9 +960,6 @@
     </div>
 </header>
 
-<!-- ══════════════════════════════════════
-     LOGIN SCREEN
-══════════════════════════════════════ -->
 <div id="loginScreen" class="screen active">
     <div class="login-wrap">
         <div class="login-badge">
@@ -998,9 +994,6 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     WELCOME FLASH
-══════════════════════════════════════ -->
 <div id="welcomeScreen" class="screen">
     <div style="display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 56px);">
         <div class="welcome-inner">
@@ -1011,9 +1004,6 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     HUB SCREEN
-══════════════════════════════════════ -->
 <div id="hubScreen" class="screen">
     <div class="hub-wrap">
         <div class="hub-header">
@@ -1077,9 +1067,6 @@
     <div class="footer-strip">NGU — OES — ENGINEER PORTAL — BARRY DIXON</div>
 </div>
 
-<!-- ══════════════════════════════════════
-     BONUS SCREEN
-══════════════════════════════════════ -->
 <div id="bonusScreen" class="screen">
     <div class="bonus-wrap">
 
@@ -1126,9 +1113,6 @@
     <div class="footer-strip" id="bonusFooter" style="display:none;">NGU — OES — ENGINEER PORTAL — BARRY DIXON</div>
 </div>
 
-<!-- ══════════════════════════════════════
-     CAPACITY MODAL
-══════════════════════════════════════ -->
 <div id="capacityModal" class="modal-overlay">
     <div class="capacity-modal-box">
         <div class="modal-head">
@@ -1139,9 +1123,6 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     PAYMENT MODAL
-══════════════════════════════════════ -->
 <div id="paymentModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-head">
@@ -1232,9 +1213,6 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     QUARTERLY BONUS MODAL
-══════════════════════════════════════ -->
 <div id="quarterlyModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-head">
@@ -1247,13 +1225,10 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     FIREBASE + LOGIC
-══════════════════════════════════════ -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, query, where, getDocs, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
+<script>
 const firebaseConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
     authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -1264,8 +1239,9 @@ const firebaseConfig = {
     measurementId: "G-R56BGZYV8N"
 };
 
-const app = initializeApp(firebaseConfig);
-const db  = getFirestore(app);
+// Initialize Firebase via Compat
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 let currentEngineer = '';
 let additionalPayments = {};
@@ -1284,7 +1260,7 @@ if (saved) { currentEngineer = saved; showHub(); }
 // ── Load engineers ──
 async function loadEngineers() {
     try {
-        const qs = await getDocs(collection(db, "engineers"));
+        const qs = await db.collection("engineers").get();
         engineersWithPasswords = [];
         qs.forEach(doc => {
             const d = doc.data();
@@ -1453,7 +1429,7 @@ window.loadDailyBreakdown = async function() {
     document.getElementById('bonusFooter').style.display  = 'none';
 
     try {
-        const pmSnap = await getDocs(query(collection(db,"additionalPayments"),where("engineerName","==",currentEngineer)));
+        const pmSnap = await db.collection("additionalPayments").where("engineerName","==",currentEngineer).get();
         additionalPayments = {};
         const weekendWithPay = new Set();
         pmSnap.forEach(doc => {
@@ -1468,8 +1444,8 @@ window.loadDailyBreakdown = async function() {
         });
 
         const [perfSnap, attSnap] = await Promise.all([
-            getDocs(query(collection(db,"performance"),where("engineerName","==",currentEngineer))),
-            getDocs(query(collection(db,"attendance"),where("engineerName","==",currentEngineer)))
+            db.collection("performance").where("engineerName","==",currentEngineer).get(),
+            db.collection("attendance").where("engineerName","==",currentEngineer).get()
         ]);
 
         const perfData={}, attData={};
@@ -1488,9 +1464,9 @@ window.loadDailyBreakdown = async function() {
         const allDates = [...allDatesSet].filter(ds=>ds>=startDate&&ds<=endDate).sort();
 
         let bonusData={}, jobsData={}, avgBonusByMonth={};
-        try { const bSnap=await getDocs(query(collection(db,"bonuses"),where("engineerName","==",currentEngineer))); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){}
-        try { const jSnap=await getDocs(query(collection(db,"jobsData"),where("engineerName","==",currentEngineer))); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){}
-        try { const avgSnap=await getDocs(query(collection(db,"Average Bonuses"),where("name","==",currentEngineer))); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){}
+        try { const bSnap=await db.collection("bonuses").where("engineerName","==",currentEngineer).get(); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){}
+        try { const jSnap=await db.collection("jobsData").where("engineerName","==",currentEngineer).get(); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){}
+        try { const avgSnap=await db.collection("Average Bonuses").where("name","==",currentEngineer).get(); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){}
 
         displayBreakdown(allDates,perfData,attData,bonusData,jobsData,startDate,endDate,avgBonusByMonth);
         document.getElementById('loadingDiv').style.display = 'none';
@@ -1679,8 +1655,8 @@ window.openQuarterlyBonusModal = async function() {
     const year = new Date().getFullYear();
     try {
         const [snap, attSnap] = await Promise.all([
-            getDocs(query(collection(db,'Quarterly Figures'), where('engineerName','==',currentEngineer))),
-            getDocs(query(collection(db,'attendance'), where('engineerName','==',currentEngineer)))
+            db.collection('Quarterly Figures').where('engineerName','==',currentEngineer).get(),
+            db.collection('attendance').where('engineerName','==',currentEngineer).get()
         ]);
 
         const q1Start=`${year}-01-01`, q1End=`${year}-03-31`;
@@ -1837,9 +1813,9 @@ window.submitPayment = async function(event) {
     let _sa=0,_sl='';
     if(standby==='yes'){ if(_isSpecial){_sa=100;_sl='Special Holiday';} else if(_isWknd){_sa=50;_sl=_dow===6?'Saturday':'Sunday';} else{_sa=20;_sl='Weekday';} }
 
-    const data={engineerName:currentEngineer,date:paymentDate,standby,workingAway,overtime,overtimeHours:otHours,overtimeStartTime:otStart,overtimeEndTime:otEnd,overtimeReason:otReason,hasJobs:hasJobs==='yes',jobs,isBankHoliday:false,standbyAmount:_sa,standbyLabel:_sl,submittedAt:Timestamp.now(),status:'pending'};
+    const data={engineerName:currentEngineer,date:paymentDate,standby,workingAway,overtime,overtimeHours:otHours,overtimeStartTime:otStart,overtimeEndTime:otEnd,overtimeReason:otReason,hasJobs:hasJobs==='yes',jobs,isBankHoliday:false,standbyAmount:_sa,standbyLabel:_sl,submittedAt:firebase.firestore.Timestamp.now(),status:'pending'};
     try {
-        await addDoc(collection(db,"additionalPayments"),data);
+        await db.collection("additionalPayments").add(data);
         if(!additionalPayments[paymentDate]) additionalPayments[paymentDate]=[];
         additionalPayments[paymentDate].push(data);
         alert('Payment claim submitted successfully!\n\nAll submissions are subject to approval.');
