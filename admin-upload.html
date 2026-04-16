@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGU Admin - File Uploader</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Shared NGU Theme Variables */
+        :root {
+            --bg: #080c14; --bg2: #0d1420; --bg3: #111928; --border: rgba(255,255,255,0.07);
+            --border2: rgba(255,255,255,0.12); --accent: #00d4ff; --accent2: #00ff9d;
+            --text: #e8edf8; --text2: #8b97b0; --text3: #4a5568; --success: #10b981;
+        }
+        body { font-family: 'Barlow', sans-serif; background: var(--bg); color: var(--text); padding: 40px 20px; display: flex; justify-content: center; }
+        .admin-wrap { background: var(--bg2); border: 1px solid var(--border2); padding: 32px; width: 100%; max-width: 500px; border-radius: 8px; }
+        .title { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 2em; text-transform: uppercase; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+        .title span { color: var(--accent); }
+        
+        .field-group { margin-bottom: 20px; }
+        .field-label { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.7em; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+        .field-select, .field-input { width: 100%; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); padding: 12px; font-family: 'Barlow', sans-serif; font-size: 1em; outline: none; }
+        .field-select:focus, .field-input:focus { border-color: var(--accent); }
+        
+        /* Styled File Drop Zone */
+        .file-drop-zone { border: 2px dashed var(--border2); padding: 40px 20px; text-align: center; background: rgba(0,212,255,0.02); cursor: pointer; transition: all 0.2s; margin-bottom: 20px; }
+        .file-drop-zone:hover { border-color: var(--accent); background: rgba(0,212,255,0.05); }
+        .file-drop-zone p { margin: 0; color: var(--text2); font-size: 0.9em; pointer-events: none; }
+        .file-drop-zone span { display: block; font-family: 'JetBrains Mono', monospace; color: var(--accent); font-size: 0.7em; margin-top: 8px; }
+        #fileInput { display: none; }
+
+        .btn-upload { width: 100%; padding: 16px; background: var(--accent); color: var(--bg); border: none; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.1em; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: background 0.2s; }
+        .btn-upload:hover { background: #33ddff; }
+        .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #statusMsg { margin-top: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.8em; text-align: center; display: none; }
+        .status-success { color: var(--accent2); }
+        .status-error { color: #ef4444; }
+        .status-loading { color: var(--accent); }
+    </style>
+</head>
+<body>
+
+<div class="admin-wrap">
+    <div class="title">Admin <span>File Uploader</span></div>
+
+    <div class="field-group">
+        <label class="field-label">Target Section</label>
+        <select class="field-select" id="fileCategory">
+            <option value="Toolbox Talks">Toolbox Talks</option>
+            <option value="Vehicle Documents">Vehicle Documents</option>
+            <option value="DNO Guides">DNO Guides</option>
+        </select>
+    </div>
+
+    <div class="field-group">
+        <label class="field-label">Document Display Name</label>
+        <input type="text" class="field-input" id="fileName" placeholder="e.g., Q2 Safety Briefing">
+    </div>
+
+    <div class="field-group">
+        <label class="field-label">Select File</label>
+        <div class="file-drop-zone" onclick="document.getElementById('fileInput').click()">
+            <p id="fileDisplay">Click here to browse for a file</p>
+            <span>PDF, DOCX, JPG, PNG allowed</span>
+        </div>
+        <input type="file" id="fileInput" onchange="updateFileDisplay()">
+    </div>
+
+    <button class="btn-upload" id="uploadBtn" onclick="uploadFile()">Upload to Portal</button>
+    <div id="statusMsg"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+
+<script>
+    // Initialize Firebase
+    const firebaseConfig = {
+        apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+        authDomain: "oesperformance-a54c0.firebaseapp.com",
+        projectId: "oesperformance-a54c0",
+        storageBucket: "oesperformance-a54c0.firebasestorage.app",
+        messagingSenderId: "484894102454",
+        appId: "1:484894102454:web:17535ee497eac2d90d6717"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    let selectedFile = null;
+
+    function updateFileDisplay() {
+        const fileInput = document.getElementById('fileInput');
+        const display = document.getElementById('fileDisplay');
+        if (fileInput.files.length > 0) {
+            selectedFile = fileInput.files[0];
+            display.innerHTML = `Selected:<br><strong style="color:var(--accent)">${selectedFile.name}</strong>`;
+            
+            // Auto-fill the display name if empty
+            const nameInput = document.getElementById('fileName');
+            if(!nameInput.value) nameInput.value = selectedFile.name.split('.')[0];
+        }
+    }
+
+    async function uploadFile() {
+        const category = document.getElementById('fileCategory').value;
+        const displayName = document.getElementById('fileName').value.trim();
+        const statusMsg = document.getElementById('statusMsg');
+        const uploadBtn = document.getElementById('uploadBtn');
+
+        if (!selectedFile) { alert("Please select a file first."); return; }
+        if (!displayName) { alert("Please enter a display name for the document."); return; }
+
+        // Set Loading State
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "Uploading...";
+        statusMsg.className = "status-loading";
+        statusMsg.textContent = "// UPLOADING FILE TO SECURE SERVER...";
+        statusMsg.style.display = "block";
+
+        try {
+            // 1. Upload the file to Firebase Storage
+            const storageRef = storage.ref();
+            const fileRef = storageRef.child(`portal_documents/${category}/${Date.now()}_${selectedFile.name}`);
+            await fileRef.put(selectedFile);
+
+            // 2. Get the public download URL
+            const downloadUrl = await fileRef.getDownloadURL();
+
+            // 3. Save the link and details to Firestore
+            await db.collection("portal_documents").add({
+                name: displayName,
+                category: category,
+                url: downloadUrl,
+                uploadedAt: firebase.firestore.Timestamp.now(),
+                originalName: selectedFile.name
+            });
+
+            // Success State
+            statusMsg.className = "status-success";
+            statusMsg.textContent = "✓ UPLOAD COMPLETE. DOCUMENT IS LIVE ON PORTAL.";
+            
+            // Reset Form
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileName').value = '';
+            document.getElementById('fileDisplay').textContent = 'Click here to browse for a file';
+            selectedFile = null;
+
+        } catch (error) {
+            console.error(error);
+            statusMsg.className = "status-error";
+            statusMsg.textContent = "⚠ ERROR: " + error.message;
+        } finally {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "Upload to Portal";
+        }
+    }
+</script>
+</body>
+</html>
