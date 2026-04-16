@@ -833,6 +833,7 @@
         .modal-head-title.purple { color: var(--accent4); }
         .modal-head-title.pink { color: #f472b6; }
         .modal-head-title.blue { color: var(--accent); }
+        .modal-head-title.accent { color: var(--accent); }
 
         .modal-close {
             background: none; border: none; color: var(--text2);
@@ -1271,7 +1272,7 @@
                         <select class="field-select" id="overtimeReason">
                             <option value="">Select a reason</option>
                             <option value="extra work">Extra Work</option>
-                            <option value="OOH rota coverage">OOH Rota Coverage</option>
+                            <option value="OOH rota coverage">OOH Rota coverage</option>
                             <option value="standard weekly hours exceeded">Standard Weekly Hours Exceeded</option>
                             <option value="travel to training/work away">Travel to Training/Work Away</option>
                         </select>
@@ -1319,6 +1320,27 @@
     </div>
 </div>
 
+<div id="signatureModal" class="modal-overlay" style="z-index: 300;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-head">
+            <div class="modal-head-title accent">✍️ Document Acknowledgment</div>
+            <button class="modal-close" onclick="closeSignatureModal()">×</button>
+        </div>
+        <div class="modal-body-scroll">
+            <p style="font-size: 0.9em; color: var(--text2); margin-bottom: 20px; line-height: 1.5;">
+                By signing below, you confirm that you have fully read and understood the contents of the following document:<br>
+                <strong id="sigDocName" style="color: var(--text); font-size: 1.1em; display:block; margin-top: 8px;"></strong>
+            </p>
+            <div class="field-group">
+                <label class="field-label">Type your username to sign</label>
+                <input class="field-input" type="text" id="signatureInput" placeholder="e.g. John Doe">
+            </div>
+            <div class="login-error" id="sigError" style="display:none; margin-top: -10px; margin-bottom: 16px;"></div>
+            <button class="btn-primary" onclick="submitSignature()">Sign & Confirm</button>
+        </div>
+    </div>
+</div>
+
 <div id="quarterlyModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-head">
@@ -1352,7 +1374,11 @@ const db = firebase.firestore();
 let currentEngineer = '';
 let additionalPayments = {};
 let engineersWithPasswords = [];
-let isPortalLocked = false; // <-- NEW: Tracks if the portal is locked
+let isPortalLocked = false; 
+
+// Track current docs view for refreshing
+let currentDocsCategory = '';
+let pendingSigDocId = null;
 
 // ── Init dates ──
 const today = new Date(), lastWeek = new Date(today);
@@ -1485,22 +1511,13 @@ window.checkLock = function(targetFunction) {
     targetFunction();
 };
 
-// ── MARK DOCUMENT AS READ ──
-window.markAsRead = function(docId) {
-    let viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
-    if (!viewedDocs.includes(docId)) {
-        viewedDocs.push(docId);
-        localStorage.setItem(`viewed_${currentEngineer}`, JSON.stringify(viewedDocs));
-        refreshDocumentStatus(); // Refresh badges and locks immediately
-    }
-};
 
 // ── HUB ──
 function showHub() {
     setScreen('hubScreen');
     setBreadcrumb('HUB');
     document.getElementById('hubUserName').textContent = currentEngineer;
-    refreshDocumentStatus(); // <-- Trigger document check here
+    refreshDocumentStatus(); 
 }
 window.showHub = showHub;
 
@@ -2002,6 +2019,7 @@ window.submitPayment = async function(event) {
 
 // ── DYNAMIC DOCUMENT VIEWER ──
 window.openDocsModal = async function(category) {
+    currentDocsCategory = category;
     const modal = document.getElementById('docsModal');
     const title = document.getElementById('docsModalTitle');
     const container = document.getElementById('docsListContainer');
@@ -2013,7 +2031,6 @@ window.openDocsModal = async function(category) {
     document.body.style.overflow = 'hidden';
 
     try {
-        // Fetch files from Firestore where category matches the button clicked
         const snapshot = await db.collection("portal_documents")
                                  .where("category", "==", category)
                                  .orderBy("uploadedAt", "desc")
@@ -2028,15 +2045,13 @@ window.openDocsModal = async function(category) {
         snapshot.forEach(doc => {
             const data = doc.data();
             const dateStr = data.uploadedAt ? data.uploadedAt.toDate().toLocaleDateString('en-GB') : 'Unknown Date';
-            
-            // Check if the user has viewed this specific document ID
             const viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
             const isUnread = !viewedDocs.includes(doc.id);
+            const safeName = data.name.replace(/'/g, "\\'"); // Prevent breaks if name has an apostrophe
 
-            // Build a clickable card for each file (with a red border if unread)
             html += `
                 <a href="${data.url}" target="_blank" rel="noopener noreferrer" 
-                   onclick="markAsRead('${doc.id}')"
+                   onclick="handleDocClick('${doc.id}', '${safeName}', ${isUnread})"
                    class="job-entry-block" 
                    style="display:flex; align-items:center; justify-content:space-between; text-decoration:none; cursor:pointer; transition: background 0.2s; border-left: 3px solid ${isUnread ? 'var(--danger)' : 'var(--accent)'};">
                     <div>
@@ -2061,11 +2076,66 @@ window.closeDocsModal = function() {
     document.body.style.overflow = '';
 };
 
-// Close modal when clicking outside of it
 document.getElementById('docsModal').addEventListener('click', e => { 
     if(e.target === document.getElementById('docsModal')) closeDocsModal(); 
 });
 
+// ── SIGNATURE MODAL LOGIC ──
+window.handleDocClick = function(docId, docName, isUnread) {
+    if (isUnread) {
+        openSignatureModal(docId, docName);
+    }
+};
+
+window.openSignatureModal = function(docId, docName) {
+    pendingSigDocId = docId;
+    document.getElementById('sigDocName').innerText = docName;
+    document.getElementById('signatureInput').value = '';
+    document.getElementById('sigError').style.display = 'none';
+    document.getElementById('signatureModal').classList.add('open');
+};
+
+window.closeSignatureModal = function() {
+    document.getElementById('signatureModal').classList.remove('open');
+    pendingSigDocId = null;
+};
+
+window.submitSignature = function() {
+    const sig = document.getElementById('signatureInput').value.trim();
+    
+    if (sig.toLowerCase() !== currentEngineer.toLowerCase()) {
+        document.getElementById('sigError').innerText = '⚠ Signature must match your logged-in username (' + currentEngineer + ')';
+        document.getElementById('sigError').style.display = 'block';
+        return;
+    }
+    
+    // Mark as read locally
+    let viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
+    if (!viewedDocs.includes(pendingSigDocId)) {
+        viewedDocs.push(pendingSigDocId);
+        localStorage.setItem(`viewed_${currentEngineer}`, JSON.stringify(viewedDocs));
+        
+        // Save signature to Database for compliance
+        try {
+            db.collection("document_signatures").add({
+                engineerName: currentEngineer,
+                documentId: pendingSigDocId,
+                documentName: document.getElementById('sigDocName').innerText,
+                signedAt: firebase.firestore.Timestamp.now()
+            });
+        } catch(e) { console.error("Could not save signature to DB", e); }
+
+        refreshDocumentStatus(); 
+    }
+    
+    closeSignatureModal();
+    alert("Thank you. Your acknowledgment has been recorded.");
+    
+    // Refresh the open list to remove the red unread badge
+    if (currentDocsCategory) {
+        openDocsModal(currentDocsCategory);
+    }
+};
 
 window.addEventListener('load', () => loadEngineers());
 document.addEventListener('keydown', e => {
@@ -2074,6 +2144,7 @@ document.addEventListener('keydown', e => {
         closeQuarterlyModal();
         closePaymentModal();
         closeDocsModal();
+        closeSignatureModal();
     }
 });
 </script>
