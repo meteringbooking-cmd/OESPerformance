@@ -2197,6 +2197,7 @@ window.submitSignature = function() {
 };
 
 // ── QUARTERLY BONUS ──
+// ── QUARTERLY BONUS ──
 const BONUS_TIERS = [
     { min: 35,  max: Infinity, bonus: 1500, label: '35m+ per week'     },
     { min: 34,  max: 35,       bonus: 1200, label: '34 – 35m per week' },
@@ -2210,17 +2211,57 @@ function getTier(mpw) {
     return BONUS_TIERS.find(t => mpw >= t.min && mpw < t.max) || BONUS_TIERS[BONUS_TIERS.length - 1];
 }
 
+const Q_CONFIG = {
+    1: { months: [1,2,3],   labels: ['January','February','March'],   label: 'JAN · FEB · MAR' },
+    2: { months: [4,5,6],   labels: ['April','May','June'],           label: 'APR · MAY · JUN' },
+    3: { months: [7,8,9],   labels: ['July','August','September'],    label: 'JUL · AUG · SEP' },
+    4: { months: [10,11,12],labels: ['October','November','December'],label: 'OCT · NOV · DEC' },
+};
+
+let activeQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+
 window.openQuarterlyBonusModal = async function() {
     const modal = document.getElementById('quarterlyBonusModal');
     const body  = document.getElementById('quarterlyBonusBody');
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
-    body.innerHTML = '<div class="qb-loading">// LOADING Q1 DATA…</div>';
+    await renderQuarterlyBonus(body, activeQuarter);
+};
 
-    const year    = new Date().getFullYear();
-    const q1Start = `${year}-01-01`;
-    const q1End   = `${year}-03-31`;
-    const MNAMES  = { 1: 'January', 2: 'February', 3: 'March' };
+window.switchQuarter = async function(q) {
+    activeQuarter = q;
+    const body = document.getElementById('quarterlyBonusBody');
+    await renderQuarterlyBonus(body, q);
+};
+
+async function renderQuarterlyBonus(body, quarter) {
+    const cfg = Q_CONFIG[quarter];
+    const year = new Date().getFullYear();
+    const qMonths = cfg.months;
+    const qStart = `${year}-${String(qMonths[0]).padStart(2,'0')}-01`;
+    const lastMonth = qMonths[2];
+    const lastDay = new Date(year, lastMonth, 0).getDate();
+    const qEnd = `${year}-${String(lastMonth).padStart(2,'0')}-${lastDay}`;
+
+    // Quarter selector HTML
+    const selectorHTML = `
+        <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+            ${[1,2,3,4].map(q => `
+                <button onclick="switchQuarter(${q})"
+                    style="flex:1;min-width:60px;padding:8px 4px;
+                        background:${q===quarter?'rgba(168,85,247,0.25)':'var(--bg3)'};
+                        border:1px solid ${q===quarter?'var(--accent4)':'var(--border2)'};
+                        color:${q===quarter?'var(--accent4)':'var(--text3)'};
+                        font-family:'Barlow Condensed',sans-serif;font-weight:700;
+                        font-size:0.85em;letter-spacing:0.1em;text-transform:uppercase;
+                        cursor:pointer;transition:all 0.2s;">
+                    Q${q}
+                </button>
+            `).join('')}
+        </div>
+    `;
+
+    body.innerHTML = selectorHTML + '<div class="qb-loading">// LOADING DATA…</div>';
 
     try {
         const [qSnap, attSnap] = await Promise.all([
@@ -2232,12 +2273,13 @@ window.openQuarterlyBonusModal = async function() {
         attSnap.forEach(doc => {
             const d = doc.data();
             const pd = normDate(d.date);
-            if (pd && pd >= q1Start && pd <= q1End) {
+            if (pd && pd >= qStart && pd <= qEnd) {
                 if (d.attendance === 'H' || d.attendance === 'H/H') holidayDates.add(pd);
             }
         });
 
-        const monthData = { 1: {}, 2: {}, 3: {} };
+        const monthData = {};
+        qMonths.forEach(m => monthData[m] = {});
 
         qSnap.forEach(doc => {
             const d = doc.data();
@@ -2255,11 +2297,11 @@ window.openQuarterlyBonusModal = async function() {
 
         let grandMeters = 0, grandDays = 0;
         const mStats = {};
-        [1, 2, 3].forEach(m => {
+        qMonths.forEach((m, i) => {
             const byDate = monthData[m];
             const days   = Object.keys(byDate).length;
             const total  = Object.values(byDate).reduce((s, v) => s + v, 0);
-            mStats[m] = { days, total };
+            mStats[m] = { days, total, label: cfg.labels[i] };
             grandDays   += days;
             grandMeters += total;
         });
@@ -2268,10 +2310,10 @@ window.openQuarterlyBonusModal = async function() {
         const mpw  = mpd * 5;
         const tier = getTier(mpw);
 
-        const monthCardsHTML = [1, 2, 3].map(m => {
+        const monthCardsHTML = qMonths.map(m => {
             const s = mStats[m];
             return `<div class="qb-month-card ${s.days === 0 ? 'no-data' : ''}">
-                <div class="qb-month-name">${MNAMES[m]}</div>
+                <div class="qb-month-name">${s.label}</div>
                 <div class="qb-month-meters">${s.days > 0 ? s.total.toFixed(1) : '—'}</div>
                 <div class="qb-month-unit">meters</div>
                 <div class="qb-month-days">${s.days > 0 ? s.days + ' day' + (s.days !== 1 ? 's' : '') : 'No data yet'}</div>
@@ -2290,9 +2332,9 @@ window.openQuarterlyBonusModal = async function() {
 
         const noData = grandDays === 0;
 
-        body.innerHTML = `
+        body.innerHTML = selectorHTML + `
             <div style="text-align:center;margin-bottom:18px;">
-                <span class="qb-year-pill">Q1 ${year} · JAN · FEB · MAR</span>
+                <span class="qb-year-pill">Q${quarter} ${year} · ${cfg.label}</span>
             </div>
             <div class="qb-month-grid">${monthCardsHTML}</div>
             <div class="qb-divider"></div>
@@ -2312,7 +2354,7 @@ window.openQuarterlyBonusModal = async function() {
             <div class="qb-tiers-label">// BONUS TIER LADDER</div>
             ${tiersHTML}
             <div class="qb-result-card ${tier.bonus === 0 ? 'zero' : ''}">
-                <div class="qb-result-label">// PROJECTED Q1 BONUS</div>
+                <div class="qb-result-label">// PROJECTED Q${quarter} BONUS</div>
                 <div class="qb-result-amount">£${tier.bonus.toLocaleString()}</div>
                 <div class="qb-result-tier">${tier.label}</div>
             </div>
@@ -2321,17 +2363,17 @@ window.openQuarterlyBonusModal = async function() {
             </div>
             <div class="qb-note">
                 ${noData
-                    ? `// NO Q1 ${year} DATA FOUND YET. DATA IS UPLOADED BY YOUR MANAGER.`
-                    : `// BASED ON ${grandDays} WORKING DAY${grandDays!==1?'S':''} ACROSS Q1 ${year}. HOLIDAY DAYS EXCLUDED.`
+                    ? `// NO Q${quarter} ${year} DATA FOUND YET. DATA IS UPLOADED BY YOUR MANAGER.`
+                    : `// BASED ON ${grandDays} WORKING DAY${grandDays!==1?'S':''} ACROSS Q${quarter} ${year}. HOLIDAY DAYS EXCLUDED.`
                 }<br>
                 SICK DAYS AND AAUP ABSENCES COUNT AS WORKING DAYS WITH 0 METERS.
             </div>
         `;
     } catch (err) {
         console.error('Quarterly bonus error:', err);
-        body.innerHTML = `<div class="qb-loading" style="color:var(--danger);">⚠ ERROR: ${err.message}</div>`;
+        body.innerHTML = selectorHTML + `<div class="qb-loading" style="color:var(--danger);">⚠ ERROR: ${err.message}</div>`;
     }
-};
+}
 
 window.closeQuarterlyBonusModal = function() {
     document.getElementById('quarterlyBonusModal').classList.remove('open');
