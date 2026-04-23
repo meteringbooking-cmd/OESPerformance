@@ -238,13 +238,14 @@
                     <div class="progress-bar-container"><div class="progress-bar" id="metersProgress" style="width: 0%"></div></div>
                     <div class="progress-text" id="metersProgressText">0%</div>
                     <div style="margin-top:14px;padding:12px 16px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(0,210,255,0.2);display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-size:0.78em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Today's Meters (Kraken AM)</span>
-    <span style="font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#00d2ff,#3a7bd5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="krakenTodayMeters">—</span>
-</div>
+                        <span style="font-size:0.78em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Today's Meters (Kraken AM)</span>
+                        <span style="font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#00d2ff,#3a7bd5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="krakenTodayMeters">—</span>
+                    </div>
                     <div class="historical-data">
                         <div class="historical-title">Previous 10 Working Days</div>
                         <table class="historical-table">
-                            <thead><tr><th>Date</th><th>Meters</th><th>Target</th><th>%</th></tr></thead>
+                            <!-- UPDATED: Added Kraken AM column -->
+                            <thead><tr><th>Date</th><th>Meters</th><th>Kraken AM</th><th>Target</th><th>%</th></tr></thead>
                             <tbody id="metersHistory"></tbody>
                         </table>
                     </div>
@@ -1037,9 +1038,11 @@
             if (card.classList.contains('expanded') && complianceData.length>0) populateComplianceHistory();
         };
         function populateHistoricalTables() {
+            // UPDATED: Meters history now includes Kraken AM column
             document.getElementById('metersHistory').innerHTML=historicalData.map(d=>{
                 const pct=d.metersTarget?((d.totalMeters/d.metersTarget)*100).toFixed(1):'0';
-                return `<tr><td>${d.displayDate}</td><td>${d.totalMeters.toLocaleString()}</td><td>${d.metersTarget.toLocaleString()}</td><td>${pct}%</td></tr>`;
+                const krakenVal = d.krakenMeters !== undefined ? (d.krakenMeters === null ? '—' : d.krakenMeters.toLocaleString()) : '—';
+                return `<tr><td>${d.displayDate}</td><td>${d.totalMeters.toLocaleString()}</td><td>${krakenVal}</td><td>${d.metersTarget.toLocaleString()}</td><td>${pct}%</td></tr>`;
             }).join('');
             document.getElementById('completionHistory').innerHTML=historicalData.map(d=>`<tr><td>${d.displayDate}</td><td>${d.totalCompleted.toLocaleString()}</td><td>${d.totalJobs.toLocaleString()}</td><td>${d.completionRate}%</td></tr>`).join('');
             document.getElementById('attendanceHistory').innerHTML=historicalData.map(d=>`<tr><td>${d.displayDate}</td><td>${d.atWorkPercent}%</td><td>${d.holPercent}%</td><td>${d.sickPercent}%</td><td>${d.aaupPercent}%</td></tr>`).join('');
@@ -1231,16 +1234,16 @@
                 document.getElementById('aaupPercent').textContent=aaup.toFixed(1)+'%';
                 await loadMilesPerMeter(dateStr);
                 // Load today's Kraken AM meters
-try {
-    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
-    const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", todayStr)));
-    let krakenTotal = 0;
-    krakenSnap.forEach(doc => { krakenTotal += doc.data().totalMeters || 0; });
-    document.getElementById('krakenTodayMeters').textContent = krakenSnap.empty ? 'No data' : Math.round(krakenTotal).toLocaleString();
-} catch(err) {
-    console.error('Kraken AM meters error:', err);
-    document.getElementById('krakenTodayMeters').textContent = 'Error';
-}
+                try {
+                    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
+                    const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", todayStr)));
+                    let krakenTotal = 0;
+                    krakenSnap.forEach(doc => { krakenTotal += doc.data().totalMeters || 0; });
+                    document.getElementById('krakenTodayMeters').textContent = krakenSnap.empty ? 'No data' : Math.round(krakenTotal).toLocaleString();
+                } catch(err) {
+                    console.error('Kraken AM meters error:', err);
+                    document.getElementById('krakenTodayMeters').textContent = 'Error';
+                }
                 const spDate = getSPCompletionDate();
                 await loadSPCompletion(spDate);
                 await loadComplianceData();
@@ -1259,17 +1262,27 @@ try {
             }catch(err){console.error("Dashboard load error:",err);document.getElementById('loadingDiv').innerHTML='<div style="color:#ef4444">Error loading data – check console</div>';}
         }
 
+        // UPDATED: loadHistoricalData now fetches Kraken AM data in parallel for each day
         async function loadHistoricalData() {
             historicalData=[];
             for(const date of getPreviousWorkingDays(10)){
                 const ds=formatDateForQuery(date),disp=formatDate(date);
-                const perfSnap=await getDocs(query(collection(performanceDb,"performance"),where("date","==",ds)));
+                const [perfSnap, gsSnap, krakenSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb,"performance"),where("date","==",ds))),
+                    getDocs(query(collection(performanceDb,"garethstats"),where("date","==",ds))),
+                    getDocs(query(collection(performanceDb,"KrakenAM"),where("date","==",ds)))
+                ]);
                 let m=0,j=0,c=0;
                 perfSnap.forEach(doc=>{const d=doc.data();m+=d.meters||0;j+=d.jobs||0;c+=d.completed||0;});
-                const gsSnap=await getDocs(query(collection(performanceDb,"garethstats"),where("date","==",ds)));
                 let aw='0',h='0',s='0',aa='0';
                 gsSnap.forEach(doc=>{const d=doc.data();aw=(d.atWorkPercent||0).toFixed(1);h=(d.holidayPercent||0).toFixed(1);s=(d.sickPercent||0).toFixed(1);aa=(d.aaupPercent||0).toFixed(1);});
-                historicalData.push({displayDate:disp,totalMeters:m,metersTarget:Math.round(oesEngineerCount*6*0.9),totalJobs:j,totalCompleted:c,completionRate:j?(c/j*100).toFixed(1):'0',atWorkPercent:aw,holPercent:h,sickPercent:s,aaupPercent:aa});
+                let krakenMeters = null;
+                if (!krakenSnap.empty) {
+                    let kt = 0;
+                    krakenSnap.forEach(doc => { kt += doc.data().totalMeters || 0; });
+                    krakenMeters = Math.round(kt);
+                }
+                historicalData.push({displayDate:disp,totalMeters:m,metersTarget:Math.round(oesEngineerCount*6*0.9),totalJobs:j,totalCompleted:c,completionRate:j?(c/j*100).toFixed(1):'0',atWorkPercent:aw,holPercent:h,sickPercent:s,aaupPercent:aa,krakenMeters});
             }
         }
 
