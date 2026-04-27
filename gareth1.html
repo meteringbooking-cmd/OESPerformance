@@ -672,29 +672,6 @@
             padding: 8px 6px;
         }
 
-        .placeholder-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            margin-bottom: 20px;
-        }
-
-        .placeholder-title {
-            font-size: 1.4em;
-            font-weight: bold;
-            color: #1e3c72;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .placeholder-content {
-            color: #666;
-            line-height: 1.8;
-        }
-
         .back-link {
             display: block;
             text-align: center;
@@ -723,6 +700,101 @@
 
         .fail-stats {
             margin-top: 24px;
+        }
+
+        /* ── Engineer Profit styles ── */
+        .profit-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .profit-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 10px;
+            border: 1px solid rgba(99, 102, 241, 0.15);
+            transition: all 0.2s ease;
+        }
+
+        .profit-row:hover {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.35);
+        }
+
+        .profit-rank {
+            font-size: 0.7em;
+            font-weight: 800;
+            color: #64748b;
+            min-width: 22px;
+            text-align: center;
+        }
+
+        .profit-rank.gold   { color: #fbbf24; }
+        .profit-rank.silver { color: #94a3b8; }
+        .profit-rank.bronze { color: #b45309; }
+
+        .profit-name {
+            flex: 1;
+            font-size: 0.85em;
+            font-weight: 700;
+            color: #e2e8f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .profit-amount {
+            font-size: 0.9em;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .profit-amount.positive { color: #34d399; }
+        .profit-amount.negative { color: #f87171; }
+
+        .profit-bar-bg {
+            width: 60px;
+            height: 6px;
+            background: rgba(15, 23, 42, 0.7);
+            border-radius: 3px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .profit-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .profit-bar-fill.positive { background: linear-gradient(90deg, #10b981, #34d399); }
+        .profit-bar-fill.negative { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+        .show-all-btn {
+            width: 100%;
+            padding: 10px;
+            background: rgba(99, 102, 241, 0.15);
+            color: #94a3b8;
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 10px;
+        }
+
+        .show-all-btn:hover {
+            background: rgba(99, 102, 241, 0.25);
+            color: #e2e8f0;
+            border-color: rgba(99, 102, 241, 0.5);
         }
 
         @media (max-width: 768px) {
@@ -960,6 +1032,26 @@
                     </div>
                 </div>
 
+                <!-- ── Engineer Profit KPI ── -->
+                <div class="kpi-card expandable" onclick="toggleExpand(this, 'profit')">
+                    <span class="expand-indicator">▼</span>
+                    <div class="kpi-header">
+                        <span class="kpi-title">Engineer Profit</span>
+                        <span class="kpi-icon">🏆</span>
+                    </div>
+                    <div class="kpi-value" id="profitTotal">£0</div>
+                    <div class="kpi-target">Total engineer profit today</div>
+
+                    <!-- Top 10 live list -->
+                    <div class="profit-list" id="profitTopList" style="margin-top: 16px;"></div>
+                    <button class="show-all-btn" id="profitShowAllBtn" style="display:none;" onclick="event.stopPropagation(); toggleShowAllProfit()">Show all engineers</button>
+
+                    <div class="historical-data">
+                        <div class="historical-title">All engineers — ranked best to worst</div>
+                        <div class="profit-list" id="profitAllList"></div>
+                    </div>
+                </div>
+
                 <!-- Compliance KPI -->
                 <div class="kpi-card expandable" onclick="toggleExpand(this, 'compliance')">
                     <span class="expand-indicator">▼</span>
@@ -1095,8 +1187,9 @@
         let historicalDataByTeamLeader = {};
         let oesEngineerCount = 0;
         let complianceData = [];
+        let allEngineerProfits = [];  // full sorted list for profit tile
+        let showingAllProfit = false;
 
-        // ── Named engineers on £50/day + job-value table ──────────────────────
         const NAMED_ENGINEERS = [
             'Billy McDonough', 'Chanda Kasama', 'Dinis Cruz',
             'Johnson Allepot', 'Ryan Beekawa', 'Sammim Miah', 'Stephen Lawless'
@@ -1114,31 +1207,22 @@
             return JOB_VALUE_TABLE[capped] || 0;
         }
 
-        // Revenue contribution for a named engineer:
-        // take what they generated (Firestore value), deduct £50 day rate and
-        // the job-value payout for the number of jobs they completed.
         function calcNamedEngineerContribution(firestoreValue, completed) {
             const contribution = firestoreValue - 50 - getJobValue(completed);
-            return Math.max(0, contribution); // never go negative
+            return Math.max(0, contribution);
         }
 
         function isNamedEngineer(name) {
             if (!name) return false;
             return NAMED_ENGINEERS.some(n => n.toLowerCase() === name.trim().toLowerCase());
         }
-        // ─────────────────────────────────────────────────────────────────────
 
         function getPreviousWorkingDay() {
             const today = new Date();
             let previousDay = new Date(today);
             previousDay.setDate(previousDay.getDate() - 1);
-            
-            if (previousDay.getDay() === 0) {
-                previousDay.setDate(previousDay.getDate() - 2);
-            } else if (previousDay.getDay() === 6) {
-                previousDay.setDate(previousDay.getDate() - 1);
-            }
-            
+            if (previousDay.getDay() === 0) previousDay.setDate(previousDay.getDate() - 2);
+            else if (previousDay.getDay() === 6) previousDay.setDate(previousDay.getDate() - 1);
             return previousDay;
         }
 
@@ -1147,9 +1231,7 @@
             let d = new Date();
             while (dates.length < count) {
                 d.setDate(d.getDate() - 1);
-                if (d.getDay() !== 0 && d.getDay() !== 6) {
-                    dates.push(new Date(d));
-                }
+                if (d.getDay() !== 0 && d.getDay() !== 6) dates.push(new Date(d));
             }
             return dates;
         }
@@ -1157,28 +1239,21 @@
         function getPreviousTwoWeeks() {
             const dates = [];
             const today = new Date();
-            
             for (let i = 1; i <= 14; i++) {
                 const date = new Date(today);
                 date.setDate(date.getDate() - i);
-                
-                if (date.getDay() !== 0 && date.getDay() !== 6) {
-                    dates.push(date);
-                }
+                if (date.getDay() !== 0 && date.getDay() !== 6) dates.push(date);
             }
-            
             return dates.reverse();
         }
 
         function getPreviousSixMonths() {
             const months = [];
             const today = new Date();
-            
             for (let i = 0; i < 6; i++) {
                 const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
                 months.push(date);
             }
-            
             return months.reverse();
         }
 
@@ -1205,7 +1280,6 @@
             const cleaned = str.trim().replace(/\s+/g, ' ');
             const match = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
             if (!match) return null;
-
             const [_, dd, mm, yyyy, hh, min, sec = '0'] = match;
             return new Date(+yyyy, +mm - 1, +dd, +hh, +min, +sec);
         }
@@ -1214,33 +1288,103 @@
             const bar = document.getElementById(elementId);
             const actualPercentage = Math.min(percentage, 100);
             bar.style.width = actualPercentage + '%';
-            
-            if (percentage >= 90) {
-                bar.className = 'progress-bar';
-            } else if (percentage >= 70) {
-                bar.className = 'progress-bar warning';
-            } else {
-                bar.className = 'progress-bar danger';
-            }
+            if (percentage >= 90) bar.className = 'progress-bar';
+            else if (percentage >= 70) bar.className = 'progress-bar warning';
+            else bar.className = 'progress-bar danger';
         }
 
         function updateStatusIndicator(elementId, percentage, threshold = 90) {
             const indicator = document.getElementById(elementId);
-            if (percentage >= threshold) {
-                indicator.className = 'status-indicator status-green';
-            } else if (percentage >= threshold * 0.8) {
-                indicator.className = 'status-indicator status-amber';
+            if (percentage >= threshold) indicator.className = 'status-indicator status-green';
+            else if (percentage >= threshold * 0.8) indicator.className = 'status-indicator status-amber';
+            else indicator.className = 'status-indicator status-red';
+        }
+
+        // ── Engineer Profit helpers ──────────────────────────────────────────
+        function renderProfitRow(eng, idx, maxAbsProfit) {
+            const isPos = eng.profit >= 0;
+            const barPct = maxAbsProfit > 0 ? Math.min(100, (Math.abs(eng.profit) / maxAbsProfit) * 100) : 0;
+            const rankClass = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
+            return `
+                <div class="profit-row">
+                    <span class="profit-rank ${rankClass}">#${idx + 1}</span>
+                    <span class="profit-name">${eng.name}</span>
+                    <div class="profit-bar-bg">
+                        <div class="profit-bar-fill ${isPos ? 'positive' : 'negative'}" style="width:${barPct}%"></div>
+                    </div>
+                    <span class="profit-amount ${isPos ? 'positive' : 'negative'}">£${Math.round(eng.profit).toLocaleString()}</span>
+                </div>`;
+        }
+
+        function renderProfitList(list, containerId) {
+            const container = document.getElementById(containerId);
+            if (!list || list.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:16px;color:#64748b;font-size:0.85em;">No profit data for today</div>';
+                return;
+            }
+            const maxAbs = Math.max(...list.map(e => Math.abs(e.profit)));
+            container.innerHTML = list.map((e, i) => renderProfitRow(e, i, maxAbs)).join('');
+        }
+
+        window.toggleShowAllProfit = function() {
+            showingAllProfit = !showingAllProfit;
+            const btn = document.getElementById('profitShowAllBtn');
+            if (showingAllProfit) {
+                renderProfitList(allEngineerProfits, 'profitTopList');
+                btn.textContent = 'Show top 10 only';
             } else {
-                indicator.className = 'status-indicator status-red';
+                renderProfitList(allEngineerProfits.slice(0, 10), 'profitTopList');
+                btn.textContent = 'Show all engineers';
+            }
+        };
+
+        async function loadEngineerProfits(dateString) {
+            try {
+                const q = query(collection(performanceDb, "Engineer Daily Profit"), where("date", "==", dateString));
+                const snap = await getDocs(q);
+
+                const profits = [];
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.engineer && d.profit !== undefined) {
+                        profits.push({ name: d.engineer, profit: parseFloat(d.profit) || 0 });
+                    }
+                });
+
+                // Sort best to worst
+                profits.sort((a, b) => b.profit - a.profit);
+                allEngineerProfits = profits;
+
+                const total = profits.reduce((sum, e) => sum + e.profit, 0);
+                document.getElementById('profitTotal').textContent = '£' + Math.round(total).toLocaleString();
+
+                // Top 10
+                renderProfitList(profits.slice(0, 10), 'profitTopList');
+
+                const showAllBtn = document.getElementById('profitShowAllBtn');
+                if (profits.length > 10) {
+                    showAllBtn.style.display = 'block';
+                    showAllBtn.textContent = `Show all ${profits.length} engineers`;
+                } else {
+                    showAllBtn.style.display = 'none';
+                }
+
+                // Expanded "all" list
+                renderProfitList(profits, 'profitAllList');
+
+            } catch (err) {
+                console.error('Error loading engineer profits:', err);
             }
         }
+        // ────────────────────────────────────────────────────────────────────
 
         window.toggleExpand = function(card, type) {
             card.classList.toggle('expanded');
-            
             if (card.classList.contains('expanded')) {
                 if (type === 'compliance' && complianceData.length > 0) {
                     populateComplianceHistory();
+                } else if (type === 'profit') {
+                    // already rendered
                 } else if (historicalData.length > 0) {
                     populateHistoricalData(type);
                 }
@@ -1251,57 +1395,32 @@
             if (type === 'meters') {
                 const tbody = document.getElementById('metersHistory');
                 tbody.innerHTML = '';
-                
                 historicalData.forEach(day => {
                     const row = tbody.insertRow();
                     const percentage = day.metersTarget > 0 ? ((day.totalMeters / day.metersTarget) * 100).toFixed(1) : 0;
-                    row.innerHTML = `
-                        <td>${day.displayDate}</td>
-                        <td>${day.totalMeters.toLocaleString()}</td>
-                        <td>${day.metersTarget.toLocaleString()}</td>
-                        <td>${percentage}%</td>
-                    `;
+                    row.innerHTML = `<td>${day.displayDate}</td><td>${day.totalMeters.toLocaleString()}</td><td>${day.metersTarget.toLocaleString()}</td><td>${percentage}%</td>`;
                 });
             } else if (type === 'attendance') {
                 const tbody = document.getElementById('attendanceHistory');
                 tbody.innerHTML = '';
-                
                 historicalData.forEach(day => {
                     const row = tbody.insertRow();
-                    row.innerHTML = `
-                        <td>${day.displayDate}</td>
-                        <td>${day.atWorkPercent}%</td>
-                        <td>${day.holPercent}%</td>
-                        <td>${day.sickPercent}%</td>
-                        <td>${day.aaupPercent}%</td>
-                    `;
+                    row.innerHTML = `<td>${day.displayDate}</td><td>${day.atWorkPercent}%</td><td>${day.holPercent}%</td><td>${day.sickPercent}%</td><td>${day.aaupPercent}%</td>`;
                 });
             } else if (type === 'completion') {
                 const tbody = document.getElementById('completionHistory');
                 tbody.innerHTML = '';
-                
                 historicalData.forEach(day => {
                     const row = tbody.insertRow();
-                    row.innerHTML = `
-                        <td>${day.displayDate}</td>
-                        <td>${day.totalCompleted.toLocaleString()}</td>
-                        <td>${day.totalJobs.toLocaleString()}</td>
-                        <td>${day.completionRate}%</td>
-                    `;
+                    row.innerHTML = `<td>${day.displayDate}</td><td>${day.totalCompleted.toLocaleString()}</td><td>${day.totalJobs.toLocaleString()}</td><td>${day.completionRate}%</td>`;
                 });
             } else if (type === 'revenue') {
                 const tbody = document.getElementById('revenueHistory');
                 tbody.innerHTML = '';
-                
                 historicalData.forEach(day => {
                     const row = tbody.insertRow();
                     const percentage = day.revenueTarget > 0 ? ((day.totalValue / day.revenueTarget) * 100).toFixed(1) : 0;
-                    row.innerHTML = `
-                        <td>${day.displayDate}</td>
-                        <td>£${Math.round(day.totalValue).toLocaleString()}</td>
-                        <td>£${day.revenueTarget.toLocaleString()}</td>
-                        <td>${percentage}%</td>
-                    `;
+                    row.innerHTML = `<td>${day.displayDate}</td><td>£${Math.round(day.totalValue).toLocaleString()}</td><td>£${day.revenueTarget.toLocaleString()}</td><td>${percentage}%</td>`;
                 });
             }
         }
@@ -1309,82 +1428,61 @@
         function populateComplianceHistory() {
             const tbody = document.getElementById('complianceHistory');
             tbody.innerHTML = '';
-            
             complianceData.forEach(monthData => {
                 const row = tbody.insertRow();
                 row.innerHTML = `
                     <td>${monthData.monthLabel}</td>
                     <td>${monthData.wipPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.wipPass}/${monthData.wipTotal}</span></td>
                     <td>${monthData.postCompPassRate}%<br><span style="font-size: 0.85em; opacity: 0.7;">${monthData.postCompPass}/${monthData.postCompTotal}</span></td>
-                    <td><span style="font-weight: 700;">${monthData.overallPassRate}%</span></td>
-                `;
+                    <td><span style="font-weight: 700;">${monthData.overallPassRate}%</span></td>`;
             });
         }
 
         async function loadComplianceData() {
             try {
                 const complianceSnapshot = await getDocs(collection(performanceDb, "compliance"));
-                
                 const months = getPreviousSixMonths();
                 const currentMonth = new Date();
                 months.push(currentMonth);
-                
                 complianceData = [];
-                
+
                 for (const month of months) {
                     const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
                     const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59, 59, 999);
-                    
                     const wipJobs = new Map();
                     const postCompJobs = new Map();
-                    
+
                     complianceSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        
                         const dateSubmittedStr = data["Date Submitted"] || data.dateSubmitted || "";
                         const submittedDate = parseDateSubmitted(dateSubmittedStr);
-                        
                         if (submittedDate && submittedDate >= monthStart && submittedDate <= monthEnd) {
                             const jobRef = data.jobReference;
                             const outcome = (data.auditOutcome || '').toLowerCase();
                             const isPassed = outcome.includes('pass') || outcome === 'p';
-                            
                             if (data.type === 'wip') {
-                                if (!wipJobs.has(jobRef)) {
-                                    wipJobs.set(jobRef, isPassed);
-                                }
+                                if (!wipJobs.has(jobRef)) wipJobs.set(jobRef, isPassed);
                             } else if (data.type === 'post_completion') {
-                                if (!postCompJobs.has(jobRef)) {
-                                    postCompJobs.set(jobRef, isPassed);
-                                }
+                                if (!postCompJobs.has(jobRef)) postCompJobs.set(jobRef, isPassed);
                             }
                         }
                     });
-                    
+
                     const wipTotal = wipJobs.size;
-                    const wipPass = Array.from(wipJobs.values()).filter(passed => passed).length;
+                    const wipPass = Array.from(wipJobs.values()).filter(p => p).length;
                     const wipPassRate = wipTotal > 0 ? ((wipPass / wipTotal) * 100).toFixed(1) : 0;
-                    
                     const postCompTotal = postCompJobs.size;
-                    const postCompPass = Array.from(postCompJobs.values()).filter(passed => passed).length;
+                    const postCompPass = Array.from(postCompJobs.values()).filter(p => p).length;
                     const postCompPassRate = postCompTotal > 0 ? ((postCompPass / postCompTotal) * 100).toFixed(1) : 0;
-                    
                     const overallTotal = wipTotal + postCompTotal;
                     const overallPass = wipPass + postCompPass;
                     const overallPassRate = overallTotal > 0 ? ((overallPass / overallTotal) * 100).toFixed(1) : 0;
-                    
-                    complianceData.push({
-                        month: month,
-                        monthLabel: formatMonth(month),
-                        wipTotal, wipPass, wipPassRate,
-                        postCompTotal, postCompPass, postCompPassRate,
-                        overallTotal, overallPass, overallPassRate
-                    });
+
+                    complianceData.push({ month, monthLabel: formatMonth(month), wipTotal, wipPass, wipPassRate, postCompTotal, postCompPass, postCompPassRate, overallTotal, overallPass, overallPassRate });
                 }
-                
+
                 if (complianceData.length > 0) {
                     const currentData = complianceData[complianceData.length - 1];
-                    
                     document.getElementById('complianceOverallPass').textContent = currentData.overallPassRate;
                     document.getElementById('wipPassRate').textContent = currentData.wipPassRate + '%';
                     document.getElementById('wipPassCount').textContent = currentData.wipPass;
@@ -1392,21 +1490,15 @@
                     document.getElementById('postCompPassRate').textContent = currentData.postCompPassRate + '%';
                     document.getElementById('postCompPassCount').textContent = currentData.postCompPass;
                     document.getElementById('postCompTotalCount').textContent = currentData.postCompTotal;
-                    
                     updateStatusIndicator('complianceStatus', parseFloat(currentData.overallPassRate), 90);
-                    
                     const complianceCard = document.querySelector('.kpi-card.expandable[onclick*="compliance"]');
                     if (parseFloat(currentData.overallPassRate) >= 90) {
-                        complianceCard.classList.add('target-met');
-                        complianceCard.classList.remove('target-not-met');
+                        complianceCard.classList.add('target-met'); complianceCard.classList.remove('target-not-met');
                     } else {
-                        complianceCard.classList.add('target-not-met');
-                        complianceCard.classList.remove('target-met');
+                        complianceCard.classList.add('target-not-met'); complianceCard.classList.remove('target-met');
                     }
                 }
-                
                 complianceData.pop();
-                
             } catch (error) {
                 console.error("Error loading compliance data:", error);
             }
@@ -1416,26 +1508,18 @@
             try {
                 const snap = await getDocs(collection(performanceDb, "compliance"));
                 let cat1 = 0, cat2 = 0, cat3 = 0;
-
                 let minDate = new Date();
                 let maxDate = null;
 
                 if (period === 'prevday') {
-                    minDate = getPreviousWorkingDay();
-                    minDate.setHours(0, 0, 0, 0);
-                    maxDate = new Date(minDate);
-                    maxDate.setDate(maxDate.getDate() + 1);
-                    maxDate.setHours(0, 0, 0, 0);
+                    minDate = getPreviousWorkingDay(); minDate.setHours(0, 0, 0, 0);
+                    maxDate = new Date(minDate); maxDate.setDate(maxDate.getDate() + 1); maxDate.setHours(0, 0, 0, 0);
                 } else if (period === '5days') {
-                    const days = getPreviousWorkingDays(5);
-                    minDate = days[days.length - 1];
-                    minDate.setHours(0, 0, 0, 0);
+                    const days = getPreviousWorkingDays(5); minDate = days[days.length - 1]; minDate.setHours(0, 0, 0, 0);
                 } else if (period === '4weeks') {
-                    minDate.setDate(minDate.getDate() - 28);
-                    minDate.setHours(0, 0, 0, 0);
+                    minDate.setDate(minDate.getDate() - 28); minDate.setHours(0, 0, 0, 0);
                 } else if (period === '12weeks') {
-                    minDate.setDate(minDate.getDate() - 84);
-                    minDate.setHours(0, 0, 0, 0);
+                    minDate.setDate(minDate.getDate() - 84); minDate.setHours(0, 0, 0, 0);
                 }
 
                 snap.forEach(doc => {
@@ -1443,14 +1527,7 @@
                     const submittedStr = data["Date Submitted"] || data.dateSubmitted || "";
                     const submitted = parseDateSubmitted(submittedStr);
                     if (!submitted) return;
-
-                    let include = false;
-                    if (period === 'prevday') {
-                        include = submitted >= minDate && submitted < maxDate;
-                    } else {
-                        include = submitted >= minDate;
-                    }
-
+                    let include = period === 'prevday' ? (submitted >= minDate && submitted < maxDate) : (submitted >= minDate);
                     if (include) {
                         const outcome = (data.auditOutcome || '').toLowerCase();
                         if (outcome.includes('fail')) {
@@ -1460,11 +1537,9 @@
                         }
                     }
                 });
-
                 return { cat1, cat2, cat3 };
             } catch (err) {
-                console.error("Fail count error:", err);
-                return { cat1: 0, cat2: 0, cat3: 0 };
+                console.error("Fail count error:", err); return { cat1: 0, cat2: 0, cat3: 0 };
             }
         }
 
@@ -1472,20 +1547,13 @@
             try {
                 const q = query(collection(performanceDb, "accidents"), orderBy("accidentDate", "desc"), limit(1));
                 const snap = await getDocs(q);
-                if (snap.empty) {
-                    document.getElementById('daysSinceAccident').textContent = 'N/A';
-                    document.getElementById('hsTarget').textContent = 'No Accidents Recorded';
-                    return;
-                }
+                if (snap.empty) { document.getElementById('daysSinceAccident').textContent = 'N/A'; document.getElementById('hsTarget').textContent = 'No Accidents Recorded'; return; }
                 const data = snap.docs[0].data();
                 const accDate = new Date(data.accidentDate);
                 const days = Math.floor((Date.now() - accDate) / 86400000);
                 document.getElementById('daysSinceAccident').textContent = days;
                 document.getElementById('hsTarget').textContent = 'Days Since Last Accident';
-            } catch (err) {
-                console.error("Accident load error:", err);
-                document.getElementById('daysSinceAccident').textContent = 'Error';
-            }
+            } catch (err) { console.error("Accident load error:", err); document.getElementById('daysSinceAccident').textContent = 'Error'; }
         }
 
         async function loadDashboard() {
@@ -1493,111 +1561,74 @@
                 const previousDay = getPreviousWorkingDay();
                 const dateString = formatDateForQuery(previousDay);
                 const displayDate = formatDate(previousDay);
-                
                 document.getElementById('statsDate').textContent = `Stats for ${displayDate}`;
-                
+
                 const employeesSnapshot = await getDocs(collection(staffDb, "employees"));
-                let oesEngineers = 0;
-                let scottishPowerEngineers = 0;
-                let edfEngineers = 0;
-                let backOfficeCount = 0;
-                
+                let oesEngineers = 0, scottishPowerEngineers = 0, edfEngineers = 0, backOfficeCount = 0;
+
                 employeesSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const teamLeader = data['Team Leader'] || data.teamLeader;
                     const location = data.Location || data.location;
-                    
                     if (!data.leaveDate) {
-                        if (teamLeader === 'Back Office') {
-                            backOfficeCount++;
-                        } else if (location === 'OES') {
-                            oesEngineers++;
-                        } else if (location === 'Scottish Power') {
-                            scottishPowerEngineers++;
-                        } else if (location === 'EDF') {
-                            edfEngineers++;
-                        }
+                        if (teamLeader === 'Back Office') backOfficeCount++;
+                        else if (location === 'OES') oesEngineers++;
+                        else if (location === 'Scottish Power') scottishPowerEngineers++;
+                        else if (location === 'EDF') edfEngineers++;
                     }
                 });
-                
+
                 oesEngineerCount = oesEngineers;
                 const totalEngineers = oesEngineers + scottishPowerEngineers + edfEngineers;
                 const totalEmployees = totalEngineers + backOfficeCount;
-                
+
                 document.getElementById('totalEmployees').textContent = totalEmployees;
                 document.getElementById('engineerCount').textContent = totalEngineers;
                 document.getElementById('oesCount').textContent = oesEngineers;
                 document.getElementById('scottishPowerCount').textContent = scottishPowerEngineers;
                 document.getElementById('edfCount').textContent = edfEngineers;
                 document.getElementById('backOfficeCount').textContent = backOfficeCount;
-                
-                // Target: named engineers excluded; remaining OES engineers × £500 × 0.9
+
                 const metersTarget = Math.round(oesEngineers * 6 * 0.9);
-                const revenueTarget = Math.round((oesEngineers - 6) * 500 * 0.9);
-                
+                const revenueTarget = Math.round((oesEngineers - 6) * 413 * 0.9);
                 document.getElementById('metersTarget').textContent = metersTarget;
                 document.getElementById('revenueTarget').textContent = '£' + revenueTarget.toLocaleString();
-                
-                const performanceQuery = query(
-                    collection(performanceDb, "performance"),
-                    where("date", "==", dateString)
-                );
-                
+
+                const performanceQuery = query(collection(performanceDb, "performance"), where("date", "==", dateString));
                 const performanceSnapshot = await getDocs(performanceQuery);
-                
-                let totalMeters = 0;
-                let totalJobs = 0;
-                let totalCompleted = 0;
-                let totalValue = 0;
-                
+
+                let totalMeters = 0, totalJobs = 0, totalCompleted = 0, totalValue = 0;
                 performanceSnapshot.forEach((doc) => {
                     const data = doc.data();
                     const engineerName = data.engineerName || '';
                     const rawValue = data.value || 0;
                     const completed = data.completed || 0;
-
                     totalMeters += data.meters || 0;
                     totalJobs += data.jobs || 0;
                     totalCompleted += completed;
-
-                    // Named engineers: deduct £50 day rate + job-value payout
-                    if (isNamedEngineer(engineerName)) {
-                        totalValue += calcNamedEngineerContribution(rawValue, completed);
-                    } else {
-                        totalValue += rawValue;
-                    }
+                    totalValue += isNamedEngineer(engineerName) ? calcNamedEngineerContribution(rawValue, completed) : rawValue;
                 });
-                
+
                 const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
                 const metersPercentage = metersTarget > 0 ? ((totalMeters / metersTarget) * 100).toFixed(1) : 0;
                 const revenuePercentage = revenueTarget > 0 ? ((totalValue / revenueTarget) * 100).toFixed(1) : 0;
-                
+
                 document.getElementById('metersActual').textContent = totalMeters.toLocaleString();
                 document.getElementById('metersProgressText').textContent = metersPercentage + '%';
                 updateProgressBar('metersProgress', parseFloat(metersPercentage));
-                
+
                 document.getElementById('completionActual').textContent = completionRate;
-                document.getElementById('completionProgressText').textContent = 
-                    `${totalCompleted.toLocaleString()} of ${totalJobs.toLocaleString()} jobs`;
+                document.getElementById('completionProgressText').textContent = `${totalCompleted.toLocaleString()} of ${totalJobs.toLocaleString()} jobs`;
                 updateProgressBar('completionProgress', parseFloat(completionRate));
                 updateStatusIndicator('completionStatus', parseFloat(completionRate), 90);
-                
+
                 document.getElementById('revenueActual').textContent = '£' + Math.round(totalValue).toLocaleString();
                 document.getElementById('revenueProgressText').textContent = revenuePercentage + '%';
                 updateProgressBar('revenueProgress', parseFloat(revenuePercentage));
-                
-                const garethStatsQuery = query(
-                    collection(performanceDb, "garethstats"),
-                    where("date", "==", dateString)
-                );
-                
+
+                const garethStatsQuery = query(collection(performanceDb, "garethstats"), where("date", "==", dateString));
                 const garethStatsSnapshot = await getDocs(garethStatsQuery);
-                
-                let atWorkPercent = 0;
-                let holPercent = 0;
-                let sickPercent = 0;
-                let aaupPercent = 0;
-                
+                let atWorkPercent = 0, holPercent = 0, sickPercent = 0, aaupPercent = 0;
                 garethStatsSnapshot.forEach((doc) => {
                     const data = doc.data();
                     atWorkPercent = data.atWorkPercent || 0;
@@ -1605,23 +1636,23 @@
                     sickPercent = data.sickPercent || 0;
                     aaupPercent = data.aaupPercent || 0;
                 });
-                
+
                 document.getElementById('attendanceTotal').textContent = oesEngineers;
                 document.getElementById('atWorkPercent').textContent = atWorkPercent.toFixed(1) + '%';
                 document.getElementById('holPercent').textContent = holPercent.toFixed(1) + '%';
                 document.getElementById('sickPercent').textContent = sickPercent.toFixed(1) + '%';
                 document.getElementById('aaupPercent').textContent = aaupPercent.toFixed(1) + '%';
-                
+
+                // Load engineer profits for today
+                await loadEngineerProfits(dateString);
+
                 await loadComplianceData();
                 await loadHistoricalData();
-                
+
                 const now = new Date();
-                document.getElementById('lastUpdated').textContent = 
-                    `Last updated: ${now.toLocaleTimeString()}`;
-                
+                document.getElementById('lastUpdated').textContent = `Last updated: ${now.toLocaleTimeString()}`;
                 document.getElementById('loadingDiv').style.display = 'none';
                 document.getElementById('dashboardContent').style.display = 'block';
-                
                 updateCardColors();
 
                 const periods = ['prevday', '5days', '4weeks', '12weeks'];
@@ -1631,13 +1662,11 @@
                     document.getElementById(`cat2_${p}`).textContent = counts.cat2;
                     document.getElementById(`cat3_${p}`).textContent = counts.cat3;
                 }
-
                 await loadLastAccident();
-                
+
             } catch (error) {
                 console.error("Error loading dashboard:", error);
-                document.getElementById('loadingDiv').innerHTML = 
-                    '<div style="color: #f44336;">Error loading data. Please check console for details.</div>';
+                document.getElementById('loadingDiv').innerHTML = '<div style="color: #f44336;">Error loading data. Please check console for details.</div>';
             }
         }
 
@@ -1646,17 +1675,12 @@
             const teamLeaderView = document.getElementById(`${type}TeamLeaderView`);
             const toggleBtn = document.getElementById(`${type}ViewToggle`);
             const title = document.getElementById(`${type}HistoryTitle`);
-            
             if (overallView.style.display === 'none') {
-                overallView.style.display = 'block';
-                teamLeaderView.style.display = 'none';
-                toggleBtn.textContent = 'View by Team Leader';
-                title.textContent = 'Previous 2 Weeks';
+                overallView.style.display = 'block'; teamLeaderView.style.display = 'none';
+                toggleBtn.textContent = 'View by Team Leader'; title.textContent = 'Previous 2 Weeks';
             } else {
-                overallView.style.display = 'none';
-                teamLeaderView.style.display = 'block';
-                toggleBtn.textContent = 'View Overall';
-                title.textContent = 'By Team Leader';
+                overallView.style.display = 'none'; teamLeaderView.style.display = 'block';
+                toggleBtn.textContent = 'View Overall'; title.textContent = 'By Team Leader';
                 populateTeamLeaderView(type);
             }
         }
@@ -1664,168 +1688,73 @@
         function populateTeamLeaderView(type) {
             const listContainer = document.getElementById(`${type}TeamLeaderList`);
             listContainer.innerHTML = '';
-            
             const yesterday = getPreviousWorkingDay();
             const yesterdayString = formatDateForQuery(yesterday);
-            
             const teamLeaderData = {};
-            
             if (historicalDataByTeamLeader[yesterdayString]) {
-                Object.keys(historicalDataByTeamLeader[yesterdayString]).forEach(teamLeader => {
-                    const data = historicalDataByTeamLeader[yesterdayString][teamLeader];
-                    teamLeaderData[teamLeader] = data;
+                Object.keys(historicalDataByTeamLeader[yesterdayString]).forEach(tl => {
+                    teamLeaderData[tl] = historicalDataByTeamLeader[yesterdayString][tl];
                 });
             }
-            
             const sortedTeamLeaders = Object.keys(teamLeaderData).sort();
-            
             if (sortedTeamLeaders.length === 0) {
                 listContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No team leader data available</div>';
                 return;
             }
-            
             sortedTeamLeaders.forEach(teamLeader => {
                 const data = teamLeaderData[teamLeader];
                 const card = document.createElement('div');
                 card.className = 'team-leader-card';
                 card.onclick = (event) => toggleTeamLeaderCard(card, teamLeader, type, event);
-                
                 let statsHTML = '';
                 if (type === 'meters') {
-                    const percentage = data.metersTarget > 0 ? ((data.totalMeters / data.metersTarget) * 100).toFixed(1) : 0;
-                    statsHTML = `
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Meters</div>
-                            <div class="team-leader-stat-value">${data.totalMeters}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Target</div>
-                            <div class="team-leader-stat-value">${data.metersTarget}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">%</div>
-                            <div class="team-leader-stat-value">${percentage}%</div>
-                        </div>
-                    `;
+                    const pct = data.metersTarget > 0 ? ((data.totalMeters / data.metersTarget) * 100).toFixed(1) : 0;
+                    statsHTML = `<div class="team-leader-stat-item"><div class="team-leader-stat-label">Meters</div><div class="team-leader-stat-value">${data.totalMeters}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">Target</div><div class="team-leader-stat-value">${data.metersTarget}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">%</div><div class="team-leader-stat-value">${pct}%</div></div>`;
                 } else if (type === 'completion') {
-                    const percentage = data.totalJobs > 0 ? ((data.totalCompleted / data.totalJobs) * 100).toFixed(1) : 0;
-                    statsHTML = `
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Completed</div>
-                            <div class="team-leader-stat-value">${data.totalCompleted}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Total Jobs</div>
-                            <div class="team-leader-stat-value">${data.totalJobs}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">%</div>
-                            <div class="team-leader-stat-value">${percentage}%</div>
-                        </div>
-                    `;
+                    const pct = data.totalJobs > 0 ? ((data.totalCompleted / data.totalJobs) * 100).toFixed(1) : 0;
+                    statsHTML = `<div class="team-leader-stat-item"><div class="team-leader-stat-label">Completed</div><div class="team-leader-stat-value">${data.totalCompleted}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">Total Jobs</div><div class="team-leader-stat-value">${data.totalJobs}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">%</div><div class="team-leader-stat-value">${pct}%</div></div>`;
                 } else if (type === 'revenue') {
-                    const percentage = data.revenueTarget > 0 ? ((data.totalValue / data.revenueTarget) * 100).toFixed(1) : 0;
-                    statsHTML = `
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Revenue</div>
-                            <div class="team-leader-stat-value">£${Math.round(data.totalValue).toLocaleString()}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">Target</div>
-                            <div class="team-leader-stat-value">£${data.revenueTarget.toLocaleString()}</div>
-                        </div>
-                        <div class="team-leader-stat-item">
-                            <div class="team-leader-stat-label">%</div>
-                            <div class="team-leader-stat-value">${percentage}%</div>
-                        </div>
-                    `;
+                    const pct = data.revenueTarget > 0 ? ((data.totalValue / data.revenueTarget) * 100).toFixed(1) : 0;
+                    statsHTML = `<div class="team-leader-stat-item"><div class="team-leader-stat-label">Revenue</div><div class="team-leader-stat-value">£${Math.round(data.totalValue).toLocaleString()}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">Target</div><div class="team-leader-stat-value">£${data.revenueTarget.toLocaleString()}</div></div><div class="team-leader-stat-item"><div class="team-leader-stat-label">%</div><div class="team-leader-stat-value">${pct}%</div></div>`;
                 }
-                
                 card.innerHTML = `
                     <div class="team-leader-header">
                         <div class="team-leader-name">${teamLeader}</div>
-                        <div class="team-leader-stats">
-                            ${statsHTML}
-                        </div>
+                        <div class="team-leader-stats">${statsHTML}</div>
                     </div>
                     <div class="team-leader-details">
                         <div class="team-leader-detail-title">Previous 2 Weeks</div>
                         <table class="historical-table">
-                            <thead>
-                                <tr>
-                                    ${type === 'meters' ? `
-                                        <th>Date</th>
-                                        <th>Meters</th>
-                                        <th>Target</th>
-                                        <th>%</th>
-                                    ` : type === 'completion' ? `
-                                        <th>Date</th>
-                                        <th>Completed</th>
-                                        <th>Total Jobs</th>
-                                        <th>%</th>
-                                    ` : type === 'revenue' ? `
-                                        <th>Date</th>
-                                        <th>Revenue</th>
-                                        <th>Target</th>
-                                        <th>%</th>
-                                    ` : ''}
-                                </tr>
-                            </thead>
-                            <tbody class="team-leader-tbody-${teamLeader.replace(/\s+/g, '-')}">
-                            </tbody>
+                            <thead><tr>${type === 'meters' ? '<th>Date</th><th>Meters</th><th>Target</th><th>%</th>' : type === 'completion' ? '<th>Date</th><th>Completed</th><th>Total Jobs</th><th>%</th>' : '<th>Date</th><th>Revenue</th><th>Target</th><th>%</th>'}</tr></thead>
+                            <tbody class="team-leader-tbody-${teamLeader.replace(/\s+/g, '-')}"></tbody>
                         </table>
-                    </div>
-                `;
-                
+                    </div>`;
                 listContainer.appendChild(card);
             });
         }
 
         function toggleTeamLeaderCard(card, teamLeader, type, event) {
-            if (event) {
-                event.stopPropagation();
-            }
-            
+            if (event) event.stopPropagation();
             const wasExpanded = card.classList.contains('expanded');
-            
             document.querySelectorAll('.team-leader-card').forEach(c => c.classList.remove('expanded'));
-            
             if (!wasExpanded) {
                 card.classList.add('expanded');
-                
-                const tbody = card.querySelector(`tbody`);
+                const tbody = card.querySelector('tbody');
                 tbody.innerHTML = '';
-                
                 historicalData.forEach(day => {
                     const dateString = day.dateString || formatDateForQuery(new Date(day.displayDate.split('/').reverse().join('-')));
-                    const teamLeaderDayData = historicalDataByTeamLeader[dateString]?.[teamLeader];
-                    
-                    if (teamLeaderDayData) {
+                    const tlData = historicalDataByTeamLeader[dateString]?.[teamLeader];
+                    if (tlData) {
                         const row = tbody.insertRow();
                         if (type === 'meters') {
-                            const percentage = teamLeaderDayData.metersTarget > 0 ? ((teamLeaderDayData.totalMeters / teamLeaderDayData.metersTarget) * 100).toFixed(1) : 0;
-                            row.innerHTML = `
-                                <td>${day.displayDate}</td>
-                                <td>${teamLeaderDayData.totalMeters}</td>
-                                <td>${teamLeaderDayData.metersTarget}</td>
-                                <td>${percentage}%</td>
-                            `;
+                            const pct = tlData.metersTarget > 0 ? ((tlData.totalMeters / tlData.metersTarget) * 100).toFixed(1) : 0;
+                            row.innerHTML = `<td>${day.displayDate}</td><td>${tlData.totalMeters}</td><td>${tlData.metersTarget}</td><td>${pct}%</td>`;
                         } else if (type === 'completion') {
-                            const percentage = teamLeaderDayData.totalJobs > 0 ? ((teamLeaderDayData.totalCompleted / teamLeaderDayData.totalJobs) * 100).toFixed(1) : 0;
-                            row.innerHTML = `
-                                <td>${day.displayDate}</td>
-                                <td>${teamLeaderDayData.totalCompleted}</td>
-                                <td>${teamLeaderDayData.totalJobs}</td>
-                                <td>${percentage}%</td>
-                            `;
+                            const pct = tlData.totalJobs > 0 ? ((tlData.totalCompleted / tlData.totalJobs) * 100).toFixed(1) : 0;
+                            row.innerHTML = `<td>${day.displayDate}</td><td>${tlData.totalCompleted}</td><td>${tlData.totalJobs}</td><td>${pct}%</td>`;
                         } else if (type === 'revenue') {
-                            const percentage = teamLeaderDayData.revenueTarget > 0 ? ((teamLeaderDayData.totalValue / teamLeaderDayData.revenueTarget) * 100).toFixed(1) : 0;
-                            row.innerHTML = `
-                                <td>${day.displayDate}</td>
-                                <td>£${Math.round(teamLeaderDayData.totalValue).toLocaleString()}</td>
-                                <td>£${teamLeaderDayData.revenueTarget.toLocaleString()}</td>
-                                <td>${percentage}%</td>
-                            `;
+                            const pct = tlData.revenueTarget > 0 ? ((tlData.totalValue / tlData.revenueTarget) * 100).toFixed(1) : 0;
+                            row.innerHTML = `<td>${day.displayDate}</td><td>£${Math.round(tlData.totalValue).toLocaleString()}</td><td>£${tlData.revenueTarget.toLocaleString()}</td><td>${pct}%</td>`;
                         }
                     }
                 });
@@ -1836,50 +1765,26 @@
             const metersCard = document.querySelector('.kpi-card.expandable[onclick*="meters"]');
             const metersActual = parseInt(document.getElementById('metersActual').textContent.replace(/,/g, '')) || 0;
             const metersTarget = parseInt(document.getElementById('metersTarget').textContent.replace(/,/g, '')) || 0;
-            const metersPercentage = metersTarget > 0 ? (metersActual / metersTarget) * 100 : 0;
-            
-            if (metersPercentage >= 100) {
-                metersCard.classList.add('target-met');
-                metersCard.classList.remove('target-not-met');
-            } else {
-                metersCard.classList.add('target-not-met');
-                metersCard.classList.remove('target-met');
-            }
-            
+            const mPct = metersTarget > 0 ? (metersActual / metersTarget) * 100 : 0;
+            metersCard.classList.toggle('target-met', mPct >= 100);
+            metersCard.classList.toggle('target-not-met', mPct < 100);
+
             const attendanceCard = document.querySelector('.kpi-card.expandable[onclick*="attendance"]');
-            const atWorkPercent = parseFloat(document.getElementById('atWorkPercent').textContent) || 0;
-            
-            if (atWorkPercent >= 85) {
-                attendanceCard.classList.add('target-met');
-                attendanceCard.classList.remove('target-not-met');
-            } else {
-                attendanceCard.classList.add('target-not-met');
-                attendanceCard.classList.remove('target-met');
-            }
-            
+            const atWork = parseFloat(document.getElementById('atWorkPercent').textContent) || 0;
+            attendanceCard.classList.toggle('target-met', atWork >= 85);
+            attendanceCard.classList.toggle('target-not-met', atWork < 85);
+
             const completionCard = document.querySelector('.kpi-card.expandable[onclick*="completion"]');
-            const completionRate = parseFloat(document.getElementById('completionActual').textContent) || 0;
-            
-            if (completionRate >= 90) {
-                completionCard.classList.add('target-met');
-                completionCard.classList.remove('target-not-met');
-            } else {
-                completionCard.classList.add('target-not-met');
-                completionCard.classList.remove('target-met');
-            }
-            
+            const compRate = parseFloat(document.getElementById('completionActual').textContent) || 0;
+            completionCard.classList.toggle('target-met', compRate >= 90);
+            completionCard.classList.toggle('target-not-met', compRate < 90);
+
             const revenueCard = document.querySelector('.kpi-card.expandable[onclick*="revenue"]');
-            const revenueActual = parseInt(document.getElementById('revenueActual').textContent.replace(/[£,]/g, '')) || 0;
-            const revenueTarget = parseInt(document.getElementById('revenueTarget').textContent.replace(/[£,]/g, '')) || 0;
-            const revenuePercentage = revenueTarget > 0 ? (revenueActual / revenueTarget) * 100 : 0;
-            
-            if (revenuePercentage >= 100) {
-                revenueCard.classList.add('target-met');
-                revenueCard.classList.remove('target-not-met');
-            } else {
-                revenueCard.classList.add('target-not-met');
-                revenueCard.classList.remove('target-met');
-            }
+            const revActual = parseInt(document.getElementById('revenueActual').textContent.replace(/[£,]/g, '')) || 0;
+            const revTarget = parseInt(document.getElementById('revenueTarget').textContent.replace(/[£,]/g, '')) || 0;
+            const rPct = revTarget > 0 ? (revActual / revTarget) * 100 : 0;
+            revenueCard.classList.toggle('target-met', rPct >= 100);
+            revenueCard.classList.toggle('target-not-met', rPct < 100);
         }
 
         async function loadHistoricalData() {
@@ -1887,114 +1792,64 @@
                 const dates = getPreviousTwoWeeks();
                 historicalData = [];
                 historicalDataByTeamLeader = {};
-                
+
                 for (const date of dates) {
                     const dateString = formatDateForQuery(date);
                     const displayDate = formatDate(date);
-                    
-                    const performanceQuery = query(
-                        collection(performanceDb, "performance"),
-                        where("date", "==", dateString)
-                    );
-                    
+                    const performanceQuery = query(collection(performanceDb, "performance"), where("date", "==", dateString));
                     const performanceSnapshot = await getDocs(performanceQuery);
-                    
-                    let totalMeters = 0;
-                    let totalJobs = 0;
-                    let totalCompleted = 0;
-                    let totalValue = 0;
-                    
+
+                    let totalMeters = 0, totalJobs = 0, totalCompleted = 0, totalValue = 0;
                     const teamLeaderBreakdown = {};
-                    
+
                     performanceSnapshot.forEach((doc) => {
                         const data = doc.data();
                         const teamLeader = data.teamLeader;
                         const engineerName = data.engineerName || '';
                         const rawValue = data.value || 0;
                         const completed = data.completed || 0;
-
                         totalMeters += data.meters || 0;
                         totalJobs += data.jobs || 0;
                         totalCompleted += completed;
-
-                        // Named engineers: deduct £50 day rate + job-value payout
-                        const engValue = isNamedEngineer(engineerName)
-                            ? calcNamedEngineerContribution(rawValue, completed)
-                            : rawValue;
+                        const engValue = isNamedEngineer(engineerName) ? calcNamedEngineerContribution(rawValue, completed) : rawValue;
                         totalValue += engValue;
-                        
+
                         if (!teamLeaderBreakdown[teamLeader]) {
-                            teamLeaderBreakdown[teamLeader] = {
-                                totalMeters: 0,
-                                totalJobs: 0,
-                                totalCompleted: 0,
-                                totalValue: 0,
-                                engineerCount: 0
-                            };
+                            teamLeaderBreakdown[teamLeader] = { totalMeters: 0, totalJobs: 0, totalCompleted: 0, totalValue: 0, engineerCount: 0 };
                         }
-                        
                         teamLeaderBreakdown[teamLeader].totalMeters    += data.meters || 0;
                         teamLeaderBreakdown[teamLeader].totalJobs      += data.jobs || 0;
                         teamLeaderBreakdown[teamLeader].totalCompleted += completed;
                         teamLeaderBreakdown[teamLeader].totalValue     += engValue;
                         teamLeaderBreakdown[teamLeader].engineerCount  += 1;
                     });
-                    
-                    Object.keys(teamLeaderBreakdown).forEach(teamLeader => {
-                        const breakdown = teamLeaderBreakdown[teamLeader];
-                        breakdown.metersTarget = breakdown.engineerCount * 6;
-                        // For Tom Green's team, the 6 named engineers are excluded
-                        // from the standard £500 target as they contribute via net method
-                        const standardEngineers = teamLeader === 'Tom Green'
-                            ? Math.max(0, breakdown.engineerCount - 6)
-                            : breakdown.engineerCount;
-                        breakdown.revenueTarget = standardEngineers * 500;
+
+                    Object.keys(teamLeaderBreakdown).forEach(tl => {
+                        const b = teamLeaderBreakdown[tl];
+                        b.metersTarget = b.engineerCount * 6;
+                        const stdEng = tl === 'Tom Green' ? Math.max(0, b.engineerCount - 6) : b.engineerCount;
+                        b.revenueTarget = stdEng * 413;
                     });
-                    
+
                     historicalDataByTeamLeader[dateString] = teamLeaderBreakdown;
-                    
-                    const garethStatsQuery = query(
-                        collection(performanceDb, "garethstats"),
-                        where("date", "==", dateString)
-                    );
-                    
+
+                    const garethStatsQuery = query(collection(performanceDb, "garethstats"), where("date", "==", dateString));
                     const garethStatsSnapshot = await getDocs(garethStatsQuery);
-                    
-                    let atWorkPercent = 0;
-                    let holPercent = 0;
-                    let sickPercent = 0;
-                    let aaupPercent = 0;
-                    
+                    let atWorkPercent = 0, holPercent = 0, sickPercent = 0, aaupPercent = 0;
                     garethStatsSnapshot.forEach((doc) => {
                         const data = doc.data();
-                        atWorkPercent = (data.atWorkPercent   || 0).toFixed(1);
-                        holPercent    = (data.holidayPercent  || 0).toFixed(1);
-                        sickPercent   = (data.sickPercent     || 0).toFixed(1);
-                        aaupPercent   = (data.aaupPercent     || 0).toFixed(1);
+                        atWorkPercent = (data.atWorkPercent  || 0).toFixed(1);
+                        holPercent    = (data.holidayPercent || 0).toFixed(1);
+                        sickPercent   = (data.sickPercent    || 0).toFixed(1);
+                        aaupPercent   = (data.aaupPercent    || 0).toFixed(1);
                     });
-                    
-                    // Historical targets: exclude the 7 named engineers from revenue target
+
                     const metersTarget  = Math.round(oesEngineerCount * 6 * 0.9);
-                    const revenueTarget = Math.round((oesEngineerCount - 6) * 500 * 0.9);
+                    const revenueTarget = Math.round((oesEngineerCount - 6) * 413 * 0.9);
                     const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
-                    
-                    historicalData.push({
-                        displayDate,
-                        dateString,
-                        totalMeters,
-                        metersTarget,
-                        totalJobs,
-                        totalCompleted,
-                        completionRate,
-                        totalValue,
-                        revenueTarget,
-                        atWorkPercent,
-                        holPercent,
-                        sickPercent,
-                        aaupPercent
-                    });
+
+                    historicalData.push({ displayDate, dateString, totalMeters, metersTarget, totalJobs, totalCompleted, completionRate, totalValue, revenueTarget, atWorkPercent, holPercent, sickPercent, aaupPercent });
                 }
-                
             } catch (error) {
                 console.error("Error loading historical data:", error);
             }
