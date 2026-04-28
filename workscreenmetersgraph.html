@@ -418,14 +418,13 @@
     measurementId: "G-PFH059DZ64"
   };
 
-  // Initialise apps — avoid duplicate-app errors if loaded inside an iframe that already has them
+  // Initialise apps 
   const existingApps = getApps();
   const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
   const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
   const db      = getFirestore(perfApp);
   const staffDb = getFirestore(staffApp);
 
-  // Normalise FTL4 / FTL 4 (any casing/spacing) → "Tom Green"
   const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
 
   const ctx = document.createElement('canvas');
@@ -493,7 +492,6 @@
     }
   }
 
-  // ── Abort chart state ─────────────────────────────────────────────────────────
   let abortChart = null;
   const today = new Date();
   const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
@@ -523,7 +521,6 @@
   // 2. NEW KRAKEN SPECIFIC QUERY: Exclusively fetch KrakenAM data for the Meters Per Head Line
   async function fetchKrakenMphData(startDate, endDate, team) {
     try {
-      // Get KrakenAM total meters per day
       const qMeters = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapMeters = await getDocs(qMeters);
       const krakenMeters = {};
@@ -537,7 +534,6 @@
         }
       });
 
-      // Get KrakenAM Headcounts per day
       const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapHc = await getDocs(qHc);
       const krakenHc = {};
@@ -587,9 +583,7 @@
     const startDate = startOfMonth.toISOString().split('T')[0];
     const endDate   = effectiveEnd.toISOString().split('T')[0];
     
-    // Fetch Main Data (from 'performance')
     const records = await fetchRecordsForRange(startDate, endDate, team);
-    // Fetch Kraken Data (from 'KrakenAM')
     const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
     
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
@@ -611,11 +605,9 @@
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
-      // Calculate MPH exclusively using Kraken Data
       mphValues: weekdays.map(d => {
         const km = krakenMeters[d] || 0;
         let hc = krakenHc[d];
-        // Fallback to static DB headcount if Kraken daily headcount is missing or if specific team filtered
         if (!hc || hc <= 0 || team !== "all") {
           hc = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
         }
@@ -630,9 +622,7 @@
     const startDate = start.toISOString().split('T')[0];
     const endDate = today.toISOString().split('T')[0];
     
-    // Fetch Main Data (from 'performance')
     const records = await fetchRecordsForRange(startDate, endDate, team);
-    // Fetch Kraken Data (from 'KrakenAM')
     const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
     
     const weekdays = getWeekdayDates(start, today);
@@ -644,7 +634,6 @@
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      // Calculate MPH exclusively using Kraken Data
       mphValues: weekdays.map(d => {
         const km = krakenMeters[d] || 0;
         let hc = krakenHc[d];
@@ -654,6 +643,36 @@
         return (hc && hc > 0 && km > 0) ? Number((km / hc).toFixed(1)) : null;
       }),
       workingDays: weekdays.length
+    };
+  }
+
+  // Dual axis options specific to Month view (includes completion)
+  function dualAxisOptions(title, showCompletion = true) {
+    const scales = {
+      x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
+      yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
+      yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Kraken MPH', color:'#f59e0b', font:{size:12,weight:'600'} } }
+    };
+    if (showCompletion) {
+      scales.yCompletion = { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } };
+    }
+    return {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
+        legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
+              if (c.dataset.label === 'Kraken MPH') return c.raw !== null ? ` Kraken MPH: ${c.raw}` : ' Kraken MPH: No data';
+              return ` Meters: ${c.raw}`;
+            }
+          }
+        }
+      },
+      scales: scales
     };
   }
 
@@ -713,35 +732,17 @@
               borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
               pointHoverRadius: 8, pointBackgroundColor: '#f59e0b',
               yAxisID: 'yMph', spanGaps: true,
-              datalabels: { anchor:'end', align:'top', offset:4, color:'#fcd34d',
-                font:{weight:'bold',size:11}, formatter: v => v!==null&&v>0?`${v}`:'',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
+              datalabels: { 
+                display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 
+              }
             }
           ]
         },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { mode:'index', intersect:false },
-          plugins: {
-            title: { display:true, text:`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
-            legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
-            tooltip: {
-              callbacks: {
-                label: c => {
-                  if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
-                  if (c.dataset.label === 'Kraken MPH') return c.raw !== null ? ` Kraken MPH: ${c.raw}` : ' Kraken MPH: No data';
-                  return ` Meters: ${c.raw}`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: { ticks:{ color:'#94a3b8', font:{size:11}, padding:8 }, grid:{color:'#334155'} },
-            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
-            yCompletion: { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } },
-            yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Kraken MPH', color:'#f59e0b', font:{size:12,weight:'600'} } }
-          }
-        },
+        options: dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, true),
         plugins: [ChartDataLabels]
       });
 
@@ -798,7 +799,7 @@
               datalabels: cfg.type==='bar' ? {
                 anchor:'end', align:'top', offset:4, color:'#e2e8f0', font:{weight:'bold',size:12},
                 formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              } : false
+              } : { display: false }
             },
             {
               type: 'line', 
@@ -815,10 +816,12 @@
               pointBackgroundColor: '#f59e0b',
               spanGaps: true,
               datalabels: cfg.type==='bar' ? {
-                 anchor:'end', align:'top', offset:4, color:'#fcd34d',
-                 font:{weight:'bold',size:11}, formatter: v => v!==null&&v>0?`${v}`:'',
+                 display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
+                 backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                 padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                 font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
                  textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              } : false
+              } : { display: false }
             }
           ]
         },
@@ -835,13 +838,13 @@
                   return ` Meters: ${c.raw}`;
                 }
               }
-            },
-            datalabels: false
+            }
+            // datalabels plugin is now globally enabled, controlled specifically at dataset level!
           },
           scales: {
             x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
-            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
-            yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax:10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Kraken MPH', color:'#f59e0b', font:{size:12,weight:'600'} } }
+            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} },
+            yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax:10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false } }
           }
         },
         plugins: [ChartDataLabels]
@@ -933,7 +936,7 @@
             datalabels: chartType==='bar' ? {
               anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
               formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
+            } : { display: false }
           },
           {
             label: 'Singles', data: data.singles,
@@ -944,7 +947,7 @@
             datalabels: chartType==='bar' ? {
               anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
               formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
+            } : { display: false }
           },
           {
             label: 'Comms/Site Visits', data: data.comms,
@@ -955,7 +958,7 @@
             datalabels: chartType==='bar' ? {
               anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
               formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
+            } : { display: false }
           }
         ]
       },
@@ -963,8 +966,7 @@
         responsive: true, maintainAspectRatio: false,
         plugins: {
           title: { display:true, text:`${data.label} – Install Types (All Teams)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
-          legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
-          datalabels: chartType==='bar' ? {} : false
+          legend: { labels:{ color:'#cbd5e1', font:{size:14} } }
         },
         scales: {
           x: { ticks:{ color:'#94a3b8', font:{size:chartType==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
@@ -1074,7 +1076,7 @@
             borderColor: chartData.map(v => v===Math.max(...chartData)?'#ef4444':'#f97316'),
             borderWidth: 1, borderRadius: 5,
             datalabels: {
-              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:12},
+              display: true, anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:12},
               formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
             }
           }]
@@ -1085,8 +1087,7 @@
           plugins: {
             title: { display:true, text:`Aborts by Reason — ${currentTeam==='all'?'All Teams':currentTeam} (${fromDate} → ${toDate})`, color:'#e2e8f0', font:{size:16,weight:'600'}, padding:{bottom:20} },
             legend: { display:false },
-            tooltip: { callbacks:{ label: c=>` Total: ${c.raw}` } },
-            datalabels: {}
+            tooltip: { callbacks:{ label: c=>` Total: ${c.raw}` } }
           },
           scales: {
             x: { ticks:{ color:'#94a3b8', font:{size:11}, padding:4, maxRotation:90, minRotation:90, autoSkip:false }, grid:{color:'#334155'} },
