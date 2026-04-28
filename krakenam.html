@@ -69,6 +69,9 @@
         .stat-card .value { font-size: 2.5em; font-weight: 900; background: linear-gradient(135deg, #00d4ff 0%, #8a2be2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .stat-card.per-head { border-color: rgba(138, 43, 226, 0.3); background: linear-gradient(135deg, rgba(138, 43, 226, 0.05) 0%, rgba(0, 212, 255, 0.05) 100%); }
         .stat-card.per-head::before { background: linear-gradient(90deg, #8a2be2, #00d4ff, #8a2be2); }
+        .stat-card.revenue { border-color: rgba(0, 184, 148, 0.4); background: linear-gradient(135deg, rgba(0, 184, 148, 0.07) 0%, rgba(0, 212, 255, 0.05) 100%); }
+        .stat-card.revenue::before { background: linear-gradient(90deg, #00b894, #00d4ff, #00b894); }
+        .stat-card.revenue .value { background: linear-gradient(135deg, #00b894 0%, #00d4ff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .percentage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 30px; }
         .percentage-card { background: white; border: 2px solid rgba(0, 212, 255, 0.2); padding: 20px; border-radius: 14px; text-align: center; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
         .percentage-card:hover { transform: translateY(-3px); border-color: #00d4ff; box-shadow: 0 8px 30px rgba(0, 212, 255, 0.15); }
@@ -139,6 +142,7 @@
                     <div class="stat-card"><h4>Engineers Available</h4><div class="value" id="engineersAvailable">-</div></div>
                     <div class="stat-card per-head"><h4>Jobs Per Head</h4><div class="value" id="jobsPerHead">-</div></div>
                     <div class="stat-card per-head"><h4>Meters Per Head</h4><div class="value" id="metersPerHead">-</div></div>
+                    <div class="stat-card revenue"><h4>Avg Rev Per Head</h4><div class="value" id="avgRevPerHead">-</div></div>
                 </div>
                 <h3 style="margin-bottom: 15px; color: #333;">Job Type Distribution</h3>
                 <div class="percentage-grid">
@@ -250,6 +254,9 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // Revenue rates
+        const RATES = { dual: 139.05, single: 113.30, comms: 72.10, removal: 92.70 };
+
         const today = new Date();
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -311,7 +318,7 @@
 
             const sortedDates = Object.keys(dateGroups).sort();
 
-            const headers = ['Date', 'Total Jobs', 'Total Dual', 'Total Single', 'Total Comms', 'Total Removal', 'Total Meters', 'Engineers Available', 'Jobs Per Head', 'Meters Per Head', 'Dual %', 'Single %', 'Comms %', 'Removal %'];
+            const headers = ['Date', 'Total Jobs', 'Total Dual', 'Total Single', 'Total Comms', 'Total Removal', 'Total Meters', 'Engineers Available', 'Jobs Per Head', 'Meters Per Head', 'Avg Rev Per Head', 'Dual %', 'Single %', 'Comms %', 'Removal %'];
 
             const dataRows = sortedDates.map(date => {
                 const recs = dateGroups[date];
@@ -329,7 +336,9 @@
                 const hc = headcountByDate[date] != null ? headcountByDate[date] : '';
                 const jobsPH = hc > 0 ? (t.jobs / hc).toFixed(1) : '-';
                 const metersPH = hc > 0 ? (t.meters / hc).toFixed(1) : '-';
-                return [date, t.jobs, t.dual, t.single, t.comms, t.removal, Math.round(t.meters), hc !== '' ? hc : '-', jobsPH, metersPH, pct(t.dual), pct(t.single), pct(t.comms), pct(t.removal)];
+                const totalRev = (t.dual * RATES.dual) + (t.single * RATES.single) + (t.comms * RATES.comms) + (t.removal * RATES.removal);
+                const revPH = hc > 0 ? '£' + (totalRev / hc).toFixed(2) : '-';
+                return [date, t.jobs, t.dual, t.single, t.comms, t.removal, Math.round(t.meters), hc !== '' ? hc : '-', jobsPH, metersPH, revPH, pct(t.dual), pct(t.single), pct(t.comms), pct(t.removal)];
             });
 
             const csvContent = [headers, ...dataRows]
@@ -582,9 +591,14 @@
             if (currentHeadcount && currentHeadcount > 0) {
                 document.getElementById('jobsPerHead').textContent = (totals.jobs / currentHeadcount).toFixed(1);
                 document.getElementById('metersPerHead').textContent = (totals.meters / currentHeadcount).toFixed(1);
+                // Avg Rev Per Head calculation
+                const totalRevenue = (totals.dual * RATES.dual) + (totals.single * RATES.single) + (totals.comms * RATES.comms) + (totals.removal * RATES.removal);
+                const avgRevPerHead = totalRevenue / currentHeadcount;
+                document.getElementById('avgRevPerHead').textContent = '£' + avgRevPerHead.toFixed(2);
             } else {
                 document.getElementById('jobsPerHead').textContent = '-';
                 document.getElementById('metersPerHead').textContent = '-';
+                document.getElementById('avgRevPerHead').textContent = '-';
             }
             const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
             document.getElementById('dualPercent').textContent = (totalJobTypes > 0 ? (totals.dual / totalJobTypes * 100) : 0).toFixed(1) + '%';
