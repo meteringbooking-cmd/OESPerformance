@@ -437,9 +437,6 @@
   const db      = getFirestore(perfApp);
   const staffDb = getFirestore(staffApp);
 
-  // Also connect to the KrakenAM headcount DB (same project as perf)
-  // KrakenAM Headcount collection is in oesperformance-a54c0 (same as perfApp)
-
   const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
 
   const ctx = document.createElement('canvas');
@@ -463,8 +460,9 @@
   let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
   let headcountLoaded = false;
 
-  // ── Daily headcount from KrakenAM Headcount collection ───────────────────────
-  // Returns a map of { "YYYY-MM-DD": number }
+  // ── Daily headcount from KrakenAM Headcount collection ──────────────────────
+  // Returns a map of { "YYYY-MM-DD": number } — ONLY dates that have a saved record.
+  // Dates with no record will be absent from the map, producing null MPH (matching KrakenAM.html).
   async function fetchDailyHeadcount(startDate, endDate) {
     try {
       const q = query(
@@ -476,6 +474,7 @@
       const map = {};
       snap.forEach(doc => {
         const d = doc.data();
+        // Only store dates that have an actual headcount value saved
         if (d.date && d.headcount != null) map[d.date] = Number(d.headcount);
       });
       return map;
@@ -588,6 +587,15 @@
     document.getElementById('statsContainer').innerHTML = html;
   }
 
+  // ── MPH calculator — EXACT same logic as KrakenAM.html ──────────────────────
+  // Only returns a value when dailyHcMap has a saved headcount for that date.
+  // No fallback to engineerHeadcount — that would produce different numbers.
+  function calcMph(dateStr, meters, dailyHcMap) {
+    const hc = dailyHcMap[dateStr]; // undefined if no record saved for this date
+    if (hc == null || hc === 0 || meters === 0) return null;
+    return Number((meters / hc).toFixed(2));
+  }
+
   // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
 
   async function fetchMonthDataMix(monthKey, team) {
@@ -599,9 +607,8 @@
     const endDate   = effectiveEnd.toISOString().split('T')[0];
     const records   = await fetchRecordsForRange(startDate, endDate, team);
 
-    // Fetch daily headcount for the range
+    // Fetch daily headcount — only dates with saved records will be in this map
     const dailyHcMap = await fetchDailyHeadcount(startDate, endDate);
-    const fallbackHc = engineerHeadcount[team] || engineerHeadcount["all"] || 39;
 
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
@@ -621,14 +628,9 @@
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
-      mphValues: weekdays.map(d => {
-        const meters = Math.round(dateMap[d].meters);
-        const hc = dailyHcMap[d] != null ? dailyHcMap[d] : fallbackHc;
-        if (!hc || meters === 0) return null;
-        return Number((meters / hc).toFixed(2));
-      }),
-      dailyHcMap,
-      fallbackHc
+      // MPH: only calculated when KrakenAM Headcount has a saved value for this date
+      mphValues: weekdays.map(d => calcMph(d, Math.round(dateMap[d].meters), dailyHcMap)),
+      dailyHcMap
     };
   }
 
@@ -640,9 +642,8 @@
 
     const records  = await fetchRecordsForRange(startDate, endDate, team);
 
-    // Fetch daily headcount for the range
+    // Fetch daily headcount — only dates with saved records will be in this map
     const dailyHcMap = await fetchDailyHeadcount(startDate, endDate);
-    const fallbackHc = engineerHeadcount[team] || engineerHeadcount["all"] || 39;
 
     const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
@@ -653,15 +654,10 @@
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      mphValues: weekdays.map(d => {
-        const meters = Math.round(dateMap[d] || 0);
-        const hc = dailyHcMap[d] != null ? dailyHcMap[d] : fallbackHc;
-        if (!hc || meters === 0) return null;
-        return Number((meters / hc).toFixed(2));
-      }),
+      // MPH: only calculated when KrakenAM Headcount has a saved value for this date
+      mphValues: weekdays.map(d => calcMph(d, Math.round(dateMap[d] || 0), dailyHcMap)),
       workingDays: weekdays.length,
-      dailyHcMap,
-      fallbackHc
+      dailyHcMap
     };
   }
 
@@ -778,7 +774,7 @@
         targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
-      // Average MPH across visible days
+      // Average MPH — only over days that have a saved headcount record
       const validMph = data.mphValues.filter(v=>v!==null&&v>0);
       const avgMph = validMph.length > 0 ? (validMph.reduce((s,v)=>s+v,0)/validMph.length).toFixed(1) : '—';
 
@@ -841,7 +837,7 @@
         tooltip: {
           callbacks: {
             label: c => {
-              if (c.dataset.label === 'Meters Per Head') return c.raw !== null ? ` MPH: ${c.raw}` : ' MPH: —';
+              if (c.dataset.label === 'Meters Per Head') return c.raw !== null ? ` MPH: ${c.raw}` : ' MPH: No headcount saved';
               return ` Meters: ${c.raw}`;
             }
           }
@@ -879,7 +875,7 @@
           callbacks: {
             label: c => {
               if (c.dataset.label === 'Completion %') return c.raw!==null ? ` Completion: ${c.raw}%` : ' Completion: No data';
-              if (c.dataset.label === 'Meters Per Head') return c.raw!==null ? ` MPH: ${c.raw}` : ' MPH: —';
+              if (c.dataset.label === 'Meters Per Head') return c.raw!==null ? ` MPH: ${c.raw}` : ' MPH: No headcount saved';
               return ` Meters: ${c.raw}`;
             }
           }
