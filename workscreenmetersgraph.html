@@ -19,7 +19,6 @@
       --success: #10b981;
       --warning: #f59e0b;
       --orange: #f97316;
-      --mph: #f472b6;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
@@ -201,11 +200,6 @@
       border-color: var(--orange);
       box-shadow: 0 4px 15px rgba(249,115,22,0.2);
     }
-    .stats-box.pink {
-      background: linear-gradient(135deg, rgba(244,114,182,0.15), rgba(249,168,212,0.1));
-      border-color: var(--mph);
-      box-shadow: 0 4px 15px rgba(244,114,182,0.2);
-    }
     .stats-label {
       font-size: 0.75rem;
       color: var(--text-dim);
@@ -240,11 +234,6 @@
     }
     .stats-value.orange-grad {
       background: linear-gradient(90deg, var(--orange), #fb923c);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .stats-value.pink-grad {
-      background: linear-gradient(90deg, var(--mph), #f9a8d4);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -335,12 +324,14 @@
 <aside>
   <div class="logo">OES Meters</div>
 
+  <!-- View Toggle -->
   <div class="view-toggle">
     <button class="view-tab tab-mix active" data-view="mix">📊 Meters &amp; Completion</button>
     <button class="view-tab tab-types" data-view="types">⚡ Install Types</button>
     <button class="view-tab tab-abort" data-view="aborts">🚫 Aborts</button>
   </div>
 
+  <!-- Period buttons -->
   <div id="periodSection">
     <h2>Time Period</h2>
     <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
@@ -357,6 +348,7 @@
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
   <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
 
+  <!-- Monthly buttons -->
   <div id="monthSection">
     <h2>2026 Monthly View</h2>
     <div class="months-grid">
@@ -380,7 +372,8 @@
   <header>
     <h1 id="pageTitle">Meters Installed</h1>
     <div class="stats-container" id="statsContainer">
-      </div>
+      <!-- Stats injected by JS -->
+    </div>
   </header>
 
   <div class="card">
@@ -408,6 +401,7 @@
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+  // ── Firebase: performance DB ──────────────────────────────────────────────────
   const perfConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
     authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -417,6 +411,7 @@
     appId: "1:484894102454:web:17535ee497eac2d90d6717",
     measurementId: "G-R56BGZYV8N"
   };
+  // ── Firebase: staff DB ────────────────────────────────────────────────────────
   const staffConfig = {
     apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
     authDomain: "pingu-solar.firebaseapp.com",
@@ -427,12 +422,14 @@
     measurementId: "G-PFH059DZ64"
   };
 
+  // Initialise apps — avoid duplicate-app errors if loaded inside an iframe that already has them
   const existingApps = getApps();
   const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
   const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
   const db      = getFirestore(perfApp);
   const staffDb = getFirestore(staffApp);
 
+  // Normalise FTL4 / FTL 4 (any casing/spacing) → "Tom Green"
   const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
 
   const ctx = document.createElement('canvas');
@@ -453,48 +450,38 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
+  // ── Dynamic headcount from staff Firebase ────────────────────────────────────
+  // engineerHeadcount maps display name → OES engineer count
+  // "all" = total OES engineers across all teams
   let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
   let headcountLoaded = false;
-
-  // ── Daily headcount from KrakenAM Headcount collection ──────────────────────
-  async function fetchDailyHeadcount(startDate, endDate) {
-    try {
-      const q = query(
-        collection(db, "KrakenAM Headcount"),
-        where("date", ">=", startDate),
-        where("date", "<=", endDate)
-      );
-      const snap = await getDocs(q);
-      const map = {};
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (d.date && d.headcount != null) map[d.date] = Number(d.headcount);
-      });
-      return map;
-    } catch (err) {
-      console.warn('Could not load daily headcount from KrakenAM:', err);
-      return {};
-    }
-  }
 
   async function loadHeadcount() {
     try {
       const staffSnap = await getDocs(collection(staffDb, "employees"));
+      // Reset counts
       Object.keys(engineerHeadcount).forEach(k => engineerHeadcount[k] = 0);
       staffSnap.forEach(doc => {
         const d = doc.data();
-        if (d.leaveDate) return;
+        if (d.leaveDate) return; // skip leavers
         const loc = (d.Location || d.location || '').trim();
-        if (loc !== 'OES') return;
+        if (loc !== 'OES') return; // only OES engineers count toward meter targets
         const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
+        // Normalise FTL 4 / FTL4 → "Tom Green"
         const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
         engineerHeadcount["all"]++;
-        if (engineerHeadcount[tl] !== undefined) engineerHeadcount[tl]++;
+        if (engineerHeadcount[tl] !== undefined) {
+          engineerHeadcount[tl]++;
+        }
       });
       headcountLoaded = true;
 
+      // ── Known-correct overrides for Scott Carson teams ──
+      // The staff DB team leader field may not exactly match these display names,
+      // so we pin the confirmed headcounts here and recalculate the overall total.
       engineerHeadcount["Scott Carson"]        = 9;
       engineerHeadcount["Scott Carson - Scot"] = 4;
+      // Recalculate "all" as sum of all named team leaders to stay consistent
       engineerHeadcount["all"] =
         engineerHeadcount["Richard Wiecko"] +
         engineerHeadcount["Scott Carson"] +
@@ -502,6 +489,7 @@
         engineerHeadcount["Stuart Whyte"] +
         engineerHeadcount["Tom Green"];
 
+      // Update badge displays in sidebar
       document.getElementById('hc_all').textContent       = engineerHeadcount["all"];
       document.getElementById('hc_richard').textContent   = engineerHeadcount["Richard Wiecko"];
       document.getElementById('hc_scott').textContent     = engineerHeadcount["Scott Carson"];
@@ -510,6 +498,7 @@
       document.getElementById('hc_tom').textContent       = engineerHeadcount["Tom Green"];
     } catch (err) {
       console.warn('Could not load dynamic headcount, using fallback values:', err);
+      // Fallback: confirmed headcounts — Scott Carson = 9, Scott Carson - Scot = 4
       engineerHeadcount["Richard Wiecko"]       = 9;
       engineerHeadcount["Scott Carson"]         = 9;
       engineerHeadcount["Scott Carson - Scot"]  = 4;
@@ -531,8 +520,10 @@
     }
   }
 
+  // ── Abort chart state ─────────────────────────────────────────────────────────
   let abortChart = null;
 
+  // Set default abort date range (last 7 days)
   const today = new Date();
   const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
   document.getElementById('abortFrom').value = sevenAgo.toISOString().split('T')[0];
@@ -580,12 +571,6 @@
     document.getElementById('statsContainer').innerHTML = html;
   }
 
-  function calcMph(dateStr, meters, dailyHcMap) {
-    const hc = dailyHcMap[dateStr];
-    if (hc == null || hc === 0 || meters === 0) return null;
-    return Number((meters / hc).toFixed(2));
-  }
-
   // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
 
   async function fetchMonthDataMix(monthKey, team) {
@@ -596,21 +581,6 @@
     const startDate = startOfMonth.toISOString().split('T')[0];
     const endDate   = effectiveEnd.toISOString().split('T')[0];
     const records   = await fetchRecordsForRange(startDate, endDate, team);
-    const dailyHcMap = await fetchDailyHeadcount(startDate, endDate);
-
-    // KRAKEN AM MATH: Calculate Total Meters & Headcount including weekends
-    let krakenTotalMeters = 0;
-    records.forEach(r => krakenTotalMeters += Number(r.meters || 0));
-    
-    let krakenTotalHc = 0, krakenHcCount = 0;
-    for (const hc of Object.values(dailyHcMap)) {
-      krakenTotalHc += hc;
-      krakenHcCount++;
-    }
-    const krakenAvgHc = krakenHcCount > 0 ? Math.round(krakenTotalHc / krakenHcCount) : 0;
-    const krakenAvgMph = krakenAvgHc > 0 ? (krakenTotalMeters / krakenAvgHc).toFixed(1) : '—';
-
-    // DASHBOARD GRAPH MATH: Filter out weekends strictly for visual charts
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
     weekdays.forEach(d => dateMap[d] = { meters:0, completed:0, jobs:0 });
@@ -621,85 +591,29 @@
         dateMap[r.date].jobs      += Number(r.jobs||0);
       }
     });
-
     return {
       labels:           weekdays.map(d => formatDayLabel(d, true)),
       metersValues:     weekdays.map(d => Math.round(dateMap[d].meters)),
       completionValues: weekdays.map(d => {
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
-      }),
-      mphValues: weekdays.map(d => calcMph(d, Math.round(dateMap[d].meters), dailyHcMap)),
-      krakenTotalMeters,
-      krakenAvgMph
+      })
     };
   }
 
   async function fetchPeriodDataMix(periodKey, team) {
     const cfg = periods[periodKey];
     const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
-    const startDate = start.toISOString().split('T')[0];
-    const endDate   = today.toISOString().split('T')[0];
-
-    const records  = await fetchRecordsForRange(startDate, endDate, team);
-    const dailyHcMap = await fetchDailyHeadcount(startDate, endDate);
-
-    // KRAKEN AM MATH: Calculate Total Meters & Headcount including weekends
-    let krakenTotalMeters = 0;
-    records.forEach(r => krakenTotalMeters += Number(r.meters || 0));
-    
-    let krakenTotalHc = 0, krakenHcCount = 0;
-    for (const hc of Object.values(dailyHcMap)) {
-      krakenTotalHc += hc;
-      krakenHcCount++;
-    }
-    const krakenAvgHc = krakenHcCount > 0 ? Math.round(krakenTotalHc / krakenHcCount) : 0;
-    const krakenAvgMph = krakenAvgHc > 0 ? (krakenTotalMeters / krakenAvgHc).toFixed(1) : '—';
-
-    // DASHBOARD GRAPH MATH: Filter out weekends strictly for visual charts
+    const records  = await fetchRecordsForRange(start.toISOString().split('T')[0], today.toISOString().split('T')[0], team);
     const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
-
     const isBar = cfg.type === 'bar';
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      mphValues: weekdays.map(d => calcMph(d, Math.round(dateMap[d] || 0), dailyHcMap)),
-      krakenTotalMeters,
-      krakenAvgMph
-    };
-  }
-
-  function mphDataset(data) {
-    return {
-      type: 'line',
-      label: 'Meters Per Head',
-      data: data,
-      borderColor: '#f472b6',
-      backgroundColor: 'rgba(244,114,182,0.10)',
-      borderWidth: 2.5,
-      borderDash: [6, 3],
-      tension: 0.35,
-      fill: false,
-      pointRadius: 5,
-      pointHoverRadius: 8,
-      pointBackgroundColor: '#f472b6',
-      pointBorderColor: '#0f172a',
-      pointBorderWidth: 1.5,
-      yAxisID: 'yMph',
-      spanGaps: true,
-      datalabels: {
-        anchor: 'bottom',
-        align: 'bottom',
-        offset: 6,
-        color: '#f9a8d4',
-        font: { weight: 'bold', size: 10 },
-        formatter: v => v !== null && v > 0 ? v.toFixed(1) : '',
-        textShadowColor: 'rgba(0,0,0,0.9)',
-        textShadowBlur: 4
-      }
+      workingDays: weekdays.length
     };
   }
 
@@ -712,18 +626,21 @@
       const label = `${monthNames[mon-1]} ${year}`;
       document.getElementById('pageTitle').textContent = `Meters — ${label}`;
 
+      setStats(
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large" id="statTotal">—</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value" id="statAvg">—</div></div>` +
+        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success" id="statComp">—</div></div>`
+      );
+
       const data = await fetchMonthDataMix(currentMonth, currentTeam);
 
+      const total = data.metersValues.reduce((s,v) => s+v, 0);
+      document.getElementById('statTotal').textContent = total.toLocaleString();
       const pop = data.metersValues.filter(v=>v>0).length;
+      document.getElementById('statAvg').textContent = pop > 0 ? (total/pop).toFixed(1) : '—';
       const validComp = data.completionValues.filter(v=>v!==null&&v>0);
-
-      // INJECT HTML SAFELY
-      setStats(
-        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${data.krakenTotalMeters.toLocaleString()}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (data.krakenTotalMeters/pop).toFixed(1) : '—'}</div></div>` +
-        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success">${validComp.length > 0 ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—'}</div></div>` +
-        `<div class="stats-box pink"><div class="stats-label">Avg MPH</div><div class="stats-value pink-grad">${data.krakenAvgMph}</div></div>`
-      );
+      document.getElementById('statComp').textContent = validComp.length > 0
+        ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—';
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
@@ -749,11 +666,10 @@
               datalabels: { anchor:'top', align:'top', offset:6, color:'#34d399',
                 font:{weight:'bold',size:10}, formatter: v => v!==null&&v>0?`${v}%`:'',
                 textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
-            },
-            mphDataset(data.mphValues)
+            }
           ]
         },
-        options: dualAxisOptions(`${label} – Meters, Completion & MPH (${currentTeam==='all'?'All Teams':currentTeam})`),
+        options: dualAxisOptions(`${label} – Meters & Completion (${currentTeam==='all'?'All Teams':currentTeam})`),
         plugins: [ChartDataLabels]
       });
 
@@ -762,7 +678,10 @@
       const cfg = periods[currentPeriod];
       const data = await fetchPeriodDataMix(currentPeriod, currentTeam);
 
-      const pop = data.values.filter(v=>v>0).length;
+      const total = data.values.reduce((s,v)=>s+v,0);
+      const pop   = data.values.filter(v=>v>0).length;
+
+      // ── Dynamic headcount (live from Firebase staff DB) ──
       const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 39;
 
       let targetHTML = '';
@@ -772,135 +691,53 @@
         const target = hc * 6 * 0.9 * last5.length;
         const pct    = target > 0 ? (l5tot/target)*100 : 0;
         const cls    = pct>=100 ? 'success' : pct>=80 ? 'warning' : 'error';
-        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}">${pct.toFixed(1)}%</div></div>`;
+        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
-      // INJECT HTML SAFELY
       setStats(
-        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${data.krakenTotalMeters.toLocaleString()}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(data.krakenTotalMeters/pop).toFixed(1):'—'}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Headcount (OES)</div><div class="stats-value">${hc}</div></div>` +
-        `<div class="stats-box pink"><div class="stats-label">Avg MPH</div><div class="stats-value pink-grad">${data.krakenAvgMph}</div></div>` +
         targetHTML
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
-
-      const isBar = cfg.type === 'bar';
       chart = new Chart(ctx, {
         type: cfg.type,
         data: {
           labels: data.labels,
-          datasets: [
-            {
-              label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
-              data: data.values,
-              backgroundColor: isBar ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.12)',
-              borderColor: cfg.color,
-              borderWidth: isBar ? 1 : 3,
-              borderRadius: isBar ? 6 : 0,
-              tension: isBar ? 0 : 0.35,
-              fill: !isBar,
-              pointRadius: isBar ? 0 : 3,
-              pointHoverRadius: 7,
-              yAxisID: 'yMeters',
-              datalabels: isBar ? {
-                anchor:'end', align:'top', offset:4, color:'#e2e8f0', font:{weight:'bold',size:12},
-                formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              } : false
-            },
-            mphDataset(data.mphValues)
-          ]
+          datasets: [{
+            label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
+            data: data.values,
+            backgroundColor: cfg.type==='bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.12)',
+            borderColor: cfg.color,
+            borderWidth: cfg.type==='bar' ? 1 : 3,
+            borderRadius: cfg.type==='bar' ? 6 : 0,
+            tension: cfg.type==='line' ? 0.35 : 0,
+            fill: cfg.type==='line',
+            pointRadius: cfg.type==='bar' ? 0 : 3,
+            pointHoverRadius: 7,
+          }]
         },
-        options: periodMixOptions(cfg, hc, isBar),
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            title: { display:true, text:`${cfg.label} – Meters Installed (${hc} OES engineers, target ${Math.round(hc*6*0.9)}/day)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
+            legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
+            datalabels: cfg.type==='bar' ? {
+              anchor:'end', align:'top', offset:4, color:'#e2e8f0', font:{weight:'bold',size:12},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+            } : false
+          },
+          scales: {
+            x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
+            y: { beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} }
+          }
+        },
         plugins: [ChartDataLabels]
       });
     }
-  }
-
-  // ── Chart options helpers ─────────────────────────────────────────────────────
-
-  function periodMixOptions(cfg, hc, isBar) {
-    return {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
-      plugins: {
-        title: {
-          display: true,
-          text: `${cfg.label} – Meters Installed & MPH (${hc} OES engineers, target ${Math.round(hc*6*0.9)}/day)`,
-          color: '#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20}
-        },
-        legend: { labels:{ color:'#cbd5e1', font:{size:14}, usePointStyle:true } },
-        tooltip: {
-          callbacks: {
-            label: c => {
-              if (c.dataset.label === 'Meters Per Head') return c.raw !== null ? ` MPH: ${c.raw}` : ' MPH: No headcount saved';
-              return ` Meters: ${c.raw}`;
-            }
-          }
-        },
-        datalabels: isBar ? {} : false
-      },
-      scales: {
-        x: { ticks:{ color:'#94a3b8', font:{size:isBar?11:12}, padding:8 }, grid:{color:'#334155'} },
-        yMeters: {
-          type: 'linear', position: 'left',
-          beginAtZero: true,
-          ticks:{ color:'#94a3b8', stepSize:50 },
-          grid:{ color:'#334155' },
-          title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} }
-        },
-        yMph: {
-          type: 'linear', position: 'right',
-          beginAtZero: true,
-          ticks: { color:'#f472b6', callback: v => v.toFixed(1) },
-          grid: { drawOnChartArea: false },
-          title:{ display:true, text:'Meters Per Head', color:'#f472b6', font:{size:12,weight:'600'} }
-        }
-      }
-    };
-  }
-
-  function dualAxisOptions(title) {
-    return {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
-      plugins: {
-        title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
-        legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
-        tooltip: {
-          callbacks: {
-            label: c => {
-              if (c.dataset.label === 'Completion %') return c.raw!==null ? ` Completion: ${c.raw}%` : ' Completion: No data';
-              if (c.dataset.label === 'Meters Per Head') return c.raw!==null ? ` MPH: ${c.raw}` : ' MPH: No headcount saved';
-              return ` Meters: ${c.raw}`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
-        yMeters: {
-          type:'linear', position:'left', beginAtZero:true,
-          ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'},
-          title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} }
-        },
-        yCompletion: {
-          type:'linear', position:'right', beginAtZero:true, max:100,
-          ticks:{ color:'#10b981', callback: v=>`${v}%` },
-          grid:{ drawOnChartArea:false },
-          title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} }
-        },
-        yMph: {
-          type: 'linear', position: 'right',
-          beginAtZero: true,
-          ticks: { color:'#f472b6', callback: v => v.toFixed(1) },
-          grid: { drawOnChartArea: false },
-          title:{ display:true, text:'Meters Per Head', color:'#f472b6', font:{size:12,weight:'600'} }
-        }
-      }
-    };
   }
 
   // ── VIEW: Install Types ───────────────────────────────────────────────────────
@@ -1158,6 +995,25 @@
     }
   }
 
+  // ── Dual-axis chart options ───────────────────────────────────────────────────
+
+  function dualAxisOptions(title) {
+    return {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
+        legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
+        tooltip: { callbacks:{ label: c => c.dataset.label==='Completion %'?(c.raw!==null?` Completion: ${c.raw}%`:' Completion: No data'):` Meters: ${c.raw}` } }
+      },
+      scales: {
+        x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
+        yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
+        yCompletion: { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } }
+      }
+    };
+  }
+
   // ── Main render dispatcher ────────────────────────────────────────────────────
 
   async function updateView() {
@@ -1234,6 +1090,7 @@
 
   document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
 
+  // ── Bootstrap: load headcount first, then render ──────────────────────────────
   await loadHeadcount();
   updateView();
 </script>
