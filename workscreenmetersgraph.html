@@ -502,9 +502,11 @@
   document.getElementById('abortTo').value   = today.toISOString().split('T')[0];
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+  
+  // CHANGED: Now pulling explicitly from KrakenAM instead of "performance"
   async function fetchRecordsForRange(startDate, endDate, team) {
     const q = query(
-      collection(db, "performance"),
+      collection(db, "KrakenAM"),
       where("date", ">=", startDate),
       where("date", "<=", endDate),
       orderBy("date", "asc")
@@ -513,13 +515,27 @@
     const recs = [];
     snap.forEach(doc => {
       const d = doc.data();
-      const normalisedTeam = normTeam(d.teamLeader);
-      if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
+      const rawTeam = d.team || d.teamLeader || '';
+      const normalisedTeam = normTeam(rawTeam);
+      
+      // Map KrakenAM fields into the format the dashboard originally expected
+      if (team === "all" || normalisedTeam === team) {
+        recs.push({
+          date: d.date,
+          teamLeader: normalisedTeam,
+          meters: Number(d.totalMeters || d.meters || 0),
+          jobs: Number(d.totalJobs || d.jobs || 0),
+          completed: Number((d.dual||0) + (d.single||0) + (d.comms||0) + (d.removal||0)),
+          duals: Number(d.dual || d.duals || 0),
+          singles: Number(d.single || d.singles || 0),
+          comms: Number(d.comms || 0)
+        });
+      }
     });
     return recs;
   }
 
-  // New fetcher for KrakenAM daily headcounts
+  // Fetcher for KrakenAM daily headcounts
   async function fetchDailyHeadcounts(startDate, endDate) {
     try {
       const q = query(
