@@ -19,6 +19,7 @@
       --success: #10b981;
       --warning: #f59e0b;
       --orange: #f97316;
+      --purple: #a78bfa;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
@@ -200,6 +201,11 @@
       border-color: var(--orange);
       box-shadow: 0 4px 15px rgba(249,115,22,0.2);
     }
+    .stats-box.per-head {
+      background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(139, 92, 246, 0.1));
+      border-color: var(--purple);
+      box-shadow: 0 4px 15px rgba(167, 139, 250, 0.2);
+    }
     .stats-label {
       font-size: 0.75rem;
       color: var(--text-dim);
@@ -219,6 +225,11 @@
     .stats-value.large { font-size: 2rem; }
     .stats-value.success {
       background: linear-gradient(90deg, var(--success), #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.purple-grad {
+      background: linear-gradient(90deg, var(--purple), #c084fc);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -324,14 +335,12 @@
 <aside>
   <div class="logo">OES Meters</div>
 
-  <!-- View Toggle -->
   <div class="view-toggle">
     <button class="view-tab tab-mix active" data-view="mix">📊 Meters &amp; Completion</button>
     <button class="view-tab tab-types" data-view="types">⚡ Install Types</button>
     <button class="view-tab tab-abort" data-view="aborts">🚫 Aborts</button>
   </div>
 
-  <!-- Period buttons -->
   <div id="periodSection">
     <h2>Time Period</h2>
     <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
@@ -348,7 +357,6 @@
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
   <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
 
-  <!-- Monthly buttons -->
   <div id="monthSection">
     <h2>2026 Monthly View</h2>
     <div class="months-grid">
@@ -372,8 +380,7 @@
   <header>
     <h1 id="pageTitle">Meters Installed</h1>
     <div class="stats-container" id="statsContainer">
-      <!-- Stats injected by JS -->
-    </div>
+      </div>
   </header>
 
   <div class="card">
@@ -422,14 +429,12 @@
     measurementId: "G-PFH059DZ64"
   };
 
-  // Initialise apps — avoid duplicate-app errors if loaded inside an iframe that already has them
   const existingApps = getApps();
   const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
   const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
   const db      = getFirestore(perfApp);
   const staffDb = getFirestore(staffApp);
 
-  // Normalise FTL4 / FTL 4 (any casing/spacing) → "Tom Green"
   const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
 
   const ctx = document.createElement('canvas');
@@ -437,7 +442,6 @@
   let chart = null;
 
   const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
   const periods = {
     "7days":   { label: "Last 7 days",    daysBack: 7,   color: "#6366f1", type: "bar"  },
     "4weeks":  { label: "4 week rolling", daysBack: 28,  color: "#8b5cf6", type: "bar"  },
@@ -450,94 +454,44 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
-  // ── Dynamic headcount from staff Firebase ────────────────────────────────────
-  // engineerHeadcount maps display name → OES engineer count
-  // "all" = total OES engineers across all teams
+  const today = new Date();
   let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
   let headcountLoaded = false;
 
   async function loadHeadcount() {
     try {
       const staffSnap = await getDocs(collection(staffDb, "employees"));
-      // Reset counts
       Object.keys(engineerHeadcount).forEach(k => engineerHeadcount[k] = 0);
       staffSnap.forEach(doc => {
         const d = doc.data();
-        if (d.leaveDate) return; // skip leavers
+        if (d.leaveDate) return; 
         const loc = (d.Location || d.location || '').trim();
-        if (loc !== 'OES') return; // only OES engineers count toward meter targets
+        if (loc !== 'OES') return;
         const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
-        // Normalise FTL 4 / FTL4 → "Tom Green"
         const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
-        engineerHeadcount["all"]++;
-        if (engineerHeadcount[tl] !== undefined) {
-          engineerHeadcount[tl]++;
-        }
+        if (engineerHeadcount[tl] !== undefined) engineerHeadcount[tl]++;
       });
-      headcountLoaded = true;
-
-      // ── Known-correct overrides for Scott Carson teams ──
-      // The staff DB team leader field may not exactly match these display names,
-      // so we pin the confirmed headcounts here and recalculate the overall total.
+      
       engineerHeadcount["Scott Carson"]        = 9;
       engineerHeadcount["Scott Carson - Scot"] = 4;
-      // Recalculate "all" as sum of all named team leaders to stay consistent
-      engineerHeadcount["all"] =
-        engineerHeadcount["Richard Wiecko"] +
-        engineerHeadcount["Scott Carson"] +
-        engineerHeadcount["Scott Carson - Scot"] +
-        engineerHeadcount["Stuart Whyte"] +
-        engineerHeadcount["Tom Green"];
+      engineerHeadcount["all"] = engineerHeadcount["Richard Wiecko"] + engineerHeadcount["Scott Carson"] + engineerHeadcount["Scott Carson - Scot"] + engineerHeadcount["Stuart Whyte"] + engineerHeadcount["Tom Green"];
 
-      // Update badge displays in sidebar
       document.getElementById('hc_all').textContent       = engineerHeadcount["all"];
       document.getElementById('hc_richard').textContent   = engineerHeadcount["Richard Wiecko"];
       document.getElementById('hc_scott').textContent     = engineerHeadcount["Scott Carson"];
       document.getElementById('hc_scottscot').textContent = engineerHeadcount["Scott Carson - Scot"];
       document.getElementById('hc_stuart').textContent    = engineerHeadcount["Stuart Whyte"];
       document.getElementById('hc_tom').textContent       = engineerHeadcount["Tom Green"];
-    } catch (err) {
-      console.warn('Could not load dynamic headcount, using fallback values:', err);
-      // Fallback: confirmed headcounts — Scott Carson = 9, Scott Carson - Scot = 4
-      engineerHeadcount["Richard Wiecko"]       = 9;
-      engineerHeadcount["Scott Carson"]         = 9;
-      engineerHeadcount["Scott Carson - Scot"]  = 4;
-      engineerHeadcount["Stuart Whyte"]         = 7;
-      engineerHeadcount["Tom Green"]            = 12;
-      engineerHeadcount["all"] =
-        engineerHeadcount["Richard Wiecko"] +
-        engineerHeadcount["Scott Carson"] +
-        engineerHeadcount["Scott Carson - Scot"] +
-        engineerHeadcount["Stuart Whyte"] +
-        engineerHeadcount["Tom Green"];
       headcountLoaded = true;
-      document.getElementById('hc_all').textContent       = engineerHeadcount["all"];
-      document.getElementById('hc_richard').textContent   = engineerHeadcount["Richard Wiecko"];
-      document.getElementById('hc_scott').textContent     = engineerHeadcount["Scott Carson"];
-      document.getElementById('hc_scottscot').textContent = engineerHeadcount["Scott Carson - Scot"];
-      document.getElementById('hc_stuart').textContent    = engineerHeadcount["Stuart Whyte"];
-      document.getElementById('hc_tom').textContent       = engineerHeadcount["Tom Green"];
+    } catch (err) {
+      console.warn('Fallback headcount used');
+      engineerHeadcount = { "all": 41, "Richard Wiecko": 9, "Scott Carson": 9, "Scott Carson - Scot": 4, "Stuart Whyte": 7, "Tom Green": 12 };
+      headcountLoaded = true;
     }
   }
 
-  // ── Abort chart state ─────────────────────────────────────────────────────────
-  let abortChart = null;
-
-  // Set default abort date range (last 7 days)
-  const today = new Date();
-  const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
-  document.getElementById('abortFrom').value = sevenAgo.toISOString().split('T')[0];
-  document.getElementById('abortTo').value   = today.toISOString().split('T')[0];
-
-  // ── Helpers ───────────────────────────────────────────────────────────────────
-
   async function fetchRecordsForRange(startDate, endDate, team) {
-    const q = query(
-      collection(db, "performance"),
-      where("date", ">=", startDate),
-      where("date", "<=", endDate),
-      orderBy("date", "asc")
-    );
+    const q = query(collection(db, "performance"), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "asc"));
     const snap = await getDocs(q);
     const recs = [];
     snap.forEach(doc => {
@@ -571,76 +525,51 @@
     document.getElementById('statsContainer').innerHTML = html;
   }
 
-  // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
-
   async function fetchMonthDataMix(monthKey, team) {
     const [year, mon] = monthKey.split('-').map(Number);
     const startOfMonth = new Date(year, mon-1, 1);
     const endOfMonth   = new Date(year, mon, 0);
     const effectiveEnd = endOfMonth < today ? endOfMonth : today;
-    const startDate = startOfMonth.toISOString().split('T')[0];
-    const endDate   = effectiveEnd.toISOString().split('T')[0];
-    const records   = await fetchRecordsForRange(startDate, endDate, team);
+    const records   = await fetchRecordsForRange(startOfMonth.toISOString().split('T')[0], effectiveEnd.toISOString().split('T')[0], team);
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
     weekdays.forEach(d => dateMap[d] = { meters:0, completed:0, jobs:0 });
-    records.forEach(r => {
-      if (dateMap[r.date] !== undefined) {
-        dateMap[r.date].meters    += Number(r.meters||0);
-        dateMap[r.date].completed += Number(r.completed||0);
-        dateMap[r.date].jobs      += Number(r.jobs||0);
-      }
-    });
-    return {
-      labels:           weekdays.map(d => formatDayLabel(d, true)),
-      metersValues:     weekdays.map(d => Math.round(dateMap[d].meters)),
-      completionValues: weekdays.map(d => {
-        const {completed,jobs} = dateMap[d];
-        return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
-      })
-    };
+    records.forEach(r => { if (dateMap[r.date]) { dateMap[r.date].meters += Number(r.meters||0); dateMap[r.date].completed += Number(r.completed||0); dateMap[r.date].jobs += Number(r.jobs||0); } });
+    return { labels: weekdays.map(d => formatDayLabel(d, true)), metersValues: weekdays.map(d => Math.round(dateMap[d].meters)), completionValues: weekdays.map(d => { const {completed,jobs} = dateMap[d]; return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null; }), workingDays: weekdays.length };
   }
 
   async function fetchPeriodDataMix(periodKey, team) {
     const cfg = periods[periodKey];
     const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
-    const records  = await fetchRecordsForRange(start.toISOString().split('T')[0], today.toISOString().split('T')[0], team);
+    const records = await fetchRecordsForRange(start.toISOString().split('T')[0], today.toISOString().split('T')[0], team);
     const weekdays = getWeekdayDates(start, today);
-    const dateMap  = {};
+    const dateMap = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
-    const isBar = cfg.type === 'bar';
-    return {
-      labels: weekdays.map(d => formatDayLabel(d, isBar)),
-      values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      workingDays: weekdays.length
-    };
+    return { labels: weekdays.map(d => formatDayLabel(d, cfg.type==='bar')), values: weekdays.map(d => Math.round(dateMap[d]||0)), workingDays: weekdays.length };
   }
 
   async function renderMix() {
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading…</div>';
+    const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 1;
 
     if (currentMonth) {
       const [year, mon] = currentMonth.split('-').map(Number);
       const label = `${monthNames[mon-1]} ${year}`;
       document.getElementById('pageTitle').textContent = `Meters — ${label}`;
+      const data = await fetchMonthDataMix(currentMonth, currentTeam);
+      const total = data.metersValues.reduce((s,v) => s+v, 0);
+      const metersPerHead = (total / hc).toFixed(1);
 
       setStats(
-        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large" id="statTotal">—</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value" id="statAvg">—</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
+        `<div class="stats-box per-head"><div class="stats-label">Meters Per Head</div><div class="stats-value purple-grad">${metersPerHead}</div></div>` +
         `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success" id="statComp">—</div></div>`
       );
 
-      const data = await fetchMonthDataMix(currentMonth, currentTeam);
-
-      const total = data.metersValues.reduce((s,v) => s+v, 0);
-      document.getElementById('statTotal').textContent = total.toLocaleString();
-      const pop = data.metersValues.filter(v=>v>0).length;
-      document.getElementById('statAvg').textContent = pop > 0 ? (total/pop).toFixed(1) : '—';
       const validComp = data.completionValues.filter(v=>v!==null&&v>0);
-      document.getElementById('statComp').textContent = validComp.length > 0
-        ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—';
+      if(document.getElementById('statComp')) document.getElementById('statComp').textContent = validComp.length > 0 ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—';
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
@@ -649,24 +578,8 @@
         data: {
           labels: data.labels,
           datasets: [
-            {
-              type: 'bar', label: 'Meters Installed', data: data.metersValues,
-              backgroundColor: 'rgba(99,102,241,0.75)', borderColor: '#6366f1',
-              borderWidth: 1, borderRadius: 6, yAxisID: 'yMeters',
-              datalabels: { anchor:'end', align:'top', offset:2, color:'#e2e8f0',
-                font:{weight:'bold',size:11}, formatter: v => v>0?v:'',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
-            },
-            {
-              type: 'line', label: 'Completion %', data: data.completionValues,
-              borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)',
-              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
-              pointHoverRadius: 8, pointBackgroundColor: '#10b981',
-              yAxisID: 'yCompletion', spanGaps: true,
-              datalabels: { anchor:'top', align:'top', offset:6, color:'#34d399',
-                font:{weight:'bold',size:10}, formatter: v => v!==null&&v>0?`${v}%`:'',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
-            }
+            { type: 'bar', label: 'Meters Installed', data: data.metersValues, backgroundColor: 'rgba(99,102,241,0.75)', borderColor: '#6366f1', borderWidth: 1, borderRadius: 6, yAxisID: 'yMeters', datalabels: { anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:11}, formatter: v => v>0?v:'' } },
+            { type: 'line', label: 'Completion %', data: data.completionValues, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)', borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5, yAxisID: 'yCompletion', spanGaps: true, datalabels: { anchor:'top', align:'top', offset:6, color:'#34d399', font:{weight:'bold',size:10}, formatter: v => v!==null&&v>0?`${v}%`:'' } }
           ]
         },
         options: dualAxisOptions(`${label} – Meters & Completion (${currentTeam==='all'?'All Teams':currentTeam})`),
@@ -677,12 +590,8 @@
       document.getElementById('pageTitle').textContent = 'Meters Installed';
       const cfg = periods[currentPeriod];
       const data = await fetchPeriodDataMix(currentPeriod, currentTeam);
-
       const total = data.values.reduce((s,v)=>s+v,0);
-      const pop   = data.values.filter(v=>v>0).length;
-
-      // ── Dynamic headcount (live from Firebase staff DB) ──
-      const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 39;
+      const metersPerHead = (total / hc).toFixed(1);
 
       let targetHTML = '';
       if (currentPeriod === '7days') {
@@ -691,13 +600,13 @@
         const target = hc * 6 * 0.9 * last5.length;
         const pct    = target > 0 ? (l5tot/target)*100 : 0;
         const cls    = pct>=100 ? 'success' : pct>=80 ? 'warning' : 'error';
-        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
+        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}">${pct.toFixed(1)}%</div></div>`;
       }
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Headcount (OES)</div><div class="stats-value">${hc}</div></div>` +
+        `<div class="stats-box per-head"><div class="stats-label">Meters Per Head</div><div class="stats-value purple-grad">${metersPerHead}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Headcount</div><div class="stats-value">${hc}</div></div>` +
         targetHTML
       );
 
@@ -705,316 +614,126 @@
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
         type: cfg.type,
-        data: {
-          labels: data.labels,
-          datasets: [{
-            label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
-            data: data.values,
-            backgroundColor: cfg.type==='bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.12)',
-            borderColor: cfg.color,
-            borderWidth: cfg.type==='bar' ? 1 : 3,
-            borderRadius: cfg.type==='bar' ? 6 : 0,
-            tension: cfg.type==='line' ? 0.35 : 0,
-            fill: cfg.type==='line',
-            pointRadius: cfg.type==='bar' ? 0 : 3,
-            pointHoverRadius: 7,
-          }]
-        },
+        data: { labels: data.labels, datasets: [{ label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`, data: data.values, backgroundColor: cfg.type==='bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.12)', borderColor: cfg.color, borderWidth: cfg.type==='bar' ? 1 : 3, borderRadius: cfg.type==='bar' ? 6 : 0, tension: 0.35, fill: cfg.type==='line', pointRadius: cfg.type==='bar' ? 0 : 3 }] },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: {
-            title: { display:true, text:`${cfg.label} – Meters Installed (${hc} OES engineers, target ${Math.round(hc*6*0.9)}/day)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
-            legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
-            datalabels: cfg.type==='bar' ? {
-              anchor:'end', align:'top', offset:4, color:'#e2e8f0', font:{weight:'bold',size:12},
-              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
+            title: { display:true, text:`${cfg.label} – Meters Installed (${hc} Eng, target ${Math.round(hc*6*0.9)}/day)`, color:'#e2e8f0', font:{size:18,weight:'600'} },
+            datalabels: cfg.type==='bar' ? { anchor:'end', align:'top', color:'#e2e8f0', font:{weight:'bold'}, formatter: v => v>0?v:'' } : false
           },
-          scales: {
-            x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
-            y: { beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} }
-          }
+          scales: { x: { grid:{color:'#334155'}, ticks:{color:'#94a3b8'} }, y: { beginAtZero:true, grid:{color:'#334155'}, ticks:{color:'#94a3b8'} } }
         },
         plugins: [ChartDataLabels]
       });
     }
   }
 
-  // ── VIEW: Install Types ───────────────────────────────────────────────────────
-
   async function fetchTypesData(periodKey, monthKey, team) {
     let startDate, endDate, weekdays, label, isBar;
-
     if (monthKey) {
       const [year, mon] = monthKey.split('-').map(Number);
       const startOfMonth = new Date(year, mon-1, 1);
       const endOfMonth   = new Date(year, mon, 0);
       const effectiveEnd = endOfMonth < today ? endOfMonth : today;
-      startDate = startOfMonth.toISOString().split('T')[0];
-      endDate   = effectiveEnd.toISOString().split('T')[0];
+      startDate = startOfMonth.toISOString().split('T')[0]; endDate = effectiveEnd.toISOString().split('T')[0];
       weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
-      label     = `${monthNames[mon-1]} ${year}`;
-      isBar     = true;
+      label = `${monthNames[mon-1]} ${year}`; isBar = true;
     } else {
-      const cfg  = periods[periodKey];
+      const cfg = periods[periodKey];
       const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
-      startDate  = start.toISOString().split('T')[0];
-      endDate    = today.toISOString().split('T')[0];
-      weekdays   = getWeekdayDates(start, today);
-      label      = cfg.label;
-      isBar      = cfg.type === 'bar';
+      startDate = start.toISOString().split('T')[0]; endDate = today.toISOString().split('T')[0];
+      weekdays = getWeekdayDates(start, today);
+      label = cfg.label; isBar = cfg.type === 'bar';
     }
-
     const records = await fetchRecordsForRange(startDate, endDate, "all");
-    const dateMap = {};
-    weekdays.forEach(d => dateMap[d] = { duals:0, singles:0, comms:0 });
-    records.forEach(r => {
-      if (dateMap[r.date] !== undefined) {
-        dateMap[r.date].duals   += Number(r.duals||0);
-        dateMap[r.date].singles += Number(r.singles||0);
-        dateMap[r.date].comms   += Number(r.comms||0);
-      }
-    });
-
-    return {
-      labels:  weekdays.map(d => formatDayLabel(d, isBar)),
-      duals:   weekdays.map(d => dateMap[d].duals),
-      singles: weekdays.map(d => dateMap[d].singles),
-      comms:   weekdays.map(d => dateMap[d].comms),
-      label, isBar
-    };
+    const dateMap = {}; weekdays.forEach(d => dateMap[d] = { duals:0, singles:0, comms:0 });
+    records.forEach(r => { if (dateMap[r.date]) { dateMap[r.date].duals += Number(r.duals||0); dateMap[r.date].singles += Number(r.singles||0); dateMap[r.date].comms += Number(r.comms||0); } });
+    return { labels: weekdays.map(d => formatDayLabel(d, isBar)), duals: weekdays.map(d => dateMap[d].duals), singles: weekdays.map(d => dateMap[d].singles), comms: weekdays.map(d => dateMap[d].comms), label, isBar };
   }
 
   async function renderTypes() {
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading…</div>';
-    document.getElementById('pageTitle').textContent = 'Install Types';
-
     const data = await fetchTypesData(currentPeriod, currentMonth, currentTeam);
-
-    const totDuals   = data.duals.reduce((s,v)=>s+v,0);
+    const totDuals = data.duals.reduce((s,v)=>s+v,0);
     const totSingles = data.singles.reduce((s,v)=>s+v,0);
-    const totComms   = data.comms.reduce((s,v)=>s+v,0);
-    const totAll     = totDuals + totSingles + totComms;
-
-    const pDual = totAll > 0 ? ((totDuals/totAll)*100).toFixed(1) : '—';
-    const pSing = totAll > 0 ? ((totSingles/totAll)*100).toFixed(1) : '—';
-    const pComm = totAll > 0 ? ((totComms/totAll)*100).toFixed(1) : '—';
+    const totComms = data.comms.reduce((s,v)=>s+v,0);
+    const totAll = totDuals + totSingles + totComms;
 
     setStats(
-      `<div class="stats-box green"><div class="stats-label">Duals</div><div class="stats-value success">${totDuals} <small style="font-size:0.55em;opacity:0.7">${pDual}%</small></div></div>` +
-      `<div class="stats-box"><div class="stats-label">Singles</div><div class="stats-value">${totSingles} <small style="font-size:0.55em;opacity:0.7">${pSing}%</small></div></div>` +
-      `<div class="stats-box orange"><div class="stats-label">Comms/Site</div><div class="stats-value orange-grad">${totComms} <small style="font-size:0.55em;opacity:0.7">${pComm}%</small></div></div>`
+      `<div class="stats-box green"><div class="stats-label">Duals</div><div class="stats-value success">${totDuals} <small style="font-size:0.5em">${(totAll>0?totDuals/totAll*100:0).toFixed(1)}%</small></div></div>` +
+      `<div class="stats-box"><div class="stats-label">Singles</div><div class="stats-value">${totSingles}</div></div>` +
+      `<div class="stats-box orange"><div class="stats-label">Comms</div><div class="stats-value orange-grad">${totComms}</div></div>`
     );
 
     container.innerHTML = ''; container.appendChild(ctx);
     if (chart) chart.destroy();
-
     const chartType = data.isBar ? 'bar' : 'line';
     chart = new Chart(ctx, {
       type: chartType,
       data: {
         labels: data.labels,
         datasets: [
-          {
-            label: 'Duals', data: data.duals,
-            backgroundColor: chartType==='bar' ? 'rgba(16,185,129,0.75)' : 'rgba(16,185,129,0.15)',
-            borderColor: '#10b981', borderWidth: chartType==='bar'?1:3,
-            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
-            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
-            datalabels: chartType==='bar' ? {
-              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
-              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
-          },
-          {
-            label: 'Singles', data: data.singles,
-            backgroundColor: chartType==='bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.15)',
-            borderColor: '#6366f1', borderWidth: chartType==='bar'?1:3,
-            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
-            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
-            datalabels: chartType==='bar' ? {
-              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
-              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
-          },
-          {
-            label: 'Comms/Site Visits', data: data.comms,
-            backgroundColor: chartType==='bar' ? 'rgba(249,115,22,0.75)' : 'rgba(249,115,22,0.15)',
-            borderColor: '#f97316', borderWidth: chartType==='bar'?1:3,
-            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
-            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
-            datalabels: chartType==='bar' ? {
-              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
-              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            } : false
-          }
+          { label: 'Duals', data: data.duals, backgroundColor: 'rgba(16,185,129,0.75)', borderColor: '#10b981', borderWidth: 1, borderRadius: 6, fill: chartType==='line' },
+          { label: 'Singles', data: data.singles, backgroundColor: 'rgba(99,102,241,0.75)', borderColor: '#6366f1', borderWidth: 1, borderRadius: 6, fill: chartType==='line' },
+          { label: 'Comms', data: data.comms, backgroundColor: 'rgba(249,115,22,0.75)', borderColor: '#f97316', borderWidth: 1, borderRadius: 6, fill: chartType==='line' }
         ]
       },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          title: { display:true, text:`${data.label} – Install Types (All Teams)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
-          legend: { labels:{ color:'#cbd5e1', font:{size:14} } },
-          datalabels: chartType==='bar' ? {} : false
-        },
-        scales: {
-          x: { ticks:{ color:'#94a3b8', font:{size:chartType==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
-          y: { beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:5 }, grid:{color:'#334155'} }
-        }
-      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { title:{display:true, text:`${data.label} – Install Types`, color:'#e2e8f0'} }, scales: { x:{grid:{color:'#334155'}, ticks:{color:'#94a3b8'}}, y:{grid:{color:'#334155'}, ticks:{color:'#94a3b8'}} } },
       plugins: [ChartDataLabels]
     });
   }
 
-  // ── VIEW: Aborts ──────────────────────────────────────────────────────────────
-
-  const ABORT_REASONS = [
-    'Tech abort','No access','Refused access','Higher skill set required',
-    'Work not required','DNO Issue','Stock issue','Wrong details',
-    'H&S issue','No abort code','Customer Cancellation','Left open',
-  ];
-
+  const ABORT_REASONS = ['Tech abort','No access','Refused access','Higher skill set required','Work not required','DNO Issue','Stock issue','Wrong details','H&S issue','No abort code','Customer Cancellation','Left open'];
+  
   function normaliseReason(raw) {
     if (!raw) return ['No abort code'];
-    const str = raw.trim();
-    const multMatch = str.match(/^(.+?)\s*[xX×](\d+)\s*$/);
-    let baseStr = str, multiplier = 1;
-    if (multMatch) { baseStr = multMatch[1].trim(); multiplier = parseInt(multMatch[2]) || 1; }
-    const parts = baseStr.split(',').map(p => p.trim()).filter(Boolean);
-    const results = [];
-    parts.forEach(part => { const matched = fuzzyMatchReason(part); for (let i=0;i<multiplier;i++) results.push(matched); });
-    return results;
-  }
-
-  function fuzzyMatchReason(str) {
-    const s = str.toLowerCase().replace(/[^a-z0-9 &]/g,'').trim();
-    const map = {
-      'tech abort':'Tech abort','technical abort':'Tech abort',
-      'no access':'No access','refused access':'Refused access','refused':'Refused access',
-      'higher skill set required':'Higher skill set required','higher skill':'Higher skill set required','skill set':'Higher skill set required',
-      'work not required':'Work not required','not required':'Work not required',
-      'dno issue':'DNO Issue','dno':'DNO Issue',
-      'stock issue':'Stock issue','stock':'Stock issue',
-      'wrong details':'Wrong details','wrong detail':'Wrong details',
-      'hs issue':'H&S issue','h&s issue':'H&S issue','h&s':'H&S issue','health and safety':'H&S issue',
-      'no abort code':'No abort code','no code':'No abort code',
-      'customer cancellation':'Customer Cancellation','customer cancel':'Customer Cancellation','cancellation':'Customer Cancellation',
-      'left open':'Left open',
-    };
-    if (map[s]) return map[s];
-    for (const [key,val] of Object.entries(map)) { if (s.includes(key)||key.includes(s)) return val; }
-    for (const canon of ABORT_REASONS) { if (s.includes(canon.toLowerCase())||canon.toLowerCase().includes(s)) return canon; }
-    return 'No abort code';
+    const str = raw.trim().toLowerCase();
+    for (const r of ABORT_REASONS) { if (str.includes(r.toLowerCase())) return [r]; }
+    return ['No abort code'];
   }
 
   async function loadAborts() {
     const fromDate = document.getElementById('abortFrom').value;
     const toDate   = document.getElementById('abortTo').value;
     if (!fromDate || !toDate) return;
-
     const abortsChartEl = document.getElementById('abortsChartContainer');
-    abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">Loading…</div>';
-
+    abortsChartEl.innerHTML = '<div class="loading">Loading…</div>';
     try {
       const q = query(collection(db,"aborts"),where("date",">=",fromDate),where("date","<=",toDate),orderBy("date","asc"));
       const snap = await getDocs(q);
       const allAborts = [];
-      snap.forEach(doc => { const d = doc.data(); allAborts.push({...d, teamLeader: normTeam(d.teamLeader)}); });
-
+      snap.forEach(doc => { allAborts.push({...doc.data(), teamLeader: normTeam(doc.data().teamLeader)}); });
       const filtered = currentTeam==='all' ? allAborts : allAborts.filter(r=>r.teamLeader===currentTeam);
+      
+      const reasonTotals = {}; ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
+      filtered.forEach(row => { const resolved = normaliseReason(row.reason||''); resolved.forEach(canon => { reasonTotals[canon] += (Number(row.total)||1); }); });
 
-      if (filtered.length === 0) {
-        abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">No abort records found for this period.</div>';
-        setStats(`<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">0</div></div>`);
-        return;
-      }
-
-      const reasonTotals = {};
-      ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
-      filtered.forEach(row => {
-        const rawTotal = Number(row.total)||1;
-        const resolved = normaliseReason(row.reason||'');
-        const share = rawTotal/resolved.length;
-        resolved.forEach(canon => { reasonTotals[canon] = (reasonTotals[canon]||0) + share; });
-      });
-      ABORT_REASONS.forEach(r => { reasonTotals[r] = Math.round(reasonTotals[r]); });
-
-      const grandTotal = ABORT_REASONS.reduce((s,r)=>s+reasonTotals[r],0);
-      const topReason  = ABORT_REASONS.slice().sort((a,b)=>reasonTotals[b]-reasonTotals[a])[0];
-      const uniqueEng  = new Set(filtered.map(r=>r.engineer)).size;
-
-      setStats(
-        `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>` +
-        `<div class="stats-box"><div class="stats-label">Engineers</div><div class="stats-value">${uniqueEng}</div></div>` +
-        `<div class="stats-box" style="min-width:200px"><div class="stats-label">Top Reason</div><div class="stats-value orange-grad" style="font-size:1rem;line-height:1.3;padding-top:2px">${topReason}</div></div>`
-      );
+      const grandTotal = Object.values(reasonTotals).reduce((a,b)=>a+b,0);
+      setStats(`<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>`);
 
       abortsChartEl.innerHTML = '';
       const abortCtx = document.createElement('canvas');
       abortsChartEl.appendChild(abortCtx);
-      if (abortChart) abortChart.destroy();
-
-      const chartData = ABORT_REASONS.map(r => reasonTotals[r]);
-      abortChart = new Chart(abortCtx, {
+      if (chart) chart.destroy();
+      chart = new Chart(abortCtx, {
         type: 'bar',
-        data: {
-          labels: ABORT_REASONS,
-          datasets: [{
-            label: 'Aborts', data: chartData,
-            backgroundColor: chartData.map(v => v===Math.max(...chartData)?'rgba(239,68,68,0.8)':'rgba(249,115,22,0.75)'),
-            borderColor: chartData.map(v => v===Math.max(...chartData)?'#ef4444':'#f97316'),
-            borderWidth: 1, borderRadius: 5,
-            datalabels: {
-              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:12},
-              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-            }
-          }]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          layout: { padding:{ top:24 } },
-          plugins: {
-            title: { display:true, text:`Aborts by Reason — ${currentTeam==='all'?'All Teams':currentTeam} (${fromDate} → ${toDate})`, color:'#e2e8f0', font:{size:16,weight:'600'}, padding:{bottom:20} },
-            legend: { display:false },
-            tooltip: { callbacks:{ label: c=>` Total: ${c.raw}` } },
-            datalabels: {}
-          },
-          scales: {
-            x: { ticks:{ color:'#94a3b8', font:{size:11}, padding:4, maxRotation:90, minRotation:90, autoSkip:false }, grid:{color:'#334155'} },
-            y: { beginAtZero:true, ticks:{ color:'#94a3b8', precision:0 }, grid:{color:'#334155'} }
-          }
-        },
-        plugins: [ChartDataLabels]
+        data: { labels: ABORT_REASONS, datasets: [{ data: ABORT_REASONS.map(r=>reasonTotals[r]), backgroundColor: '#f97316' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: {display:false} } }
       });
-
-    } catch (err) {
-      console.error(err);
-      document.getElementById('abortsChartContainer').innerHTML =
-        `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);font-size:1rem">${err.message}</div>`;
-    }
+    } catch (err) { console.error(err); }
   }
-
-  // ── Dual-axis chart options ───────────────────────────────────────────────────
 
   function dualAxisOptions(title) {
     return {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
-      plugins: {
-        title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
-        legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
-        tooltip: { callbacks:{ label: c => c.dataset.label==='Completion %'?(c.raw!==null?` Completion: ${c.raw}%`:' Completion: No data'):` Meters: ${c.raw}` } }
-      },
+      plugins: { title: { display:true, text:title, color:'#e2e8f0', font:{size:16} }, legend: { labels:{color:'#cbd5e1'} } },
       scales: {
-        x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
-        yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
-        yCompletion: { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } }
+        yMeters: { type:'linear', position:'left', grid:{color:'#334155'}, ticks:{color:'#94a3b8'} },
+        yCompletion: { type:'linear', position:'right', max:100, grid:{drawOnChartArea:false}, ticks:{color:'#10b981', callback: v=>`${v}%`} }
       }
     };
   }
-
-  // ── Main render dispatcher ────────────────────────────────────────────────────
 
   async function updateView() {
     const chartContainer  = document.getElementById('chartContainer');
@@ -1023,74 +742,42 @@
     const monthSection    = document.getElementById('monthSection');
 
     if (currentView === 'aborts') {
-      chartContainer.style.display  = 'none';
-      abortsContainer.style.display = 'block';
-      periodSection.style.display   = 'none';
-      monthSection.style.display    = 'none';
-      document.getElementById('pageTitle').textContent = 'Aborts Breakdown';
+      chartContainer.style.display = 'none'; abortsContainer.style.display = 'block';
+      periodSection.style.display = 'none'; monthSection.style.display = 'none';
       await loadAborts();
     } else {
-      chartContainer.style.display  = 'block';
-      abortsContainer.style.display = 'none';
-      periodSection.style.display   = 'block';
-      monthSection.style.display    = 'block';
-      chartContainer.innerHTML = '<div class="loading">Loading…</div>';
-      chartContainer.appendChild(ctx);
-      try {
-        if (currentView === 'mix')   await renderMix();
-        if (currentView === 'types') await renderTypes();
-      } catch (err) {
-        console.error(err);
-        chartContainer.innerHTML = `<div class="error-msg">${err.message}<br><small>F12 → Console for details</small></div>`;
-      }
+      chartContainer.style.display = 'block'; abortsContainer.style.display = 'none';
+      periodSection.style.display = 'block'; monthSection.style.display = 'block';
+      if (currentView === 'mix') await renderMix();
+      else if (currentView === 'types') await renderTypes();
     }
   }
 
-  // ── Event listeners ───────────────────────────────────────────────────────────
-
-  document.querySelectorAll('.view-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentView = btn.dataset.view;
-      updateView();
-    });
-  });
-
-  document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentPeriod = btn.dataset.period;
-      currentMonth  = null;
-      updateView();
-    });
-  });
-
-  document.querySelectorAll('.team-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentTeam = btn.dataset.team;
-      updateView();
-    });
-  });
-
-  document.querySelectorAll('.month-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentMonth  = btn.dataset.month;
-      currentPeriod = null;
-      updateView();
-    });
-  });
-
+  // Event Listeners
+  document.querySelectorAll('.view-tab').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); currentView = btn.dataset.view; updateView();
+  }));
+  document.querySelectorAll('.period-btn').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); currentPeriod = btn.dataset.period; currentMonth = null; updateView();
+  }));
+  document.querySelectorAll('.team-btn').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); currentTeam = btn.dataset.team; updateView();
+  }));
+  document.querySelectorAll('.month-btn').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); currentMonth = btn.dataset.month; currentPeriod = null; updateView();
+  }));
   document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
 
-  // ── Bootstrap: load headcount first, then render ──────────────────────────────
+  const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
+  document.getElementById('abortFrom').value = sevenAgo.toISOString().split('T')[0];
+  document.getElementById('abortTo').value   = today.toISOString().split('T')[0];
+
   await loadHeadcount();
   updateView();
 </script>
