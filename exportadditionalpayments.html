@@ -37,14 +37,13 @@
         .loading { text-align: center; padding: 40px; color: #666; font-size: 1.1em; }
         .no-data { text-align: center; padding: 60px 40px; color: #666; font-size: 1.2em; background: #f8f9fa; border-radius: 10px; }
         .info-box { background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #0c5460; }
-
+        
         /* ── Engineer claim cards ── */
         .engineer-block { margin-bottom: 30px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .engineer-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .engineer-header-name { font-size: 1.05em; font-weight: 700; }
         .engineer-header-total { font-size: 0.95em; opacity: 0.95; }
 
-        /* mirrors .additional-payment-section from engineer.html */
         .claim-section { padding: 18px 20px; background: #f0fdf4; border-left: 4px solid #10b981; border-bottom: 1px solid #e0e0e0; }
         .claim-section:last-child { border-bottom: none; border-radius: 0 0 12px 12px; }
         .claim-section.changes { background: #ecfeff; border-left-color: #0891b2; }
@@ -71,7 +70,6 @@
         .comment-box.rejection { background: #fee2e2; border-left: 4px solid #ef4444; color: #991b1b; }
         .comment-box.approval  { background: #dbeafe; border-left: 4px solid #3b82f6; color: #1e3a8a; }
 
-        /* ── Bonus table ── */
         .preview-table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .preview-table th { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; text-align: left; font-weight: 600; font-size: 0.95em; }
         .preview-table td { padding: 12px 15px; border-bottom: 1px solid #e0e0e0; font-size: 0.95em; }
@@ -80,7 +78,7 @@
         .avg-bonus-badge { display: inline-block; background: #e9f7ef; color: #1a7a4a; border: 1px solid #a3d9b7; border-radius: 5px; font-size: 0.8em; padding: 2px 7px; margin-left: 6px; font-weight: 600; white-space: nowrap; }
 
         @media (max-width: 768px) {
-            .container { padding: 20px; }
+            .container { padding: 40px 20px; }
             .form-grid { grid-template-columns: 1fr; }
             .stats-section { grid-template-columns: 1fr; }
             .export-buttons { grid-template-columns: 1fr; }
@@ -151,9 +149,7 @@ const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CALCULATION FUNCTIONS — copied verbatim from engineer.html
-//  calcPayBreakdown  →  calculatePaymentBreakdown in engineer.html
-//  calcApprovedTotal →  calcApprovedTotal in engineer.html
+// UPDATED CALCULATION FUNCTIONS (SYNCHRONIZED WITH PORTAL)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function calcPayBreakdown(payment, dateObj) {
@@ -178,9 +174,10 @@ function calcPayBreakdown(payment, dateObj) {
     if (payment.workingAway === 'yes') bd.workingAway.amount = 50;
 
     if (payment.overtime === 'yes' && payment.overtimeHours > 0) {
-        if (isSun || payment.isBankHoliday) { bd.overtime.rate = 37.50; bd.overtime.rateLabel = isSun ? 'Sunday' : 'Bank Holiday'; }
-        else if (isSat)                      { bd.overtime.rate = 28.13; bd.overtime.rateLabel = 'Saturday'; }
-        else                                 { bd.overtime.rate = 24.94; bd.overtime.rateLabel = 'Weekday'; }
+        // SYNCHRONIZED RATES: Sunday/BH £39.90, Sat £29.93, Weekday £24.94
+        if (isSun || payment.isBankHoliday) { bd.overtime.rate = 39.90; bd.overtime.rateLabel = isSun ? 'Sunday' : 'Bank Holiday'; }
+        else if (isSat)                     { bd.overtime.rate = 29.93; bd.overtime.rateLabel = 'Saturday'; }
+        else                                { bd.overtime.rate = 24.94; bd.overtime.rateLabel = 'Weekday'; }
         bd.overtime.amount = payment.overtimeHours * bd.overtime.rate;
     }
 
@@ -199,6 +196,7 @@ function calcPayBreakdown(payment, dateObj) {
 function calcApprovedTotal(payment, dateObj) {
     const bd = calcPayBreakdown(payment, dateObj);
     let total = 0;
+    // ONLY CALCULATE TOTAL IF APPROVED OR APPROVED WITH CHANGES
     if (payment.status === 'approved') {
         total = bd.standby.amount + bd.workingAway.amount + bd.overtime.amount + bd.jobs.amount;
     } else if (payment.status === 'approved-with-changes') {
@@ -223,378 +221,188 @@ function calcApprovedTotal(payment, dateObj) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  BUILD CLAIM HTML — mirrors buildPaymentHTML from engineer.html exactly
+// PREVIEW AND UI LOGIC
 // ─────────────────────────────────────────────────────────────────────────────
+
 function buildClaimHTML(p, dateObj, idx, total) {
     const bd    = calcPayBreakdown(p, dateObj);
     const hasAm = p.status === 'approved-with-changes' && p.amendments;
     const details = [];
 
-    // ── Standby ──
     if (p.standby === 'yes') {
-        if (hasAm && p.amendments.standby === false) {
-            details.push(`<div class="detail-item removed">✓ Standby (${bd.standby.label}): £${bd.standby.amount.toFixed(2)} <span class="removed-tag">[REMOVED]</span></div>`);
-        } else {
-            details.push(`<div class="detail-item">✓ Standby Payment (${bd.standby.label}): <strong>£${bd.standby.amount.toFixed(2)}</strong></div>`);
-        }
+        if (hasAm && p.amendments.standby === false) details.push(`<div class="detail-item removed">✓ Standby (${bd.standby.label}): £${bd.standby.amount.toFixed(2)} <span class="removed-tag">[REMOVED]</span></div>`);
+        else details.push(`<div class="detail-item">✓ Standby Payment (${bd.standby.label}): <strong>£${bd.standby.amount.toFixed(2)}</strong></div>`);
     }
 
-    // ── Working Away ──
     if (p.workingAway === 'yes') {
-        if (hasAm && p.amendments.workingAway === false) {
-            details.push(`<div class="detail-item removed">✓ Working Away Allowance: £${bd.workingAway.amount.toFixed(2)} <span class="removed-tag">[REMOVED]</span></div>`);
-        } else {
-            details.push(`<div class="detail-item">✓ Working Away Allowance: <strong>£${bd.workingAway.amount.toFixed(2)}</strong></div>`);
-        }
+        if (hasAm && p.amendments.workingAway === false) details.push(`<div class="detail-item removed">✓ Working Away: £${bd.workingAway.amount.toFixed(2)} <span class="removed-tag">[REMOVED]</span></div>`);
+        else details.push(`<div class="detail-item">✓ Working Away Allowance: <strong>£${bd.workingAway.amount.toFixed(2)}</strong></div>`);
     }
 
-    // ── Overtime ──
     if (p.overtime === 'yes') {
         const st = p.overtimeStartTime || 'N/A';
         const et = p.overtimeEndTime   || 'N/A';
-        if (hasAm && p.amendments.overtime === false) {
-            details.push(`<div class="detail-item removed">✓ Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et}) <span class="removed-tag">[REMOVED]</span></div>`);
-        } else if (hasAm && p.amendments.overtimeHours) {
+        if (hasAm && p.amendments.overtime === false) details.push(`<div class="detail-item removed">✓ Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et}) <span class="removed-tag">[REMOVED]</span></div>`);
+        else if (hasAm && p.amendments.overtimeHours) {
             const nh = p.amendments.overtimeHours;
-            details.push(`<div class="detail-item removed">✓ Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et})</div>`);
-            details.push(`<div class="detail-item">✓ Overtime (MODIFIED): ${nh.toFixed(1)}h (${p.amendments.overtimeStartTime||st}–${p.amendments.overtimeEndTime||et})</div>`);
-            details.push(`<div class="detail-item">&nbsp;&nbsp;Rate: £${bd.overtime.rate.toFixed(2)}/hr (${bd.overtime.rateLabel}) | Reason: ${p.overtimeReason||'N/A'}</div>`);
-            details.push(`<div class="detail-item">&nbsp;&nbsp;<strong>Overtime Total: £${(nh*bd.overtime.rate).toFixed(2)}</strong></div>`);
+            details.push(`<div class="detail-item removed">✓ Overtime: ${p.overtimeHours.toFixed(1)}h</div>`);
+            details.push(`<div class="detail-item">✓ Overtime (MODIFIED): ${nh.toFixed(1)}h | Total: £${(nh*bd.overtime.rate).toFixed(2)}</div>`);
         } else {
-            details.push(`<div class="detail-item">✓ Overtime: ${p.overtimeHours.toFixed(1)}h (${st}–${et})</div>`);
-            details.push(`<div class="detail-item">&nbsp;&nbsp;Rate: £${bd.overtime.rate.toFixed(2)}/hr (${bd.overtime.rateLabel}) | Reason: ${p.overtimeReason||'N/A'}</div>`);
-            details.push(`<div class="detail-item">&nbsp;&nbsp;<strong>Overtime Total: £${bd.overtime.amount.toFixed(2)}</strong></div>`);
+            details.push(`<div class="detail-item">✓ Overtime: ${p.overtimeHours.toFixed(1)}h | Total: £${bd.overtime.amount.toFixed(2)}</div>`);
         }
     }
 
-    // ── Jobs ──
     if (p.hasJobs && p.jobs && p.jobs.length > 0) {
         const rm = (hasAm && p.amendments.removeJobs) ? p.amendments.removeJobs : [];
-        details.push(`<div class="detail-item">✓ Additional Jobs (${p.jobs.length}):</div>`);
         let jTotal = 0;
-        p.jobs.forEach((j, i) => {
+        p.jobs.forEach(j => {
             const amt = j.jobType==='Dual' ? 80 : j.jobType==='Single' ? 50 : j.jobType==='Comms' ? 25 : 0;
-            const isRm = rm.includes(j.jobNumber);
-            if (isRm) {
-                details.push(`<div class="detail-item removed">&nbsp;&nbsp;• Job ${i+1}: ${j.jobNumber} – ${j.jobType} (${j.postcode}) – £${amt} <span class="removed-tag">[REMOVED]</span></div>`);
-            } else if (j.claimPricePerJob === 'yes') {
-                details.push(`<div class="detail-item">&nbsp;&nbsp;• Job ${i+1}: ${j.jobNumber} – ${j.jobType} (${j.postcode}) – <strong>£${amt}</strong></div>`);
-                jTotal += amt;
-            } else {
-                details.push(`<div class="detail-item">&nbsp;&nbsp;• Job ${i+1}: ${j.jobNumber} – ${j.jobType} (${j.postcode}) – Not claimed</div>`);
-            }
+            if (j.claimPricePerJob === 'yes' && !rm.includes(j.jobNumber)) jTotal += amt;
         });
-        if (jTotal > 0) details.push(`<div class="detail-item"><strong>Jobs Total: £${jTotal.toFixed(2)}</strong></div>`);
+        if (jTotal > 0) details.push(`<div class="detail-item">✓ Additional Jobs Total: <strong>£${jTotal.toFixed(2)}</strong></div>`);
     }
 
-    // ── Final total ──
-    let finalTotal = calcApprovedTotal(p, dateObj);
-    if (p.status === 'pending')  finalTotal = bd.standby.amount + bd.workingAway.amount + bd.overtime.amount + bd.jobs.amount;
-    if (p.status === 'rejected') finalTotal = bd.standby.amount + bd.workingAway.amount + bd.overtime.amount + bd.jobs.amount;
+    const finalTotal = calcApprovedTotal(p, dateObj);
+    const badge = p.status === 'approved' ? '<span class="badge badge-approved">✓ Approved</span>' :
+                  p.status === 'approved-with-changes' ? '<span class="badge badge-changes">✓ Approved with Changes</span>' :
+                  p.status === 'rejected' ? '<span class="badge badge-rejected">✗ Rejected</span>' :
+                  '<span class="badge badge-pending">⏳ Pending</span>';
 
-    const totalLabel =
-        p.status === 'approved'              ? 'APPROVED AMOUNT' :
-        p.status === 'approved-with-changes' ? 'APPROVED AMOUNT (WITH CHANGES)' :
-        p.status === 'rejected'              ? 'TOTAL CLAIMED (REJECTED)' :
-                                               'TOTAL CLAIMED (PENDING)';
+    const sectionCls = p.status === 'approved-with-changes' ? 'claim-section changes' :
+                      p.status === 'pending' ? 'claim-section pending' :
+                      p.status === 'rejected' ? 'claim-section rejected' : 'claim-section';
 
-    const totalCls = p.status === 'rejected' ? 'detail-total rejected-total'
-                   : p.status === 'pending'  ? 'detail-total pending-total'
-                   : 'detail-total';
-
-    details.push(`<div class="${totalCls}">${totalLabel}: £${finalTotal.toFixed(2)}</div>`);
-
-    // ── Badge ──
-    const badge =
-        p.status === 'approved'              ? '<span class="badge badge-approved">✓ Approved</span>' :
-        p.status === 'approved-with-changes' ? '<span class="badge badge-changes">✓ Approved with Changes</span>' :
-        p.status === 'rejected'              ? '<span class="badge badge-rejected">✗ Rejected</span>' :
-                                               '<span class="badge badge-pending">⏳ Pending Approval</span>';
-
-    const sectionCls = p.status === 'approved-with-changes' ? 'claim-section changes'
-                     : p.status === 'pending'               ? 'claim-section pending'
-                     : p.status === 'rejected'              ? 'claim-section rejected'
-                     : 'claim-section';
-
-    const claimLabel = total > 1 ? `💳 Payment Claim ${idx+1} of ${total}` : '💳 Additional Payment Claim';
-
-    let html = `
+    return `
         <div class="${sectionCls}">
-            <div class="claim-title">${claimLabel} ${badge}</div>
-            <div class="payment-details">${details.join('')}</div>`;
-
-    if (p.status === 'rejected' && p.rejectionComment) {
-        html += `<div class="comment-box rejection"><strong>Rejection Reason:</strong> ${p.rejectionComment}</div>`;
-    }
-    if (p.status === 'approved-with-changes' && p.changesComment) {
-        html += `<div class="comment-box approval"><strong>Approval Comments:</strong> ${p.changesComment}</div>`;
-    }
-    html += `</div>`;
-    return html;
+            <div class="claim-title">💳 ${p.date} ${badge}</div>
+            <div class="payment-details">${details.join('')} <div class="detail-total">APPROVED TOTAL: £${finalTotal.toFixed(2)}</div></div>
+        </div>`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  STATE
-// ─────────────────────────────────────────────────────────────────────────────
-let allClaimsByEngineer = {};  // engineerName -> sorted array of claim docs
-let bonusSummary        = [];
+let allClaimsByEngineer = {}; 
+let bonusSummary = [];
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  LOAD PREVIEW
-// ─────────────────────────────────────────────────────────────────────────────
 window.loadPreview = async function() {
     const startDate = document.getElementById('startDate').value;
     const endDate   = document.getElementById('endDate').value;
-    if (!startDate || !endDate) { alert('Please select both start and end dates'); return; }
-    if (startDate > endDate)    { alert('Start date must be before end date'); return; }
+    if (!startDate || !endDate) { alert('Please select dates'); return; }
 
-    document.getElementById('loadingDiv').style.display    = 'block';
+    document.getElementById('loadingDiv').style.display = 'block';
     document.getElementById('previewSection').style.display= 'none';
-    document.getElementById('statsSection').style.display  = 'none';
-    document.getElementById('noDataDiv').style.display     = 'none';
+    document.getElementById('statsSection').style.display = 'none';
 
     try {
-        // ── 1. Additional payments — ALL statuses, grouped by engineer ────────
         const pmSnap = await getDocs(collection(db, 'additionalPayments'));
         allClaimsByEngineer = {};
         pmSnap.forEach(doc => {
             const d = doc.data();
-            if (!d.date || d.date < startDate || d.date > endDate) return;
-            if (!allClaimsByEngineer[d.engineerName]) allClaimsByEngineer[d.engineerName] = [];
-            allClaimsByEngineer[d.engineerName].push(d);
+            if (d.date >= startDate && d.date <= endDate) {
+                if (!allClaimsByEngineer[d.engineerName]) allClaimsByEngineer[d.engineerName] = [];
+                allClaimsByEngineer[d.engineerName].push(d);
+            }
         });
-        // sort each engineer's claims by date ascending
-        Object.values(allClaimsByEngineer).forEach(arr => arr.sort((a,b) => a.date.localeCompare(b.date)));
 
-        // ── 2. Performance bonuses — assign per date (mirrors engineer.html) ──
         const bSnap = await getDocs(collection(db, 'bonuses'));
         const engineerDailyBonus = {};
         bSnap.forEach(doc => {
             const d = doc.data();
-            if (!d.dailyBonuses || !d.engineerName) return;
-            if (!engineerDailyBonus[d.engineerName]) engineerDailyBonus[d.engineerName] = {};
-            // ASSIGN — same as engineer.html: bonusData[date] = d.dailyBonuses[date]
-            Object.keys(d.dailyBonuses).forEach(date => {
-                engineerDailyBonus[d.engineerName][date] = d.dailyBonuses[date];
-            });
+            if (d.dailyBonuses && d.engineerName) {
+                if (!engineerDailyBonus[d.engineerName]) engineerDailyBonus[d.engineerName] = {};
+                Object.keys(d.dailyBonuses).forEach(date => {
+                    if (date >= startDate && date <= endDate) engineerDailyBonus[d.engineerName][date] = d.dailyBonuses[date];
+                });
+            }
         });
 
-        // ── 3. Average bonuses ────────────────────────────────────────────────
         const avgSnap = await getDocs(collection(db, 'Average Bonuses'));
         const avgBonusMap = {};
-        avgSnap.forEach(doc => {
-            const d = doc.data();
-            if (d.name) avgBonusMap[d.name] = parseFloat(d.fullDay) || 0;
-        });
+        avgSnap.forEach(doc => { const d = doc.data(); if (d.name) avgBonusMap[d.name] = parseFloat(d.fullDay) || 0; });
 
-        // ── 4. Attendance (H, H/H, Training) ─────────────────────────────────
         const attSnap = await getDocs(collection(db, 'attendance'));
         const attendanceMap = {};
         attSnap.forEach(doc => {
             const d = doc.data();
-            if (!d.date || d.date < startDate || d.date > endDate) return;
-            if (!['H','H/H','Training'].includes(d.attendance)) return;
-            if (!attendanceMap[d.engineerName]) attendanceMap[d.engineerName] = [];
-            attendanceMap[d.engineerName].push({ date: d.date, attendance: d.attendance });
+            if (d.date >= startDate && d.date <= endDate && ['H','H/H','Training'].includes(d.attendance)) {
+                if (!attendanceMap[d.engineerName]) attendanceMap[d.engineerName] = [];
+                attendanceMap[d.engineerName].push(d);
+            }
         });
-
-        // ── 5. Build bonus summary ─────────────────────────────────────────────
-        const allBonusNames = new Set([
-            ...Object.keys(engineerDailyBonus),
-            ...Object.keys(attendanceMap)
-        ]);
 
         bonusSummary = [];
-        allBonusNames.forEach(name => {
-            // perf bonus: sum daily values in range (assign pattern already handled above)
-            const dailyMap = engineerDailyBonus[name] || {};
-            let perfTotal = 0;
-            Object.entries(dailyMap).forEach(([date, amt]) => {
-                if (date >= startDate && date <= endDate) perfTotal += parseFloat(amt || 0);
-            });
-
-            // avg bonus for H/H/H/Training days — mirrors engineer.html exactly
-            const avg  = avgBonusMap[name] || 0;
-            const days = attendanceMap[name] || [];
-            let avgBonusTotal = 0;
-            const avgBonusDays = [];
-            days.forEach(({ date, attendance }) => {
-                let amount = 0;
-                if      (attendance === 'H')        amount = avg;
-                else if (attendance === 'H/H')      amount = avg / 2;
-                else if (attendance === 'Training') amount = avg;
-                if (amount > 0) { avgBonusTotal += amount; avgBonusDays.push({ date, attendance, amount }); }
-            });
-
-            const totalBonus = perfTotal + avgBonusTotal;
-            if (totalBonus > 0) bonusSummary.push({ engineerName: name, perfTotal, avgBonusTotal, avgBonusDays, totalBonus });
+        const allNames = new Set([...Object.keys(engineerDailyBonus), ...Object.keys(attendanceMap)]);
+        allNames.forEach(name => {
+            let perfTotal = Object.values(engineerDailyBonus[name] || {}).reduce((s, v) => s + parseFloat(v || 0), 0);
+            let avg = avgBonusMap[name] || 0;
+            let avgTotal = (attendanceMap[name] || []).reduce((s, a) => s + (a.attendance === 'H/H' ? avg/2 : avg), 0);
+            if (perfTotal + avgTotal > 0) bonusSummary.push({ engineerName: name, perfTotal, avgBonusTotal: avgTotal, totalBonus: perfTotal + avgTotal });
         });
-        bonusSummary.sort((a,b) => a.engineerName.localeCompare(b.engineerName));
 
         document.getElementById('loadingDiv').style.display = 'none';
-
-        const hasPayments = Object.keys(allClaimsByEngineer).length > 0;
-        const hasBonus    = bonusSummary.length > 0;
-        if (!hasPayments && !hasBonus) {
-            document.getElementById('noDataDiv').style.display = 'block';
-            return;
-        }
-
         displayStats();
         displayPreview();
-
-    } catch (err) {
-        console.error(err);
-        document.getElementById('loadingDiv').style.display = 'none';
-        alert('Error loading data: ' + err.message);
-    }
+    } catch (err) { console.error(err); document.getElementById('loadingDiv').style.display = 'none'; }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  DISPLAY
-// ─────────────────────────────────────────────────────────────────────────────
 function displayStats() {
-    const totalPayments = Object.values(allClaimsByEngineer).reduce((sum, claims) =>
+    const totalPayments = Object.values(allClaimsByEngineer).reduce((sum, claims) => 
         sum + claims.reduce((s, p) => s + calcApprovedTotal(p, new Date(p.date+'T00:00:00')), 0), 0);
     const totalBonus = bonusSummary.reduce((s,b) => s + b.totalBonus, 0);
-
     document.getElementById('statsSection').style.display = 'grid';
     document.getElementById('statsSection').innerHTML = `
-        <div class="stat-card payments">
-            <div class="stat-label">Total Approved Payments</div>
-            <div class="stat-value">£${totalPayments.toFixed(2)}</div>
-        </div>
-        <div class="stat-card bonus">
-            <div class="stat-label">Total Bonuses</div>
-            <div class="stat-value">£${totalBonus.toFixed(2)}</div>
-        </div>
-        <div class="stat-card total">
-            <div class="stat-label">Grand Total</div>
-            <div class="stat-value">£${(totalPayments+totalBonus).toFixed(2)}</div>
-        </div>`;
+        <div class="stat-card payments"><div class="stat-label">Approved Payments</div><div class="stat-value">£${totalPayments.toFixed(2)}</div></div>
+        <div class="stat-card bonus"><div class="stat-label">Total Bonuses</div><div class="stat-value">£${totalBonus.toFixed(2)}</div></div>
+        <div class="stat-card total"><div class="stat-label">Grand Total</div><div class="stat-value">£${(totalPayments+totalBonus).toFixed(2)}</div></div>`;
 }
 
 function displayPreview() {
     document.getElementById('previewSection').style.display = 'block';
-    const startDate = document.getElementById('startDate').value;
-    const endDate   = document.getElementById('endDate').value;
-    const dateRange = `${new Date(startDate+'T00:00:00').toLocaleDateString('en-GB')} – ${new Date(endDate+'T00:00:00').toLocaleDateString('en-GB')}`;
-
-    // ── Payments ──
     const container = document.getElementById('paymentsContainer');
-    const engineers = Object.keys(allClaimsByEngineer).sort();
-    if (engineers.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:30px;color:#666;background:#f8f9fa;border-radius:10px;">No additional payment claims found for this period</div>';
-    } else {
-        container.innerHTML = engineers.map(name => {
-            const claims   = allClaimsByEngineer[name];
-            const approved = claims.reduce((s,p) => s + calcApprovedTotal(p, new Date(p.date+'T00:00:00')), 0);
-            const claimsHTML = claims.map((p,i) => buildClaimHTML(p, new Date(p.date+'T00:00:00'), i, claims.length)).join('');
-            return `
-                <div class="engineer-block">
-                    <div class="engineer-header">
-                        <span class="engineer-header-name">👷 ${name} <small style="opacity:0.8;font-weight:400;">(${claims.length} claim${claims.length!==1?'s':''})</small></span>
-                        <span class="engineer-header-total">Approved Total: £${approved.toFixed(2)}</span>
-                    </div>
-                    ${claimsHTML}
-                </div>`;
-        }).join('');
-    }
+    container.innerHTML = Object.keys(allClaimsByEngineer).sort().map(name => {
+        const claims = allClaimsByEngineer[name];
+        const approved = claims.reduce((s,p) => s + calcApprovedTotal(p, new Date(p.date+'T00:00:00')), 0);
+        return `<div class="engineer-block">
+            <div class="engineer-header"><span>👷 ${name}</span><span>Approved: £${approved.toFixed(2)}</span></div>
+            ${claims.map((p,i) => buildClaimHTML(p, new Date(p.date+'T00:00:00'), i, claims.length)).join('')}
+        </div>`;
+    }).join('');
 
-    // ── Bonus table ──
     const bonusTable = document.getElementById('bonusTable');
-    let bHTML = `<thead><tr><th>Engineer Name</th><th>Date Range</th><th>Performance Bonus</th><th>Holiday / Training Avg Bonus</th><th>Total Bonus</th></tr></thead><tbody>`;
-    if (bonusSummary.length === 0) {
-        bHTML += `<tr><td colspan="5" style="text-align:center;padding:20px;color:#666;">No bonuses found for this period</td></tr>`;
-    } else {
-        bonusSummary.forEach(b => {
-            let badge = '';
-            if (b.avgBonusTotal > 0 && b.avgBonusDays.length > 0) {
-                const tip = b.avgBonusDays.sort((a,c)=>a.date.localeCompare(c.date))
-                    .map(d => `${new Date(d.date+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} (${d.attendance==='H/H'?'Half Holiday':d.attendance}): £${d.amount.toFixed(2)}`).join(' | ');
-                badge = `<span class="avg-bonus-badge" title="${tip}">${b.avgBonusDays.length} day${b.avgBonusDays.length!==1?'s':''}</span>`;
-            }
-            bHTML += `<tr><td>${b.engineerName}</td><td>${dateRange}</td><td>£${b.perfTotal.toFixed(2)}</td><td>£${b.avgBonusTotal.toFixed(2)} ${badge}</td><td><strong>£${b.totalBonus.toFixed(2)}</strong></td></tr>`;
-        });
-    }
-    bHTML += '</tbody>';
-    bonusTable.innerHTML = bHTML;
+    bonusTable.innerHTML = `<thead><tr><th>Name</th><th>Performance</th><th>Avg Bonus</th><th>Total</th></tr></thead>
+        <tbody>${bonusSummary.map(b => `<tr><td>${b.engineerName}</td><td>£${b.perfTotal.toFixed(2)}</td><td>£${b.avgBonusTotal.toFixed(2)}</td><td><strong>£${b.totalBonus.toFixed(2)}</strong></td></tr>`).join('')}</tbody>`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CSV EXPORTS
-// ─────────────────────────────────────────────────────────────────────────────
 window.exportPaymentsCSV = function() {
-    const engineers = Object.keys(allClaimsByEngineer);
-    if (engineers.length === 0) { alert('No payments data to export'); return; }
-
-    const startDate = document.getElementById('startDate').value;
-    const endDate   = document.getElementById('endDate').value;
-
-    let csv = 'Engineer Name,Date,Day,Status,Standby Amount,Working Away,Overtime Hours,Overtime Rate,Overtime Total,Jobs Total,Approved Total,Notes\n';
-
-    engineers.sort().forEach(name => {
+    let csv = 'Engineer Name,Date,Status,Standby,Working Away,Overtime Total,Jobs Total,Approved Total\n';
+    Object.keys(allClaimsByEngineer).sort().forEach(name => {
         allClaimsByEngineer[name].forEach(p => {
             const dateObj = new Date(p.date+'T00:00:00');
-            const bd      = calcPayBreakdown(p, dateObj);
-            const hasAm   = p.status === 'approved-with-changes' && p.amendments;
-            const am      = hasAm ? p.amendments : {};
-
-            const standbyAmt     = (p.standby==='yes'     && am.standby    !==false) ? bd.standby.amount     : 0;
-            const workingAwayAmt = (p.workingAway==='yes' && am.workingAway!==false) ? bd.workingAway.amount  : 0;
-
-            let otHours = 0, otRate = 0, otTotal = 0;
-            if (p.overtime==='yes' && am.overtime!==false) {
-                otRate  = bd.overtime.rate;
-                otHours = (am.overtimeHours) ? am.overtimeHours : (p.overtimeHours || 0);
-                otTotal = otHours * otRate;
-            }
-
-            let jobsTotal = 0;
-            if (p.hasJobs && p.jobs) {
-                const rm = am.removeJobs || [];
-                p.jobs.forEach(j => {
-                    if (j.claimPricePerJob==='yes' && !rm.includes(j.jobNumber)) {
-                        if      (j.jobType==='Dual')   jobsTotal += 80;
-                        else if (j.jobType==='Single') jobsTotal += 50;
-                        else if (j.jobType==='Comms')  jobsTotal += 25;
-                    }
-                });
-            }
-
+            const bd = calcPayBreakdown(p, dateObj);
             const approved = calcApprovedTotal(p, dateObj);
-            const notes    = p.rejectionComment || p.changesComment || '';
+            // Export values only if approved or approved-with-changes, else 0 to match display
+            const isApproved = p.status === 'approved' || p.status === 'approved-with-changes';
+            
+            let otTotal = 0;
+            if(isApproved) {
+                const am = p.amendments || {};
+                otTotal = (p.status === 'approved-with-changes' && am.overtimeHours) ? am.overtimeHours * bd.overtime.rate : bd.overtime.amount;
+                if(p.status === 'approved-with-changes' && am.overtime === false) otTotal = 0;
+            }
 
-            csv += [
-                esc(name),
-                esc(dateObj.toLocaleDateString('en-GB')),
-                esc(dateObj.toLocaleDateString('en-GB',{weekday:'long'})),
-                esc(p.status || 'pending'),
-                standbyAmt     > 0 ? standbyAmt.toFixed(2)     : '0.00',
-                workingAwayAmt > 0 ? workingAwayAmt.toFixed(2)  : '0.00',
-                otHours        > 0 ? otHours.toFixed(2)         : '0.00',
-                otRate         > 0 ? otRate.toFixed(2)          : '0.00',
-                otTotal        > 0 ? otTotal.toFixed(2)         : '0.00',
-                jobsTotal      > 0 ? jobsTotal.toFixed(2)       : '0.00',
-                approved.toFixed(2),
-                esc(notes)
-            ].join(',') + '\n';
+            csv += [esc(name), p.date, esc(p.status), 
+                    (isApproved && (p.amendments?.standby !== false) ? bd.standby.amount : 0).toFixed(2),
+                    (isApproved && (p.amendments?.workingAway !== false) ? bd.workingAway.amount : 0).toFixed(2),
+                    otTotal.toFixed(2), 
+                    (isApproved ? approved - bd.standby.amount - bd.workingAway.amount - otTotal : 0).toFixed(2),
+                    approved.toFixed(2)].join(',') + '\n';
         });
     });
-
-    download(csv, `additional_payments_${startDate}_to_${endDate}.csv`);
+    download(csv, `payments_export.csv`);
 };
 
 window.exportBonusCSV = function() {
-    if (bonusSummary.length === 0) { alert('No bonus data to export'); return; }
-    const startDate = document.getElementById('startDate').value;
-    const endDate   = document.getElementById('endDate').value;
-    const dateRange = `${new Date(startDate+'T00:00:00').toLocaleDateString('en-GB')} – ${new Date(endDate+'T00:00:00').toLocaleDateString('en-GB')}`;
-    let csv = 'Engineer Name,Date Range,Performance Bonus,Holiday/Training Avg Bonus,Total Bonus\n';
-    bonusSummary.forEach(b => {
-        csv += `${esc(b.engineerName)},${esc(dateRange)},${b.perfTotal.toFixed(2)},${b.avgBonusTotal.toFixed(2)},${b.totalBonus.toFixed(2)}\n`;
-    });
-    download(csv, `bonus_summary_${startDate}_to_${endDate}.csv`);
+    let csv = 'Engineer Name,Performance Bonus,Avg Bonus,Total Bonus\n';
+    bonusSummary.forEach(b => { csv += `${esc(b.engineerName)},${b.perfTotal.toFixed(2)},${b.avgBonusTotal.toFixed(2)},${b.totalBonus.toFixed(2)}\n`; });
+    download(csv, `bonus_export.csv`);
 };
 
 function download(csv, filename) {
@@ -605,21 +413,13 @@ function download(csv, filename) {
     a.click();
 }
 
-function esc(str) {
-    if (str == null) return '';
-    str = String(str);
-    return (str.includes(',') || str.includes('"') || str.includes('\n'))
-        ? '"' + str.replace(/"/g, '""') + '"'
-        : str;
-}
+function esc(str) { return str ? `"${str.toString().replace(/"/g, '""')}"` : '""'; }
 
-// ── Default dates ──
 window.addEventListener('load', () => {
     const today = new Date();
-    const ago   = new Date(today);
-    ago.setDate(today.getDate() - 30);
-    document.getElementById('endDate').value   = today.toISOString().split('T')[0];
-    document.getElementById('startDate').value = ago.toISOString().split('T')[0];
+    document.getElementById('endDate').value = today.toISOString().split('T')[0];
+    today.setDate(today.getDate() - 30);
+    document.getElementById('startDate').value = today.toISOString().split('T')[0];
 });
 </script>
 </body>
