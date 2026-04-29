@@ -12,7 +12,7 @@
             --bg3:       #111928;
             --border:    rgba(255,255,255,0.07);
             --border2:   rgba(255,255,255,0.15);
-            --accent:    #00ff9d; /* Green accent for the Rota */
+            --accent:    #00ff9d; 
             --accent-dim: color-mix(in srgb, #00ff9d 15%, transparent);
             --text:      #e8edf8;
             --text2:     #8b97b0;
@@ -43,6 +43,8 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: var(--accent);
+            cursor: pointer;
+            user-select: none; /* Prevents text highlighting when triple-clicking */
         }
 
         .btn {
@@ -69,8 +71,12 @@
             color: var(--bg);
             border-color: var(--accent);
         }
-        .btn-save:hover {
+        .btn-save:hover:not(:disabled) {
             background: color-mix(in srgb, var(--accent) 80%, white);
+        }
+        .btn-save:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         #editSection {
@@ -127,7 +133,6 @@
             color: var(--text2);
         }
 
-        /* Styling logic based on content */
         .cell-week {
             font-family: 'Barlow Condensed', sans-serif;
             font-weight: 800;
@@ -172,58 +177,91 @@
             font-size: 0.85em;
             border: 1px dashed var(--border2);
         }
+        
+        #loadingMsg {
+            text-align: center;
+            padding: 40px;
+            color: var(--text3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <div class="title">📅 On Call Rota</div>
-        <button class="btn" id="toggleEditBtn" onclick="toggleEdit()">✎ Update Rota</button>
+        <div class="title" id="rotaTitle">📅 On Call Rota</div>
     </div>
 
     <div id="editSection">
         <div class="instruction">// Paste the cells directly from Excel below, then click Save.</div>
         <textarea id="tsvInput" placeholder="Paste Excel data here..."></textarea>
         <div style="margin-top: 16px; text-align: right;">
-            <button class="btn" onclick="toggleEdit()" style="margin-right: 8px;">Cancel</button>
-            <button class="btn btn-save" onclick="saveRota()">💾 Save & Convert</button>
+            <button class="btn" onclick="hideEdit()" style="margin-right: 8px;">Cancel</button>
+            <button class="btn btn-save" id="saveBtn" onclick="saveRota()">💾 Save Live to Database</button>
         </div>
     </div>
 
     <div id="displaySection">
-        <div class="table-responsive" id="tableContainer">
+        <div id="loadingMsg">// CONNECTING TO DATABASE...</div>
+        <div class="table-responsive" id="tableContainer" style="display:none;">
             </div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
     <script>
-        // Load existing rota on page load
+        // Connect to your existing NGU Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // 1. Fetch live data from Database on load
         document.addEventListener("DOMContentLoaded", () => {
-            const savedData = localStorage.getItem('ngu_oncall_rota');
-            if (savedData) {
-                renderTable(savedData);
-            } else {
-                document.getElementById('tableContainer').innerHTML = '<div class="empty-state">No rota data found. Click "Update Rota" to paste from Excel.</div>';
-            }
+            db.collection("portal_settings").doc("oncall_rota").get().then(doc => {
+                document.getElementById('loadingMsg').style.display = 'none';
+                document.getElementById('tableContainer').style.display = 'block';
+                
+                if (doc.exists && doc.data().tsvData) {
+                    renderTable(doc.data().tsvData);
+                    document.getElementById('tsvInput').value = doc.data().tsvData;
+                } else {
+                    document.getElementById('tableContainer').innerHTML = '<div class="empty-state">No rota data found. Admin must paste data.</div>';
+                }
+            }).catch(err => {
+                console.error("Error loading rota:", err);
+                document.getElementById('loadingMsg').innerText = '// ERROR LOADING ROTA.';
+            });
         });
 
-        function toggleEdit() {
-            const editSec = document.getElementById('editSection');
-            const displaySec = document.getElementById('displaySection');
-            const btn = document.getElementById('toggleEditBtn');
-
-            if (editSec.style.display === 'block') {
-                editSec.style.display = 'none';
-                displaySec.style.display = 'block';
-                btn.style.display = 'block';
-            } else {
-                // Populate textarea with current saved data
-                document.getElementById('tsvInput').value = localStorage.getItem('ngu_oncall_rota') || '';
-                editSec.style.display = 'block';
-                displaySec.style.display = 'none';
-                btn.style.display = 'none';
+        // 2. Secret Admin Trigger: Triple-click the title to reveal the edit box
+        let clickCount = 0;
+        document.getElementById('rotaTitle').addEventListener('click', () => {
+            clickCount++;
+            if (clickCount === 3) {
+                document.getElementById('editSection').style.display = 'block';
+                document.getElementById('displaySection').style.display = 'none';
+                clickCount = 0;
             }
+            setTimeout(() => clickCount = 0, 1000); // Reset clicks if too slow
+        });
+
+        function hideEdit() {
+            document.getElementById('editSection').style.display = 'none';
+            document.getElementById('displaySection').style.display = 'block';
         }
 
+        // 3. Save directly to Database
         function saveRota() {
             const rawData = document.getElementById('tsvInput').value.trim();
             if (!rawData) {
@@ -231,17 +269,31 @@
                 return;
             }
             
-            localStorage.setItem('ngu_oncall_rota', rawData);
-            renderTable(rawData);
-            toggleEdit();
+            const btn = document.getElementById('saveBtn');
+            btn.innerText = "Saving to Cloud...";
+            btn.disabled = true;
+
+            db.collection("portal_settings").doc("oncall_rota").set({
+                tsvData: rawData,
+                updatedAt: firebase.firestore.Timestamp.now()
+            }, { merge: true }).then(() => {
+                btn.innerText = "💾 Save Live to Database";
+                btn.disabled = false;
+                renderTable(rawData);
+                hideEdit();
+            }).catch(err => {
+                alert("Error saving to database: " + err.message);
+                btn.innerText = "💾 Save Live to Database";
+                btn.disabled = false;
+            });
         }
 
+        // 4. Convert pasted Excel text into a clean HTML table
         function renderTable(tsvData) {
             const rows = tsvData.split('\n');
             let html = '<table><tbody>';
 
             rows.forEach(row => {
-                // Skip completely empty lines
                 if (!row.trim()) return; 
 
                 const cells = row.split('\t');
@@ -251,18 +303,16 @@
                     let cellClass = "";
                     let content = cell.trim();
 
-                    // Apply smart styling based on the content of the cell
                     if (content.toLowerCase().startsWith('week ')) {
                         cellClass = "cell-week";
                     } else if (content.match(/\d{2} [a-zA-Z]{3} \d{4}/) || content.toLowerCase() === 'bank hol') {
-                        // Matches dates like "18 May 2026"
                         cellClass = "cell-date";
                     } else if (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].includes(content.toLowerCase())) {
                         cellClass = "cell-day";
                     } else if (['scotland', 'north east'].includes(content.toLowerCase())) {
                         cellClass = "cell-region";
                     } else if (content !== "") {
-                        cellClass = "cell-name"; // Engineer names
+                        cellClass = "cell-name";
                     }
 
                     html += `<td class="${cellClass}">${content}</td>`;
