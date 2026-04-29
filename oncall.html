@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGU On Call Rota</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #080c14;
+            --bg2:       #0d1420;
+            --bg3:       #111928;
+            --border:    rgba(255,255,255,0.07);
+            --border2:   rgba(255,255,255,0.15);
+            --accent:    #00ff9d; /* Green accent for the Rota */
+            --accent-dim: color-mix(in srgb, #00ff9d 15%, transparent);
+            --text:      #e8edf8;
+            --text2:     #8b97b0;
+            --text3:     #4a5568;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-weight: 800;
+            font-size: 1.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--accent);
+        }
+
+        .btn {
+            background: var(--bg3);
+            border: 1px solid var(--border2);
+            color: var(--text);
+            padding: 8px 16px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-weight: 600;
+            font-size: 0.9em;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-save {
+            background: var(--accent);
+            color: var(--bg);
+            border-color: var(--accent);
+        }
+        .btn-save:hover {
+            background: color-mix(in srgb, var(--accent) 80%, white);
+        }
+
+        #editSection {
+            display: none;
+            margin-bottom: 24px;
+            background: var(--bg2);
+            padding: 20px;
+            border: 1px solid var(--border2);
+        }
+
+        .instruction {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75em;
+            color: var(--text2);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            color: var(--text);
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            resize: vertical;
+            outline: none;
+            box-sizing: border-box;
+            white-space: pre;
+        }
+        textarea:focus { border-color: var(--accent); }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            color: var(--text2);
+        }
+
+        /* Styling logic based on content */
+        .cell-week {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-weight: 800;
+            font-size: 1.1em;
+            color: var(--text);
+            background: var(--bg3);
+            text-transform: uppercase;
+        }
+        
+        .cell-date {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            color: var(--accent);
+            background: var(--accent-dim);
+            font-weight: 700;
+        }
+
+        .cell-day {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75em;
+            color: var(--text3);
+            text-transform: uppercase;
+            background: var(--bg);
+        }
+
+        .cell-region {
+            font-weight: 700;
+            color: var(--text);
+            background: var(--bg3);
+        }
+
+        .cell-name {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .empty-state {
+            padding: 40px;
+            text-align: center;
+            color: var(--text3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            border: 1px dashed var(--border2);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="title">📅 On Call Rota</div>
+        <button class="btn" id="toggleEditBtn" onclick="toggleEdit()">✎ Update Rota</button>
+    </div>
+
+    <div id="editSection">
+        <div class="instruction">// Paste the cells directly from Excel below, then click Save.</div>
+        <textarea id="tsvInput" placeholder="Paste Excel data here..."></textarea>
+        <div style="margin-top: 16px; text-align: right;">
+            <button class="btn" onclick="toggleEdit()" style="margin-right: 8px;">Cancel</button>
+            <button class="btn btn-save" onclick="saveRota()">💾 Save & Convert</button>
+        </div>
+    </div>
+
+    <div id="displaySection">
+        <div class="table-responsive" id="tableContainer">
+            </div>
+    </div>
+
+    <script>
+        // Load existing rota on page load
+        document.addEventListener("DOMContentLoaded", () => {
+            const savedData = localStorage.getItem('ngu_oncall_rota');
+            if (savedData) {
+                renderTable(savedData);
+            } else {
+                document.getElementById('tableContainer').innerHTML = '<div class="empty-state">No rota data found. Click "Update Rota" to paste from Excel.</div>';
+            }
+        });
+
+        function toggleEdit() {
+            const editSec = document.getElementById('editSection');
+            const displaySec = document.getElementById('displaySection');
+            const btn = document.getElementById('toggleEditBtn');
+
+            if (editSec.style.display === 'block') {
+                editSec.style.display = 'none';
+                displaySec.style.display = 'block';
+                btn.style.display = 'block';
+            } else {
+                // Populate textarea with current saved data
+                document.getElementById('tsvInput').value = localStorage.getItem('ngu_oncall_rota') || '';
+                editSec.style.display = 'block';
+                displaySec.style.display = 'none';
+                btn.style.display = 'none';
+            }
+        }
+
+        function saveRota() {
+            const rawData = document.getElementById('tsvInput').value.trim();
+            if (!rawData) {
+                alert("Please paste some data first.");
+                return;
+            }
+            
+            localStorage.setItem('ngu_oncall_rota', rawData);
+            renderTable(rawData);
+            toggleEdit();
+        }
+
+        function renderTable(tsvData) {
+            const rows = tsvData.split('\n');
+            let html = '<table><tbody>';
+
+            rows.forEach(row => {
+                // Skip completely empty lines
+                if (!row.trim()) return; 
+
+                const cells = row.split('\t');
+                html += '<tr>';
+                
+                cells.forEach(cell => {
+                    let cellClass = "";
+                    let content = cell.trim();
+
+                    // Apply smart styling based on the content of the cell
+                    if (content.toLowerCase().startsWith('week ')) {
+                        cellClass = "cell-week";
+                    } else if (content.match(/\d{2} [a-zA-Z]{3} \d{4}/) || content.toLowerCase() === 'bank hol') {
+                        // Matches dates like "18 May 2026"
+                        cellClass = "cell-date";
+                    } else if (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].includes(content.toLowerCase())) {
+                        cellClass = "cell-day";
+                    } else if (['scotland', 'north east'].includes(content.toLowerCase())) {
+                        cellClass = "cell-region";
+                    } else if (content !== "") {
+                        cellClass = "cell-name"; // Engineer names
+                    }
+
+                    html += `<td class="${cellClass}">${content}</td>`;
+                });
+                
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('tableContainer').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
