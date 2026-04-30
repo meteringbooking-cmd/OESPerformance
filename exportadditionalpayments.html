@@ -190,7 +190,8 @@ function calcApprovedTotal(payment, dateObj) {
 
 let allClaimsByEngineer = {};
 let bonusSummary = [];
-let dailyBonusBreakdown = {}; // Added to store daily breakdown data
+let dailyBonusBreakdown = {}; 
+let dailyJobsBreakdown = {}; // Store daily jobs
 
 window.loadPreview = async function() {
     const startDate = document.getElementById('startDate').value;
@@ -205,6 +206,7 @@ window.loadPreview = async function() {
         allClaimsByEngineer = {};
         bonusSummary = [];
         dailyBonusBreakdown = {};
+        dailyJobsBreakdown = {};
 
         // 1. Payments
         const pmSnap = await getDocs(collection(db, 'additionalPayments'));
@@ -230,7 +232,6 @@ window.loadPreview = async function() {
                         const amount = parseFloat(amt || 0);
                         perfBonusMap[d.engineerName] += amount;
 
-                        // Track daily performance bonus
                         if (!dailyBonusBreakdown[d.engineerName][date]) {
                             dailyBonusBreakdown[d.engineerName][date] = { perf: 0, att: '', avgBonus: 0 };
                         }
@@ -242,7 +243,7 @@ window.loadPreview = async function() {
 
         // 3. Average Bonuses (Month-Aware)
         const avgSnap = await getDocs(collection(db, 'Average Bonuses'));
-        const avgConfig = {}; // { "Name": { "January": 50 } }
+        const avgConfig = {}; 
         avgSnap.forEach(doc => {
             const d = doc.data();
             if (d.name && d.month) {
@@ -257,13 +258,11 @@ window.loadPreview = async function() {
         attSnap.forEach(doc => {
             const d = doc.data();
             if (d.date >= startDate && d.date <= endDate) {
-                // Ensure daily object exists to track attendance status
                 if (!dailyBonusBreakdown[d.engineerName]) dailyBonusBreakdown[d.engineerName] = {};
                 if (!dailyBonusBreakdown[d.engineerName][d.date]) {
                     dailyBonusBreakdown[d.engineerName][d.date] = { perf: 0, att: '', avgBonus: 0 };
                 }
                 
-                // Track attendance status for the day
                 dailyBonusBreakdown[d.engineerName][d.date].att = d.attendance || '';
 
                 if (['H', 'H/H', 'Training'].includes(d.attendance)) {
@@ -275,11 +274,23 @@ window.loadPreview = async function() {
                     if (amount > 0) {
                         if (!attendanceBonusMap[d.engineerName]) attendanceBonusMap[d.engineerName] = 0;
                         attendanceBonusMap[d.engineerName] += amount;
-
-                        // Track daily applied average bonus
                         dailyBonusBreakdown[d.engineerName][d.date].avgBonus += amount;
                     }
                 }
+            }
+        });
+
+        // 5. Jobs Data
+        const jSnap = await getDocs(collection(db, 'jobsData'));
+        jSnap.forEach(doc => {
+            const d = doc.data();
+            if (d.engineerName && d.dailyJobs) {
+                if (!dailyJobsBreakdown[d.engineerName]) dailyJobsBreakdown[d.engineerName] = {};
+                Object.entries(d.dailyJobs).forEach(([date, jobsArray]) => {
+                    if (date >= startDate && date <= endDate) {
+                        dailyJobsBreakdown[d.engineerName][date] = jobsArray;
+                    }
+                });
             }
         });
 
@@ -342,31 +353,34 @@ window.exportBonusCSV = function() {
     download(csv, 'bonus_summary_export.csv');
 };
 
-// NEW FUNCTION: Export Full Detailed Breakdown
 window.exportFullBreakdownCSV = function() {
-    let csv = 'Engineer Name,Date,Attendance Status,Performance Bonus Earned,Avg Bonus Applied,Daily Total\n';
+    let csv = 'Engineer Name,Date,Attendance Status,Performance Bonus Earned,Avg Bonus Applied,Daily Total,Jobs Completed\n';
     
-    // Sort engineer names alphabetically
     const engineers = Object.keys(dailyBonusBreakdown).sort();
     
     engineers.forEach(name => {
         const days = dailyBonusBreakdown[name];
-        // Sort dates chronologically
         const dates = Object.keys(days).sort();
         
         dates.forEach(date => {
             const dayData = days[date];
             const dailyTotal = dayData.perf + dayData.avgBonus;
             
-            // Only export days where they actually earned something or had a specific attendance
-            if (dailyTotal > 0 || dayData.att !== '') {
+            let jobsString = 'No Jobs Recorded';
+            if (dailyJobsBreakdown[name] && dailyJobsBreakdown[name][date]) {
+                const jobsList = dailyJobsBreakdown[name][date];
+                jobsString = jobsList.map(j => `${j.bookingRef || 'N/A'} (${j.jobType || 'N/A'} - ${j.bookingStatus || 'N/A'})`).join(' | ');
+            }
+            
+            if (dailyTotal > 0 || dayData.att !== '' || jobsString !== 'No Jobs Recorded') {
                 csv += [
                     esc(name),
                     date,
                     esc(dayData.att),
                     dayData.perf.toFixed(2),
                     dayData.avgBonus.toFixed(2),
-                    dailyTotal.toFixed(2)
+                    dailyTotal.toFixed(2),
+                    esc(jobsString) 
                 ].join(',') + '\n';
             }
         });
