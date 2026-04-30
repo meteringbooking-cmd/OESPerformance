@@ -19,7 +19,7 @@
         .form-group label { margin-bottom: 8px; color: #333; font-weight: 600; font-size: 1.05em; }
         .form-group input { padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1em; transition: border-color 0.3s ease; }
         .form-group input:focus { outline: none; border-color: #667eea; }
-        .btn { padding: 15px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; width: 100%; }
+        .btn { padding: 15px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; width: 100%; }
         .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(102,126,234,0.4); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-export { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); }
@@ -33,7 +33,10 @@
         .stat-value { font-size: 2.5em; font-weight: bold; }
         .preview-section { margin-top: 30px; }
         .preview-header { font-size: 1.3em; font-weight: 600; color: #333; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px solid #667eea; }
-        .export-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        
+        /* Updated to handle 3 buttons beautifully */
+        .export-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        
         .loading { text-align: center; padding: 40px; color: #666; font-size: 1.1em; }
         .no-data { text-align: center; padding: 60px 40px; color: #666; font-size: 1.2em; background: #f8f9fa; border-radius: 10px; }
         .info-box { background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #0c5460; }
@@ -104,7 +107,8 @@
 
         <div class="export-buttons">
             <button class="btn btn-export" onclick="exportPaymentsCSV()">💾 Export Payments CSV</button>
-            <button class="btn btn-export" onclick="exportBonusCSV()">💾 Export Bonus CSV</button>
+            <button class="btn btn-export" onclick="exportBonusCSV()">💾 Export Bonus Summary CSV</button>
+            <button class="btn btn-export" onclick="exportFullBreakdownCSV()">💾 Export Full Bonus Breakdown</button>
         </div>
     </div>
 
@@ -186,6 +190,7 @@ function calcApprovedTotal(payment, dateObj) {
 
 let allClaimsByEngineer = {};
 let bonusSummary = [];
+let dailyBonusBreakdown = {}; // Added to store daily breakdown data
 
 window.loadPreview = async function() {
     const startDate = document.getElementById('startDate').value;
@@ -196,9 +201,13 @@ window.loadPreview = async function() {
     document.getElementById('previewSection').style.display = 'none';
 
     try {
+        // Reset Variables
+        allClaimsByEngineer = {};
+        bonusSummary = [];
+        dailyBonusBreakdown = {};
+
         // 1. Payments
         const pmSnap = await getDocs(collection(db, 'additionalPayments'));
-        allClaimsByEngineer = {};
         pmSnap.forEach(doc => {
             const d = doc.data();
             if (d.date >= startDate && d.date <= endDate) {
@@ -214,8 +223,19 @@ window.loadPreview = async function() {
             const d = doc.data();
             if (d.dailyBonuses && d.engineerName) {
                 if (!perfBonusMap[d.engineerName]) perfBonusMap[d.engineerName] = 0;
+                if (!dailyBonusBreakdown[d.engineerName]) dailyBonusBreakdown[d.engineerName] = {};
+
                 Object.entries(d.dailyBonuses).forEach(([date, amt]) => {
-                    if (date >= startDate && date <= endDate) perfBonusMap[d.engineerName] += parseFloat(amt || 0);
+                    if (date >= startDate && date <= endDate) {
+                        const amount = parseFloat(amt || 0);
+                        perfBonusMap[d.engineerName] += amount;
+
+                        // Track daily performance bonus
+                        if (!dailyBonusBreakdown[d.engineerName][date]) {
+                            dailyBonusBreakdown[d.engineerName][date] = { perf: 0, att: '', avgBonus: 0 };
+                        }
+                        dailyBonusBreakdown[d.engineerName][date].perf += amount;
+                    }
                 });
             }
         });
@@ -236,21 +256,34 @@ window.loadPreview = async function() {
         const attendanceBonusMap = {};
         attSnap.forEach(doc => {
             const d = doc.data();
-            if (d.date >= startDate && d.date <= endDate && ['H', 'H/H', 'Training'].includes(d.attendance)) {
-                const dateObj = new Date(d.date + 'T00:00:00');
-                const monthName = dateObj.toLocaleString('en-GB', { month: 'long' });
-                const dailyAvg = (avgConfig[d.engineerName] && avgConfig[d.engineerName][monthName]) ? avgConfig[d.engineerName][monthName] : 0;
+            if (d.date >= startDate && d.date <= endDate) {
+                // Ensure daily object exists to track attendance status
+                if (!dailyBonusBreakdown[d.engineerName]) dailyBonusBreakdown[d.engineerName] = {};
+                if (!dailyBonusBreakdown[d.engineerName][d.date]) {
+                    dailyBonusBreakdown[d.engineerName][d.date] = { perf: 0, att: '', avgBonus: 0 };
+                }
                 
-                let amount = (d.attendance === 'H/H') ? dailyAvg / 2 : dailyAvg;
-                if (amount > 0) {
-                    if (!attendanceBonusMap[d.engineerName]) attendanceBonusMap[d.engineerName] = 0;
-                    attendanceBonusMap[d.engineerName] += amount;
+                // Track attendance status for the day
+                dailyBonusBreakdown[d.engineerName][d.date].att = d.attendance || '';
+
+                if (['H', 'H/H', 'Training'].includes(d.attendance)) {
+                    const dateObj = new Date(d.date + 'T00:00:00');
+                    const monthName = dateObj.toLocaleString('en-GB', { month: 'long' });
+                    const dailyAvg = (avgConfig[d.engineerName] && avgConfig[d.engineerName][monthName]) ? avgConfig[d.engineerName][monthName] : 0;
+                    
+                    let amount = (d.attendance === 'H/H') ? dailyAvg / 2 : dailyAvg;
+                    if (amount > 0) {
+                        if (!attendanceBonusMap[d.engineerName]) attendanceBonusMap[d.engineerName] = 0;
+                        attendanceBonusMap[d.engineerName] += amount;
+
+                        // Track daily applied average bonus
+                        dailyBonusBreakdown[d.engineerName][d.date].avgBonus += amount;
+                    }
                 }
             }
         });
 
         // Build Summary
-        bonusSummary = [];
         const names = new Set([...Object.keys(perfBonusMap), ...Object.keys(attendanceBonusMap)]);
         names.forEach(name => {
             const perf = perfBonusMap[name] || 0;
@@ -306,7 +339,40 @@ window.exportPaymentsCSV = function() {
 window.exportBonusCSV = function() {
     let csv = 'Engineer Name,Performance Bonus,Avg Bonus (Holiday/Training),Total Bonus\n';
     bonusSummary.forEach(b => { csv += `${esc(b.engineerName)},${b.perfTotal.toFixed(2)},${b.avgBonusTotal.toFixed(2)},${b.totalBonus.toFixed(2)}\n`; });
-    download(csv, 'bonus_export.csv');
+    download(csv, 'bonus_summary_export.csv');
+};
+
+// NEW FUNCTION: Export Full Detailed Breakdown
+window.exportFullBreakdownCSV = function() {
+    let csv = 'Engineer Name,Date,Attendance Status,Performance Bonus Earned,Avg Bonus Applied,Daily Total\n';
+    
+    // Sort engineer names alphabetically
+    const engineers = Object.keys(dailyBonusBreakdown).sort();
+    
+    engineers.forEach(name => {
+        const days = dailyBonusBreakdown[name];
+        // Sort dates chronologically
+        const dates = Object.keys(days).sort();
+        
+        dates.forEach(date => {
+            const dayData = days[date];
+            const dailyTotal = dayData.perf + dayData.avgBonus;
+            
+            // Only export days where they actually earned something or had a specific attendance
+            if (dailyTotal > 0 || dayData.att !== '') {
+                csv += [
+                    esc(name),
+                    date,
+                    esc(dayData.att),
+                    dayData.perf.toFixed(2),
+                    dayData.avgBonus.toFixed(2),
+                    dailyTotal.toFixed(2)
+                ].join(',') + '\n';
+            }
+        });
+    });
+
+    download(csv, 'full_bonus_breakdown_export.csv');
 };
 
 function download(csv, filename) {
