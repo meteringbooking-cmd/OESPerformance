@@ -32,7 +32,6 @@
 
         .container { max-width: 1400px; margin: 0 auto; padding: 36px 24px; }
         
-        /* Layout modifications for the new sidebar */
         .main-layout { display: flex; gap: 28px; align-items: flex-start; }
         .main-content { flex: 1; min-width: 0; }
         .sidebar { width: 340px; flex-shrink: 0; position: sticky; top: 24px; }
@@ -153,6 +152,16 @@
         .overall-status.no-answer { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); color: var(--accent-amber); }
         .overall-status.rebooked { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
         .overall-status.exhausted { background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.3); color: var(--accent-rose); }
+
+        /* Sub-section divider inside attempt box */
+        .sub-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+        .sub-section-label { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--accent-violet); margin-bottom: 2px; }
+
+        /* Toggle yes/no */
+        .toggle-group { display: flex; gap: 8px; }
+        .toggle-btn { flex: 1; padding: 8px 10px; font-size: 12px; font-weight: 700; font-family: 'DM Sans', sans-serif; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 8px; border: 2px solid rgba(148,163,184,0.2); background: var(--bg-input); color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+        .toggle-btn.active-yes { border-color: rgba(52,211,153,0.5); background: rgba(52,211,153,0.1); color: var(--success); }
+        .toggle-btn.active-no { border-color: rgba(251,113,133,0.5); background: rgba(251,113,133,0.1); color: var(--accent-rose); }
 
         /* Duplicate Block CSS */
         .dup-item { background: rgba(251,113,133,0.06); border: 1px solid rgba(251,113,133,0.25); border-radius: 12px; padding: 16px; margin-bottom: 14px; transition: all 0.3s; }
@@ -301,6 +310,8 @@
 window._naData = [];
 window._expandedId = null;
 
+const DISPOSITIONS = ['Rang out', 'Straight to voicemail', 'Wrong number', 'Dead line'];
+
 /* ── HELPERS ── */
 function toast(msg, type='success') {
     const t = document.getElementById('toast');
@@ -331,13 +342,11 @@ function updateDuplicateSidebar() {
     const counts = {};
     const container = document.getElementById('duplicateSidebarContent');
     
-    // Check across all loaded data
     window._naData.forEach(r => {
         const pc = (r.postcode || '').trim().toUpperCase();
         if (!pc || pc === '—') return;
         const status = getOverallStatus(r);
         const key = pc + '|' + status;
-        
         if (!counts[key]) counts[key] = [];
         counts[key].push(r);
     });
@@ -353,7 +362,6 @@ function updateDuplicateSidebar() {
         const [pc, status] = key.split('|');
         const jobs = arr.map(a => a.jobNumber).filter(Boolean).join(', ');
         const displayStatus = status.replace('-', ' ');
-        
         return `
             <div class="dup-item">
                 <div class="dup-header">
@@ -441,7 +449,6 @@ function renderCards() {
         ${exh    ? `<div class="chip rose">🚫 ${exh} 3 Attempts Made</div>` : ''}
     `;
 
-    // Always update duplicates on render
     updateDuplicateSidebar();
 
     if (!data.length) {
@@ -505,6 +512,14 @@ function buildCard(r) {
 </div>`;
 }
 
+/* ── DISPOSITION OPTIONS HTML ── */
+function dispositionOptions(selected) {
+    return DISPOSITIONS.map(d =>
+        `<option value="${d}" ${selected===d?'selected':''}>${d}</option>`
+    ).join('');
+}
+
+/* ── BUILD ATTEMPT BOX ── */
 function buildAttemptBox(docId, att, index, allAttempts) {
     const prevFilled = index === 0 || (allAttempts[index-1] && allAttempts[index-1].outcome);
     const anyRebooked = allAttempts.slice(0, index).some(a => a && a.outcome === 'rebooked');
@@ -522,29 +537,65 @@ function buildAttemptBox(docId, att, index, allAttempts) {
         </div>`;
     }
 
+    /* ── SAVED / READ-ONLY VIEW ── */
     if (filled && !att._editing) {
+        const dispRow = att.disposition
+            ? `<div class="attempt-row"><span class="attempt-row-label">Disposition</span><span class="attempt-row-val" style="color:var(--accent-violet)">${esc(att.disposition)}</span></div>`
+            : '';
+
+        /* Second number — saved display */
+        let secondNumHtml = '';
+        if (att.outcome === 'no-answer') {
+            const sn = att.secondNumber || {};
+            const triedLabel = sn.tried === 'yes' ? '✓ Yes' : sn.tried === 'no' ? '✗ No' : '—';
+            secondNumHtml = `
+                <div class="attempt-row" style="margin-top:6px"><span class="attempt-row-label">Another number tried?</span><span class="attempt-row-val" style="color:${sn.tried==='yes'?'var(--success)':'var(--accent-rose)'}">${triedLabel}</span></div>
+                ${sn.tried==='yes' ? `
+                    <div class="attempt-row"><span class="attempt-row-label">2nd Attempt Date</span><span class="attempt-row-val">${esc(fmtDate(sn.date||''))}</span></div>
+                    <div class="attempt-row"><span class="attempt-row-label">2nd Outcome</span><span class="attempt-row-val">${esc(sn.outcome||'—')}</span></div>
+                    ${sn.disposition ? `<div class="attempt-row"><span class="attempt-row-label">2nd Disposition</span><span class="attempt-row-val" style="color:var(--accent-violet)">${esc(sn.disposition)}</span></div>` : ''}
+                ` : ''}
+            `;
+        }
+
         const rebookInfo = att.outcome === 'rebooked' ? `
             <div class="attempt-row"><span class="attempt-row-label">Rebooked Date</span><span class="attempt-row-val">${esc(fmtDate(att.rebookDate||''))}</span></div>
             ${att.newJobNumber ? `<div class="attempt-row"><span class="attempt-row-label">New Job No.</span><span class="attempt-row-val">${esc(att.newJobNumber)}</span></div>` : ''}
             ${att.bookedOn ? `<div class="attempt-row"><span class="attempt-row-label">Engineer Booked On</span><span class="attempt-row-val" style="color:var(--accent-amber)">${esc(att.bookedOn)}</span></div>` : ''}
         ` : '';
+
         return `<div class="${boxClass}">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
             <div class="attempt-saved">
                 <div class="attempt-row"><span class="attempt-row-label">Date</span><span class="attempt-row-val">${esc(fmtDate(att.date||''))}</span></div>
                 <div class="attempt-row"><span class="attempt-row-label">Outcome</span><span><span class="outcome-badge ${att.outcome}">${att.outcome==='rebooked'?'Rebooked':'No Answer'}</span></span></div>
+                ${dispRow}
+                ${secondNumHtml}
                 ${rebookInfo}
             </div>
             <button class="btn btn-sm amber attempt-edit-btn" onclick="editAttempt('${docId}',${index})">Edit</button>
         </div>`;
     }
 
+    /* ── EDIT / INPUT FORM ── */
     const today = new Date().toISOString().split('T')[0];
-    const selVal = att._editing ? (att.outcome||'') : '';
-    const dateVal = att._editing ? (att.date||today) : today;
+    const selVal    = att._editing ? (att.outcome||'') : '';
+    const dateVal   = att._editing ? (att.date||today) : today;
+    const dispVal   = att._editing ? (att.disposition||'') : '';
     const rebookDate = att._editing ? (att.rebookDate||'') : '';
-    const newJob = att._editing ? (att.newJobNumber||'') : '';
-    const bookedOn = att._editing ? (att.bookedOn||'') : '';
+    const newJob    = att._editing ? (att.newJobNumber||'') : '';
+    const bookedOn  = att._editing ? (att.bookedOn||'') : '';
+
+    /* second number state */
+    const sn = (att._editing && att.secondNumber) ? att.secondNumber : {};
+    const snTried   = sn.tried || '';
+    const snDate    = sn.date  || today;
+    const snOutcome = sn.outcome || '';
+    const snDisp    = sn.disposition || '';
+
+    const showNoAnswerExtra = selVal === 'no-answer';
+    const showRebookFields  = selVal === 'rebooked';
+    const showSnForm        = showNoAnswerExtra && snTried === 'yes';
 
     return `<div class="${boxClass}">
         <div class="attempt-number">Attempt <span>${index+1}</span></div>
@@ -561,7 +612,50 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                     <option value="rebooked" ${selVal==='rebooked'?'selected':''}>Rebooked</option>
                 </select>
             </div>
-            <div id="rebook-fields-${docId}-${index}" style="display:${selVal==='rebooked'?'flex':'none'};flex-direction:column;gap:10px">
+
+            <!-- No Answer extras: disposition + second number -->
+            <div id="no-answer-fields-${docId}-${index}" style="display:${showNoAnswerExtra?'flex':'none'};flex-direction:column;gap:10px">
+                <div class="form-group">
+                    <label class="form-label">Disposition</label>
+                    <select id="att-disp-${docId}-${index}">
+                        <option value="">— Select —</option>
+                        ${dispositionOptions(dispVal)}
+                    </select>
+                </div>
+
+                <!-- Another number tried? -->
+                <div class="sub-section">
+                    <div class="sub-section-label">Was another number tried?</div>
+                    <div class="toggle-group">
+                        <button type="button" class="toggle-btn ${snTried==='yes'?'active-yes':''}" id="sn-yes-${docId}-${index}" onclick="setSnTried('${docId}',${index},'yes')">Yes</button>
+                        <button type="button" class="toggle-btn ${snTried==='no'?'active-no':''}" id="sn-no-${docId}-${index}" onclick="setSnTried('${docId}',${index},'no')">No</button>
+                    </div>
+                    <div id="sn-form-${docId}-${index}" style="display:${showSnForm?'flex':'none'};flex-direction:column;gap:10px;margin-top:4px">
+                        <div class="form-group">
+                            <label class="form-label">2nd Attempt Date</label>
+                            <input type="date" id="sn-date-${docId}-${index}" value="${snDate}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">2nd Outcome</label>
+                            <select id="sn-outcome-${docId}-${index}">
+                                <option value="">— Select —</option>
+                                <option value="No Answer" ${snOutcome==='No Answer'?'selected':''}>No Answer</option>
+                                <option value="Rebooked" ${snOutcome==='Rebooked'?'selected':''}>Rebooked</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">2nd Disposition</label>
+                            <select id="sn-disp-${docId}-${index}">
+                                <option value="">— Select —</option>
+                                ${dispositionOptions(snDisp)}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rebook fields -->
+            <div id="rebook-fields-${docId}-${index}" style="display:${showRebookFields?'flex':'none'};flex-direction:column;gap:10px">
                 <div class="form-group">
                     <label class="form-label">Rebooked Date</label>
                     <input type="date" id="att-rebookdate-${docId}-${index}" value="${rebookDate}">
@@ -575,6 +669,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                     <input type="text" id="att-bookedon-${docId}-${index}" placeholder="e.g. Jane Doe" value="${bookedOn}">
                 </div>
             </div>
+
             <button class="btn btn-sm green" onclick="saveAttempt('${docId}',${index})">Save Attempt</button>
             ${att._editing ? `<button class="btn btn-sm" style="opacity:0.5" onclick="cancelEdit('${docId}',${index})">Cancel</button>` : ''}
         </div>
@@ -588,21 +683,40 @@ function toggleCard(id) {
 }
 window.toggleCard = toggleCard;
 
-/* ── OUTCOME CHANGE (show/hide rebook fields) ── */
+/* ── OUTCOME CHANGE (show/hide extra fields) ── */
 function onOutcomeChange(docId, index) {
-    const sel = document.getElementById(`att-outcome-${docId}-${index}`);
-    const rb  = document.getElementById(`rebook-fields-${docId}-${index}`);
-    if (rb) rb.style.display = sel.value === 'rebooked' ? 'flex' : 'none';
+    const sel  = document.getElementById(`att-outcome-${docId}-${index}`);
+    const naEl = document.getElementById(`no-answer-fields-${docId}-${index}`);
+    const rbEl = document.getElementById(`rebook-fields-${docId}-${index}`);
+    if (naEl) naEl.style.display = sel.value === 'no-answer' ? 'flex' : 'none';
+    if (rbEl) rbEl.style.display = sel.value === 'rebooked'  ? 'flex' : 'none';
 }
 window.onOutcomeChange = onOutcomeChange;
+
+/* ── SET SECOND NUMBER TRIED ── */
+function setSnTried(docId, index, val) {
+    const yesBtn  = document.getElementById(`sn-yes-${docId}-${index}`);
+    const noBtn   = document.getElementById(`sn-no-${docId}-${index}`);
+    const snForm  = document.getElementById(`sn-form-${docId}-${index}`);
+    if (!yesBtn || !noBtn || !snForm) return;
+
+    yesBtn.className = 'toggle-btn' + (val === 'yes' ? ' active-yes' : '');
+    noBtn.className  = 'toggle-btn' + (val === 'no'  ? ' active-no'  : '');
+    snForm.style.display = val === 'yes' ? 'flex' : 'none';
+
+    /* store on in-memory rec so it survives re-renders if needed */
+    const rec = window._naData.find(r => r.id === docId);
+    if (rec && rec.attempts[index]) {
+        if (!rec.attempts[index].secondNumber) rec.attempts[index].secondNumber = {};
+        rec.attempts[index].secondNumber.tried = val;
+    }
+}
+window.setSnTried = setSnTried;
 
 /* ── SAVE ATTEMPT ── */
 async function saveAttempt(docId, index) {
     const dateEl    = document.getElementById(`att-date-${docId}-${index}`);
     const outcomeEl = document.getElementById(`att-outcome-${docId}-${index}`);
-    const rbDateEl  = document.getElementById(`att-rebookdate-${docId}-${index}`);
-    const newJobEl  = document.getElementById(`att-newjob-${docId}-${index}`);
-
     if (!dateEl || !outcomeEl) return;
     const date    = dateEl.value;
     const outcome = outcomeEl.value;
@@ -610,11 +724,33 @@ async function saveAttempt(docId, index) {
     if (!outcome) { toast('Please select an outcome', 'error'); return; }
 
     const attemptData = { date, outcome };
+
+    if (outcome === 'no-answer') {
+        const dispEl = document.getElementById(`att-disp-${docId}-${index}`);
+        attemptData.disposition = dispEl ? dispEl.value : '';
+
+        /* second number */
+        const yesBtn = document.getElementById(`sn-yes-${docId}-${index}`);
+        const snTried = yesBtn && yesBtn.classList.contains('active-yes') ? 'yes' : 'no';
+        const secondNumber = { tried: snTried };
+        if (snTried === 'yes') {
+            const snDateEl    = document.getElementById(`sn-date-${docId}-${index}`);
+            const snOutcomeEl = document.getElementById(`sn-outcome-${docId}-${index}`);
+            const snDispEl    = document.getElementById(`sn-disp-${docId}-${index}`);
+            secondNumber.date        = snDateEl    ? snDateEl.value    : '';
+            secondNumber.outcome     = snOutcomeEl ? snOutcomeEl.value : '';
+            secondNumber.disposition = snDispEl    ? snDispEl.value    : '';
+        }
+        attemptData.secondNumber = secondNumber;
+    }
+
     if (outcome === 'rebooked') {
-        attemptData.rebookDate   = rbDateEl ? rbDateEl.value : '';
-        attemptData.newJobNumber = newJobEl  ? newJobEl.value.trim() : '';
+        const rbDateEl  = document.getElementById(`att-rebookdate-${docId}-${index}`);
+        const newJobEl  = document.getElementById(`att-newjob-${docId}-${index}`);
         const bookedOnEl = document.getElementById(`att-bookedon-${docId}-${index}`);
-        attemptData.bookedOn = bookedOnEl ? bookedOnEl.value.trim() : '';
+        attemptData.rebookDate   = rbDateEl   ? rbDateEl.value        : '';
+        attemptData.newJobNumber = newJobEl   ? newJobEl.value.trim() : '';
+        attemptData.bookedOn     = bookedOnEl ? bookedOnEl.value.trim(): '';
     }
 
     const rec = window._naData.find(r => r.id === docId);
@@ -626,7 +762,6 @@ async function saveAttempt(docId, index) {
         await window._updateDoc(window._firestoreDoc(window._db, 'No Accesses', docId), { attempts });
         toast('✓ Attempt saved');
         rec.attempts = attempts;
-        delete attempts[index]._editing;
         renderCards();
     } catch(e) {
         toast('Error: ' + e.message, 'error');
@@ -639,7 +774,6 @@ function editAttempt(docId, index) {
     const rec = window._naData.find(r => r.id === docId);
     if (!rec) return;
     rec.attempts[index]._editing = true;
-    renderCards();
     window._expandedId = docId;
     renderCards();
 }
