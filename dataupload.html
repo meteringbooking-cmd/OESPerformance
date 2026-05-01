@@ -116,6 +116,22 @@
             margin: 5px 0;
         }
 
+        .warning-info {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 0.95em;
+        }
+
+        .warning-info strong {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 1em;
+        }
+
         .btn {
             padding: 15px 40px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -297,6 +313,17 @@
             margin-left: 10px;
         }
 
+        .week-range-badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -327,6 +354,11 @@
                 </ul>
             </div>
 
+            <div class="warning-info">
+                ⚠️ <strong>Re-uploading replaces the entire week</strong>
+                If a week commencing date already exists in the database for an engineer, all entries for that Mon–Sun period will be replaced with the new file's data. Data from other weeks is preserved.
+            </div>
+
             <div class="form-group">
                 <label for="weekCommencing">Week Commencing Date:</label>
                 <input type="date" id="weekCommencing" required>
@@ -353,6 +385,8 @@
 
         <div id="previewSection" class="preview-section">
             <h2 class="preview-title">📊 Data Preview</h2>
+
+            <div id="weekRangeBadge" style="text-align:center;margin-bottom:10px;"></div>
             
             <div class="stats-grid" id="statsGrid"></div>
             
@@ -393,7 +427,6 @@
             const weekDate = document.getElementById('weekCommencing').value;
             const fileInput = document.getElementById('fileInput');
             const processBtn = document.getElementById('processBtn');
-            
             processBtn.disabled = !(weekDate && fileInput.files.length > 0);
         }
 
@@ -425,11 +458,8 @@
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
                     
-                    // Get first sheet
                     const firstSheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[firstSheetName];
-                    
-                    // Convert to JSON
                     const jsonData = XLSX.utils.sheet_to_json(worksheet);
                     
                     if (jsonData.length === 0) {
@@ -468,19 +498,17 @@
                             else if (normalizedKey.toLowerCase() === 'booking status') normalizedRow.bookingStatus = row[key];
                         }
                         return normalizedRow;
-                    }).filter(row => row.engineer && row.date && row.date !== ''); // Filter out empty rows
+                    }).filter(row => row.engineer && row.date && row.date !== '');
 
                     // Sort by date then time
                     processedData.sort((a, b) => {
-    const dateA = a.date || '';
-    const dateB = b.date || '';
-    const timeA = a.time || '';
-    const timeB = b.time || '';
-    if (dateA !== dateB) {
-        return dateA.localeCompare(dateB);
-    }
-    return timeA.localeCompare(timeB);
-});
+                        const dateA = a.date || '';
+                        const dateB = b.date || '';
+                        const timeA = a.time || '';
+                        const timeB = b.time || '';
+                        if (dateA !== dateB) return dateA.localeCompare(dateB);
+                        return timeA.localeCompare(timeB);
+                    });
 
                     displayPreview();
                     document.getElementById('loadingDiv').style.display = 'none';
@@ -498,18 +526,15 @@
         function parseDate(dateValue) {
             if (!dateValue) return '';
             
-            // If it's already a string in YYYY-MM-DD format, return it
             if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
                 return dateValue;
             }
             
-            // Handle Excel serial date
             if (typeof dateValue === 'number') {
                 const date = XLSX.SSF.parse_date_code(dateValue);
                 return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
             }
             
-            // Try to parse string dates
             const date = new Date(dateValue);
             if (!isNaN(date.getTime())) {
                 return date.toISOString().split('T')[0];
@@ -521,47 +546,55 @@
         function parseTime(timeValue) {
             if (!timeValue) return '';
             
-            // If it's a string containing both date and time (e.g., "01/12/2025 10:39:00")
             if (typeof timeValue === 'string' && timeValue.includes(' ')) {
-                const timePart = timeValue.split(' ')[1]; // Get the time part after the space
-                if (timePart) {
-                    // Extract just HH:MM from HH:MM:SS
-                    return timePart.substring(0, 5);
-                }
+                const timePart = timeValue.split(' ')[1];
+                if (timePart) return timePart.substring(0, 5);
             }
             
-            // If already in HH:MM format
             if (typeof timeValue === 'string' && /^\d{1,2}:\d{2}/.test(timeValue)) {
-                return timeValue.substring(0, 5); // Take just HH:MM
+                return timeValue.substring(0, 5);
             }
             
-            // Handle Excel serial date-time (greater than 1 means it includes date)
             if (typeof timeValue === 'number') {
-                // Excel serial date-time
                 const date = XLSX.SSF.parse_date_code(timeValue);
                 return `${String(date.H).padStart(2, '0')}:${String(date.M).padStart(2, '0')}`;
             }
             
-            // Try parsing as a Date object
             try {
                 const date = new Date(timeValue);
                 if (!isNaN(date.getTime())) {
                     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                 }
-            } catch (e) {
-                // If parsing fails, return as string
-            }
+            } catch (e) {}
             
             return timeValue.toString();
         }
 
+        // Returns the Monday and Sunday of the selected week as YYYY-MM-DD strings
+        function getWeekBounds(weekCommencing) {
+            // weekCommencing is already the Monday (user-selected)
+            const monday = new Date(weekCommencing + 'T00:00:00');
+            const sunday = new Date(monday);
+            sunday.setDate(sunday.getDate() + 6);
+
+            const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return { weekStart: fmt(monday), weekEnd: fmt(sunday) };
+        }
+
         function displayPreview() {
-            // Calculate statistics
+            const { weekStart, weekEnd } = getWeekBounds(weekCommencingDate);
+
+            // Week range badge
+            const fmtDisp = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            document.getElementById('weekRangeBadge').innerHTML =
+                `<span class="week-range-badge">📅 Week: ${fmtDisp(weekStart)} – ${fmtDisp(weekEnd)}</span>
+                 <p style="color:#856404;font-size:0.88em;margin-top:6px;">Any existing entries for this week will be fully replaced on upload.</p>`;
+
+            // Stats
             const engineers = [...new Set(processedData.map(row => row.engineer))];
             const dates = [...new Set(processedData.map(row => row.date))];
             const totalJobs = processedData.length;
 
-            // Display stats
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = `
                 <div class="stat-card">
@@ -578,23 +611,18 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Week Starting</div>
-                    <div class="stat-value">${new Date(weekCommencingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
+                    <div class="stat-value">${new Date(weekCommencingDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</div>
                 </div>
             `;
 
             // Group by engineer and date
             const groupedData = {};
             processedData.forEach(row => {
-                if (!groupedData[row.engineer]) {
-                    groupedData[row.engineer] = {};
-                }
-                if (!groupedData[row.engineer][row.date]) {
-                    groupedData[row.engineer][row.date] = [];
-                }
+                if (!groupedData[row.engineer]) groupedData[row.engineer] = {};
+                if (!groupedData[row.engineer][row.date]) groupedData[row.engineer][row.date] = [];
                 groupedData[row.engineer][row.date].push(row);
             });
 
-            // Display grouped data
             const dataPreview = document.getElementById('dataPreview');
             dataPreview.innerHTML = '';
 
@@ -616,16 +644,13 @@
                     
                     const dateObj = new Date(date + 'T00:00:00');
                     const displayDate = dateObj.toLocaleDateString('en-GB', { 
-                        weekday: 'short',
-                        day: '2-digit', 
-                        month: 'short',
-                        year: 'numeric'
+                        weekday: 'short', day: '2-digit', month: 'short', year: 'numeric'
                     });
 
                     const jobs = groupedData[engineer][date];
                     
                     dateDiv.innerHTML = `
-                        <div class="date-header">${displayDate} - ${jobs.length} jobs</div>
+                        <div class="date-header">${displayDate} — ${jobs.length} jobs</div>
                         <div class="data-table-container">
                             <table class="data-table">
                                 <thead>
@@ -670,22 +695,17 @@
             hideMessages();
 
             try {
-                // Organize data by engineer and date for the jobsData collection
-                const jobsDataByEngineer = {};
+                // Get the Mon–Sun bounds for the selected week
+                const { weekStart, weekEnd } = getWeekBounds(weekCommencingDate);
 
+                // Organise new data by engineer and date
+                const jobsDataByEngineer = {};
                 processedData.forEach(row => {
                     const engineer = row.engineer;
                     const date = row.date;
 
-                    if (!jobsDataByEngineer[engineer]) {
-                        jobsDataByEngineer[engineer] = {
-                            dailyJobs: {}
-                        };
-                    }
-
-                    if (!jobsDataByEngineer[engineer].dailyJobs[date]) {
-                        jobsDataByEngineer[engineer].dailyJobs[date] = [];
-                    }
+                    if (!jobsDataByEngineer[engineer]) jobsDataByEngineer[engineer] = { dailyJobs: {} };
+                    if (!jobsDataByEngineer[engineer].dailyJobs[date]) jobsDataByEngineer[engineer].dailyJobs[date] = [];
 
                     jobsDataByEngineer[engineer].dailyJobs[date].push({
                         time: row.time,
@@ -695,60 +715,58 @@
                     });
                 });
 
-                console.log('Uploading jobs data:', jobsDataByEngineer);
-
-                // Upload to Firestore in the jobsData collection
                 let uploadCount = 0;
-                
+
                 for (const engineer in jobsDataByEngineer) {
-                    // Check if document exists for this engineer
                     const jobsQuery = query(
                         collection(db, "jobsData"),
                         where("engineerName", "==", engineer)
                     );
                     
                     const querySnapshot = await getDocs(jobsQuery);
-                    
+
                     if (querySnapshot.empty) {
-                        // Create new document
-                        const newDoc = await addDoc(collection(db, "jobsData"), {
+                        // No existing document — create fresh
+                        await addDoc(collection(db, "jobsData"), {
                             engineerName: engineer,
                             weekCommencing: weekCommencingDate,
                             dailyJobs: jobsDataByEngineer[engineer].dailyJobs,
                             uploadedAt: new Date()
                         });
-                        console.log(`Created new jobsData document for ${engineer}:`, newDoc.id);
+                        console.log(`Created new jobsData document for ${engineer}`);
                     } else {
-                        // Update existing document
+                        // Existing document — strip out this week's dates, then merge new data
                         const docRef = querySnapshot.docs[0].ref;
                         const existingData = querySnapshot.docs[0].data();
-                        
-                        console.log(`Updating existing document for ${engineer}`);
-                        console.log('Existing dailyJobs:', existingData.dailyJobs);
-                        console.log('New dailyJobs:', jobsDataByEngineer[engineer].dailyJobs);
-                        
-                        // Merge daily jobs
+
+                        // Keep only dates that fall OUTSIDE the selected Mon–Sun week
+                        const filteredExistingJobs = {};
+                        for (const [date, jobs] of Object.entries(existingData.dailyJobs || {})) {
+                            if (date < weekStart || date > weekEnd) {
+                                filteredExistingJobs[date] = jobs;
+                            }
+                        }
+
+                        // Layer in the freshly uploaded week's data
                         const mergedDailyJobs = {
-                            ...existingData.dailyJobs,
+                            ...filteredExistingJobs,
                             ...jobsDataByEngineer[engineer].dailyJobs
                         };
-                        
-                        console.log('Merged dailyJobs:', mergedDailyJobs);
-                        
+
                         const batch = writeBatch(db);
                         batch.update(docRef, {
                             dailyJobs: mergedDailyJobs,
                             lastUpdated: new Date()
                         });
                         await batch.commit();
-                        
-                        console.log(`Updated jobsData document for ${engineer}`);
+
+                        console.log(`Replaced week ${weekStart}–${weekEnd} for ${engineer}`);
                     }
-                    
+
                     uploadCount++;
                 }
 
-                showSuccess(`Successfully uploaded data for ${uploadCount} engineer(s) - ${processedData.length} total jobs`);
+                showSuccess(`Successfully uploaded data for ${uploadCount} engineer(s) — ${processedData.length} total jobs. Week ${weekStart} to ${weekEnd} replaced.`);
                 document.getElementById('uploadBtn').textContent = '✅ Upload Complete';
                 
                 setTimeout(() => {
@@ -768,8 +786,6 @@
             const successDiv = document.getElementById('successMessage');
             successDiv.textContent = '✅ ' + message;
             successDiv.style.display = 'block';
-            
-            // Scroll to message
             successDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
@@ -777,8 +793,6 @@
             const errorDiv = document.getElementById('errorMessage');
             errorDiv.textContent = '❌ ' + message;
             errorDiv.style.display = 'block';
-            
-            // Scroll to message
             errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
@@ -787,13 +801,12 @@
             document.getElementById('errorMessage').style.display = 'none';
         }
 
-        // Set default week commencing date to current Monday
+        // Default week commencing to current Monday
         window.addEventListener('load', () => {
             const today = new Date();
             const dayOfWeek = today.getDay();
-            const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust when day is Sunday
+            const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
             const monday = new Date(today.setDate(diff));
-            
             document.getElementById('weekCommencing').valueAsDate = monday;
         });
 
