@@ -189,7 +189,7 @@
     const snap = await getDoc(doc(_db, 'users', user.uid));
     if (!snap.exists()) { await _auth.signOut(); window.location.href = 'login.html'; return; }
     document.documentElement.style.visibility = 'visible';
-    window.currentUser     = user;
+    window.currentUser      = user;
     window.currentUserRole = snap.data().role || 'viewer';
     window.currentUserName = snap.data().name || user.email;
   });
@@ -511,7 +511,23 @@
         </div>
     </div>
 
-    <button class="export-pptx-btn" id="exportPptxBtn" onclick="exportToPowerPoint()">📊 Export PowerPoint</button>
+    <!-- New Export PPTX Date Selector Popup -->
+    <div class="popup-overlay" id="exportPopup" onclick="closeExportPopup(event)">
+        <div class="popup-content" onclick="event.stopPropagation()" style="height: auto; max-width: 400px; padding: 20px;">
+            <div class="popup-header" style="border: none; padding-bottom: 0;">
+                <div class="popup-title">📊 Export PowerPoint</div>
+                <button class="popup-close" onclick="closeExportPopup()">✕</button>
+            </div>
+            <div style="padding: 20px 0;">
+                <label style="color: #00d2ff; font-size: 0.9em; font-weight: 700; margin-bottom: 10px; display: block;">Select Week Commencing (Monday):</label>
+                <input type="date" id="exportWcDate" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(0,210,255,0.4); background: rgba(0,0,0,0.3); color: white; font-family: 'Inter', sans-serif;" />
+            </div>
+            <button onclick="confirmExportToPowerPoint()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, rgba(139,92,246,0.9), rgba(99,102,241,0.9)); border: none; border-radius: 10px; color: white; font-weight: 700; cursor: pointer;">Start Export</button>
+        </div>
+    </div>
+
+    <button class="export-pptx-btn" id="exportPptxBtn" onclick="openExportPopup()">📊 Export PowerPoint</button>
+    
     <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
@@ -590,7 +606,7 @@
             document.getElementById('sharepointPopup').classList.remove('active');
         };
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') { closeGraphPopup(); closeAbortsPopup(); closeMilesBreakdownPopup(); closeSharepointPopup(); }
+            if (e.key === 'Escape') { closeGraphPopup(); closeAbortsPopup(); closeMilesBreakdownPopup(); closeSharepointPopup(); closeExportPopup(); }
         });
 
         const performanceApp = initializeApp({
@@ -1045,7 +1061,6 @@
             if (card.classList.contains('expanded') && complianceData.length>0) populateComplianceHistory();
         };
         function populateHistoricalTables() {
-            // UPDATED: Meters history now includes Kraken AM column
             document.getElementById('metersHistory').innerHTML=historicalData.map(d=>{
                 const pct=d.metersTarget?((d.totalMeters/d.metersTarget)*100).toFixed(1):'0';
                 const krakenVal = d.krakenMeters !== undefined ? (d.krakenMeters === null ? '—' : d.krakenMeters.toLocaleString()) : '—';
@@ -1240,7 +1255,6 @@
                 document.getElementById('sickPercent').textContent=sick.toFixed(1)+'%';
                 document.getElementById('aaupPercent').textContent=aaup.toFixed(1)+'%';
                 await loadMilesPerMeter(dateStr);
-                // Load today's Kraken AM meters
                 try {
                     const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
                     const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", todayStr)));
@@ -1269,7 +1283,6 @@
             }catch(err){console.error("Dashboard load error:",err);document.getElementById('loadingDiv').innerHTML='<div style="color:#ef4444">Error loading data – check console</div>';}
         }
 
-        // UPDATED: loadHistoricalData now fetches Kraken AM data in parallel for each day
         async function loadHistoricalData() {
             historicalData=[];
             for(const date of getPreviousWorkingDays(10)){
@@ -1343,9 +1356,18 @@
             }
         }
 
-        async function getLast5DaysAllData(teamLeader) {
+        function getWorkingDaysForWeek(mondayDate) {
+            const dates = [];
+            for (let i = 0; i < 5; i++) {
+                const d = new Date(mondayDate);
+                d.setDate(mondayDate.getDate() + i);
+                dates.push(d);
+            }
+            return dates;
+        }
+
+        async function getPeriodData(teamLeader, dates) {
             const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
-            const dates=getPreviousWorkingDays(5).reverse();
             const engCount=await getEngineerCount(teamLeader);
             const dailyTarget=Math.round(engCount*6*0.9);
             const result={dates:[],meters:[],completion:[],aborts:[],targets:[],vsTargetPct:[]};
@@ -1365,42 +1387,7 @@
             return result;
         }
 
-        async function getPriorWeekData(teamLeader) {
-            const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
-            const ref = new Date();
-            const dow = ref.getDay();
-            const daysToLastMon = dow === 0 ? 13 : (dow - 1) + 7;
-            const lastMon = new Date(ref);
-            lastMon.setDate(ref.getDate() - daysToLastMon);
-            const priorDates = [];
-            for (let i = 0; i < 5; i++) {
-                const d = new Date(lastMon);
-                d.setDate(lastMon.getDate() + i);
-                priorDates.push(d);
-            }
-            const engCount = await getEngineerCount(teamLeader);
-            const dailyTarget = Math.round(engCount*6*0.9);
-            const result = { dates:[], meters:[], completion:[], aborts:[], targets:[], vsTargetPct:[] };
-            for (const date of priorDates) {
-                const ds = formatDateForQuery(date);
-                result.dates.push(formatDate(date));
-                result.targets.push(dailyTarget);
-                const perfSnap = await queryPerfSnap(ds, dataKey);
-                let m=0,j=0,c=0;
-                perfSnap.forEach(doc=>{const d=doc.data();m+=d.meters||0;j+=d.jobs||0;c+=d.completed||0;});
-                result.meters.push(m);
-                result.vsTargetPct.push(dailyTarget>0?Math.round((m/dailyTarget)*1000)/10:0);
-                result.completion.push(j>0?Math.round((c/j)*1000)/10:0);
-                const abortSnap = await queryAbortSnap(ds, dataKey);
-                let abortTotal=0;
-                abortSnap.forEach(doc=>{const d=doc.data();if(!d.engineer||d.engineer==='')return;parseAbortReasons(d.reason||'',d.total||1).forEach(r=>{abortTotal+=r.qty;});});
-                result.aborts.push(abortTotal);
-            }
-            return result;
-        }
-
-        async function getLast5DaysAttendance() {
-            const dates=getPreviousWorkingDays(5).reverse();
+        async function getPeriodAttendance(dates) {
             const result={dates:[],atWork:[],holiday:[],sick:[],aaup:[]};
             for(const date of dates){
                 const ds=formatDateForQuery(date); result.dates.push(formatDate(date));
@@ -1411,35 +1398,76 @@
             }
             return result;
         }
+        
         function niceMax(val){if(val<=0)return 10;const mag=Math.pow(10,Math.floor(Math.log10(val)));const step=mag>=100?50:mag>=10?5:1;return Math.ceil((val*1.15)/step)*step;}
         function avg(arr){const valid=arr.filter(v=>v>0);if(!valid.length)return 0;return Math.round((valid.reduce((a,b)=>a+b,0)/valid.length)*10)/10;}
         function addHeader(pptx,slide,title,subtitle){slide.addShape(pptx.shapes.RECTANGLE,{x:0,y:0,w:10,h:0.75,fill:{color:'0A1628'},line:{color:'0A1628'}});slide.addText(title,{x:0.3,y:0.07,w:8.2,h:0.38,fontSize:20,bold:true,color:'00D2FF',fontFace:'Calibri',margin:0});slide.addText(subtitle,{x:0.3,y:0.45,w:8.2,h:0.24,fontSize:9,bold:false,color:'8EAEC9',fontFace:'Calibri',margin:0});slide.addText('NGU',{x:8.8,y:0.15,w:0.9,h:0.35,fontSize:14,bold:true,color:'00D2FF',fontFace:'Calibri',align:'right',margin:0});}
         function addStatStrip(slide,stats,x,y,w){const colW=w/stats.length;const valSize=stats.length>=4?11:14;const lblSize=stats.length>=4?7:8;stats.forEach((s,i)=>{const cx=x+i*colW;slide.addText(s.label,{x:cx,y:y,w:colW,h:0.2,fontSize:lblSize,bold:false,color:'8EAEC9',fontFace:'Calibri',align:'center',margin:0});slide.addText(s.value,{x:cx,y:y+0.19,w:colW,h:0.28,fontSize:valSize,bold:true,color:s.color||'FFFFFF',fontFace:'Calibri',align:'center',margin:0});});}
         function addCommentaryBox(pptx,slide,x,y,w,h){slide.addShape(pptx.shapes.RECTANGLE,{x,y,w,h,fill:{color:'0D1B2A'},line:{color:'2A4A6A',width:1}});slide.addText('Commentary',{x:x+0.12,y:y+0.1,w:w-0.24,h:0.25,fontSize:9,bold:true,color:'00D2FF',fontFace:'Calibri',margin:0});slide.addText('[ Enter commentary here ]',{x:x+0.12,y:y+0.38,w:w-0.24,h:h-0.5,fontSize:10,color:'4A6A8A',fontFace:'Calibri',italic:true,valign:'top',margin:0});}
 
-        window.exportToPowerPoint = async function() {
+        window.openExportPopup = function() {
+            const d = new Date();
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            const lastMon = new Date(d.setDate(diff));
+            const yyyy = lastMon.getFullYear();
+            const mm = String(lastMon.getMonth() + 1).padStart(2, '0');
+            const dd = String(lastMon.getDate()).padStart(2, '0');
+            document.getElementById('exportWcDate').value = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('exportPopup').classList.add('active');
+        };
+
+        window.closeExportPopup = function(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('exportPopup').classList.remove('active');
+        };
+
+        window.confirmExportToPowerPoint = async function() {
+            const wcStr = document.getElementById('exportWcDate').value;
+            if(!wcStr) return alert("Please select a valid date.");
+            
+            const [yyyy, mm, dd] = wcStr.split('-');
+            let wcDate = new Date(parseInt(yyyy), parseInt(mm)-1, parseInt(dd));
+            const day = wcDate.getDay();
+            const diff = wcDate.getDate() - day + (day === 0 ? -6 : 1);
+            wcDate.setDate(diff);
+
+            closeExportPopup();
+            
             const btn=document.getElementById('exportPptxBtn');
             btn.disabled=true; btn.textContent='⏳ Fetching data...';
             try {
                 const pptx=new PptxGenJS(); pptx.layout='LAYOUT_16x9'; pptx.author='OES Performance System'; pptx.company='NGU'; pptx.title='OES Weekly Performance Report';
                 const teamLeaders=['Richard Wiecko','Scott Carson','Scott Carson - Scot','Stuart Whyte','Tom Green'];
-                btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx);
-                btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx);
-                btn.textContent='⏳ SP Completion...'; await createSPSlide(pptx);
-                for(let i=0;i<teamLeaders.length;i++){btn.textContent=`⏳ ${teamLeaders[i]}...`;await createTeamSlide(pptx,teamLeaders[i]);}
-                btn.textContent='⏳ Saving...'; await pptx.writeFile({fileName:`OES_Performance_${new Date().toISOString().split('T')[0]}.pptx`});
+                
+                btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx, wcDate);
+                btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx, wcDate);
+                btn.textContent='⏳ SP Completion...'; await createSPSlide(pptx, wcDate);
+                for(let i=0;i<teamLeaders.length;i++){btn.textContent=`⏳ ${teamLeaders[i]}...`;await createTeamSlide(pptx, teamLeaders[i], wcDate);}
+                
+                btn.textContent='⏳ Saving...'; 
+                const niceDateStr = `${wcDate.getFullYear()}-${String(wcDate.getMonth()+1).padStart(2,'0')}-${String(wcDate.getDate()).padStart(2,'0')}`;
+                await pptx.writeFile({fileName:`OES_Performance_WC_${niceDateStr}.pptx`});
+                
                 btn.textContent='✅ Done!'; setTimeout(()=>{btn.textContent='📊 Export PowerPoint';btn.disabled=false;},2500);
             }catch(err){console.error('Export error:',err);alert('Error generating PowerPoint: '+err.message);btn.textContent='📊 Export PowerPoint';btn.disabled=false;}
         };
 
-        async function createOverallSlide1(pptx) {
+        async function createOverallSlide1(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const _d = new Date(); _d.setDate(_d.getDate() - ((_d.getDay() + 6) % 7));
-            const todayLabel = 'W/C ' + _d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Meters, Completion & Attendance', 'Last 5 Working Days vs Prior Week  ·  ' + todayLabel);
+            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Meters, Completion & Attendance', 'Selected Week vs Prior Week  ·  ' + todayLabel);
+            
+            const currentWeekDates = getWorkingDaysForWeek(wcDate);
+            const priorMon = new Date(wcDate); priorMon.setDate(wcDate.getDate() - 7);
+            const priorWeekDates = getWorkingDaysForWeek(priorMon);
+
             const [perf, att, priorPerf] = await Promise.all([
-                getLast5DaysAllData(null), getLast5DaysAttendance(), getPriorWeekData(null)
+                getPeriodData(null, currentWeekDates), 
+                getPeriodAttendance(currentWeekDates), 
+                getPeriodData(null, priorWeekDates)
             ]);
+            
             const dailyTarget = perf.targets[0];
             const totalMeters = perf.meters.reduce((a,b)=>a+b,0);
             const priorTotalMeters = priorPerf.meters.reduce((a,b)=>a+b,0);
@@ -1480,12 +1508,20 @@
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
 
-        async function createOverallSlide2(pptx) {
+        async function createOverallSlide2(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const _d = new Date(); _d.setDate(_d.getDate() - ((_d.getDay() + 6) % 7));
-            const todayLabel = 'W/C ' + _d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Aborts & Compliance', 'Last 5 Working Days vs Prior Week / Current Month  ·  ' + todayLabel);
-            const [perf, priorPerf] = await Promise.all([getLast5DaysAllData(null), getPriorWeekData(null)]);
+            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx, slide, 'OES Overall Performance  —  Aborts & Compliance', 'Selected Week vs Prior Week / Current Month  ·  ' + todayLabel);
+            
+            const currentWeekDates = getWorkingDaysForWeek(wcDate);
+            const priorMon = new Date(wcDate); priorMon.setDate(wcDate.getDate() - 7);
+            const priorWeekDates = getWorkingDaysForWeek(priorMon);
+
+            const [perf, priorPerf] = await Promise.all([
+                getPeriodData(null, currentWeekDates), 
+                getPeriodData(null, priorWeekDates)
+            ]);
+
             const totalAborts = perf.aborts.reduce((a,b)=>a+b,0);
             const priorTotalAborts = priorPerf.aborts.reduce((a,b)=>a+b,0);
             const abortsMax = niceMax(Math.max(...perf.aborts,...priorPerf.aborts));
@@ -1533,11 +1569,10 @@
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
 
-        async function createSPSlide(pptx) {
+        async function createSPSlide(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const _d = new Date(); _d.setDate(_d.getDate() - ((_d.getDay() + 6) % 7));
-            const todayLabel = 'W/C ' + _d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'Scottish Power  —  Completion Rate', 'Last 5 Working Days  ·  ' + todayLabel);
+            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx, slide, 'Scottish Power  —  Completion Rate', 'Selected Week  ·  ' + todayLabel);
 
             const teamsSnap = await getDocs(collection(performanceDb, 'SP - Teams'));
             const knownEngineers = new Set();
@@ -1546,7 +1581,7 @@
                 if (name) knownEngineers.add(name);
             });
 
-            const dates = getPreviousWorkingDays(5).reverse();
+            const dates = getWorkingDaysForWeek(wcDate);
             const dayLabels=[], totalArr=[], completedArr=[], pctArr=[], abortArr=[];
 
             for (const date of dates) {
@@ -1593,12 +1628,20 @@
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
 
-        async function createTeamSlide(pptx, teamLeader) {
+        async function createTeamSlide(pptx, teamLeader, wcDate) {
             const slide=pptx.addSlide(); slide.background={color:'131F2E'};
-            const _d=new Date(); _d.setDate(_d.getDate()-((_d.getDay()+6)%7));
-            const todayLabel='W/C '+_d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
-            addHeader(pptx,slide,teamLeader,'Last 5 Working Days vs Prior Week  ·  '+todayLabel);
-            const [perf, priorPerf]=await Promise.all([getLast5DaysAllData(teamLeader), getPriorWeekData(teamLeader)]);
+            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            addHeader(pptx,slide,teamLeader,'Selected Week vs Prior Week  ·  '+todayLabel);
+            
+            const currentWeekDates = getWorkingDaysForWeek(wcDate);
+            const priorMon = new Date(wcDate); priorMon.setDate(wcDate.getDate() - 7);
+            const priorWeekDates = getWorkingDaysForWeek(priorMon);
+
+            const [perf, priorPerf]=await Promise.all([
+                getPeriodData(teamLeader, currentWeekDates), 
+                getPeriodData(teamLeader, priorWeekDates)
+            ]);
+            
             const dailyTarget=perf.targets[0];
             const totalMeters=perf.meters.reduce((a,b)=>a+b,0);
             const priorTotalMeters=priorPerf.meters.reduce((a,b)=>a+b,0);
