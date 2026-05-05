@@ -1183,6 +1183,20 @@
         const performanceDb = getFirestore(performanceApp);
         const staffDb = getFirestore(staffApp);
 
+        // Array of UK Bank Holidays (YYYY-MM-DD format). Update as needed for future years.
+        const BANK_HOLIDAYS = [
+            "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
+            "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+            "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28"
+        ];
+
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false; // Skip weekends
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return !BANK_HOLIDAYS.includes(dateStr);  // Skip if it's in the bank holiday list
+        }
+
         let historicalData = [];
         let historicalDataByTeamLeader = {};
         let oesEngineerCount = 0;
@@ -1221,8 +1235,9 @@
             const today = new Date();
             let previousDay = new Date(today);
             previousDay.setDate(previousDay.getDate() - 1);
-            if (previousDay.getDay() === 0) previousDay.setDate(previousDay.getDate() - 2);
-            else if (previousDay.getDay() === 6) previousDay.setDate(previousDay.getDate() - 1);
+            while (!isWorkingDay(previousDay)) {
+                previousDay.setDate(previousDay.getDate() - 1);
+            }
             return previousDay;
         }
 
@@ -1231,7 +1246,7 @@
             let d = new Date();
             while (dates.length < count) {
                 d.setDate(d.getDate() - 1);
-                if (d.getDay() !== 0 && d.getDay() !== 6) dates.push(new Date(d));
+                if (isWorkingDay(d)) dates.push(new Date(d));
             }
             return dates;
         }
@@ -1242,7 +1257,7 @@
             for (let i = 1; i <= 14; i++) {
                 const date = new Date(today);
                 date.setDate(date.getDate() - i);
-                if (date.getDay() !== 0 && date.getDay() !== 6) dates.push(date);
+                if (isWorkingDay(date)) dates.push(date);
             }
             return dates.reverse();
         }
