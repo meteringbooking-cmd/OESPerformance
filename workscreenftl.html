@@ -538,12 +538,31 @@
         const DISPLAY_TO_DATA_TEAMLEADER = { 'Tom Green': 'FTL 4' };
         function dataTeamLeader(displayName) { return DISPLAY_TO_DATA_TEAMLEADER[displayName] || displayName; }
 
+        // Array of UK Bank Holidays (YYYY-MM-DD format). Update as needed for future years.
+        const BANK_HOLIDAYS = [
+            "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
+            "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+            "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28"
+        ];
+
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false; // Skip weekends
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return !BANK_HOLIDAYS.includes(dateStr);  // Skip if it's in the bank holiday list
+        }
+
         let _dailyOffset = 0;
+        
         function getPrevWorkingDayByOffset(offset) {
             let d = new Date(), count = 0;
-            while (count <= offset) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) count++; }
+            while (count <= offset) { 
+                d.setDate(d.getDate() - 1); 
+                if (isWorkingDay(d)) count++; 
+            }
             return d;
         }
+        
         function buildDailyUrl(offset) {
             const d = getPrevWorkingDayByOffset(offset);
             const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -634,14 +653,19 @@
 
         function getPreviousWorkingDay() {
             let d = new Date(); d.setDate(d.getDate() - 1);
-            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+            while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
             return d;
         }
+        
         function getPreviousWorkingDays(count) {
             const dates = []; let d = new Date();
-            while (dates.length < count) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) dates.push(new Date(d)); }
+            while (dates.length < count) { 
+                d.setDate(d.getDate() - 1); 
+                if (isWorkingDay(d)) dates.push(new Date(d)); 
+            }
             return dates;
         }
+        
         function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
         function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
         function formatMonth(date) { return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getMonth()]} ${date.getFullYear()}`; }
@@ -1144,7 +1168,7 @@
             let count = 0;
             while (count < daysBack) {
                 target.setDate(target.getDate() - 1);
-                if (target.getDay() !== 0 && target.getDay() !== 6) count++;
+                if (isWorkingDay(target)) count++;
             }
             return formatDateForQuery(target);
         }
