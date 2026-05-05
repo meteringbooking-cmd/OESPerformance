@@ -460,6 +460,13 @@
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:14px;">
+                        <!-- NEW: Date Range Selector -->
+                        <select id="abortDateRangeSelect" onchange="loadDetailedAborts(parseInt(this.value))" style="background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);color:#00d2ff;border-radius:8px;padding:6px 12px;font-size:0.8em;font-weight:700;outline:none;cursor:pointer;text-transform:uppercase;">
+                            <option value="5">Last 5 Days</option>
+                            <option value="10">Last 10 Days</option>
+                            <option value="21">Last Month (21 Days)</option>
+                        </select>
+                        
                         <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);border-radius:8px;padding:6px 12px;">
                             <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Table</span>
                             <div id="abortViewToggle" onclick="toggleAbortView()" style="width:42px;height:22px;background:rgba(0,210,255,0.2);border:1px solid rgba(0,210,255,0.4);border-radius:11px;cursor:pointer;position:relative;transition:background 0.3s;">
@@ -610,7 +617,9 @@
         window.toggleAborts = async function(event) {
             event.stopPropagation();
             document.getElementById('abortsPopup').classList.add('active');
-            await loadDetailedAborts();
+            const rangeSelect = document.getElementById('abortDateRangeSelect');
+            const daysToLoad = rangeSelect ? parseInt(rangeSelect.value) : 5;
+            await loadDetailedAborts(daysToLoad);
         };
         window.closeAbortsPopup = function(event) {
             if (event) event.stopPropagation();
@@ -973,7 +982,7 @@
                 ${sortedReasons.map(r=>`<td style="padding:10px 8px;text-align:center;color:#f59e0b;font-weight:800;">${allReasons[r]}</td>`).join('')}
             </tr>`;
             return `<div style="background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);overflow-x:auto;">
-                <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 5-Day Summary — Aborts by Type
+                <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 ${abortAllDaysData.length}-Day Summary — Aborts by Type
                     <span style="font-size:0.8em;color:#a8dadc;font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px;">Selected days highlighted ◀</span>
                 </div>
                 <table style="width:100%;border-collapse:collapse;font-size:0.88em;min-width:500px;">
@@ -1024,15 +1033,17 @@
                 });
             }, 60);
         }
-        window.loadDetailedAborts = async function() {
+        window.loadDetailedAborts = async function(daysCount = 5) {
             try {
                 const container = document.getElementById('abortsDetailContainer');
                 container.innerHTML = `<div style="text-align:center;padding:40px;color:#a8dadc;"><div style="font-size:2em;">⏳</div><div>Loading abort data...</div></div>`;
                 abortChartMode = false; abortSelectedDays = new Set([0]);
                 document.getElementById('abortToggleKnob').style.left = '2px';
                 document.getElementById('abortViewToggle').style.background = 'rgba(0,210,255,0.2)';
-                const fiveDays = getPreviousWorkingDays(5).reverse();
-                const rawDays = await Promise.all(fiveDays.map(async (d) => {
+                
+                // Use dynamic day count
+                const targetDays = getPreviousWorkingDays(daysCount).reverse();
+                const rawDays = await Promise.all(targetDays.map(async (d) => {
                     const ds = formatDateForQuery(d);
                     const snap = await getDocs(query(collection(performanceDb, "aborts"), where("date", "==", ds)));
                     const teamData = {}; let total = 0; const reasons = {};
