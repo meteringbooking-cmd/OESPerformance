@@ -200,6 +200,16 @@
       border-color: var(--orange);
       box-shadow: 0 4px 15px rgba(249,115,22,0.2);
     }
+    .stats-box.teal {
+      background: linear-gradient(135deg, rgba(20,184,166,0.15), rgba(45,212,191,0.1));
+      border-color: #14b8a6;
+      box-shadow: 0 4px 15px rgba(20,184,166,0.2);
+    }
+    .stats-box.sky {
+      background: linear-gradient(135deg, rgba(14,165,233,0.15), rgba(56,189,248,0.1));
+      border-color: #0ea5e9;
+      box-shadow: 0 4px 15px rgba(14,165,233,0.2);
+    }
     .stats-label {
       font-size: 0.75rem;
       color: var(--text-dim);
@@ -207,6 +217,12 @@
       letter-spacing: 0.5px;
       margin-bottom: 0.4rem;
       font-weight: 600;
+    }
+    .stats-sublabel {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      opacity: 0.7;
+      margin-top: 0.2rem;
     }
     .stats-value {
       font-size: 1.8rem;
@@ -234,6 +250,16 @@
     }
     .stats-value.orange-grad {
       background: linear-gradient(90deg, var(--orange), #fb923c);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.teal-grad {
+      background: linear-gradient(90deg, #14b8a6, #2dd4bf);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.sky-grad {
+      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -369,7 +395,7 @@
   <header>
     <h1 id="pageTitle">Meters Installed</h1>
     <div class="stats-container" id="statsContainer">
-      </div>
+    </div>
   </header>
 
   <div class="card">
@@ -397,7 +423,6 @@
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  // ── Firebase: performance DB ──────────────────────────────────────────────────
   const perfConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
     authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -407,7 +432,6 @@
     appId: "1:484894102454:web:17535ee497eac2d90d6717",
     measurementId: "G-R56BGZYV8N"
   };
-  // ── Firebase: staff DB ────────────────────────────────────────────────────────
   const staffConfig = {
     apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
     authDomain: "pingu-solar.firebaseapp.com",
@@ -418,7 +442,6 @@
     measurementId: "G-PFH059DZ64"
   };
 
-  // Initialise apps 
   const existingApps = getApps();
   const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
   const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
@@ -445,7 +468,6 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
-  // ── Dynamic headcount from staff Firebase ────────────────────────────────────
   let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
   let headcountLoaded = false;
 
@@ -455,9 +477,9 @@
       Object.keys(engineerHeadcount).forEach(k => engineerHeadcount[k] = 0);
       staffSnap.forEach(doc => {
         const d = doc.data();
-        if (d.leaveDate) return; 
+        if (d.leaveDate) return;
         const loc = (d.Location || d.location || '').trim();
-        if (loc !== 'OES') return; 
+        if (loc !== 'OES') return;
         const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
         const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
         engineerHeadcount["all"]++;
@@ -500,7 +522,6 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // 1. ORIGINAL QUERY: Keep main charts pulling correctly from "performance" 
   async function fetchRecordsForRange(startDate, endDate, team) {
     const q = query(
       collection(db, "performance"),
@@ -518,13 +539,13 @@
     return recs;
   }
 
-  // 2. NEW KRAKEN SPECIFIC QUERY: Exclusively fetch KrakenAM data for the Meters Per Head Line
+  // Fetch KrakenAM data — returns per-date meters, headcount, AND first/last day details
   async function fetchKrakenMphData(startDate, endDate, team) {
     try {
       const qMeters = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapMeters = await getDocs(qMeters);
       const krakenMeters = {};
-      
+
       snapMeters.forEach(doc => {
         const d = doc.data();
         const rawTeam = d.team || d.teamLeader || '';
@@ -537,7 +558,7 @@
       const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapHc = await getDocs(qHc);
       const krakenHc = {};
-      
+
       snapHc.forEach(doc => {
         const d = doc.data();
         krakenHc[d.date] = Number(d.headcount || 0);
@@ -548,6 +569,16 @@
       console.warn("Could not fetch KrakenAM specific data for MPH:", err);
       return { krakenMeters: {}, krakenHc: {} };
     }
+  }
+
+  // Helper: compute MPH for a single date given krakenMeters, krakenHc, team, hcFallback
+  function computeMphForDate(date, krakenMeters, krakenHc, team, hcFallback) {
+    const km = krakenMeters[date] || 0;
+    let hc = krakenHc[date];
+    if (!hc || hc <= 0 || team !== "all") {
+      hc = hcFallback;
+    }
+    return (hc && hc > 0 && km > 0) ? Number((km / hc).toFixed(1)) : null;
   }
 
   function getWeekdayDates(start, end) {
@@ -582,14 +613,14 @@
     const effectiveEnd = endOfMonth < today ? endOfMonth : today;
     const startDate = startOfMonth.toISOString().split('T')[0];
     const endDate   = effectiveEnd.toISOString().split('T')[0];
-    
+
     const records = await fetchRecordsForRange(startDate, endDate, team);
     const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
-    
+
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
     weekdays.forEach(d => dateMap[d] = { meters:0, completed:0, jobs:0 });
-    
+
     records.forEach(r => {
       if (dateMap[r.date] !== undefined) {
         dateMap[r.date].meters    += Number(r.meters||0);
@@ -598,6 +629,19 @@
       }
     });
 
+    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+
+    // Find first and last weekdays that have KrakenAM meter data
+    const datesWithKraken = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
+    const firstKrakenDate = datesWithKraken[0] || null;
+    const lastKrakenDate  = datesWithKraken[datesWithKraken.length - 1] || null;
+
+    const startingMeters = firstKrakenDate ? Math.round(krakenMeters[firstKrakenDate]) : null;
+    const startingMph    = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
+    const endingMph      = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
+    const startingDate   = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+    const endingDate     = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
+
     return {
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
@@ -605,14 +649,8 @@
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
-      mphValues: weekdays.map(d => {
-        const km = krakenMeters[d] || 0;
-        let hc = krakenHc[d];
-        if (!hc || hc <= 0 || team !== "all") {
-          hc = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
-        }
-        return (hc && hc > 0 && km > 0) ? Number((km / hc).toFixed(1)) : null;
-      })
+      mphValues: weekdays.map(d => computeMphForDate(d, krakenMeters, krakenHc, team, hcFallback)),
+      startingMeters, startingMph, endingMph, startingDate, endingDate
     };
   }
 
@@ -621,32 +659,38 @@
     const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
     const startDate = start.toISOString().split('T')[0];
     const endDate = today.toISOString().split('T')[0];
-    
+
     const records = await fetchRecordsForRange(startDate, endDate, team);
     const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
-    
+
     const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
-    
+
+    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+
+    // Find first and last weekdays that have KrakenAM meter data
+    const datesWithKraken = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
+    const firstKrakenDate = datesWithKraken[0] || null;
+    const lastKrakenDate  = datesWithKraken[datesWithKraken.length - 1] || null;
+
+    const startingMeters = firstKrakenDate ? Math.round(krakenMeters[firstKrakenDate]) : null;
+    const startingMph    = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
+    const endingMph      = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
+    const startingDate   = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+    const endingDate     = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
+
     const isBar = cfg.type === 'bar';
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      mphValues: weekdays.map(d => {
-        const km = krakenMeters[d] || 0;
-        let hc = krakenHc[d];
-        if (!hc || hc <= 0 || team !== "all") {
-          hc = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
-        }
-        return (hc && hc > 0 && km > 0) ? Number((km / hc).toFixed(1)) : null;
-      }),
-      workingDays: weekdays.length
+      mphValues: weekdays.map(d => computeMphForDate(d, krakenMeters, krakenHc, team, hcFallback)),
+      workingDays: weekdays.length,
+      startingMeters, startingMph, endingMph, startingDate, endingDate
     };
   }
 
-  // Dual axis options specific to Month view (includes completion)
   function dualAxisOptions(title, showCompletion = true) {
     const scales = {
       x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
@@ -676,6 +720,20 @@
     };
   }
 
+  // Build the 3 new stat boxes for start/end MPH and starting meters
+  function buildMphBoundaryStats(startingMeters, startingMph, endingMph, startingDate, endingDate) {
+    const smBox = startingMeters !== null
+      ? `<div class="stats-box sky"><div class="stats-label">Start Meters</div><div class="stats-value sky-grad">${startingMeters.toLocaleString()}</div>${startingDate ? `<div class="stats-sublabel">${startingDate}</div>` : ''}</div>`
+      : '';
+    const startBox = startingMph !== null
+      ? `<div class="stats-box teal"><div class="stats-label">Start MPH</div><div class="stats-value teal-grad">${startingMph}</div>${startingDate ? `<div class="stats-sublabel">${startingDate}</div>` : ''}</div>`
+      : '';
+    const endBox = endingMph !== null
+      ? `<div class="stats-box orange"><div class="stats-label">End MPH</div><div class="stats-value orange-grad">${endingMph}</div>${endingDate ? `<div class="stats-sublabel">${endingDate}</div>` : ''}</div>`
+      : '';
+    return smBox + startBox + endBox;
+  }
+
   async function renderMix() {
     const container = document.querySelector('#chartContainer');
     container.innerHTML = '<div class="loading">Loading…</div>';
@@ -694,11 +752,14 @@
       const validMph = data.mphValues.filter(v=>v!==null&&v>0);
       const avgMph = validMph.length > 0 ? (validMph.reduce((s,v)=>s+v,0)/validMph.length).toFixed(1) : '—';
 
+      const boundaryStats = buildMphBoundaryStats(data.startingMeters, data.startingMph, data.endingMph, data.startingDate, data.endingDate);
+
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
         `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success">${compAvg}</div></div>` +
-        `<div class="stats-box orange"><div class="stats-label">Kraken Avg MPH</div><div class="stats-value orange-grad">${avgMph}</div></div>`
+        `<div class="stats-box orange"><div class="stats-label">Kraken Avg MPH</div><div class="stats-value orange-grad">${avgMph}</div></div>` +
+        boundaryStats
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
@@ -732,12 +793,12 @@
               borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
               pointHoverRadius: 8, pointBackgroundColor: '#f59e0b',
               yAxisID: 'yMph', spanGaps: true,
-              datalabels: { 
+              datalabels: {
                 display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
                 backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
                 padding: { top: 3, bottom: 3, left: 6, right: 6 },
                 font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
               }
             }
           ]
@@ -753,7 +814,7 @@
 
       const total = data.values.reduce((s,v)=>s+v,0);
       const pop   = data.values.filter(v=>v>0).length;
-      
+
       const validMph = data.mphValues.filter(v=>v!==null&&v>0);
       const avgMph = validMph.length > 0 ? (validMph.reduce((s,v)=>s+v,0)/validMph.length).toFixed(1) : '—';
 
@@ -769,12 +830,15 @@
         targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
+      const boundaryStats = buildMphBoundaryStats(data.startingMeters, data.startingMph, data.endingMph, data.startingDate, data.endingDate);
+
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
         `<div class="stats-box orange"><div class="stats-label">Kraken Avg MPH</div><div class="stats-value orange-grad">${avgMph}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Headcount (OES DB)</div><div class="stats-value">${hc}</div></div>` +
-        targetHTML
+        targetHTML +
+        boundaryStats
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
@@ -802,25 +866,25 @@
               } : { display: false }
             },
             {
-              type: 'line', 
-              label: 'Kraken MPH', 
+              type: 'line',
+              label: 'Kraken MPH',
               data: data.mphValues,
               yAxisID: 'yMph',
-              borderColor: '#f59e0b', 
+              borderColor: '#f59e0b',
               backgroundColor: '#f59e0b',
-              borderWidth: 3, 
-              tension: 0.35, 
-              fill: false, 
-              pointRadius: cfg.type==='bar'?0:3, 
-              pointHoverRadius: 7, 
+              borderWidth: 3,
+              tension: 0.35,
+              fill: false,
+              pointRadius: cfg.type==='bar'?0:3,
+              pointHoverRadius: 7,
               pointBackgroundColor: '#f59e0b',
               spanGaps: true,
               datalabels: cfg.type==='bar' ? {
-                 display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
-                 backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
-                 padding: { top: 3, bottom: 3, left: 6, right: 6 },
-                 font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                 textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+                display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
               } : { display: false }
             }
           ]
@@ -839,7 +903,6 @@
                 }
               }
             }
-            // datalabels plugin is now globally enabled, controlled specifically at dataset level!
           },
           scales: {
             x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
@@ -1180,7 +1243,7 @@
 
   document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
 
-  // ── Bootstrap: load headcount first, then render ──────────────────────────────
+  // ── Bootstrap ─────────────────────────────────────────────────────────────────
   await loadHeadcount();
   updateView();
 </script>
