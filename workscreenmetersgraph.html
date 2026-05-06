@@ -690,10 +690,6 @@
     return {
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
-      completionValues: weekdays.map(d => {
-        const {completed,jobs} = dateMap[d];
-        return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
-      }),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
       startMphValues,
       endMphValues,
@@ -747,17 +743,12 @@
     };
   }
 
-  function dualAxisOptions(title, showCompletion = true) {
+  function dualAxisOptions(title) {
     const scales = {
       x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
-      yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } }
+      yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
+      yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'MPH', color:'#d8b4fe', font:{size:12,weight:'600'} } }
     };
-    if (showCompletion) {
-      scales.yCompletion = { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } };
-    }
-    
-    // Y-Axis specifically for MPH line mapping
-    scales.yMph = { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'MPH', color:'#d8b4fe', font:{size:12,weight:'600'} } };
 
     return {
       responsive: true, maintainAspectRatio: false,
@@ -768,7 +759,6 @@
         tooltip: {
           callbacks: {
             label: c => {
-              if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
               if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
               if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
               if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
@@ -794,8 +784,6 @@
 
       const total = data.metersValues.reduce((s,v) => s+v, 0);
       const pop = data.metersValues.filter(v=>v>0).length;
-      const validComp = data.completionValues.filter(v=>v!==null&&v>0);
-      const compAvg = validComp.length > 0 ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—';
       
       const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
       const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
@@ -805,13 +793,12 @@
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
-        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success">${compAvg}</div></div>` +
         `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>`
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
-      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, true);
+      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`);
       monthOpts.plugins.annotation = { annotations };
 
       chart = new Chart(ctx, {
@@ -862,16 +849,6 @@
                 textShadowColor: 'rgba(0,0,0,0.9)',
                 textShadowBlur: 4
               }
-            },
-            {
-              type: 'line', label: 'Completion %', data: data.completionValues,
-              borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)',
-              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
-              pointHoverRadius: 8, pointBackgroundColor: '#10b981',
-              yAxisID: 'yCompletion', spanGaps: true, order: 0,
-              datalabels: { anchor:'top', align:'top', offset:6, color:'#34d399',
-                font:{weight:'bold',size:10}, formatter: v => v!==null&&v>0?`${v}%`:'',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
             },
             {
               type: 'line', label: 'Start MPH', data: data.startMphValues,
@@ -942,6 +919,10 @@
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
+      
+      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`);
+      periodOpts.plugins.annotation = { annotations };
+      
       chart = new Chart(ctx, {
         type: cfg.type,
         data: {
@@ -1042,30 +1023,7 @@
             }
           ]
         },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { mode:'index', intersect:false },
-          plugins: {
-            title: { display:true, text:`${cfg.label} – Meters Installed (${hc} Base Engineers)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
-            legend: { labels:{ color:'#cbd5e1', font:{size:14}, usePointStyle:true } },
-            annotation: { annotations },
-            tooltip: {
-              callbacks: {
-                label: c => {
-                  if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
-                  if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
-                  if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
-                  return ` Meters: ${c.raw}`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
-            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} },
-            yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax:10, ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false } }
-          }
-        },
+        options: periodOpts,
         plugins: [ChartDataLabels]
       });
     }
