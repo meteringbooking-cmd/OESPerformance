@@ -529,33 +529,11 @@
         }
       });
 
-      const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
-      const snapHc = await getDocs(qHc);
-      const krakenHc = {};
-
-      snapHc.forEach(doc => {
-        const d = doc.data();
-        krakenHc[d.date] = Number(d.headcount || 0);
-      });
-
-      return { krakenMeters, krakenHc };
+      return { krakenMeters };
     } catch (err) {
-      console.warn("Could not fetch KrakenAM specific data for MPH:", err);
-      return { krakenMeters: {}, krakenHc: {} };
+      console.warn("Could not fetch KrakenAM specific data:", err);
+      return { krakenMeters: {} };
     }
-  }
-
-  // Unified MPH calculator: Will divide ANY passed meters (start or end) by the Kraken Headcount
-  function computeMphForDate(meters, date, krakenHc, team, hcFallback) {
-    const m = meters || 0;
-    if (m <= 0) return null;
-    let hc;
-    if (team === "all") {
-      hc = (krakenHc[date] && krakenHc[date] > 0) ? krakenHc[date] : (hcFallback || 0);
-    } else {
-      hc = hcFallback || 0;
-    }
-    return hc > 0 ? Number((m / hc).toFixed(1)) : null;
   }
 
   function getWeekdayDates(start, end) {
@@ -592,7 +570,7 @@
     const endDate   = effectiveEnd.toISOString().split('T')[0];
 
     const records = await fetchRecordsForRange(startDate, endDate, team);
-    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+    const { krakenMeters } = await fetchKrakenMphData(startDate, endDate, team);
 
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
@@ -606,25 +584,6 @@
       }
     });
 
-    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
-
-    // Build independent arrays for Start MPH (Kraken / HC) and End MPH (Installed / HC)
-    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
-    const endMphValues   = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
-
-    // Summary MPH markers: Grab the first available Start MPH, and the last available End MPH
-    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
-    const datesWithKrakenEnd   = weekdays.filter(d => (dateMap[d].meters || 0) > 0);
-    
-    const firstKrakenDate = datesWithKrakenStart[0] || null;
-    const lastKrakenDate  = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
-
-    const startingMph  = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
-    const endingMph    = lastKrakenDate  ? computeMphForDate(dateMap[lastKrakenDate].meters, lastKrakenDate, krakenHc, team, hcFallback) : null;
-    
-    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-    const endingDate   = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
-
     return {
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
@@ -632,10 +591,7 @@
         const {completed,jobs} = dateMap[d];
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
-      startMphValues,
-      endMphValues,
-      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
-      startingMph, endingMph, startingDate, endingDate
+      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0))
     };
   }
 
@@ -646,49 +602,26 @@
     const endDate = today.toISOString().split('T')[0];
 
     const records = await fetchRecordsForRange(startDate, endDate, team);
-    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+    const { krakenMeters } = await fetchKrakenMphData(startDate, endDate, team);
 
     const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
 
-    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
-
-    // Build independent arrays for Start MPH (Kraken / HC) and End MPH (Installed / HC)
-    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
-    const endMphValues   = weekdays.map(d => computeMphForDate(dateMap[d], d, krakenHc, team, hcFallback));
-
-    // Summary MPH markers: Grab the first available Start MPH, and the last available End MPH
-    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
-    const datesWithKrakenEnd   = weekdays.filter(d => (dateMap[d] || 0) > 0);
-
-    const firstKrakenDate = datesWithKrakenStart[0] || null;
-    const lastKrakenDate  = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
-
-    const startingMph  = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
-    const endingMph    = lastKrakenDate  ? computeMphForDate(dateMap[lastKrakenDate], lastKrakenDate, krakenHc, team, hcFallback) : null;
-    
-    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-    const endingDate   = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
-
     const isBar = cfg.type === 'bar';
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
-      startMphValues,
-      endMphValues,
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
-      workingDays: weekdays.length,
-      startingMph, endingMph, startingDate, endingDate
+      workingDays: weekdays.length
     };
   }
 
   function dualAxisOptions(title, showCompletion = true) {
     const scales = {
       x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
-      yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
-      yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Kraken MPH', color:'#f59e0b', font:{size:12,weight:'600'} } }
+      yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } }
     };
     if (showCompletion) {
       scales.yCompletion = { type:'linear', position:'right', beginAtZero:true, max:100, ticks:{ color:'#10b981', callback: v=>`${v}%` }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Completion %', color:'#10b981', font:{size:12,weight:'600'} } };
@@ -703,8 +636,6 @@
           callbacks: {
             label: c => {
               if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
-              if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
-              if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
               if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
               return ` Meters: ${c.raw}`;
             }
@@ -713,51 +644,6 @@
       },
       scales: scales
     };
-  }
-
-  function buildMphAnnotations(startingMph, endingMph, startingDate, endingDate) {
-    const annotations = {};
-    const sameValue = startingMph !== null && endingMph !== null && startingMph === endingMph;
-
-    if (startingMph !== null) {
-      annotations.startMphLine = {
-        type: 'line',
-        yMin: startingMph, yMax: startingMph,
-        yScaleID: 'yMph',
-        borderColor: '#f97316', borderWidth: 2,
-        borderDash: [8, 5],
-        label: {
-          display: true,
-          content: `Start MPH: ${startingMph}${startingDate ? ' ('+startingDate+')' : ''}`,
-          position: 'start',
-          backgroundColor: 'rgba(249,115,22,0.92)',
-          color: '#fff', font: { size: 11, weight: 'bold' },
-          padding: { x: 8, y: 4 }, borderRadius: 5,
-          yAdjust: sameValue ? -18 : -14
-        }
-      };
-    }
-
-    if (endingMph !== null) {
-      annotations.endMphLine = {
-        type: 'line',
-        yMin: endingMph, yMax: endingMph,
-        yScaleID: 'yMph',
-        borderColor: '#10b981', borderWidth: 2.5,
-        borderDash: [],
-        label: {
-          display: true,
-          content: `End MPH: ${endingMph}${endingDate ? ' ('+endingDate+')' : ''}`,
-          position: 'end',
-          backgroundColor: 'rgba(16,185,129,0.92)',
-          color: '#fff', font: { size: 11, weight: 'bold' },
-          padding: { x: 8, y: 4 }, borderRadius: 5,
-          yAdjust: sameValue ? 18 : 14
-        }
-      };
-    }
-
-    return annotations;
   }
 
   async function renderMix() {
@@ -775,23 +661,17 @@
       const pop = data.metersValues.filter(v=>v>0).length;
       const validComp = data.completionValues.filter(v=>v!==null&&v>0);
       const compAvg = validComp.length > 0 ? `${(validComp.reduce((s,v)=>s+v,0)/validComp.length).toFixed(1)}%` : '—';
-      
-      const validStartMph = data.startMphValues.filter(v=>v!==null&&v>0);
-      const avgStartMph = validStartMph.length > 0 ? (validStartMph.reduce((s,v)=>s+v,0)/validStartMph.length).toFixed(1) : '—';
-
-      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
-        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success">${compAvg}</div></div>` +
-        `<div class="stats-box orange"><div class="stats-label">Kraken Avg MPH</div><div class="stats-value orange-grad">${avgStartMph}</div></div>`
+        `<div class="stats-box green"><div class="stats-label">Avg Completion</div><div class="stats-value success">${compAvg}</div></div>`
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
       const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, true);
-      monthOpts.plugins.annotation = { annotations };
+      
       chart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -848,34 +728,6 @@
               datalabels: { anchor:'top', align:'top', offset:6, color:'#34d399',
                 font:{weight:'bold',size:10}, formatter: v => v!==null&&v>0?`${v}%`:'',
                 textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
-            },
-            {
-              type: 'line', label: 'Start MPH', data: data.startMphValues,
-              borderColor: '#f97316', backgroundColor: '#f97316',
-              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
-              pointHoverRadius: 8, pointBackgroundColor: '#f97316',
-              yAxisID: 'yMph', spanGaps: true, order: 0,
-              datalabels: {
-                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#fcd34d',
-                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
-                padding: { top: 3, bottom: 3, left: 6, right: 6 },
-                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              }
-            },
-            {
-              type: 'line', label: 'End MPH', data: data.endMphValues,
-              borderColor: '#10b981', backgroundColor: '#10b981',
-              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
-              pointHoverRadius: 8, pointBackgroundColor: '#10b981',
-              yAxisID: 'yMph', spanGaps: true, order: 0,
-              datalabels: {
-                display: true, anchor:'top', align:'top', offset:6, color:'#34d399',
-                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
-                padding: { top: 3, bottom: 3, left: 6, right: 6 },
-                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              }
             }
           ]
         },
@@ -891,9 +743,6 @@
       const total = data.values.reduce((s,v)=>s+v,0);
       const pop   = data.values.filter(v=>v>0).length;
 
-      const validStartMph = data.startMphValues.filter(v=>v!==null&&v>0);
-      const avgStartMph = validStartMph.length > 0 ? (validStartMph.reduce((s,v)=>s+v,0)/validStartMph.length).toFixed(1) : '—';
-
       const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 39;
 
       let targetHTML = '';
@@ -906,12 +755,9 @@
         targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
-      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
-
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
-        `<div class="stats-box orange"><div class="stats-label">Kraken Avg MPH</div><div class="stats-value orange-grad">${avgStartMph}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Headcount (OES DB)</div><div class="stats-value">${hc}</div></div>` +
         targetHTML
       );
@@ -967,52 +813,6 @@
                 textShadowColor: 'rgba(0,0,0,0.9)',
                 textShadowBlur: 4
               } : { display: false }
-            },
-            {
-              type: 'line',
-              label: 'Start MPH',
-              data: data.startMphValues,
-              yAxisID: 'yMph',
-              borderColor: '#f97316',
-              backgroundColor: '#f97316',
-              borderWidth: 3,
-              tension: 0.35,
-              fill: false,
-              pointRadius: cfg.type==='bar'?0:3,
-              pointHoverRadius: 7,
-              pointBackgroundColor: '#f97316',
-              spanGaps: true,
-              order: 0,
-              datalabels: cfg.type==='bar' ? {
-                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#fcd34d',
-                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
-                padding: { top: 3, bottom: 3, left: 6, right: 6 },
-                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              } : { display: false }
-            },
-            {
-              type: 'line',
-              label: 'End MPH',
-              data: data.endMphValues,
-              yAxisID: 'yMph',
-              borderColor: '#10b981',
-              backgroundColor: '#10b981',
-              borderWidth: 3,
-              tension: 0.35,
-              fill: false,
-              pointRadius: cfg.type==='bar'?0:3,
-              pointHoverRadius: 7,
-              pointBackgroundColor: '#10b981',
-              spanGaps: true,
-              order: 0,
-              datalabels: cfg.type==='bar' ? {
-                display: true, anchor:'top', align:'top', offset:6, color:'#34d399',
-                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
-                padding: { top: 3, bottom: 3, left: 6, right: 6 },
-                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
-              } : { display: false }
             }
           ]
         },
@@ -1022,12 +822,9 @@
           plugins: {
             title: { display:true, text:`${cfg.label} – Meters Installed (${hc} Base Engineers)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
             legend: { labels:{ color:'#cbd5e1', font:{size:14}, usePointStyle:true } },
-            annotation: { annotations },
             tooltip: {
               callbacks: {
                 label: c => {
-                  if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
-                  if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
                   if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
                   return ` Meters: ${c.raw}`;
                 }
@@ -1036,8 +833,7 @@
           },
           scales: {
             x: { ticks:{ color:'#94a3b8', font:{size:cfg.type==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
-            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} },
-            yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax:10, ticks:{ color:'#f59e0b', stepSize:2 }, grid:{ drawOnChartArea:false } }
+            yMeters: { type:'linear', position:'left', beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'} }
           }
         },
         plugins: [ChartDataLabels]
