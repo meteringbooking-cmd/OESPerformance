@@ -514,7 +514,7 @@
     return recs;
   }
 
-  // Fetch KrakenAM data — returns per-date meters, headcount, AND first/last day details
+  // Fetch KrakenAM data — returns per-date meters and headcount
   async function fetchKrakenMphData(startDate, endDate, team) {
     try {
       const qMeters = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate));
@@ -546,11 +546,19 @@
     }
   }
 
-  // Helper: compute MPH for a single date given krakenMeters, krakenHc, team, hcFallback
+  // FIX 1: compute MPH for a single date.
+  // For "all teams" use the real daily krakenHc when available, otherwise fall back.
+  // For a specific team, krakenHc is the whole-org headcount so we always use the
+  // static per-team fallback instead (krakenHc isn't split by team).
   function computeMphForDate(date, krakenMeters, krakenHc, team, hcFallback) {
     const km = krakenMeters[date] || 0;
-    let hc = krakenHc[date];
-    if (!hc || hc <= 0 || team !== "all") {
+    let hc;
+    if (team === "all") {
+      // Use the real daily headcount when we have it; otherwise fall back
+      hc = (krakenHc[date] && krakenHc[date] > 0) ? krakenHc[date] : hcFallback;
+    } else {
+      // Per-team view: krakenHc is org-wide so it's not appropriate — use the
+      // static per-team headcount that was loaded from the staff DB
       hc = hcFallback;
     }
     return (hc && hc > 0 && km > 0) ? Number((km / hc).toFixed(1)) : null;
@@ -606,16 +614,15 @@
 
     const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
 
-    // Find first and last weekdays that have KrakenAM meter data
+    // Summary MPH markers: first and last days that have KrakenAM meter data
     const datesWithKraken = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
     const firstKrakenDate = datesWithKraken[0] || null;
     const lastKrakenDate  = datesWithKraken[datesWithKraken.length - 1] || null;
 
-    const startingMeters = firstKrakenDate ? Math.round(krakenMeters[firstKrakenDate]) : null;
-    const startingMph    = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
-    const endingMph      = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
-    const startingDate   = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-    const endingDate     = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
+    const startingMph  = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
+    const endingMph    = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
+    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+    const endingDate   = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
 
     return {
       labels: weekdays.map(d => formatDayLabel(d, true)),
@@ -625,7 +632,9 @@
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
       mphValues: weekdays.map(d => computeMphForDate(d, krakenMeters, krakenHc, team, hcFallback)),
-      startingMeters, startingMph, endingMph, startingDate, endingDate
+      // FIX 2: per-day KrakenAM start meters (not a flat repeated value)
+      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      startingMph, endingMph, startingDate, endingDate
     };
   }
 
@@ -645,24 +654,25 @@
 
     const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
 
-    // Find first and last weekdays that have KrakenAM meter data
+    // Summary MPH markers: first and last days that have KrakenAM meter data
     const datesWithKraken = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
     const firstKrakenDate = datesWithKraken[0] || null;
     const lastKrakenDate  = datesWithKraken[datesWithKraken.length - 1] || null;
 
-    const startingMeters = firstKrakenDate ? Math.round(krakenMeters[firstKrakenDate]) : null;
-    const startingMph    = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
-    const endingMph      = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
-    const startingDate   = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-    const endingDate     = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
+    const startingMph  = firstKrakenDate ? computeMphForDate(firstKrakenDate, krakenMeters, krakenHc, team, hcFallback) : null;
+    const endingMph    = lastKrakenDate  ? computeMphForDate(lastKrakenDate,  krakenMeters, krakenHc, team, hcFallback) : null;
+    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+    const endingDate   = lastKrakenDate  ? formatDayLabel(lastKrakenDate,  false) : null;
 
     const isBar = cfg.type === 'bar';
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
       mphValues: weekdays.map(d => computeMphForDate(d, krakenMeters, krakenHc, team, hcFallback)),
+      // FIX 2: per-day KrakenAM start meters (not a flat repeated value)
+      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
       workingDays: weekdays.length,
-      startingMeters, startingMph, endingMph, startingDate, endingDate
+      startingMph, endingMph, startingDate, endingDate
     };
   }
 
@@ -686,7 +696,7 @@
             label: c => {
               if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
               if (c.dataset.label === 'Kraken MPH') return c.raw !== null ? ` Kraken MPH: ${c.raw}` : ' Kraken MPH: No data';
-              if (c.dataset.label === 'Start Meters (KrakenAM)') return c.raw > 0 ? ` Start Meters: ${c.raw}` : '';
+              if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
               return ` Meters: ${c.raw}`;
             }
           }
@@ -755,8 +765,6 @@
       const avgMph = validMph.length > 0 ? (validMph.reduce((s,v)=>s+v,0)/validMph.length).toFixed(1) : '—';
 
       const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
-      // Starting meters bar: same value repeated across all labels so it shows as a flat reference bar
-      const startingMetersArr = data.labels.map(() => data.startingMeters || 0);
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
@@ -774,21 +782,45 @@
         data: {
           labels: data.labels,
           datasets: [
+            // FIX 3: Orange bar behind purple — order:3 pushes it behind order:1 (purple).
+            // FIX 2: krakenMetersPerDay gives the actual per-day value instead of a flat repeat.
             {
-              type: 'bar', label: 'Start Meters (KrakenAM)', data: startingMetersArr,
-              backgroundColor: 'rgba(249,115,22,0.45)', borderColor: '#f97316',
-              borderWidth: 1, borderRadius: 4, yAxisID: 'yMeters',
-              order: 2,
-              datalabels: { display: false }
+              type: 'bar',
+              label: 'KrakenAM Meters',
+              data: data.krakenMetersPerDay,
+              backgroundColor: 'rgba(249,115,22,0.45)',
+              borderColor: '#f97316',
+              borderWidth: 1,
+              borderRadius: 4,
+              yAxisID: 'yMeters',
+              order: 3,
+              datalabels: {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                offset: -18,
+                color: '#fb923c',
+                font: { weight: 'bold', size: 10 },
+                formatter: v => v > 0 ? v : '',
+                textShadowColor: 'rgba(0,0,0,0.9)',
+                textShadowBlur: 4
+              }
             },
             {
-              type: 'bar', label: 'Meters Installed', data: data.metersValues,
-              backgroundColor: 'rgba(99,102,241,0.75)', borderColor: '#6366f1',
-              borderWidth: 1, borderRadius: 6, yAxisID: 'yMeters',
+              type: 'bar',
+              label: 'Meters Installed',
+              data: data.metersValues,
+              backgroundColor: 'rgba(99,102,241,0.75)',
+              borderColor: '#6366f1',
+              borderWidth: 1,
+              borderRadius: 6,
+              yAxisID: 'yMeters',
               order: 1,
-              datalabels: { anchor:'end', align:'top', offset:2, color:'#e2e8f0',
-                font:{weight:'bold',size:11}, formatter: v => v>0?v:'',
-                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
+              datalabels: {
+                anchor: 'end', align: 'top', offset: 2, color: '#e2e8f0',
+                font: { weight: 'bold', size: 11 }, formatter: v => v > 0 ? v : '',
+                textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+              }
             },
             {
               type: 'line', label: 'Completion %', data: data.completionValues,
@@ -844,7 +876,6 @@
       }
 
       const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
-      const startingMetersArr = data.labels.map(() => data.startingMeters || 0);
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
@@ -861,12 +892,28 @@
         data: {
           labels: data.labels,
           datasets: [
+            // FIX 3: Orange bar behind purple — order:3, and with per-day values (FIX 2)
             {
-              type: 'bar', label: 'Start Meters (KrakenAM)', data: startingMetersArr,
-              backgroundColor: 'rgba(249,115,22,0.45)', borderColor: '#f97316',
-              borderWidth: 1, borderRadius: 4, yAxisID: 'yMeters',
-              order: 2,
-              datalabels: { display: false }
+              type: 'bar',
+              label: 'KrakenAM Meters',
+              data: data.krakenMetersPerDay,
+              backgroundColor: 'rgba(249,115,22,0.45)',
+              borderColor: '#f97316',
+              borderWidth: 1,
+              borderRadius: 4,
+              yAxisID: 'yMeters',
+              order: 3,
+              datalabels: cfg.type === 'bar' ? {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                offset: -18,
+                color: '#fb923c',
+                font: { weight: 'bold', size: 10 },
+                formatter: v => v > 0 ? v : '',
+                textShadowColor: 'rgba(0,0,0,0.9)',
+                textShadowBlur: 4
+              } : { display: false }
             },
             {
               label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
@@ -900,6 +947,7 @@
               pointHoverRadius: 7,
               pointBackgroundColor: '#f59e0b',
               spanGaps: true,
+              order: 2,
               datalabels: cfg.type==='bar' ? {
                 display: true, anchor:'end', align:'top', offset:6, color:'#fcd34d',
                 backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
@@ -921,7 +969,7 @@
               callbacks: {
                 label: c => {
                   if (c.dataset.label === 'Kraken MPH') return c.raw !== null ? ` Kraken MPH: ${c.raw}` : ' Kraken MPH: No data';
-                  if (c.dataset.label === 'Start Meters (KrakenAM)') return c.raw > 0 ? ` Start Meters: ${c.raw}` : '';
+                  if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
                   return ` Meters: ${c.raw}`;
                 }
               }
