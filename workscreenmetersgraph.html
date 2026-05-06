@@ -540,6 +540,7 @@
         }
       });
 
+      // Fetch Headcount
       const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapHc = await getDocs(qHc);
       const krakenHc = {};
@@ -592,10 +593,35 @@
     document.getElementById('statsContainer').innerHTML = html;
   }
 
-  // Build the annotation for the chart specifically for End MPH
-  function buildMphAnnotations(endingMph, endingDate) {
+  // Build the annotation lines for the chart
+  function buildMphAnnotations(startingMph, endingMph, startingDate, endingDate) {
     const annotations = {};
 
+    // Adjust position if start and end values are the same so labels don't overlap
+    const sameValue = startingMph !== null && endingMph !== null && startingMph === endingMph;
+
+    // Start MPH (Orange, Dashed)
+    if (startingMph !== null) {
+      annotations.startMphLine = {
+        type: 'line',
+        yMin: startingMph, yMax: startingMph,
+        yScaleID: 'yMph',
+        borderColor: '#f97316',
+        borderWidth: 2,
+        borderDash: [8, 5],
+        label: {
+          display: true,
+          content: `Start MPH: ${startingMph}${startingDate ? ' ('+startingDate+')' : ''}`,
+          position: 'start',
+          backgroundColor: 'rgba(249,115,22,0.92)',
+          color: '#fff', font: { size: 11, weight: 'bold' },
+          padding: { x: 8, y: 4 }, borderRadius: 5,
+          yAdjust: sameValue ? -18 : -14
+        }
+      };
+    }
+
+    // End MPH (Dark Purple, Solid)
     if (endingMph !== null) {
       annotations.endMphLine = {
         type: 'line',
@@ -603,7 +629,7 @@
         yScaleID: 'yMph',
         borderColor: '#581c87', // Dark Purple
         borderWidth: 2.5,
-        borderDash: [5, 5],
+        borderDash: [], // Solid Line
         label: {
           display: true,
           content: `End MPH: ${endingMph}${endingDate ? ' ('+endingDate+')' : ''}`,
@@ -611,7 +637,7 @@
           backgroundColor: 'rgba(88,28,135,0.92)',
           color: '#fff', font: { size: 11, weight: 'bold' },
           padding: { x: 8, y: 4 }, borderRadius: 5,
-          yAdjust: -14
+          yAdjust: sameValue ? 18 : 14
         }
       };
     }
@@ -645,10 +671,17 @@
 
     const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
     
+    // Calculate Start MPH (Kraken Meters / Headcount)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
     // Calculate End MPH (Meters Installed / Headcount)
     const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
 
-    // Summary MPH markers: Grab the last available End MPH
+    // Summary MPH markers
+    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
+    const firstKrakenDate = datesWithKrakenStart[0] || null;
+    const startingMph = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
+    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+
     const datesWithKrakenEnd = weekdays.filter(d => (dateMap[d].meters || 0) > 0);
     const lastKrakenDate = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
     const endingMph = lastKrakenDate ? computeMphForDate(dateMap[lastKrakenDate].meters, lastKrakenDate, krakenHc, team, hcFallback) : null;
@@ -662,7 +695,9 @@
         return jobs > 0 ? Number(((completed/jobs)*100).toFixed(1)) : null;
       }),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      startMphValues,
       endMphValues,
+      startingMph, startingDate,
       endingMph, endingDate
     };
   }
@@ -683,10 +718,17 @@
 
     const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
 
+    // Calculate Start MPH (Kraken Meters / Headcount)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
     // Calculate End MPH (Meters Installed / Headcount)
     const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d]||0, d, krakenHc, team, hcFallback));
 
-    // Summary MPH markers: Grab the last available End MPH
+    // Summary MPH markers
+    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
+    const firstKrakenDate = datesWithKrakenStart[0] || null;
+    const startingMph = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
+    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
+
     const datesWithKrakenEnd = weekdays.filter(d => (dateMap[d] || 0) > 0);
     const lastKrakenDate = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
     const endingMph = lastKrakenDate ? computeMphForDate(dateMap[lastKrakenDate]||0, lastKrakenDate, krakenHc, team, hcFallback) : null;
@@ -698,7 +740,9 @@
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
       workingDays: weekdays.length,
+      startMphValues,
       endMphValues,
+      startingMph, startingDate,
       endingMph, endingDate
     };
   }
@@ -713,7 +757,7 @@
     }
     
     // Y-Axis specifically for MPH line mapping
-    scales.yMph = { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'End MPH', color:'#d8b4fe', font:{size:12,weight:'600'} } };
+    scales.yMph = { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'MPH', color:'#d8b4fe', font:{size:12,weight:'600'} } };
 
     return {
       responsive: true, maintainAspectRatio: false,
@@ -725,6 +769,7 @@
           callbacks: {
             label: c => {
               if (c.dataset.label === 'Completion %') return c.raw !== null ? ` Completion: ${c.raw}%` : ' Completion: No data';
+              if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
               if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
               if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
               return ` Meters: ${c.raw}`;
@@ -755,7 +800,7 @@
       const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
       const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
 
-      const annotations = buildMphAnnotations(data.endingMph, data.endingDate);
+      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
@@ -829,6 +874,20 @@
                 textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4 }
             },
             {
+              type: 'line', label: 'Start MPH', data: data.startMphValues,
+              borderColor: '#f97316', backgroundColor: '#f97316',
+              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
+              pointHoverRadius: 8, pointBackgroundColor: '#f97316',
+              yAxisID: 'yMph', spanGaps: true, order: 0,
+              datalabels: {
+                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              }
+            },
+            {
               type: 'line', label: 'End MPH', data: data.endMphValues,
               borderColor: '#581c87', backgroundColor: '#581c87',
               borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
@@ -871,7 +930,7 @@
         targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
-      const annotations = buildMphAnnotations(data.endingMph, data.endingDate);
+      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
 
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
@@ -937,6 +996,29 @@
             },
             {
               type: 'line',
+              label: 'Start MPH',
+              data: data.startMphValues,
+              yAxisID: 'yMph',
+              borderColor: '#f97316',
+              backgroundColor: '#f97316',
+              borderWidth: 3,
+              tension: 0.35,
+              fill: false,
+              pointRadius: cfg.type==='bar'?0:3,
+              pointHoverRadius: 7,
+              pointBackgroundColor: '#f97316',
+              spanGaps: true,
+              order: 0,
+              datalabels: cfg.type==='bar' ? {
+                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              } : { display: false }
+            },
+            {
+              type: 'line',
               label: 'End MPH',
               data: data.endMphValues,
               yAxisID: 'yMph',
@@ -970,6 +1052,7 @@
             tooltip: {
               callbacks: {
                 label: c => {
+                  if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
                   if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
                   if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
                   return ` Meters: ${c.raw}`;
