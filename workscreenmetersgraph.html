@@ -6,7 +6,6 @@
   <title>Meters Dashboard • OES</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
     :root {
@@ -593,56 +592,6 @@
     document.getElementById('statsContainer').innerHTML = html;
   }
 
-  // Build the annotation lines for the chart
-  function buildMphAnnotations(startingMph, endingMph, startingDate, endingDate) {
-    const annotations = {};
-
-    // Adjust position if start and end values are the same so labels don't overlap
-    const sameValue = startingMph !== null && endingMph !== null && startingMph === endingMph;
-
-    // Start MPH (Orange, Dashed)
-    if (startingMph !== null) {
-      annotations.startMphLine = {
-        type: 'line',
-        yMin: startingMph, yMax: startingMph,
-        yScaleID: 'yMph',
-        borderColor: '#f97316',
-        borderWidth: 2,
-        borderDash: [8, 5],
-        label: {
-          display: true,
-          content: `Start MPH: ${startingMph}${startingDate ? ' ('+startingDate+')' : ''}`,
-          position: 'start',
-          backgroundColor: 'rgba(249,115,22,0.92)',
-          color: '#fff', font: { size: 11, weight: 'bold' },
-          padding: { x: 8, y: 4 }, borderRadius: 5,
-          yAdjust: sameValue ? -18 : -14
-        }
-      };
-    }
-
-    // End MPH (Dark Purple, Solid)
-    if (endingMph !== null) {
-      annotations.endMphLine = {
-        type: 'line',
-        yMin: endingMph, yMax: endingMph,
-        yScaleID: 'yMph',
-        borderColor: '#581c87', // Dark Purple
-        borderWidth: 2.5,
-        borderDash: [], // Solid Line
-        label: {
-          display: true,
-          content: `End MPH: ${endingMph}${endingDate ? ' ('+endingDate+')' : ''}`,
-          position: 'end',
-          backgroundColor: 'rgba(88,28,135,0.92)',
-          color: '#fff', font: { size: 11, weight: 'bold' },
-          padding: { x: 8, y: 4 }, borderRadius: 5,
-          yAdjust: sameValue ? 18 : 14
-        }
-      };
-    }
-    return annotations;
-  }
 
   // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
 
@@ -676,25 +625,12 @@
     // Calculate End MPH (Meters Installed / Headcount)
     const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
 
-    // Summary MPH markers
-    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
-    const firstKrakenDate = datesWithKrakenStart[0] || null;
-    const startingMph = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
-    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-
-    const datesWithKrakenEnd = weekdays.filter(d => (dateMap[d].meters || 0) > 0);
-    const lastKrakenDate = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
-    const endingMph = lastKrakenDate ? computeMphForDate(dateMap[lastKrakenDate].meters, lastKrakenDate, krakenHc, team, hcFallback) : null;
-    const endingDate = lastKrakenDate ? formatDayLabel(lastKrakenDate, false) : null;
-
     return {
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
       startMphValues,
-      endMphValues,
-      startingMph, startingDate,
-      endingMph, endingDate
+      endMphValues
     };
   }
 
@@ -719,17 +655,6 @@
     // Calculate End MPH (Meters Installed / Headcount)
     const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d]||0, d, krakenHc, team, hcFallback));
 
-    // Summary MPH markers
-    const datesWithKrakenStart = weekdays.filter(d => (krakenMeters[d] || 0) > 0);
-    const firstKrakenDate = datesWithKrakenStart[0] || null;
-    const startingMph = firstKrakenDate ? computeMphForDate(krakenMeters[firstKrakenDate], firstKrakenDate, krakenHc, team, hcFallback) : null;
-    const startingDate = firstKrakenDate ? formatDayLabel(firstKrakenDate, false) : null;
-
-    const datesWithKrakenEnd = weekdays.filter(d => (dateMap[d] || 0) > 0);
-    const lastKrakenDate = datesWithKrakenEnd[datesWithKrakenEnd.length - 1] || null;
-    const endingMph = lastKrakenDate ? computeMphForDate(dateMap[lastKrakenDate]||0, lastKrakenDate, krakenHc, team, hcFallback) : null;
-    const endingDate = lastKrakenDate ? formatDayLabel(lastKrakenDate, false) : null;
-
     const isBar = cfg.type === 'bar';
     return {
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
@@ -737,9 +662,7 @@
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
       workingDays: weekdays.length,
       startMphValues,
-      endMphValues,
-      startingMph, startingDate,
-      endingMph, endingDate
+      endMphValues
     };
   }
 
@@ -788,8 +711,6 @@
       const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
       const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
 
-      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
-
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
@@ -799,7 +720,6 @@
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
       const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`);
-      monthOpts.plugins.annotation = { annotations };
 
       chart = new Chart(ctx, {
         type: 'bar',
@@ -907,8 +827,6 @@
         targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
-      const annotations = buildMphAnnotations(data.startingMph, data.endingMph, data.startingDate, data.endingDate);
-
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
@@ -921,7 +839,6 @@
       if (chart) chart.destroy();
       
       const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`);
-      periodOpts.plugins.annotation = { annotations };
       
       chart = new Chart(ctx, {
         type: cfg.type,
