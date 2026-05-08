@@ -491,6 +491,16 @@
         let currentPeriod = 6, currentType = 'all', currentEmployee = 'all';
         let expandedCard = null;
 
+        // ── Normalizer for Absence Types ─────────────────────────────────────────
+        function normalizeAbsenceType(type) {
+            if (!type) return '';
+            const t = type.trim();
+            // Automatically map old historical names to the newly incorporated long names
+            if (t === 'General absence: GA - AAUP') return 'General absence: GA - AAUP General Absence - Authorised Absence Unpaid';
+            if (t === 'General absence: GA - UPTOFD') return 'General absence: GA - UPTOFD General Absence - Unpaid Time off for Dependants';
+            return t;
+        }
+
         // ── Dedup fingerprint ───────────────────────────────────────────────────
         function makeFingerprint(employee, absenceType, fromDate) {
             return `${(employee || '').trim().toLowerCase()}|${(absenceType || '').trim().toLowerCase()}|${(fromDate || '').trim()}`;
@@ -635,7 +645,10 @@
                 let parsedRecords = [];
                 for (let i = 1; i < jsonData.length; i++) {
                     const row = jsonData[i];
-                    const absenceType = row[3]?.toString().trim();
+                    // Normalize the name directly during the excel parse
+                    const rawType = row[3]?.toString().trim();
+                    const absenceType = normalizeAbsenceType(rawType);
+                    
                     if (!validTypes.some(type => absenceType?.includes(type.split(':')[0]))) continue;
                     const employee = row[0]?.toString().trim() || '';
                     const fromDate = parseExcelDate(row[4]);
@@ -706,7 +719,14 @@
             try {
                 const q = query(collection(db, "All Absences"), orderBy("fromDate", "desc"));
                 const snapshot = await getDocs(q);
-                allAbsences = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Map over the data as it comes out of Firebase and apply the normalizer
+                allAbsences = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    data.absenceType = normalizeAbsenceType(data.absenceType);
+                    return { id: doc.id, ...data };
+                });
+                
                 const employeeSet = new Set(), typeSet = new Set();
                 allAbsences.forEach(r => {
                     if (r.employee)    employeeSet.add(r.employee);
