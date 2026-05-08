@@ -290,7 +290,7 @@ const db = getFirestore(app);
 // ── Constants ──
 const MONTH_NAMES   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const HOURS_PER_DAY = 7.5;
-const LTS_THRESHOLD = 6; // sickness records with workingDays >= 6 are classified as Long Term Sickness
+const LTS_THRESHOLD = 6; 
 
 const CAT = {
   SICKNESS:'sickness', GA:'ga', GA_AAUP:'ga_aaup', GA_JS:'ga_js',
@@ -324,7 +324,6 @@ function classifyRow(rawType) {
   return null;
 }
 
-// ── LTS: sickness records with total working days >= LTS_THRESHOLD only ──
 function isLTS(record) {
   return record.category === CAT.SICKNESS && (record.workingDays || 0) >= LTS_THRESHOLD;
 }
@@ -414,7 +413,7 @@ let holSplit        = false;
 let hiddenCats      = new Set();
 let selectedPeriods = new Set();
 let calViewStart    = new Date().getFullYear() - 1;
-let includeLTS      = true;  // when false, sickness records with workingDays >= LTS_THRESHOLD are excluded
+let includeLTS      = true;  
 let barChartInst    = null;
 let doughnutInst    = null;
 
@@ -426,7 +425,12 @@ function toast(msg, type='info') {
 }
 const periodKey   = (yr, mo0) => `${yr}-${String(mo0+1).padStart(2,'0')}`;
 const periodLabel = k => { const [y,m] = k.split('-'); return `${MONTH_NAMES[+m-1]} ${y}`; };
-const makeFingerprint = (emp, from) => `${(emp||'').trim().toLowerCase()}|${(from||'').trim()}`;
+
+/**
+ * UNIQUE FINGERPRINT HELPER
+ * Matches based on Employee name and Date From only.
+ */
+const makeFingerprint = (emp, from) => `${(emp||'').toString().trim().toLowerCase()}|${(from||'').toString().trim()}`;
 
 function dataMonthSet() {
   const s = new Set();
@@ -446,14 +450,12 @@ function resolveDisplayCat(base) {
   return null;
 }
 
-// ── Get filtered slices (respects LTS toggle) ──
 function getFilteredSlices() {
   const slices = [];
   for (const r of allRecords) {
     if (!r.fromDate) continue;
     const displayCat = resolveDisplayCat(r.category);
     if (!displayCat || hiddenCats.has(displayCat)) continue;
-    // ── LTS filter: skip sickness records with 6+ days when LTS is excluded ──
     if (!includeLTS && isLTS(r)) continue;
     const totalDays = r.workingDays || 0;
     const monthDays = splitDaysByMonth(r.fromDate, r.toDate || '', totalDays);
@@ -465,7 +467,6 @@ function getFilteredSlices() {
   return slices;
 }
 
-// ── Get LTS-only slices (used to show excluded days figure in stat tile) ──
 function getLTSOnlySlices() {
   const slices = [];
   for (const r of allRecords) {
@@ -486,7 +487,6 @@ function sumSliceDays(slices) {
   return slices.reduce((s, sl) => s + (sl.sliceDays || 0), 0);
 }
 
-// ── LTS toggle event ──
 document.getElementById('ltsToggle').addEventListener('change', e => {
   includeLTS = e.target.checked;
   const badge   = document.getElementById('ltsBadge');
@@ -503,7 +503,6 @@ document.getElementById('ltsToggle').addEventListener('change', e => {
   renderAll();
 });
 
-// ── Calendar builder ──
 function buildCalendar() {
   const hasData = dataMonthSet();
   const wrap = document.getElementById('calYearsWrap');
@@ -523,8 +522,8 @@ function buildCalendar() {
       chip.className   = 'cal-chip';
       chip.textContent = name;
       chip.dataset.key = key;
-      if (hasData.has(key))         chip.classList.add('has-data');
-      else                          chip.classList.add('no-data');
+      if (hasData.has(key))           chip.classList.add('has-data');
+      else                            chip.classList.add('no-data');
       if (selectedPeriods.has(key)) chip.classList.add('active');
       chip.addEventListener('click', () => {
         if (chip.classList.contains('no-data')) return;
@@ -557,7 +556,6 @@ function updateSummary() {
   });
 }
 
-// ── Calendar controls ──
 document.getElementById('calPrev').addEventListener('click', () => { calViewStart -= 2; buildCalendar(); });
 document.getElementById('calNext').addEventListener('click', () => { calViewStart += 2; buildCalendar(); });
 document.getElementById('calClearBtn').addEventListener('click', () => { selectedPeriods.clear(); buildCalendar(); });
@@ -583,7 +581,7 @@ document.getElementById('applyBtn').addEventListener('click', () => {
   renderAll();
 });
 
-// ── Upload ──
+// ── Updated Upload with Duplicate Checking ──
 const xlInput = document.getElementById('xlFile'), uploadBtn = document.getElementById('uploadBtn');
 xlInput.addEventListener('change', e => {
   const f = e.target.files[0];
@@ -596,12 +594,14 @@ uploadBtn.addEventListener('click', async () => {
   uploadBtn.disabled = true; uploadBtn.textContent = 'Processing…';
   const pw = document.getElementById('progressWrap'), pf = document.getElementById('progressFill');
   pw.classList.add('show'); pf.style.width = '0%';
+  
   try {
     const data = await file.arrayBuffer();
     const wb   = XLSX.read(data);
     const ws   = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true});
 
+    // Debugging info
     const debugPanel = document.getElementById('debugPanel');
     const debugPre   = document.getElementById('debugPre');
     if (rows[0]) {
@@ -614,8 +614,12 @@ uploadBtn.addEventListener('click', async () => {
       debugPanel.style.display = 'block';
     }
 
+    /** 
+     * DUPLICATE DETECTION 
+     * We populate a set with fingerprints of existing records currently in memory.
+     */
     const existing = new Set(allRecords.map(r => makeFingerprint(r.employee, r.fromDate)));
-    let parsed = [], dupes = 0;
+    let parsed = [], dupesSkipped = 0;
 
     for (let i = 1; i < rows.length; i++) {
       const row      = rows[i];
@@ -623,35 +627,55 @@ uploadBtn.addEventListener('click', async () => {
       const rawType  = (row[3]||'').toString().trim();
       const fromDate = parseExcelDate(row[4]);
       const toDate   = parseExcelDate(row[5]);
-      const rawDays  = row[6];
-      const rawHours = row[7];
-      const workingDays = resolveWorkingDays(rawDays, rawHours);
+      
+      const workingDays = resolveWorkingDays(row[6], row[7]);
       const cat = classifyRow(rawType);
+
       if (!employee || !fromDate || !cat) continue;
+
+      // Check for duplicate fingerprint
       const fp = makeFingerprint(employee, fromDate);
-      if (existing.has(fp)) { dupes++; continue; }
+      if (existing.has(fp)) {
+        dupesSkipped++;
+        continue;
+      }
+      
+      // Add to set so we don't upload the same row twice within the same file
       existing.add(fp);
+
       parsed.push({
         employee, rawType, category: cat,
         fromDate, toDate: toDate || '',
         workingDays,
-        rawDays:  rawDays  !== undefined ? rawDays.toString()  : '',
-        rawHours: rawHours !== undefined ? rawHours.toString() : '',
+        rawDays:  row[6]  !== undefined ? row[6].toString()  : '',
+        rawHours: row[7] !== undefined ? row[7].toString() : '',
         notes: (row[8]||'').toString().trim(),
         submitted: parseExcelDate(row[9])
       });
     }
 
-    if (!parsed.length && !dupes) { toast('No valid records found.','error'); resetUpload(); return; }
-    if (!parsed.length) { toast(`All ${dupes} records already exist.`,'error'); resetUpload(); return; }
+    if (!parsed.length) {
+      if (dupesSkipped > 0) {
+        toast(`Upload ignored: ${dupesSkipped} records already exist.`, 'info');
+      } else {
+        toast('No valid records found.', 'error');
+      }
+      resetUpload();
+      return;
+    }
 
     for (let i = 0; i < parsed.length; i++) {
       await addDoc(collection(db,'Absence Trends'), {...parsed[i], uploadedAt: serverTimestamp()});
       pf.style.width = ((i+1)/parsed.length*100)+'%';
     }
-    toast(`✓ Uploaded ${parsed.length} record${parsed.length>1?'s':''}${dupes?` (${dupes} dupe${dupes>1?'s':''} skipped)`:''}`, 'success');
+
+    toast(`✓ Uploaded ${parsed.length} record${parsed.length>1?'s':''}${dupesSkipped > 0 ? ` (${dupesSkipped} duplicates skipped)` : ''}`, 'success');
     await loadData();
-  } catch(err) { toast('Error: '+err.message,'error'); console.error(err); }
+    
+  } catch(err) { 
+    toast('Error: '+err.message,'error'); 
+    console.error(err); 
+  }
   resetUpload();
 });
 
@@ -661,7 +685,6 @@ function resetUpload() {
   xlInput.value = ''; document.getElementById('fileName').textContent = 'No file selected';
 }
 
-// ── Load from Firestore ──
 async function loadData() {
   try {
     const snap = await getDocs(query(collection(db,'Absence Trends'), orderBy('fromDate','desc')));
@@ -678,7 +701,6 @@ async function loadData() {
   } catch(e) { toast('Error loading data: '+e.message,'error'); console.error(e); }
 }
 
-// ── Category bar ──
 function activeCats() {
   const c = [CAT.SICKNESS];
   gasSplit ? c.push(CAT.GA_AAUP, CAT.GA_JS, CAT.GA_DEPEND, CAT.GA_PMPL, CAT.GA_AWOL) : c.push(CAT.GA);
@@ -731,7 +753,6 @@ document.getElementById('holSplitBtn').addEventListener('click', () => {
   hiddenCats.clear(); buildCatBar(); renderAll();
 });
 
-// ── Render ──
 function renderAll() {
   const slices = getFilteredSlices();
   if (!slices.length) {
@@ -749,7 +770,7 @@ function renderAll() {
 
 function renderStats(slices) {
   const total            = sumSliceDays(slices);
-  const sick             = sumSliceDays(slices.filter(sl => sl.category === CAT.SICKNESS));
+  const sick               = sumSliceDays(slices.filter(sl => sl.category === CAT.SICKNESS));
   const uniqueEmployees  = new Set(slices.map(sl => sl.employee)).size;
   const uniqueRecordIds  = new Set(slices.map(sl => sl.id)).size;
   document.getElementById('stDays').textContent      = fmt(total);
@@ -757,7 +778,6 @@ function renderStats(slices) {
   document.getElementById('stRecords').textContent   = uniqueRecordIds;
   document.getElementById('stSickness').textContent  = fmt(sick);
 
-  // When LTS is excluded, show the LTS days stat tile so users can see what was removed
   if (!includeLTS) {
     const ltsDays = sumSliceDays(getLTSOnlySlices());
     document.getElementById('stLtsDays').textContent  = fmt(ltsDays);
