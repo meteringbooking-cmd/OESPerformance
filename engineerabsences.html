@@ -398,8 +398,8 @@
                         <select id="manualAbsenceType" required style="width:100%;padding:14px 18px;border:1px solid rgba(139,92,246,0.3);border-radius:14px;font-size:1em;background:rgba(18,18,23,0.95);color:#fafafa;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s ease;">
                             <option value="">-- Select Type --</option>
                             <option value="Sickness absence">Sickness absence</option>
-                            <option value="General absence: GA - AAUP">General absence: GA - AAUP</option>
-                            <option value="General absence: GA - UPTOFD">General absence: GA - UPTOFD</option>
+                            <option value="General absence: GA - AAUP General Absence - Authorised Absence Unpaid">General absence: GA - AAUP General Absence - Authorised Absence Unpaid</option>
+                            <option value="General absence: GA - UPTOFD General Absence - Unpaid Time off for Dependants">General absence: GA - UPTOFD General Absence - Unpaid Time off for Dependants</option>
                             <option value="General absence: GA - PMPL">General absence: GA - PMPL</option>
                             <option value="General absence: GA - AWOL">General absence: GA - AWOL</option>
                         </select>
@@ -626,8 +626,11 @@
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                 const validTypes = [
-                    'Sickness absence','General absence: GA - AAUP','General absence: GA - UPTOFD',
-                    'General absence: GA - PMPL','General absence: GA - AWOL'
+                    'Sickness absence',
+                    'General absence: GA - AAUP General Absence - Authorised Absence Unpaid',
+                    'General absence: GA - UPTOFD General Absence - Unpaid Time off for Dependants',
+                    'General absence: GA - PMPL',
+                    'General absence: GA - AWOL'
                 ];
                 let parsedRecords = [];
                 for (let i = 1; i < jsonData.length; i++) {
@@ -739,8 +742,25 @@
             const sorted = [...records].sort((a, b) => new Date(a.fromDate) - new Date(b.fromDate));
             let instances = 1;
             for (let i = 1; i < sorted.length; i++) {
-                const daysDiff = Math.floor((new Date(sorted[i].fromDate) - new Date(sorted[i-1].fromDate)) / 86400000);
-                if (daysDiff > 1) instances++;
+                const date1 = new Date(sorted[i-1].fromDate);
+                const date2 = new Date(sorted[i].fromDate);
+                
+                // Use Math.round to safely calculate days difference avoiding Daylight Saving Time errors
+                const daysDiff = Math.round((date2 - date1) / 86400000); 
+                const dayOfWeek1 = date1.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+
+                // Logic: 
+                // diff = 1 (Consecutive days)
+                // diff = 3 and date1 is Friday (Friday to Monday gap)
+                // diff = 2 and date1 is Saturday (Saturday to Monday gap)
+                if (daysDiff === 1 || 
+                   (daysDiff === 3 && dayOfWeek1 === 5) || 
+                   (daysDiff === 2 && dayOfWeek1 === 6)) {
+                    // They are part of the same contiguous instance, do nothing
+                } else {
+                    // Gap is larger than a weekend, so it's a new instance
+                    instances++;
+                }
             }
             return instances;
         }
@@ -902,11 +922,11 @@
 
         function getAbsenceBadge(type) {
             const map = {
-                'Sickness absence':              '<span class="badge badge-sickness">Sickness</span>',
-                'General absence: GA - AAUP':    '<span class="badge badge-aaup">AAUP</span>',
-                'General absence: GA - UPTOFD':  '<span class="badge badge-dependants">Dependants</span>',
-                'General absence: GA - PMPL':    '<span class="badge badge-maternity">Maternity/Paternity</span>',
-                'General absence: GA - AWOL':    '<span class="badge badge-awol">AWOL</span>'
+                'Sickness absence': '<span class="badge badge-sickness">Sickness</span>',
+                'General absence: GA - AAUP General Absence - Authorised Absence Unpaid': '<span class="badge badge-aaup">AAUP</span>',
+                'General absence: GA - UPTOFD General Absence - Unpaid Time off for Dependants': '<span class="badge badge-dependants">Dependants</span>',
+                'General absence: GA - PMPL': '<span class="badge badge-maternity">Maternity/Paternity</span>',
+                'General absence: GA - AWOL': '<span class="badge badge-awol">AWOL</span>'
             };
             return map[type] || `<span class="badge">${type}</span>`;
         }
