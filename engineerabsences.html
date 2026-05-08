@@ -56,7 +56,19 @@
         }
         .alert-item:hover { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.3); transform: translateX(8px); }
         .alert-item strong { color: #fbbf24; font-weight: 600; }
-        
+        .alert-section-label {
+            font-size: 0.85em; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.8px; margin-bottom: 10px; margin-top: 0;
+        }
+        .alert-section-label.red  { color: #fca5a5; }
+        .alert-section-label.amber { color: #fbbf24; }
+        .alert-item.red-alert {
+            border-color: rgba(239,68,68,0.25);
+            background: rgba(239,68,68,0.08);
+        }
+        .alert-item.red-alert:hover { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.4); }
+        .alert-item.red-alert strong { color: #fca5a5; }
+
         /* Dedup Result Box */
         .dedup-box {
             border-radius: 20px; padding: 28px 32px; margin-bottom: 32px;
@@ -252,7 +264,7 @@
 
         <!-- Sickness Alert -->
         <div id="sicknessAlert" class="alert-box">
-            <h3>⚠️ Sickness Alert: 3+ Instances in Past 3 Months</h3>
+            <h3 id="sicknessAlertTitle">⚠️ Sickness Alert: 3+ Instances in Past 3 or 6 Months</h3>
             <div id="sicknessAlertContent"></div>
         </div>
         
@@ -415,7 +427,6 @@
         let expandedCard = null;
 
         // ── Dedup fingerprint ───────────────────────────────────────────────────
-        // A record is considered a duplicate if employee + absenceType + fromDate all match.
         function makeFingerprint(employee, absenceType, fromDate) {
             return `${(employee || '').trim().toLowerCase()}|${(absenceType || '').trim().toLowerCase()}|${(fromDate || '').trim()}`;
         }
@@ -434,7 +445,6 @@
         function displayFileInfo(file) {
             document.getElementById('fileInfo').innerHTML = `<strong>Selected:</strong> ${file.name}`;
             document.getElementById('fileInfo').classList.add('show');
-            // Hide previous dedup result when new file picked
             hideDedupBox();
         }
 
@@ -492,7 +502,6 @@
             hideDedupBox();
 
             try {
-                // 1. Parse Excel
                 const data = await file.arrayBuffer();
                 const workbook = XLSX.read(data);
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -531,10 +540,8 @@
                     return;
                 }
 
-                // 2. Build fingerprint set from existing Firestore data
                 const existingFingerprints = buildExistingFingerprintSet(allAbsences);
 
-                // 3. Split into new vs duplicate
                 const newRecords  = [];
                 const dupeRecords = [];
                 parsedRecords.forEach(r => {
@@ -546,7 +553,6 @@
                     }
                 });
 
-                // 4. Upload only new records
                 btn.textContent = newRecords.length > 0 ? 'Uploading…' : 'No new records to upload';
                 document.getElementById('progressFill').style.width = newRecords.length === 0 ? '100%' : '0%';
 
@@ -558,7 +564,6 @@
                     document.getElementById('progressFill').style.width = ((i + 1) / newRecords.length * 100) + '%';
                 }
 
-                // 5. Show dedup result
                 showDedupResult(newRecords.length, dupeRecords.length, dupeRecords);
 
                 if (newRecords.length > 0) {
@@ -657,26 +662,73 @@
             updateDataTable(filtered);
         }
 
+        // ── Sickness alerts — dual window (3 months + 6 months) ────────────────
         function checkSicknessAlerts() {
             const threeMonthsAgo = new Date();
             threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-            const sicknessRecords = allAbsences.filter(r =>
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+            // 3-month check
+            const sickness3m = allAbsences.filter(r =>
                 new Date(r.fromDate) >= threeMonthsAgo && r.absenceType === 'Sickness absence');
-            const empMap = {};
-            sicknessRecords.forEach(r => { (empMap[r.employee] = empMap[r.employee] || []).push(r); });
-            const alerts = Object.entries(empMap)
+            const map3m = {};
+            sickness3m.forEach(r => { (map3m[r.employee] = map3m[r.employee] || []).push(r); });
+            const alerts3m = Object.entries(map3m)
                 .map(([employee, records]) => ({ employee, instances: calculateInstances(records) }))
-                .filter(a => a.instances >= 3);
-            const alertBox = document.getElementById('sicknessAlert');
-            if (alerts.length > 0) {
-                document.getElementById('sicknessAlertContent').innerHTML = alerts
-                    .sort((a,b) => b.instances - a.instances)
-                    .map(a => `<div class="alert-item"><strong>${a.employee}</strong> — ${a.instances} instances in past 3 months</div>`)
-                    .join('');
-                alertBox.classList.add('show');
-            } else {
+                .filter(a => a.instances >= 3)
+                .sort((a, b) => b.instances - a.instances);
+
+            // 6-month check — exclude those already flagged in the 3-month window
+            const alerted3mNames = new Set(alerts3m.map(a => a.employee));
+            const sickness6m = allAbsences.filter(r =>
+                new Date(r.fromDate) >= sixMonthsAgo && r.absenceType === 'Sickness absence');
+            const map6m = {};
+            sickness6m.forEach(r => { (map6m[r.employee] = map6m[r.employee] || []).push(r); });
+            const alerts6m = Object.entries(map6m)
+                .map(([employee, records]) => ({ employee, instances: calculateInstances(records) }))
+                .filter(a => a.instances >= 3 && !alerted3mNames.has(a.employee))
+                .sort((a, b) => b.instances - a.instances);
+
+            const alertBox     = document.getElementById('sicknessAlert');
+            const alertTitle   = document.getElementById('sicknessAlertTitle');
+            const alertContent = document.getElementById('sicknessAlertContent');
+
+            if (alerts3m.length === 0 && alerts6m.length === 0) {
                 alertBox.classList.remove('show');
+                return;
             }
+
+            let html = '';
+
+            if (alerts3m.length > 0) {
+                html += `<p class="alert-section-label red">🔴 Past 3 months</p>`;
+                html += alerts3m.map(a => `
+                    <div class="alert-item red-alert">
+                        <strong>${a.employee}</strong> — ${a.instances} instance${a.instances !== 1 ? 's' : ''} in past 3 months
+                    </div>`).join('');
+            }
+
+            if (alerts6m.length > 0) {
+                html += `<p class="alert-section-label amber" style="margin-top:${alerts3m.length > 0 ? '20px' : '0'};">🟡 Past 6 months (not in 3-month window)</p>`;
+                html += alerts6m.map(a => `
+                    <div class="alert-item">
+                        <strong>${a.employee}</strong> — ${a.instances} instance${a.instances !== 1 ? 's' : ''} in past 6 months
+                    </div>`).join('');
+            }
+
+            alertContent.innerHTML = html;
+
+            // Update heading to reflect which windows are active
+            if (alerts3m.length > 0 && alerts6m.length > 0) {
+                alertTitle.textContent = '⚠️ Sickness Alert: 3+ Instances in Past 3 or 6 Months';
+            } else if (alerts3m.length > 0) {
+                alertTitle.textContent = '⚠️ Sickness Alert: 3+ Instances in Past 3 Months';
+            } else {
+                alertTitle.textContent = '⚠️ Sickness Alert: 3+ Instances in Past 6 Months';
+            }
+
+            alertBox.classList.add('show');
         }
 
         function updateTopOffenders(filtered) {
@@ -773,7 +825,6 @@
                 const notes       = document.getElementById('manualNotes').value.trim();
                 if (workingHours === 0 && workingDays > 0) workingHours = workingDays * 8;
 
-                // Dedup check for manual entry too
                 const fp = makeFingerprint(employee, absenceType, fromDate);
                 const existingFPs = buildExistingFingerprintSet(allAbsences);
                 if (existingFPs.has(fp)) {
