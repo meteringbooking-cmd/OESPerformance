@@ -232,7 +232,7 @@
         .offender-label { font-size: 0.95em; color: #d4d4d8; font-weight: 500; }
         .offender-details { display: none; margin-top: 24px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1); }
         .offender-card.expanded .offender-details { display: block; }
-        .detail-entry { background: rgba(24,24,27,0.6); border: 1px solid rgba(255,255,255,0.05); padding: 14px 18px; margin: 10px 0; border-radius: 12px; font-size: 0.9em; }
+        .detail-entry { padding: 14px 18px; border-radius: 12px; font-size: 0.9em; border: 1px solid; }
         .detail-entry strong { color: #fca5a5; display: block; margin-bottom: 6px; }
         .detail-entry .badge { margin: 6px 0; }
         
@@ -491,6 +491,14 @@
         let currentPeriod = 6, currentType = 'all', currentEmployee = 'all';
         let expandedCard = null;
 
+        // ── Date Formatter (yyyy-mm-dd to dd-mm-yyyy) ────────────────────────────
+        function formatDateUK(dateStr) {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            return dateStr;
+        }
+
         // ── Normalizer for Absence Types ─────────────────────────────────────────
         function normalizeAbsenceType(type) {
             if (!type) return '';
@@ -538,7 +546,7 @@
         async function sendSicknessAlertEmail(employee, instances, absenceDetails) {
             const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
             const detailLines = absenceDetails
-                .map(r => `• ${r.fromDate} — ${r.workingDays} day(s) — ${r.absenceType}${r.notes ? ' — ' + r.notes : ''}`)
+                .map(r => `• ${formatDateUK(r.fromDate)} — ${r.workingDays} day(s) — ${r.absenceType}${r.notes ? ' — ' + r.notes : ''}`)
                 .join('\n');
 
             const isEscalation = instances > 3;
@@ -611,7 +619,7 @@
             if (dupeCount > 0) {
                 summary.textContent = `Show ${dupeCount} skipped record${dupeCount > 1 ? 's' : ''}`;
                 list.innerHTML = dupeRows.map(r =>
-                    `<div class="dupe-row"><strong>${r.employee}</strong> — ${r.absenceType} on ${r.fromDate}</div>`
+                    `<div class="dupe-row"><strong>${r.employee}</strong> — ${r.absenceType} on ${formatDateUK(r.fromDate)}</div>`
                 ).join('');
                 details.style.display = 'block';
             } else {
@@ -757,32 +765,35 @@
             });
         }
 
-        function calculateInstances(records) {
-            if (records.length === 0) return 0;
+        // ── Group contiguous dates into instances helper ────────────────────────
+        function getGroupedInstances(records) {
+            if (records.length === 0) return [];
             const sorted = [...records].sort((a, b) => new Date(a.fromDate) - new Date(b.fromDate));
-            let instances = 1;
+            const instances = [[sorted[0]]];
+            
             for (let i = 1; i < sorted.length; i++) {
                 const date1 = new Date(sorted[i-1].fromDate);
                 const date2 = new Date(sorted[i].fromDate);
                 
-                // Use Math.round to safely calculate days difference avoiding Daylight Saving Time errors
                 const daysDiff = Math.round((date2 - date1) / 86400000); 
-                const dayOfWeek1 = date1.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+                const dayOfWeek1 = date1.getDay(); 
 
-                // Logic: 
-                // diff = 1 (Consecutive days)
-                // diff = 3 and date1 is Friday (Friday to Monday gap)
-                // diff = 2 and date1 is Saturday (Saturday to Monday gap)
                 if (daysDiff === 1 || 
                    (daysDiff === 3 && dayOfWeek1 === 5) || 
-                   (daysDiff === 2 && dayOfWeek1 === 6)) {
-                    // They are part of the same contiguous instance, do nothing
+                   (daysDiff === 2 && dayOfWeek1 === 6) ||
+                   daysDiff === 0) {
+                    // Contiguous (or same day), so push into current instance array
+                    instances[instances.length - 1].push(sorted[i]);
                 } else {
-                    // Gap is larger than a weekend, so it's a new instance
-                    instances++;
+                    // Gap found, start a new instance array
+                    instances.push([sorted[i]]);
                 }
             }
             return instances;
+        }
+
+        function calculateInstances(records) {
+            return getGroupedInstances(records).length;
         }
 
         function updateDisplay() {
@@ -891,9 +902,30 @@
         function updateTopOffenders(filtered) {
             const empMap = {};
             filtered.forEach(r => { (empMap[r.employee] = empMap[r.employee] || []).push(r); });
+            
             const offenders = Object.entries(empMap)
-                .map(([employee, records]) => ({ employee, instances: calculateInstances(records), records }))
+                .map(([employee, records]) => {
+                    const grouped = getGroupedInstances(records);
+                    return { employee, instances: grouped.length, groupedRecords: grouped };
+                })
                 .sort((a,b) => b.instances - a.instances).slice(0, 10);
+            
+            // Array of visually distinct colors for instances
+            const colors = [
+                'rgba(139, 92, 246, 0.12)', // Purple
+                'rgba(236, 72, 153, 0.12)', // Pink
+                'rgba(59, 130, 246, 0.12)', // Blue
+                'rgba(245, 158, 11, 0.12)', // Amber
+                'rgba(16, 185, 129, 0.12)'  // Green
+            ];
+            const borderColors = [
+                'rgba(139, 92, 246, 0.3)',
+                'rgba(236, 72, 153, 0.3)',
+                'rgba(59, 130, 246, 0.3)',
+                'rgba(245, 158, 11, 0.3)',
+                'rgba(16, 185, 129, 0.3)'
+            ];
+
             const grid = document.getElementById('offendersGrid');
             grid.innerHTML = offenders.map((o, i) => `
                 <div class="offender-card" data-employee="${o.employee}">
@@ -902,15 +934,25 @@
                     <div class="offender-instances">${o.instances}</div>
                     <div class="offender-label">instances</div>
                     <div class="offender-details">
-                        ${o.records.map(r => `
-                            <div class="detail-entry">
-                                <strong>${r.fromDate}</strong>
-                                ${getAbsenceBadge(r.absenceType)}<br>
-                                ${r.workingDays} days (${r.workingHours} hrs)<br>
-                                ${r.notes ? `<em>${r.notes}</em>` : ''}
-                            </div>`).join('')}
+                        ${o.groupedRecords.map((inst, idx) => {
+                            const bg = colors[idx % colors.length];
+                            const border = borderColors[idx % borderColors.length];
+                            return `
+                            <div style="margin-bottom: 16px; padding: 6px; border-radius: 16px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08);">
+                                <div style="font-size:0.75em; color:#a1a1aa; text-transform:uppercase; letter-spacing:1px; margin: 6px 8px;">Instance ${idx+1}</div>
+                                ${inst.map(r => `
+                                    <div class="detail-entry" style="background: ${bg}; border-color: ${border}; margin: 6px;">
+                                        <strong>${formatDateUK(r.fromDate)}</strong>
+                                        ${getAbsenceBadge(r.absenceType)}<br>
+                                        ${r.workingDays} days (${r.workingHours} hrs)<br>
+                                        ${r.notes ? `<em>${r.notes}</em>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>`;
+                        }).join('')}
                     </div>
                 </div>`).join('');
+                
             document.querySelectorAll('.offender-card').forEach(card => {
                 card.addEventListener('click', () => {
                     if (expandedCard && expandedCard !== card) expandedCard.classList.remove('expanded');
@@ -931,11 +973,11 @@
                 <tr>
                     <td><strong>${r.employee}</strong></td>
                     <td>${getAbsenceBadge(r.absenceType)}</td>
-                    <td>${r.fromDate}</td>
+                    <td>${formatDateUK(r.fromDate)}</td>
                     <td>${r.workingDays}</td>
                     <td>${r.workingHours}</td>
                     <td>${r.notes || '-'}</td>
-                    <td>${r.submitted || '-'}</td>
+                    <td>${formatDateUK(r.submitted) || '-'}</td>
                 </tr>`).join('');
             document.getElementById('dataSection').style.display = filtered.length > 0 ? 'block' : 'none';
         }
@@ -978,7 +1020,7 @@
                 const fp = makeFingerprint(employee, absenceType, fromDate);
                 const existingFPs = buildExistingFingerprintSet(allAbsences);
                 if (existingFPs.has(fp)) {
-                    showMessage(`This record already exists (${employee} · ${absenceType} · ${fromDate}). Not added.`, 'error');
+                    showMessage(`This record already exists (${employee} · ${absenceType} · ${formatDateUK(fromDate)}). Not added.`, 'error');
                     btn.disabled = false; return;
                 }
                 await addDoc(collection(db, "All Absences"), {
