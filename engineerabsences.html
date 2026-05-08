@@ -536,8 +536,9 @@
                 ? `⚠️ Sickness Escalation: ${employee} now has ${instances} instances`
                 : `⚠️ Sickness Trigger: ${employee} has reached 3 instances`;
 
+            console.log(`[AbsenceTracker] Sending email via EmailJS for ${employee}...`);
             try {
-                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+                const result = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
                     subject:         subject,
                     employee_name:   employee,
                     instance_count:  instances,
@@ -549,9 +550,10 @@
                         ? `${employee} has now reached ${instances} sickness instances in the past 6 months. This is an escalation from a previously reported trigger.`
                         : `${employee} has reached the sickness trigger threshold of 3 instances within the past 6 months. Management review is recommended.`
                 });
-                console.log(`Alert email sent for ${employee} (${instances} instances)`);
+                console.log(`[AbsenceTracker] ✅ Email sent successfully for ${employee}. Status:`, result.status, result.text);
             } catch (err) {
-                console.error(`Failed to send alert email:`, err);
+                console.error(`[AbsenceTracker] ❌ Email FAILED for ${employee}:`, err);
+                showMessage(`Email alert failed for ${employee}: ${err.text || err.message || 'Unknown error'}`, 'error');
             }
 
             // Log it
@@ -786,18 +788,27 @@
             ];
 
             const sentCounts = getSentCounts();
+            const now = new Date();
+            // Rolling monthly key — suppression resets each month automatically
+            const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+
+            console.log('[AbsenceTracker] Alerts found:', allAlerts.map(a => `${a.employee} (${a.instances})`));
+            console.log('[AbsenceTracker] Stored sent counts:', JSON.stringify(sentCounts));
 
             allAlerts.forEach(alert => {
-                const key = alert.employee.trim().toLowerCase();
+                const key = `${alert.employee.trim().toLowerCase()}__${monthKey}`;
                 const lastSentCount = sentCounts[key] || 0;
 
-                // Send email if: instances >= 3 AND count is higher than last time we sent
+                console.log(`[AbsenceTracker] ${alert.employee}: instances=${alert.instances}, lastSentCount=${lastSentCount}`);
+
+                // Send email if: instances >= 3 AND higher than last sent count this month
                 if (alert.instances >= 3 && alert.instances > lastSentCount) {
+                    console.log(`[AbsenceTracker] FIRING email for ${alert.employee} at ${alert.instances} instances`);
                     sentCounts[key] = alert.instances;
                     setSentCounts(sentCounts);
-
-                    // Fire email (async, non-blocking)
                     sendSicknessAlertEmail(alert.employee, alert.instances, alert.records);
+                } else {
+                    console.log(`[AbsenceTracker] SKIPPING ${alert.employee} — already sent at count ${lastSentCount}`);
                 }
             });
 
@@ -942,6 +953,21 @@
                 btn.disabled = false;
             }
         });
+
+        // Clear any legacy sent-count keys that used the old format (no month suffix)
+        // This prevents old suppression records blocking new alerts after the code update
+        (function purgeLegacyKeys() {
+            try {
+                const stored = JSON.parse(localStorage.getItem('absence_alert_sent_counts') || '{}');
+                const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+                const cleaned = {};
+                Object.entries(stored).forEach(([k, v]) => {
+                    if (k.includes('__')) cleaned[k] = v; // keep new-format keys only
+                });
+                localStorage.setItem('absence_alert_sent_counts', JSON.stringify(cleaned));
+                console.log('[AbsenceTracker] Legacy keys purged. Active keys:', Object.keys(cleaned));
+            } catch(e) {}
+        })();
 
         loadAbsences();
     </script>
