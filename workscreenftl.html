@@ -1456,29 +1456,7 @@
             const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
             const engCount = await getEngineerCount(teamLeader);
             const dailyTarget = Math.round(engCount*6*0.9);
-            const result = { dates:[], meters:[], completion:[], aborts:[], targets:[], vsTargetPct:[], startMph: [], endMph: [], abortReasons: {}, krakenMeters: [] };
-            
-            const startStr = formatDateForQuery(dates[0]);
-            const endStr = formatDateForQuery(dates[dates.length-1]);
-            
-            const krakenMetersMap = {};
-            const hcMap = {};
-            
-            const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", ">=", startStr), where("date", "<=", endStr)));
-            krakenSnap.forEach(doc => {
-                const d = doc.data();
-                const tl = d.team || d.teamLeader || '';
-                let match = false;
-                if(!dataKey) match = true;
-                else if(dataKey === 'FTL 4' && (tl === 'FTL 4' || tl === 'FTL4' || tl === 'Tom Green')) match = true;
-                else if(tl === dataKey) match = true;
-                if(match) krakenMetersMap[d.date] = (krakenMetersMap[d.date] || 0) + Number(d.totalMeters || 0);
-            });
-
-            const hcSnap = await getDocs(query(collection(performanceDb, "KrakenAM Headcount"), where("date", ">=", startStr), where("date", "<=", endStr)));
-            hcSnap.forEach(doc => { hcMap[doc.data().date] = Number(doc.data().headcount || 0); });
-
-            const hcFallback = engCount;
+            const result = { dates:[], meters:[], completion:[], aborts:[], targets:[], vsTargetPct:[], abortReasons: {} };
 
             for(const date of dates){
                 const ds = formatDateForQuery(date);
@@ -1500,13 +1478,6 @@
                     });
                 });
                 result.aborts.push(abortTotal);
-                
-                let kMeters = krakenMetersMap[ds] || 0;
-                let hc = (!teamLeader && hcMap[ds] && hcMap[ds] > 0) ? hcMap[ds] : hcFallback;
-                
-                result.krakenMeters.push(kMeters);
-                result.startMph.push(hc > 0 ? Number((kMeters / hc).toFixed(1)) : 0);
-                result.endMph.push(hc > 0 ? Number((m / hc).toFixed(1)) : 0);
             }
             return result;
         }
@@ -1566,7 +1537,6 @@
                 
                 btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx, wcDate);
                 btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx, wcDate);
-                btn.textContent='⏳ Overall slide 3...'; await createOverallSlide3(pptx, wcDate);
                 btn.textContent='⏳ SP Completion...'; await createSPSlide(pptx, wcDate);
                 for(let i=0;i<teamLeaders.length;i++){btn.textContent=`⏳ ${teamLeaders[i]}...`;await createTeamSlide(pptx, teamLeaders[i], wcDate);}
                 
@@ -1673,56 +1643,6 @@
             slide.addChart(pptx.charts.BAR,[
                 {name:'Reasons',labels:rLabels,values:rValues}
             ],{x:cols[1],y:chartY,w:4.65,h:chartH,barDir:'bar',chartColors:['F59E0B'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:9,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:9,dataLabelColor:'FFFFFF', valAxisHidden: true, valAxisMaxVal: rMax});
-
-            addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
-        }
-
-        async function createOverallSlide3(pptx, wcDate) {
-            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Meters & MPH', 'Selected Week  ·  ' + todayLabel);
-            
-            const currentWeekDates = getWorkingDaysForWeek(wcDate);
-            const perf = await getPeriodData(null, currentWeekDates);
-            
-            const avgStart = avg(perf.startMph);
-            const avgEnd = avg(perf.endMph);
-            
-            const statY = 0.83, labelY = statY+0.52, chartY = labelY+0.24, chartH = 2.85;
-
-            addStatStrip(slide, [
-                { label: 'Avg Start MPH (Kraken)', value: avgStart.toFixed(1), color: 'F97316' },
-                { label: 'Avg End MPH (Installed)', value: avgEnd.toFixed(1), color: '8B5CF6' }
-            ], 0.25, statY, 9.4);
-            
-            slide.addText('Meters Installed vs MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
-            
-            const comboTypes = [
-                {
-                    type: pptx.charts.BAR,
-                    data: [
-                        { name: 'Meters', labels: perf.dates, values: perf.meters },
-                        { name: 'Kraken', labels: perf.dates, values: perf.krakenMeters }
-                    ],
-                    options: { barDir: 'col', barGrouping: 'clustered', chartColors: ['6366F1', 'F97316'] }
-                },
-                {
-                    type: pptx.charts.LINE,
-                    data: [
-                        { name: 'Start MPH', labels: perf.dates, values: perf.startMph },
-                        { name: 'End MPH', labels: perf.dates, values: perf.endMph }
-                    ],
-                    options: { chartColors: ['F59E0B', '8B5CF6'], secondaryValAxis: true, secondaryValAxisTitle: 'MPH' }
-                }
-            ];
-
-            slide.addChart(comboTypes, {
-                x: 0.25, y: chartY, w: 9.4, h: chartH,
-                showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
-                catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
-                catAxisLabelFontSize: 10, valAxisLabelFontSize: 9,
-                showValue: true, dataLabelFontSize: 8, dataLabelColor: 'FFFFFF'
-            });
 
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
@@ -1897,7 +1817,6 @@
                 
                 btn.textContent = '⏳ Overall 1...'; await createLongOverallSlide1(pptx, startDate, endDate, bucketType);
                 btn.textContent = '⏳ Overall 2...'; await createLongOverallSlide2(pptx, startDate, endDate, bucketType);
-                btn.textContent = '⏳ Overall 3...'; await createLongOverallSlide3(pptx, startDate, endDate, bucketType);
                 btn.textContent = '⏳ SP Completion...'; await createLongSPSlide(pptx, startDate, endDate, bucketType);
                 
                 for(let i=0; i<teamLeaders.length; i++) {
@@ -1933,7 +1852,7 @@
                         d.setDate(diff);
                         key = 'W/C ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
                     }
-                    if(!buckets.has(key)) buckets.set(key, { workingDays:0, meters:0, jobs:0, completed:0, aborts:0, krakenMeters:0, hcSum:0, hcCount:0, dateStrList:[] });
+                    if(!buckets.has(key)) buckets.set(key, { workingDays:0, meters:0, jobs:0, completed:0, aborts:0, dateStrList:[] });
                     buckets.get(key).workingDays++;
                     buckets.get(key).dateStrList.push(formatDateForQuery(curr));
                 }
@@ -1963,7 +1882,7 @@
                 }
             });
 
-            const result = { labels: [], meters: [], completion: [], aborts: [], targets: [], vsTargetPct: [], atWork: [], holiday: [], sick: [], startMph: [], endMph: [], abortReasons: {}, krakenMeters: [] };
+            const result = { labels: [], meters: [], completion: [], aborts: [], targets: [], vsTargetPct: [], atWork: [], holiday: [], sick: [], abortReasons: {} };
 
             const abortSnap = await getDocs(query(collection(performanceDb, "aborts"), where("date", ">=", startStr), where("date", "<=", endStr)));
             abortSnap.forEach(d => {
@@ -1985,37 +1904,6 @@
                             }
                         }
                     });
-                }
-            });
-
-            const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", ">=", startStr), where("date", "<=", endStr)));
-            krakenSnap.forEach(d => {
-                const data = d.data();
-                const tl = data.team || data.teamLeader || '';
-                let match = false;
-                if(!dataKey) match = true;
-                else if(dataKey === 'FTL 4' && (tl === 'FTL 4' || tl === 'FTL4' || tl === 'Tom Green')) match = true;
-                else if(tl === dataKey) match = true;
-
-                if(match) {
-                    for(let [k, b] of buckets) {
-                        if(b.dateStrList.includes(data.date)) {
-                            b.krakenMeters += Number(data.totalMeters || 0);
-                            break;
-                        }
-                    }
-                }
-            });
-
-            const hcSnap = await getDocs(query(collection(performanceDb, "KrakenAM Headcount"), where("date", ">=", startStr), where("date", "<=", endStr)));
-            hcSnap.forEach(d => {
-                const data = d.data();
-                for(let [k, b] of buckets) {
-                    if(b.dateStrList.includes(data.date)) {
-                        b.hcSum += Number(data.headcount || 0);
-                        b.hcCount++;
-                        break;
-                    }
                 }
             });
 
@@ -2050,16 +1938,6 @@
                 result.vsTargetPct.push(target > 0 ? Math.round((b.meters/target)*1000)/10 : 0);
                 result.completion.push(b.jobs > 0 ? Math.round((b.completed/b.jobs)*1000)/10 : 0);
                 result.aborts.push(b.aborts);
-                
-                let hc = heads;
-                if(!teamLeader && b.hcCount > 0) hc = b.hcSum / b.hcCount;
-                
-                let sMph = (hc * b.workingDays) > 0 ? Number((b.krakenMeters / (hc * b.workingDays)).toFixed(1)) : 0;
-                let eMph = (hc * b.workingDays) > 0 ? Number((b.meters / (hc * b.workingDays)).toFixed(1)) : 0;
-                
-                result.krakenMeters.push(b.krakenMeters);
-                result.startMph.push(sMph);
-                result.endMph.push(eMph);
 
                 if (!teamLeader && attData) {
                     const att = attData.get(key);
@@ -2130,55 +2008,6 @@
             slide.addChart(pptx.charts.BAR,[
                 {name:'Reasons',labels:rLabels,values:rValues}
             ],{x:cols[1],y:chartY,w:4.65,h:chartH,barDir:'bar',chartColors:['F59E0B'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:9,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:9,dataLabelColor:'FFFFFF', valAxisHidden: true, valAxisMaxVal: rMax});
-
-            addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
-        }
-
-        async function createLongOverallSlide3(pptx, startDate, endDate, bucketType) {
-            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
-            addHeader(pptx, slide, 'OES Overall Trend  —  Meters & MPH', `Trending by ${bucketType}  ·  ${dateLabel}`);
-            
-            const perf = await getLongPeriodData(null, startDate, endDate, bucketType);
-            
-            const avgStart = avg(perf.startMph);
-            const avgEnd = avg(perf.endMph);
-            
-            const statY = 0.83, labelY = statY+0.52, chartY = labelY+0.24, chartH = 2.85;
-
-            addStatStrip(slide, [
-                { label: 'Avg Start MPH (Kraken)', value: avgStart.toFixed(1), color: 'F97316' },
-                { label: 'Avg End MPH (Installed)', value: avgEnd.toFixed(1), color: '8B5CF6' }
-            ], 0.25, statY, 9.4);
-            
-            slide.addText('Meters Installed vs MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
-            
-            const comboTypes = [
-                {
-                    type: pptx.charts.BAR,
-                    data: [
-                        { name: 'Meters', labels: perf.labels, values: perf.meters },
-                        { name: 'Kraken', labels: perf.labels, values: perf.krakenMeters }
-                    ],
-                    options: { barDir: 'col', barGrouping: 'clustered', chartColors: ['1D6FA4', 'F97316'] }
-                },
-                {
-                    type: pptx.charts.LINE,
-                    data: [
-                        { name: 'Start MPH', labels: perf.labels, values: perf.startMph },
-                        { name: 'End MPH', labels: perf.labels, values: perf.endMph }
-                    ],
-                    options: { chartColors: ['F59E0B', '8B5CF6'], secondaryValAxis: true, secondaryValAxisTitle: 'MPH' }
-                }
-            ];
-
-            slide.addChart(comboTypes, {
-                x: 0.25, y: chartY, w: 9.4, h: chartH,
-                showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
-                catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
-                catAxisLabelFontSize: 10, valAxisLabelFontSize: 9,
-                showValue: true, dataLabelFontSize: 8, dataLabelColor: 'FFFFFF'
-            });
 
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
