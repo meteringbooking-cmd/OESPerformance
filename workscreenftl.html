@@ -2019,12 +2019,20 @@
             let curr = new Date(startDate);
             while(curr <= endDate) {
                 if(isWorkingDay(curr)) {
-                    let key = bucketType === 'month' ? formatMonth(curr) : ('W/C ' + String(new Date(curr.setDate(curr.getDate() - curr.getDay() + (curr.getDay() === 0 ? -6 : 1))).getDate()).padStart(2,'0') + '/' + String(curr.getMonth()+1).padStart(2,'0'));
+                    let key = '';
+                    if (bucketType === 'month') {
+                        key = formatMonth(curr);
+                    } else {
+                        const tempD = new Date(curr); // FIX: Clone the date to prevent infinite loop!
+                        const day = tempD.getDay();
+                        const diff = tempD.getDate() - day + (day === 0 ? -6 : 1);
+                        tempD.setDate(diff);
+                        key = 'W/C ' + String(tempD.getDate()).padStart(2,'0') + '/' + String(tempD.getMonth()+1).padStart(2,'0');
+                    }
                     if(!buckets.has(key)) buckets.set(key, { total:0, completed:0, aborts:0, dateStrs:[] });
                     buckets.get(key).dateStrs.push(formatDateForQuery(curr));
                 }
-                curr = new Date(curr); 
-                curr.setDate(curr.getDate()+1);
+                curr.setDate(curr.getDate()+1); // Safely advance loop to next day
             }
 
             const snap = await getDocs(query(collection(performanceDb, 'SP Submitted Data'), where('submissionDate', '>=', startStr), where('submissionDate', '<=', endStr)));
