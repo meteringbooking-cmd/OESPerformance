@@ -240,10 +240,18 @@
                     <div class="kpi-target">Target: <strong id="metersTarget">0</strong> meters</div>
                     <div class="progress-bar-container"><div class="progress-bar" id="metersProgress" style="width: 0%"></div></div>
                     <div class="progress-text" id="metersProgressText">0%</div>
-                    <div style="margin-top:14px;padding:12px 16px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(0,210,255,0.2);display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:0.78em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Today's Meters (Kraken AM)</span>
-                        <span style="font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#00d2ff,#3a7bd5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="krakenTodayMeters">—</span>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+                        <div style="padding:12px 16px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(0,210,255,0.2);display:flex;flex-direction:column;justify-content:center;align-items:center;">
+                            <span style="font-size:0.65em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Today's Meters (Kraken)</span>
+                            <span style="font-size:1.4em;font-weight:800;background:linear-gradient(135deg,#00d2ff,#3a7bd5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="krakenTodayMeters">—</span>
+                        </div>
+                        <div style="padding:12px 16px;background:rgba(0,0,0,0.3);border-radius:10px;border:1px solid rgba(0,210,255,0.2);display:flex;flex-direction:column;justify-content:center;align-items:center;">
+                            <span style="font-size:0.65em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Prev Work Day (Kraken)</span>
+                            <span style="font-size:1.4em;font-weight:800;color:#ffffff;" id="krakenPrevDayMeters">—</span>
+                        </div>
                     </div>
+
                     <div class="historical-data">
                         <div class="historical-title">Previous 10 Working Days</div>
                         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -463,7 +471,6 @@
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:14px;">
-                        <!-- NEW: Date Range Selector -->
                         <select id="abortDateRangeSelect" onchange="loadDetailedAborts(parseInt(this.value))" style="background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);color:#00d2ff;border-radius:8px;padding:6px 12px;font-size:0.8em;font-weight:700;outline:none;cursor:pointer;text-transform:uppercase;">
                             <option value="5">Last 5 Days</option>
                             <option value="10">Last 10 Days</option>
@@ -548,7 +555,6 @@
         const DISPLAY_TO_DATA_TEAMLEADER = { 'Tom Green': 'FTL 4' };
         function dataTeamLeader(displayName) { return DISPLAY_TO_DATA_TEAMLEADER[displayName] || displayName; }
 
-        // Array of UK Bank Holidays (YYYY-MM-DD format). Update as needed for future years.
         const BANK_HOLIDAYS = [
             "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
             "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
@@ -557,9 +563,9 @@
 
         function isWorkingDay(d) {
             const day = d.getDay();
-            if (day === 0 || day === 6) return false; // Skip weekends
+            if (day === 0 || day === 6) return false;
             const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            return !BANK_HOLIDAYS.includes(dateStr);  // Skip if it's in the bank holiday list
+            return !BANK_HOLIDAYS.includes(dateStr);
         }
 
         let _dailyOffset = 0;
@@ -900,7 +906,6 @@
                             existing.parsedReasons.forEach(({reason,qty})=>{rc[reason]=(rc[reason]||0)+qty;});
                             existing.reason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
                         } else { 
-                            // FIXED: Deep copy the parsedReasons array
                             merged.teamData[tl].engineers.push({...eng, parsedReasons: eng.parsedReasons.map(r => ({...r}))}); 
                         }
                     }
@@ -1051,7 +1056,6 @@
                 document.getElementById('abortToggleKnob').style.left = '2px';
                 document.getElementById('abortViewToggle').style.background = 'rgba(0,210,255,0.2)';
                 
-                // Use dynamic day count
                 const targetDays = getPreviousWorkingDays(daysCount).reverse();
                 const rawDays = await Promise.all(targetDays.map(async (d) => {
                     const ds = formatDateForQuery(d);
@@ -1300,16 +1304,32 @@
                 document.getElementById('sickPercent').textContent=sick.toFixed(1)+'%';
                 document.getElementById('aaupPercent').textContent=aaup.toFixed(1)+'%';
                 await loadMilesPerMeter(dateStr);
+
+                // Kraken Load Section (Today and Previous Day)
                 try {
                     const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
-                    const krakenSnap = await getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", todayStr)));
-                    let krakenTotal = 0;
-                    krakenSnap.forEach(doc => { krakenTotal += doc.data().totalMeters || 0; });
-                    document.getElementById('krakenTodayMeters').textContent = krakenSnap.empty ? 'No data' : Math.round(krakenTotal).toLocaleString();
+                    const prevWorkDayObj = getPreviousWorkingDay();
+                    const prevWorkDayStr = formatDateForQuery(prevWorkDayObj);
+
+                    const [todayKrakenSnap, prevKrakenSnap] = await Promise.all([
+                        getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", todayStr))),
+                        getDocs(query(collection(performanceDb, "KrakenAM"), where("date", "==", prevWorkDayStr)))
+                    ]);
+
+                    let todayTotal = 0;
+                    todayKrakenSnap.forEach(doc => { todayTotal += doc.data().totalMeters || 0; });
+                    document.getElementById('krakenTodayMeters').textContent = todayKrakenSnap.empty ? 'No data' : Math.round(todayTotal).toLocaleString();
+
+                    let prevTotal = 0;
+                    prevKrakenSnap.forEach(doc => { prevTotal += doc.data().totalMeters || 0; });
+                    document.getElementById('krakenPrevDayMeters').textContent = prevKrakenSnap.empty ? 'No data' : Math.round(prevTotal).toLocaleString();
+
                 } catch(err) {
-                    console.error('Kraken AM meters error:', err);
+                    console.error('Kraken load error:', err);
                     document.getElementById('krakenTodayMeters').textContent = 'Error';
+                    document.getElementById('krakenPrevDayMeters').textContent = 'Error';
                 }
+
                 const spDate = getSPCompletionDate();
                 await loadSPCompletion(spDate);
                 await loadComplianceData();
