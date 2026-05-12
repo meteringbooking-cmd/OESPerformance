@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rubix Payments</title>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh; padding: 20px; position: relative;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px);
+            pointer-events: none; z-index: 0;
+        }
+        .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+
+        /* HEADER */
+        .header { text-align: center; color: white; margin-bottom: 40px; animation: fadeInDown 0.8s ease; position: relative; }
+        .header-logo-img {
+            position: absolute; top: 0; right: 0; height: 80px; width: auto;
+            filter: drop-shadow(0 4px 12px rgba(0,210,255,0.3)); animation: fadeIn 1s ease;
+        }
+        @media (max-width: 600px) { .header-logo-img { position: static; display: block; margin: 0 auto 16px auto; height: 55px; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmerSlide { 0% { left: -100%; } 100% { left: 100%; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .logo {
+            font-size: 3em; font-weight: 900; margin-bottom: 15px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 50%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            text-transform: uppercase; letter-spacing: 4px;
+        }
+        .subtitle { font-size: 1.1em; opacity: 0.9; margin-bottom: 8px; font-weight: 400; color: #00d2ff; }
+        .last-updated { font-size: 0.85em; opacity: 0.6; font-weight: 300; color: #a8dadc; }
+
+        /* CARDS */
+        .card {
+            background: linear-gradient(135deg, rgba(26,32,44,0.9), rgba(45,55,72,0.9));
+            border-radius: 16px; padding: 28px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            border: 1px solid rgba(0,210,255,0.2); position: relative; overflow: hidden;
+            animation: slideUp 0.8s ease;
+        }
+        .card::after {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0,210,255,0.05), transparent);
+            animation: shimmerSlide 4s infinite;
+        }
+        .card-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 22px; padding-bottom: 14px; border-bottom: 2px solid rgba(0,210,255,0.2);
+        }
+        .card-title { font-size: 0.85em; color: #00d2ff; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; }
+        .card-icon { font-size: 2em; filter: drop-shadow(0 2px 8px rgba(0,210,255,0.5)); }
+
+        /* FORM */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 16px; align-items: end; }
+        @media (max-width: 900px) { .form-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-label { font-size: 0.72em; color: #a8dadc; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .form-input, .form-select {
+            background: rgba(0,0,0,0.35); border: 1px solid rgba(0,210,255,0.3);
+            border-radius: 10px; padding: 12px 16px; color: #ffffff;
+            font-family: inherit; font-size: 0.95em; font-weight: 500;
+            transition: all 0.3s ease; outline: none; width: 100%;
+        }
+        .form-input::placeholder { color: rgba(168,218,220,0.4); }
+        .form-input:focus, .form-select:focus { border-color: rgba(0,210,255,0.7); background: rgba(0,210,255,0.05); box-shadow: 0 0 0 3px rgba(0,210,255,0.1); }
+        .form-select option { background: #1a1a2e; color: #ffffff; }
+        .form-input::-webkit-calendar-picker-indicator { filter: invert(1) brightness(0.7); cursor: pointer; }
+
+        .btn-submit {
+            padding: 12px 28px; border-radius: 10px; border: none;
+            background: linear-gradient(135deg, rgba(0,210,255,0.9), rgba(58,123,213,0.9));
+            color: white; font-family: inherit; font-size: 0.9em; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1px; cursor: pointer;
+            transition: all 0.3s ease; white-space: nowrap; height: 46px;
+            box-shadow: 0 4px 15px rgba(0,210,255,0.3);
+        }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,210,255,0.5); }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* TOAST */
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; z-index: 9999;
+            padding: 16px 24px; border-radius: 12px; font-weight: 600; font-size: 0.9em;
+            animation: toastIn 0.4s ease; display: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .toast.success { background: rgba(16,185,129,0.95); border: 1px solid rgba(16,185,129,0.5); color: white; display: block; }
+        .toast.error   { background: rgba(239,68,68,0.95); border: 1px solid rgba(239,68,68,0.5); color: white; display: block; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* TABLE */
+        .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 10px; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+        .data-table th {
+            text-align: left; padding: 13px 14px;
+            background: rgba(0,210,255,0.12); color: #00d2ff;
+            font-weight: 700; border-bottom: 2px solid rgba(0,210,255,0.3);
+            text-transform: uppercase; font-size: 0.82em; letter-spacing: 0.5px; white-space: nowrap;
+        }
+        .data-table td { padding: 13px 14px; border-bottom: 1px solid rgba(0,210,255,0.08); color: #e1e8ed; vertical-align: middle; }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tr:hover { background: rgba(0,210,255,0.05); }
+
+        /* PAYMENT STAGE PILLS */
+        .stage-pill {
+            display: inline-block; padding: 4px 10px; border-radius: 20px;
+            font-size: 0.78em; font-weight: 700; white-space: nowrap;
+        }
+        .stage-pending  { background: rgba(107,114,128,0.3); border: 1px solid rgba(107,114,128,0.5); color: #9ca3af; }
+        .stage-due      { background: rgba(245,158,11,0.25); border: 1px solid rgba(245,158,11,0.6); color: #fbbf24; animation: pulse 2s infinite; }
+        .stage-sent     { background: rgba(16,185,129,0.25); border: 1px solid rgba(16,185,129,0.5); color: #34d399; }
+        .stage-overdue  { background: rgba(239,68,68,0.25); border: 1px solid rgba(239,68,68,0.5); color: #f87171; animation: pulse 1.5s infinite; }
+
+        /* COUNTDOWN BADGES */
+        .next-due {
+            font-size: 0.78em; color: #a8dadc; display: flex; flex-direction: column; gap: 3px;
+        }
+        .next-due-label { color: #00d2ff; font-weight: 700; font-size: 0.85em; }
+        .days-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 6px; font-weight: 700;
+            font-size: 0.9em; background: rgba(0,210,255,0.15); border: 1px solid rgba(0,210,255,0.3); color: #00d2ff;
+        }
+        .days-badge.warn  { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24; }
+        .days-badge.due   { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); color: #f87171; }
+
+        /* DELETE BTN */
+        .btn-delete {
+            padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(239,68,68,0.4);
+            background: rgba(239,68,68,0.15); color: #f87171; font-size: 0.8em; font-weight: 700;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .btn-delete:hover { background: rgba(239,68,68,0.3); border-color: rgba(239,68,68,0.7); }
+
+        /* SEND NOW BTN */
+        .btn-send {
+            padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(0,210,255,0.4);
+            background: rgba(0,210,255,0.12); color: #00d2ff; font-size: 0.8em; font-weight: 700;
+            cursor: pointer; transition: all 0.2s ease; white-space: nowrap;
+        }
+        .btn-send:hover { background: rgba(0,210,255,0.25); }
+
+        /* STATS ROW */
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        @media (max-width: 700px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+        .stat-box {
+            background: rgba(0,0,0,0.3); border-radius: 12px; padding: 18px;
+            border: 1px solid rgba(0,210,255,0.2); text-align: center;
+        }
+        .stat-box-label { font-size: 0.68em; color: #a8dadc; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .stat-box-value { font-size: 2em; font-weight: 900; background: linear-gradient(135deg, #ffffff, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        /* FILTER */
+        .filter-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+        .filter-select {
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(0,210,255,0.25);
+            border-radius: 8px; padding: 8px 14px; color: #a8dadc;
+            font-family: inherit; font-size: 0.82em; font-weight: 600; outline: none;
+            cursor: pointer; transition: border-color 0.2s;
+        }
+        .filter-select:focus { border-color: rgba(0,210,255,0.5); }
+        .filter-select option { background: #1a1a2e; }
+        .filter-label { font-size: 0.75em; color: #a8dadc; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* LOADING */
+        .loading-text { text-align: center; padding: 40px; color: #a8dadc; font-size: 1em; opacity: 0.7; }
+
+        .section-gap { height: 24px; }
+        .manual-note { font-size: 0.75em; color: rgba(168,218,220,0.6); font-style: italic; margin-top: 8px; }
+
+        /* PAYMENT SCHEDULE MINI */
+        .schedule-mini { display: flex; gap: 6px; flex-wrap: wrap; }
+        .sched-chip {
+            padding: 3px 9px; border-radius: 12px; font-size: 0.74em; font-weight: 700;
+            border: 1px solid rgba(0,210,255,0.2); background: rgba(0,0,0,0.3); color: #a8dadc;
+            display: flex; align-items: center; gap: 4px; white-space: nowrap;
+        }
+        .sched-chip.sent     { border-color: rgba(16,185,129,0.5); color: #34d399; background: rgba(16,185,129,0.1); }
+        .sched-chip.due      { border-color: rgba(245,158,11,0.6); color: #fbbf24; background: rgba(245,158,11,0.1); }
+        .sched-chip.overdue  { border-color: rgba(239,68,68,0.5); color: #f87171; background: rgba(239,68,68,0.1); }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        const _cfg = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717"
+        };
+        const _app  = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(_cfg);
+        const _auth = getAuth(_app);
+        const _db   = getFirestore(_app);
+        document.documentElement.style.visibility = 'hidden';
+        onAuthStateChanged(_auth, async (user) => {
+            if (!user) { window.location.href = 'login.html'; return; }
+            const snap = await getDoc(doc(_db, 'users', user.uid));
+            if (!snap.exists()) { await _auth.signOut(); window.location.href = 'login.html'; return; }
+            document.documentElement.style.visibility = 'visible';
+            window.currentUser     = user;
+            window.currentUserRole = snap.data().role || 'viewer';
+            window.currentUserName = snap.data().name || user.email;
+        });
+    </script>
+
+    <div class="container">
+        <div class="header">
+            <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
+            <div class="logo">Rubix Payments</div>
+            <div class="subtitle" id="todayDate">Loading...</div>
+            <div class="last-updated" id="lastRefreshed">Last refreshed: --</div>
+        </div>
+
+        <!-- STATS ROW -->
+        <div class="stats-row" id="statsRow">
+            <div class="stat-box"><div class="stat-box-label">Total Records</div><div class="stat-box-value" id="statTotal">–</div></div>
+            <div class="stat-box"><div class="stat-box-label">Emails Due Today</div><div class="stat-box-value" id="statDueToday" style="background:linear-gradient(135deg,#fff,#fbbf24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">–</div></div>
+            <div class="stat-box"><div class="stat-box-label">Emails Overdue</div><div class="stat-box-value" id="statOverdue" style="background:linear-gradient(135deg,#fff,#f87171);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">–</div></div>
+            <div class="stat-box"><div class="stat-box-label">All Sent</div><div class="stat-box-value" id="statComplete" style="background:linear-gradient(135deg,#fff,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">–</div></div>
+        </div>
+
+        <!-- ADD NEW RECORD -->
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <span class="card-title">Add New Record</span>
+                <span class="card-icon">➕</span>
+            </div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Full Name</label>
+                    <input type="text" id="inputName" class="form-input" placeholder="e.g. John Smith">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Team Leader</label>
+                    <select id="inputTeamLeader" class="form-select">
+                        <option value="">— Select Team Leader —</option>
+                        <option value="Richard Wiecko">Richard Wiecko</option>
+                        <option value="Scott Carson">Scott Carson</option>
+                        <option value="Stuart Whyte">Stuart Whyte</option>
+                        <option value="Tom Green">Tom Green</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Induction Date</label>
+                    <input type="date" id="inputInductionDate" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn-submit" id="btnAdd" onclick="addRecord()">Add Record</button>
+                </div>
+            </div>
+            <div class="manual-note">💡 Emails are sent automatically at days 21, 49, 77 and 105 from the induction date. You can also trigger them manually below.</div>
+        </div>
+
+        <!-- RECORDS TABLE -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">Payment Schedule</span>
+                <span class="card-icon">💷</span>
+            </div>
+
+            <!-- FILTERS -->
+            <div class="filter-row">
+                <span class="filter-label">Filter:</span>
+                <select class="filter-select" id="filterTL" onchange="renderTable()">
+                    <option value="">All Team Leaders</option>
+                    <option value="Richard Wiecko">Richard Wiecko</option>
+                    <option value="Scott Carson">Scott Carson</option>
+                    <option value="Stuart Whyte">Stuart Whyte</option>
+                    <option value="Tom Green">Tom Green</option>
+                </select>
+                <select class="filter-select" id="filterStatus" onchange="renderTable()">
+                    <option value="">All Statuses</option>
+                    <option value="due">Has Due / Overdue</option>
+                    <option value="complete">All Sent</option>
+                    <option value="pending">All Pending</option>
+                </select>
+            </div>
+
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Team Leader</th>
+                            <th>Induction Date</th>
+                            <th>Day 21</th>
+                            <th>Day 49</th>
+                            <th>Day 77</th>
+                            <th>Day 105</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr><td colspan="8" class="loading-text">Loading records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module">
+        import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717"
+        };
+
+        const app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+        const db  = getFirestore(app);
+
+        // EmailJS init
+        emailjs.init('ziLnha91scpGjFABh');
+
+        const EMAILJS_SERVICE  = 'service_9xxxl9p';
+        const EMAILJS_TEMPLATE = 'template_3kdl2t4';
+
+        // Payment day offsets (calendar days)
+        const PAYMENT_DAYS = [21, 49, 77, 105];
+        const PAYMENT_KEYS = ['day21', 'day49', 'day77', 'day105'];
+
+        let allRecords = [];
+
+        // ────────────────────────────────────────────────
+        // HELPERS
+        // ────────────────────────────────────────────────
+        function today() {
+            const d = new Date();
+            d.setHours(0,0,0,0);
+            return d;
+        }
+        function addDays(dateStr, n) {
+            const d = new Date(dateStr + 'T00:00:00');
+            d.setDate(d.getDate() + n);
+            return d;
+        }
+        function formatDateDisplay(date) {
+            return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+        function daysDiff(target) {
+            const now = today();
+            return Math.round((target - now) / 86400000);
+        }
+
+        function getPaymentStatus(inductionDateStr, sentMap, dayOffset) {
+            const dueDate = addDays(inductionDateStr, dayOffset);
+            const key = 'day' + dayOffset;
+            const diff = daysDiff(dueDate);
+            if (sentMap[key]) return { status: 'sent', dueDate, diff };
+            if (diff < 0)     return { status: 'overdue', dueDate, diff };
+            if (diff === 0)   return { status: 'due', dueDate, diff };
+            return { status: 'pending', dueDate, diff };
+        }
+
+        // ────────────────────────────────────────────────
+        // LOAD DATA
+        // ────────────────────────────────────────────────
+        async function loadRecords() {
+            try {
+                const snap = await getDocs(query(collection(db, 'rubix payments'), orderBy('createdAt', 'desc')));
+                allRecords = [];
+                snap.forEach(d => allRecords.push({ id: d.id, ...d.data() }));
+                renderTable();
+                updateStats();
+                autoSendDueEmails();
+            } catch(err) {
+                console.error('Load error:', err);
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="8" class="loading-text" style="color:#f87171;">Error loading records. Check console.</td></tr>`;
+            }
+        }
+
+        // ────────────────────────────────────────────────
+        // RENDER TABLE
+        // ────────────────────────────────────────────────
+        window.renderTable = function() {
+            const filterTL     = document.getElementById('filterTL').value;
+            const filterStatus = document.getElementById('filterStatus').value;
+            const tbody        = document.getElementById('tableBody');
+
+            let records = [...allRecords];
+
+            if (filterTL) records = records.filter(r => r.teamLeader === filterTL);
+
+            if (filterStatus === 'due') {
+                records = records.filter(r => {
+                    return PAYMENT_DAYS.some(d => {
+                        const { status } = getPaymentStatus(r.inductionDate, r.sent || {}, d);
+                        return status === 'due' || status === 'overdue';
+                    });
+                });
+            } else if (filterStatus === 'complete') {
+                records = records.filter(r => PAYMENT_KEYS.every(k => (r.sent || {})[k]));
+            } else if (filterStatus === 'pending') {
+                records = records.filter(r => PAYMENT_KEYS.every(k => !(r.sent || {})[k]));
+            }
+
+            if (!records.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="loading-text">No records found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = records.map(r => {
+                const sent = r.sent || {};
+                const paymentCells = PAYMENT_DAYS.map(offset => {
+                    const { status, dueDate, diff } = getPaymentStatus(r.inductionDate, sent, offset);
+                    const dueDateStr = formatDateDisplay(dueDate);
+                    if (status === 'sent') {
+                        return `<td><span class="stage-pill stage-sent">✅ Sent</span><br><span style="font-size:0.75em;color:#6b7280;margin-top:2px;display:block;">${dueDateStr}</span></td>`;
+                    }
+                    if (status === 'overdue') {
+                        return `<td><span class="stage-pill stage-overdue">⚠️ Overdue</span><br><span style="font-size:0.75em;color:#a8dadc;margin-top:2px;display:block;">${dueDateStr}</span><span style="font-size:0.72em;color:#f87171;">${Math.abs(diff)}d ago</span></td>`;
+                    }
+                    if (status === 'due') {
+                        return `<td><span class="stage-pill stage-due">📧 Due Today</span><br><span style="font-size:0.75em;color:#a8dadc;margin-top:2px;display:block;">${dueDateStr}</span></td>`;
+                    }
+                    // pending
+                    let badgeClass = 'days-badge';
+                    if (diff <= 7) badgeClass += ' warn';
+                    if (diff <= 3) badgeClass += ' due';
+                    return `<td><span class="stage-pill stage-pending">🕐 Pending</span><br><span style="font-size:0.75em;color:#a8dadc;margin-top:2px;display:block;">${dueDateStr}</span><span class="${badgeClass}">${diff}d</span></td>`;
+                }).join('');
+
+                const allSent = PAYMENT_KEYS.every(k => sent[k]);
+                const hasDue  = PAYMENT_DAYS.some(d => { const { status } = getPaymentStatus(r.inductionDate, sent, d); return status === 'due' || status === 'overdue'; });
+
+                return `<tr>
+                    <td style="font-weight:700;color:#ffffff;">${r.name}</td>
+                    <td style="color:#a8dadc;">${r.teamLeader}</td>
+                    <td style="color:#a8dadc;">${formatDateDisplay(new Date(r.inductionDate + 'T00:00:00'))}</td>
+                    ${paymentCells}
+                    <td>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                            ${hasDue ? `<button class="btn-send" onclick="sendDueNow('${r.id}')">📧 Send Due</button>` : ''}
+                            <button class="btn-delete" onclick="deleteRecord('${r.id}')">🗑 Delete</button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        };
+
+        // ────────────────────────────────────────────────
+        // STATS
+        // ────────────────────────────────────────────────
+        function updateStats() {
+            let dueToday = 0, overdue = 0, complete = 0;
+            allRecords.forEach(r => {
+                const sent = r.sent || {};
+                const allSent = PAYMENT_KEYS.every(k => sent[k]);
+                if (allSent) { complete++; return; }
+                PAYMENT_DAYS.forEach(offset => {
+                    const { status } = getPaymentStatus(r.inductionDate, sent, offset);
+                    if (status === 'due')     dueToday++;
+                    if (status === 'overdue') overdue++;
+                });
+            });
+            document.getElementById('statTotal').textContent    = allRecords.length;
+            document.getElementById('statDueToday').textContent = dueToday;
+            document.getElementById('statOverdue').textContent  = overdue;
+            document.getElementById('statComplete').textContent = complete;
+        }
+
+        // ────────────────────────────────────────────────
+        // ADD RECORD
+        // ────────────────────────────────────────────────
+        window.addRecord = async function() {
+            const name         = document.getElementById('inputName').value.trim();
+            const teamLeader   = document.getElementById('inputTeamLeader').value;
+            const inductionDate= document.getElementById('inputInductionDate').value;
+
+            if (!name)         return showToast('Please enter a full name.', 'error');
+            if (!teamLeader)   return showToast('Please select a team leader.', 'error');
+            if (!inductionDate)return showToast('Please select an induction date.', 'error');
+
+            const btn = document.getElementById('btnAdd');
+            btn.disabled = true; btn.textContent = '⏳ Saving...';
+
+            try {
+                await addDoc(collection(db, 'rubix payments'), {
+                    name, teamLeader, inductionDate,
+                    sent: {}, createdAt: serverTimestamp()
+                });
+                document.getElementById('inputName').value = '';
+                document.getElementById('inputTeamLeader').value = '';
+                document.getElementById('inputInductionDate').value = '';
+                showToast(`✅ Record added for ${name}!`, 'success');
+                await loadRecords();
+            } catch(err) {
+                console.error(err);
+                showToast('Error saving record. Check console.', 'error');
+            }
+            btn.disabled = false; btn.textContent = 'Add Record';
+        };
+
+        // ────────────────────────────────────────────────
+        // DELETE RECORD
+        // ────────────────────────────────────────────────
+        window.deleteRecord = async function(id) {
+            if (!confirm('Delete this record? This cannot be undone.')) return;
+            try {
+                await deleteDoc(doc(db, 'rubix payments', id));
+                showToast('Record deleted.', 'success');
+                await loadRecords();
+            } catch(err) {
+                console.error(err); showToast('Error deleting record.', 'error');
+            }
+        };
+
+        // ────────────────────────────────────────────────
+        // SEND EMAIL
+        // ────────────────────────────────────────────────
+        async function sendEmail(record, paymentNumber, dueDate) {
+            const templateParams = {
+                to_name:        record.name,
+                full_name:      record.name,
+                team_leader:    record.teamLeader,
+                induction_date: formatDateDisplay(new Date(record.inductionDate + 'T00:00:00')),
+                payment_number: paymentNumber,
+                due_date:       formatDateDisplay(dueDate),
+                day_offset:     PAYMENT_DAYS[paymentNumber - 1]
+            };
+            await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, templateParams);
+        }
+
+        // AUTO SEND: runs on load — sends any due/overdue that haven't been sent yet
+        async function autoSendDueEmails() {
+            let sent = 0;
+            for (const record of allRecords) {
+                const sentMap = record.sent || {};
+                for (let i = 0; i < PAYMENT_DAYS.length; i++) {
+                    const offset = PAYMENT_DAYS[i];
+                    const key    = PAYMENT_KEYS[i];
+                    if (sentMap[key]) continue;
+                    const { status, dueDate } = getPaymentStatus(record.inductionDate, sentMap, offset);
+                    if (status === 'due' || status === 'overdue') {
+                        try {
+                            await sendEmail(record, i + 1, dueDate);
+                            const newSent = { ...sentMap, [key]: new Date().toISOString() };
+                            await updateDoc(doc(db, 'rubix payments', record.id), { sent: newSent });
+                            record.sent = newSent;
+                            sent++;
+                        } catch(err) {
+                            console.error(`Auto-send failed for ${record.name} day ${offset}:`, err);
+                        }
+                    }
+                }
+            }
+            if (sent > 0) {
+                showToast(`📧 ${sent} email${sent > 1 ? 's' : ''} sent automatically!`, 'success');
+                renderTable(); updateStats();
+            }
+            document.getElementById('lastRefreshed').textContent = `Last refreshed: ${new Date().toLocaleTimeString()}`;
+        }
+
+        // MANUAL: send all due/overdue for a specific record
+        window.sendDueNow = async function(id) {
+            const record = allRecords.find(r => r.id === id);
+            if (!record) return;
+            let sent = 0;
+            const sentMap = { ...(record.sent || {}) };
+            for (let i = 0; i < PAYMENT_DAYS.length; i++) {
+                const offset = PAYMENT_DAYS[i];
+                const key    = PAYMENT_KEYS[i];
+                if (sentMap[key]) continue;
+                const { status, dueDate } = getPaymentStatus(record.inductionDate, sentMap, offset);
+                if (status === 'due' || status === 'overdue') {
+                    try {
+                        await sendEmail(record, i + 1, dueDate);
+                        sentMap[key] = new Date().toISOString();
+                        sent++;
+                    } catch(err) {
+                        console.error(err);
+                        showToast(`Email error for ${record.name}: ${err.message}`, 'error');
+                    }
+                }
+            }
+            if (sent > 0) {
+                await updateDoc(doc(db, 'rubix payments', id), { sent: sentMap });
+                record.sent = sentMap;
+                showToast(`📧 ${sent} email${sent > 1 ? 's' : ''} sent for ${record.name}!`, 'success');
+                renderTable(); updateStats();
+            } else {
+                showToast('No due emails to send.', 'error');
+            }
+        };
+
+        // ────────────────────────────────────────────────
+        // TOAST
+        // ────────────────────────────────────────────────
+        window.showToast = function(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `toast ${type}`;
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => { t.style.display = 'none'; t.className = 'toast'; }, 4000);
+        };
+
+        // ────────────────────────────────────────────────
+        // INIT
+        // ────────────────────────────────────────────────
+        document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+        loadRecords();
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadRecords, 300000);
+    </script>
+</body>
+</html>
