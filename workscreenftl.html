@@ -1456,7 +1456,7 @@
             const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
             const engCount = await getEngineerCount(teamLeader);
             const dailyTarget = Math.round(engCount*6*0.9);
-            const result = { dates:[], meters:[], completion:[], aborts:[], targets:[], vsTargetPct:[], startMph: [], endMph: [], abortReasons: {} };
+            const result = { dates:[], meters:[], completion:[], aborts:[], targets:[], vsTargetPct:[], startMph: [], endMph: [], abortReasons: {}, krakenMeters: [] };
             
             const startStr = formatDateForQuery(dates[0]);
             const endStr = formatDateForQuery(dates[dates.length-1]);
@@ -1503,6 +1503,8 @@
                 
                 let kMeters = krakenMetersMap[ds] || 0;
                 let hc = (!teamLeader && hcMap[ds] && hcMap[ds] > 0) ? hcMap[ds] : hcFallback;
+                
+                result.krakenMeters.push(kMeters);
                 result.startMph.push(hc > 0 ? Number((kMeters / hc).toFixed(1)) : 0);
                 result.endMph.push(hc > 0 ? Number((m / hc).toFixed(1)) : 0);
             }
@@ -1678,7 +1680,7 @@
         async function createOverallSlide3(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Start vs End MPH', 'Selected Week  ·  ' + todayLabel);
+            addHeader(pptx, slide, 'OES Overall Performance  —  Meters & MPH', 'Selected Week  ·  ' + todayLabel);
             
             const currentWeekDates = getWorkingDaysForWeek(wcDate);
             const perf = await getPeriodData(null, currentWeekDates);
@@ -1693,19 +1695,33 @@
                 { label: 'Avg End MPH (Installed)', value: avgEnd.toFixed(1), color: '8B5CF6' }
             ], 0.25, statY, 9.4);
             
-            slide.addText('Start MPH vs End MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
-            slide.addChart(pptx.charts.BAR, [
-                { name: 'Start MPH', labels: perf.dates, values: perf.startMph },
-                { name: 'End MPH', labels: perf.dates, values: perf.endMph }
-            ], {
+            slide.addText('Meters Installed vs MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
+            
+            const comboTypes = [
+                {
+                    type: pptx.charts.BAR,
+                    data: [
+                        { name: 'Meters', labels: perf.dates, values: perf.meters },
+                        { name: 'Kraken', labels: perf.dates, values: perf.krakenMeters }
+                    ],
+                    options: { barDir: 'col', barGrouping: 'clustered', chartColors: ['6366F1', 'F97316'] }
+                },
+                {
+                    type: pptx.charts.LINE,
+                    data: [
+                        { name: 'Start MPH', labels: perf.dates, values: perf.startMph },
+                        { name: 'End MPH', labels: perf.dates, values: perf.endMph }
+                    ],
+                    options: { chartColors: ['F59E0B', '8B5CF6'], secondaryValAxis: true }
+                }
+            ];
+
+            slide.addChart(comboTypes, {
                 x: 0.25, y: chartY, w: 9.4, h: chartH,
-                barDir: 'col', barGrouping: 'clustered',
-                chartColors: ['F97316', '8B5CF6'],
                 showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
                 catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
                 catAxisLabelFontSize: 10, valAxisLabelFontSize: 9,
-                showValue: true, dataLabelFontSize: 10, dataLabelColor: 'FFFFFF',
-                valAxisMaxVal: niceMax(Math.max(...perf.startMph, ...perf.endMph))
+                showValue: true, dataLabelFontSize: 8, dataLabelColor: 'FFFFFF'
             });
 
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
@@ -1947,7 +1963,7 @@
                 }
             });
 
-            const result = { labels: [], meters: [], completion: [], aborts: [], targets: [], vsTargetPct: [], atWork: [], holiday: [], sick: [], startMph: [], endMph: [], abortReasons: {} };
+            const result = { labels: [], meters: [], completion: [], aborts: [], targets: [], vsTargetPct: [], atWork: [], holiday: [], sick: [], startMph: [], endMph: [], abortReasons: {}, krakenMeters: [] };
 
             const abortSnap = await getDocs(query(collection(performanceDb, "aborts"), where("date", ">=", startStr), where("date", "<=", endStr)));
             abortSnap.forEach(d => {
@@ -2041,6 +2057,7 @@
                 let sMph = (hc * b.workingDays) > 0 ? Number((b.krakenMeters / (hc * b.workingDays)).toFixed(1)) : 0;
                 let eMph = (hc * b.workingDays) > 0 ? Number((b.meters / (hc * b.workingDays)).toFixed(1)) : 0;
                 
+                result.krakenMeters.push(b.krakenMeters);
                 result.startMph.push(sMph);
                 result.endMph.push(eMph);
 
@@ -2120,7 +2137,7 @@
         async function createLongOverallSlide3(pptx, startDate, endDate, bucketType) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
-            addHeader(pptx, slide, 'OES Overall Trend  —  Start vs End MPH', `Trending by ${bucketType}  ·  ${dateLabel}`);
+            addHeader(pptx, slide, 'OES Overall Trend  —  Meters & MPH', `Trending by ${bucketType}  ·  ${dateLabel}`);
             
             const perf = await getLongPeriodData(null, startDate, endDate, bucketType);
             
@@ -2134,19 +2151,33 @@
                 { label: 'Avg End MPH (Installed)', value: avgEnd.toFixed(1), color: '8B5CF6' }
             ], 0.25, statY, 9.4);
             
-            slide.addText('Start MPH vs End MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
-            slide.addChart(pptx.charts.BAR, [
-                { name: 'Start MPH', labels: perf.labels, values: perf.startMph },
-                { name: 'End MPH', labels: perf.labels, values: perf.endMph }
-            ], {
+            slide.addText('Meters Installed vs MPH', { x: 0.25, y: labelY, w: 9.4, h: 0.22, fontSize: 10, bold: true, color: '00D2FF', fontFace: 'Calibri', margin: 0 });
+            
+            const comboTypes = [
+                {
+                    type: pptx.charts.BAR,
+                    data: [
+                        { name: 'Meters', labels: perf.labels, values: perf.meters },
+                        { name: 'Kraken', labels: perf.labels, values: perf.krakenMeters }
+                    ],
+                    options: { barDir: 'col', barGrouping: 'clustered', chartColors: ['6366F1', 'F97316'] }
+                },
+                {
+                    type: pptx.charts.LINE,
+                    data: [
+                        { name: 'Start MPH', labels: perf.labels, values: perf.startMph },
+                        { name: 'End MPH', labels: perf.labels, values: perf.endMph }
+                    ],
+                    options: { chartColors: ['F59E0B', '8B5CF6'], secondaryValAxis: true }
+                }
+            ];
+
+            slide.addChart(comboTypes, {
                 x: 0.25, y: chartY, w: 9.4, h: chartH,
-                barDir: 'col', barGrouping: 'clustered',
-                chartColors: ['F97316', '8B5CF6'],
                 showLegend: true, legendPos: 'b', legendFontSize: 9, legendColor: 'CCCCCC',
                 catAxisLabelColor: '8EAEC9', valAxisLabelColor: '8EAEC9',
                 catAxisLabelFontSize: 10, valAxisLabelFontSize: 9,
-                showValue: true, dataLabelFontSize: 10, dataLabelColor: 'FFFFFF',
-                valAxisMaxVal: niceMax(Math.max(...perf.startMph, ...perf.endMph))
+                showValue: true, dataLabelFontSize: 8, dataLabelColor: 'FFFFFF'
             });
 
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
