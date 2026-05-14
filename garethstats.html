@@ -111,7 +111,6 @@
         </div>
         <div id="message" class="message"></div>
 
-        <!-- ── Attendance Stats ── -->
         <div class="form-section">
             <h2 class="section-title">📊 Attendance Statistics</h2>
             <div class="info-box">
@@ -147,7 +146,6 @@
 
         <div class="section-divider"></div>
 
-        <!-- ── Safety Record ── -->
         <div class="form-section">
             <h2 class="section-title">🛡️ Safety Record</h2>
             <div class="info-box">
@@ -169,7 +167,6 @@
 
         <div class="section-divider"></div>
 
-        <!-- ── Compliance CSV Upload ── -->
         <div class="form-section">
             <h2 class="section-title">📁 Compliance CSV Upload</h2>
             <div class="info-box">
@@ -202,7 +199,6 @@
 
         <div class="section-divider"></div>
 
-        <!-- ── Aborts Upload ── -->
         <div class="form-section">
             <h2 class="section-title">🚫 Aborts Upload</h2>
             <div class="info-box">
@@ -242,7 +238,6 @@
 
         <div class="section-divider"></div>
 
-        <!-- ── Miles per Meter Upload ── -->
         <div class="form-section">
             <h2 class="section-title">🚗 Miles per Meter Upload</h2>
             <div class="info-box">
@@ -287,15 +282,12 @@
 
         <div class="section-divider"></div>
 
-        <!-- ══════════════════════════════════════════════════════════
-             ── Engineer Daily Profit Upload (NEW) ──
-             ══════════════════════════════════════════════════════════ -->
         <div class="form-section">
             <h2 class="section-title">💰 Engineer Daily Profit Upload</h2>
             <div class="info-box">
                 <h3>Upload Engineer Profit Data</h3>
                 <p><strong>CSV Format:</strong> Column A (Engineer Name), Column B (Profit £)</p>
-                <p>Each row is one engineer. Upload the CSV, check or edit figures in the preview, then save. Data is stored in the <em>Engineer Daily Profit</em> collection and shown ranked best-to-worst on the dashboard.</p>
+                <p>Each row is one engineer. Upload the CSV, check or edit figures in the preview, then save. Data is stored in the <em>Engineer Daily Profit</em> collection.</p>
             </div>
             <form id="profitForm">
                 <div class="form-group">
@@ -315,7 +307,7 @@
                 <div id="profitPreview" style="display: none; margin-top: 20px;">
                     <h3 style="margin-bottom: 15px; color: #333;">Preview &amp; Edit Data</h3>
                     <p style="font-size: 0.85em; color: #666; margin-bottom: 10px;">
-                        Engineers are shown in the order they appear in the CSV. The dashboard will sort them automatically.
+                        Engineers are shown in the order they appear in the CSV.
                     </p>
                     <div style="overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px;">
                         <table id="profitTable" style="width: 100%; border-collapse: collapse; background: white;">
@@ -342,6 +334,29 @@
             </form>
         </div>
 
+        <div class="section-divider"></div>
+
+        <div class="form-section">
+            <h2 class="section-title">📥 Export Engineer Profit</h2>
+            <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
+                <h3 style="color: #2e7d32;">Export to Excel</h3>
+                <p>Select a date range to download a matrix of engineer profits (names down the left, dates across the top).</p>
+            </div>
+            <form id="exportProfitForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="exportStartDate">Start Date</label>
+                        <input type="date" id="exportStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="exportEndDate">End Date</label>
+                        <input type="date" id="exportEndDate" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">Export to Excel (.xlsx)</button>
+            </form>
+        </div>
+
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
@@ -349,7 +364,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // Added query, where, and getDocs to the imports
+        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -370,6 +386,12 @@
         document.getElementById('abortsDate').valueAsDate = yesterday;
         document.getElementById('milesDate').valueAsDate = yesterday;
         document.getElementById('profitDate').valueAsDate = yesterday;
+
+        // Set default dates for the export section
+        const aWeekAgo = new Date();
+        aWeekAgo.setDate(aWeekAgo.getDate() - 7);
+        document.getElementById('exportStartDate').valueAsDate = aWeekAgo;
+        document.getElementById('exportEndDate').valueAsDate = new Date();
 
         // ── Attendance ──────────────────────────────────────────────────────
         function updateAtWorkPercent() {
@@ -563,7 +585,7 @@
         });
 
         // ════════════════════════════════════════════════════════════════════
-        // ── Engineer Daily Profit ────────────────────────────────────────────
+        // ── Engineer Daily Profit Upload ────────────────────────────────────
         // ════════════════════════════════════════════════════════════════════
         let profitData = [];
 
@@ -710,6 +732,80 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Save Profit Data';
+            }
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ── Export Engineer Daily Profit to Excel ───────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        document.getElementById('exportProfitForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const start = document.getElementById('exportStartDate').value;
+            const end = document.getElementById('exportEndDate').value;
+            const btn = e.target.querySelector('button');
+            
+            btn.disabled = true;
+            btn.textContent = 'Fetching and Exporting...';
+
+            try {
+                const profitRef = collection(db, "Engineer Daily Profit");
+                const q = query(profitRef, where("date", ">=", start), where("date", "<=", end));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showMessage('No profit data found for the selected date range.', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Export to Excel (.xlsx)';
+                    return;
+                }
+
+                const rawData = [];
+                const datesSet = new Set();
+                const engineersSet = new Set();
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    rawData.push(data);
+                    datesSet.add(data.date);
+                    engineersSet.add(data.engineer);
+                });
+
+                // Sort dates chronologically
+                const sortedDates = Array.from(datesSet).sort();
+                // Sort engineers alphabetically
+                const sortedEngineers = Array.from(engineersSet).sort((a, b) => a.localeCompare(b));
+
+                // Prepare the matrix (Array of Arrays for SheetJS)
+                const exportMatrix = [];
+                
+                // Top header row
+                exportMatrix.push(["Engineer Name", ...sortedDates]);
+
+                // Construct data rows mapped against their corresponding date
+                sortedEngineers.forEach(eng => {
+                    const row = [eng];
+                    sortedDates.forEach(d => {
+                        const record = rawData.find(r => r.engineer === eng && r.date === d);
+                        row.push(record ? record.profit : 0); // Put 0 if no data logged for that day
+                    });
+                    exportMatrix.push(row);
+                });
+
+                // Generate and download the workbook
+                const ws = XLSX.utils.aoa_to_sheet(exportMatrix);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Profit Export");
+
+                const fileName = `Engineer_Profit_${start}_to_${end}.xlsx`;
+                XLSX.writeFile(wb, fileName);
+
+                showMessage('Export generated successfully!', 'success');
+            } catch (err) {
+                console.error('Export error:', err);
+                showMessage('Error exporting data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Export to Excel (.xlsx)';
             }
         });
 
