@@ -626,6 +626,7 @@
     const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
 
     return {
+      rawDates: weekdays,
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
@@ -657,6 +658,7 @@
 
     const isBar = cfg.type === 'bar';
     return {
+      rawDates: weekdays,
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
@@ -666,7 +668,8 @@
     };
   }
 
-  function dualAxisOptions(title) {
+  // Passing rawDates array to add click drill-down
+  function dualAxisOptions(title, rawDates) {
     const scales = {
       x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
       yMeters: { type:'linear', position:'left', beginAtZero:true, grace:'20%', ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
@@ -676,6 +679,27 @@
     return {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
+      
+      // DRILL DOWN ON CLICK EVENT
+      onClick: (event, elements) => {
+        if (elements.length > 0 && rawDates) {
+          const index = elements[0].index;
+          const clickedDateStr = rawDates[index]; // e.g., "2026-05-14"
+          if (clickedDateStr) {
+            const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+            const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
+            if (targetBtn && !targetBtn.classList.contains('active')) {
+              targetBtn.click(); // Triggers the sidebar button logic naturally
+            }
+          }
+        }
+      },
+      // POINTER CURSOR ON HOVER
+      onHover: (event, elements) => {
+        const target = event.native ? event.native.target : event.target;
+        target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+
       plugins: {
         title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
         legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
@@ -719,7 +743,7 @@
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
-      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`);
+      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, data.rawDates);
 
       chart = new Chart(ctx, {
         type: 'bar',
@@ -855,7 +879,7 @@
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
       
-      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`);
+      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`, data.rawDates);
       
       chart = new Chart(ctx, {
         type: cfg.type,
@@ -1017,6 +1041,7 @@
     });
 
     return {
+      rawDates: weekdays,
       labels:  weekdays.map(d => formatDayLabel(d, isBar)),
       duals:   weekdays.map(d => dateMap[d].duals),
       singles: weekdays.map(d => dateMap[d].singles),
@@ -1093,6 +1118,28 @@
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        
+        // DRILL DOWN ON CLICK EVENT
+        onClick: (event, elements) => {
+          if (elements.length > 0 && data.rawDates) {
+            const index = elements[0].index;
+            const clickedDateStr = data.rawDates[index];
+            if (clickedDateStr) {
+              const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+              const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
+              if (targetBtn && !targetBtn.classList.contains('active')) {
+                targetBtn.click();
+              }
+            }
+          }
+        },
+        // POINTER CURSOR ON HOVER
+        onHover: (event, elements) => {
+          const target = event.native ? event.native.target : event.target;
+          target.style.cursor = elements.length ? 'pointer' : 'default';
+        },
+
         plugins: {
           title: { display:true, text:`${data.label} – Install Types (All Teams)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
           legend: { labels:{ color:'#cbd5e1', font:{size:14} } }
