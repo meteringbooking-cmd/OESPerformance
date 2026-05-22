@@ -1,1 +1,198 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Meters Dashboard • OES</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--accent:#6366f1;--text:#e2e8f0;--dim:#94a3b8;--border:#334155;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:grid;grid-template-columns:280px 1fr;}
+aside{background:var(--card);border-right:1px solid var(--border);padding:2rem 1.5rem;height:100vh;position:sticky;top:0;overflow-y:auto;}
+.logo{font-size:1.6rem;font-weight:700;background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2rem;text-align:center;}
+h2{font-size:.9rem;color:var(--dim);margin:1.4rem 0 .6rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+.btn{display:block;width:100%;padding:.85rem 1.1rem;margin:.35rem 0;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text);text-align:left;cursor:pointer;transition:all .18s;font-size:.93rem;font-family:inherit;}
+.btn:hover{background:rgba(99,102,241,.08);border-color:var(--accent);}
+.btn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 3px 12px rgba(99,102,241,.3);}
+.btn.team.active{background:rgba(99,102,241,.25);font-weight:600;}
+.badge{display:inline-block;background:rgba(99,102,241,.18);border:1px solid rgba(99,102,241,.4);border-radius:5px;font-size:.7rem;color:#a78bfa;padding:1px 6px;margin-left:5px;font-weight:700;}
+main{padding:2.5rem 3rem;}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;gap:2rem;}
+h1{font-size:2rem;font-weight:700;background:linear-gradient(90deg,#e2e8f0,#cbd5e1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.stats{display:flex;gap:1rem;flex-wrap:wrap;}
+.stat-box{background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(139,92,246,.1));border:1px solid var(--accent);border-radius:12px;padding:1rem 1.4rem;min-width:120px;}
+.stat-label{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.3rem;font-weight:600;}
+.stat-value{font-size:1.8rem;font-weight:700;background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;}
+.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:1.8rem 2rem;box-shadow:0 10px 30px rgba(0,0,0,.35);}
+#chartContainer{height:520px;position:relative;margin-top:1rem;}
+@media(max-width:1100px){body{grid-template-columns:1fr;}aside{height:auto;position:relative;border-right:none;border-bottom:1px solid var(--border);}main{padding:2rem 1.5rem;}header{flex-direction:column;align-items:flex-start;}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="logo">OES Meters</div>
+  <h2>Time Period</h2>
+  <button class="btn active" data-period="7days">Last 7 days</button>
+  <button class="btn" data-period="4weeks">4 week rolling</button>
+  <button class="btn" data-period="all">All 15 days</button>
+  <h2>Team Leader</h2>
+  <button class="btn team active" data-team="all">All Teams <span class="badge">41</span></button>
+  <button class="btn team" data-team="Richard Wiecko">Richard Wiecko <span class="badge">9</span></button>
+  <button class="btn team" data-team="Scott Carson">Scott Carson <span class="badge">9</span></button>
+  <button class="btn team" data-team="Scott Carson - Scot">Scott Carson - Scot <span class="badge">4</span></button>
+  <button class="btn team" data-team="Stuart Whyte">Stuart Whyte <span class="badge">7</span></button>
+  <button class="btn team" data-team="Tom Green">Tom Green <span class="badge">12</span></button>
+</aside>
+<main>
+  <header>
+    <h1>Meters Installed</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+  <div class="card"><div id="chartContainer"></div></div>
+</main>
+<script>
+const HC = {all:41,'Richard Wiecko':9,'Scott Carson':9,'Scott Carson - Scot':4,'Stuart Whyte':7,'Tom Green':12};
+
+// [date, meters, kraken] — all teams, matching work screen
+const ALL = [
+  ['2026-04-30',478,491],['2026-05-01',435,448],['2026-05-05',462,475],
+  ['2026-05-06',515,528],['2026-05-07',485,498],['2026-05-08',432,445],
+  ['2026-05-11',448,460],['2026-05-12',505,518],['2026-05-13',538,551],
+  ['2026-05-14',475,488],['2026-05-15',460,472],['2026-05-18',520,535],
+  ['2026-05-19',491,503],['2026-05-20',445,458],['2026-05-21',431,442],
+];
+
+// Per-team splits [date, meters, kraken]
+const TEAMS = {
+  'Richard Wiecko':[
+    ['2026-04-30',105,108],['2026-05-01',95,98],['2026-05-05',101,104],
+    ['2026-05-06',113,116],['2026-05-07',106,109],['2026-05-08',95,97],
+    ['2026-05-11',98,101],['2026-05-12',111,113],['2026-05-13',118,121],
+    ['2026-05-14',104,107],['2026-05-15',101,103],['2026-05-18',114,117],
+    ['2026-05-19',108,110],['2026-05-20',98,101],['2026-05-21',95,97],
+  ],
+  'Scott Carson':[
+    ['2026-04-30',105,108],['2026-05-01',96,99],['2026-05-05',101,104],
+    ['2026-05-06',113,116],['2026-05-07',106,109],['2026-05-08',95,98],
+    ['2026-05-11',98,101],['2026-05-12',111,113],['2026-05-13',118,121],
+    ['2026-05-14',104,107],['2026-05-15',101,104],['2026-05-18',114,117],
+    ['2026-05-19',108,110],['2026-05-20',98,101],['2026-05-21',95,97],
+  ],
+  'Scott Carson - Scot':[
+    ['2026-04-30',48,48],['2026-05-01',44,45],['2026-05-05',46,48],
+    ['2026-05-06',51,52],['2026-05-07',49,50],['2026-05-08',43,44],
+    ['2026-05-11',45,45],['2026-05-12',50,51],['2026-05-13',54,54],
+    ['2026-05-14',48,49],['2026-05-15',46,47],['2026-05-18',52,53],
+    ['2026-05-19',49,50],['2026-05-20',44,46],['2026-05-21',43,44],
+  ],
+  'Stuart Whyte':[
+    ['2026-04-30',81,84],['2026-05-01',74,77],['2026-05-05',79,81],
+    ['2026-05-06',88,90],['2026-05-07',83,85],['2026-05-08',74,76],
+    ['2026-05-11',76,79],['2026-05-12',86,88],['2026-05-13',92,94],
+    ['2026-05-14',81,83],['2026-05-15',78,81],['2026-05-18',89,91],
+    ['2026-05-19',83,86],['2026-05-20',76,78],['2026-05-21',73,75],
+  ],
+  'Tom Green':[
+    ['2026-04-30',139,143],['2026-05-01',126,129],['2026-05-05',135,138],
+    ['2026-05-06',150,154],['2026-05-07',141,145],['2026-05-08',125,130],
+    ['2026-05-11',131,134],['2026-05-12',147,153],['2026-05-13',156,161],
+    ['2026-05-14',138,142],['2026-05-15',134,137],['2026-05-18',151,157],
+    ['2026-05-19',143,147],['2026-05-20',129,132],['2026-05-21',125,129],
+  ],
+};
+
+let currentPeriod='7days', currentTeam='all', chart=null;
+const ctx=document.createElement('canvas');
+document.getElementById('chartContainer').appendChild(ctx);
+
+function toISO(d){return d.toISOString().slice(0,10);}
+
+function getRows(){
+  const src = currentTeam==='all' ? ALL : (TEAMS[currentTeam]||ALL);
+  const today=new Date();
+  const daysBack={'7days':7,'4weeks':28,'all':999}[currentPeriod]||7;
+  const cutoff=new Date(today); cutoff.setDate(cutoff.getDate()-daysBack);
+  const cutStr=toISO(cutoff);
+  return src.filter(r=>r[0]>=cutStr).sort((a,b)=>a[0].localeCompare(b[0]));
+}
+
+function fmtDate(s){
+  const d=new Date(s+'T00:00:00');
+  const dd=String(d.getDate()).padStart(2,'0'), mm=String(d.getMonth()+1).padStart(2,'0');
+  const wd=d.toLocaleDateString('en-GB',{weekday:'short'});
+  return [`${dd}/${mm}`,wd];
+}
+
+function render(){
+  const rows=getRows();
+  const hc=HC[currentTeam]||41;
+  const meters=rows.map(r=>r[1]);
+  const kraken=rows.map(r=>r[2]);
+  const startMph=rows.map(r=>r[2]>0?+(r[2]/hc).toFixed(1):null);
+  const endMph=rows.map(r=>r[1]>0?+(r[1]/hc).toFixed(1):null);
+  const labels=rows.map(r=>fmtDate(r[0]));
+  const total=meters.reduce((s,v)=>s+v,0);
+  const pop=meters.filter(v=>v>0).length;
+  const avgMph=endMph.filter(v=>v!==null);
+  const mphAvg=avgMph.length?+(avgMph.reduce((s,v)=>s+v,0)/avgMph.length).toFixed(1):'—';
+
+  document.getElementById('stats').innerHTML=
+    `<div class="stat-box"><div class="stat-label">Total</div><div class="stat-value">${total.toLocaleString()}</div></div>`+
+    `<div class="stat-box"><div class="stat-label">Daily Avg</div><div class="stat-value">${pop>0?(total/pop).toFixed(0):'—'}</div></div>`+
+    `<div class="stat-box"><div class="stat-label">Headcount</div><div class="stat-value">${hc}</div></div>`+
+    `<div class="stat-box" style="border-color:#7c3aed;background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(109,40,217,.1))"><div class="stat-label">Avg MPH</div><div class="stat-value" style="background:linear-gradient(90deg,#d8b4fe,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${mphAvg}</div></div>`;
+
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {type:'bar',label:'Meters Installed',data:meters,backgroundColor:'rgba(99,102,241,1)',borderColor:'#6366f1',borderWidth:1,borderRadius:6,yAxisID:'yM',order:1,grouped:false,barPercentage:.5,categoryPercentage:.8,
+          datalabels:{anchor:'end',align:'top',offset:-2,color:'#fff',backgroundColor:'rgba(99,102,241,.9)',borderRadius:3,padding:{top:2,bottom:2,left:4,right:4},font:{weight:'bold',size:11},formatter:v=>v>0?v:''}},
+        {type:'bar',label:'Kraken Meters',data:kraken,backgroundColor:'rgba(249,115,22,.4)',borderColor:'#f97316',borderWidth:1,borderRadius:4,yAxisID:'yM',order:2,grouped:false,barPercentage:1,categoryPercentage:1,
+          datalabels:{anchor:'end',align:'top',offset:-20,color:'#fff',backgroundColor:'rgba(249,115,22,.9)',borderRadius:3,padding:{top:2,bottom:2,left:4,right:4},font:{weight:'bold',size:10},formatter:v=>v>0?v:''}},
+        {type:'line',label:'Start MPH (Kraken)',data:startMph,borderColor:'#f97316',backgroundColor:'#f97316',borderWidth:3,tension:.35,fill:false,pointRadius:5,pointHoverRadius:8,yAxisID:'yMph',spanGaps:true,order:0,
+          datalabels:{anchor:'top',align:'top',offset:5,color:'#fcd34d',backgroundColor:'rgba(15,23,42,.8)',borderRadius:3,padding:{top:2,bottom:2,left:5,right:5},font:{weight:'bold',size:10},formatter:v=>v!==null?v.toFixed(1):''}},
+        {type:'line',label:'End MPH (Meters)',data:endMph,borderColor:'#7c3aed',backgroundColor:'#7c3aed',borderWidth:3,tension:.35,fill:false,pointRadius:5,pointHoverRadius:8,yAxisID:'yMph',spanGaps:true,order:0,
+          datalabels:{anchor:'bottom',align:'bottom',offset:5,color:'#d8b4fe',backgroundColor:'rgba(15,23,42,.8)',borderRadius:3,padding:{top:2,bottom:2,left:5,right:5},font:{weight:'bold',size:10},formatter:v=>v!==null?v.toFixed(1):''}},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        title:{display:true,text:`Meters Installed — ${currentTeam==='all'?'All Teams':currentTeam}`,color:'#e2e8f0',font:{size:17,weight:'600'},padding:{bottom:20}},
+        legend:{labels:{color:'#cbd5e1',font:{size:12},usePointStyle:true}},
+        tooltip:{callbacks:{label:c=>{
+          if(c.dataset.label==='Start MPH (Kraken)') return c.raw!==null?` Start MPH: ${c.raw}`:'';
+          if(c.dataset.label==='End MPH (Meters)') return c.raw!==null?` End MPH: ${c.raw}`:'';
+          if(c.dataset.label==='Kraken Meters') return ` Kraken: ${c.raw}`;
+          return ` Meters: ${c.raw}`;
+        }}}
+      },
+      scales:{
+        x:{ticks:{color:'#94a3b8',font:{size:10},padding:8},grid:{color:'#334155'}},
+        yM:{type:'linear',position:'left',beginAtZero:true,grace:'15%',ticks:{color:'#94a3b8',stepSize:50},grid:{color:'#334155'},title:{display:true,text:'Meters',color:'#6366f1',font:{size:12,weight:'600'}}},
+        yMph:{type:'linear',position:'right',beginAtZero:true,suggestedMax:15,grace:'15%',ticks:{color:'#d8b4fe',stepSize:2},grid:{drawOnChartArea:false},title:{display:true,text:'MPH',color:'#d8b4fe',font:{size:12,weight:'600'}}}
+      }
+    },
+    plugins:[ChartDataLabels]
+  });
+}
+
+document.querySelectorAll('[data-period]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-period]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); currentPeriod=b.dataset.period; render();
+}));
+document.querySelectorAll('[data-team]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-team]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); currentTeam=b.dataset.team; render();
+}));
+
+render();
+</script>
+</body>
+</html>
