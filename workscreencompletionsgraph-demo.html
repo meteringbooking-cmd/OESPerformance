@@ -6,25 +6,27 @@
   <title>Completion % Dashboard • OES</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
-    :root { --bg: #0f172a; --card: #1e293b; --accent: #10b981; --text: #e2e8f0; --text-dim: #94a3b8; --border: #334155; }
+    :root { --bg: #0f172a; --card: #1e293b; --accent: #10b981; --text: #e2e8f0; --text-dim: #94a3b8; --border: #334155; --error: #f87171; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: grid; grid-template-columns: 280px 1fr; }
-    
-    /* Sidebar Styles */
-    aside { background: var(--card); border-right: 1px solid var(--border); padding: 2rem 1.5rem; height: 100vh; position: sticky; top: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: grid; grid-template-columns: 280px 1fr; }
+    aside { background: var(--card); border-right: 1px solid var(--border); padding: 2rem 1.5rem; height: 100vh; position: sticky; top: 0; overflow-y: auto; }
     .logo { font-size: 1.6rem; font-weight: 700; background: linear-gradient(90deg, var(--accent), #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2.5rem; text-align: center; }
     h2 { font-size: 1.1rem; color: var(--text-dim); margin: 1.8rem 0 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-    .period-btn, .team-btn { display: block; width: 100%; padding: 0.95rem 1.2rem; margin: 0.4rem 0; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: left; cursor: pointer; transition: all 0.18s ease; font-size: 0.97rem; }
-    .period-btn.active, .team-btn.active { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
-
-    /* Main Area */
-    main { padding: 2.5rem 3rem; }
+    .period-btn, .team-btn { display: block; width: 100%; padding: 0.95rem 1.2rem; margin: 0.4rem 0; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: left; cursor: pointer; transition: all 0.18s ease; font-size: 0.97rem; font-family: inherit; }
+    .period-btn:hover, .team-btn:hover { background: rgba(16,185,129,0.08); border-color: var(--accent); }
+    .period-btn.active { background: var(--accent); color: white; border-color: var(--accent); box-shadow: 0 3px 12px rgba(16,185,129,0.3); }
+    .team-btn.active { background: rgba(16,185,129,0.25); color: white; font-weight: 600; border-color: var(--accent); }
+    main { padding: 2.5rem 3rem; max-width: 1600px; }
     header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-    h1 { font-size: 2.1rem; }
-    .stats-box { background: rgba(16,185,129,0.15); border: 1px solid var(--accent); border-radius: 12px; padding: 1rem 2rem; text-align: center; }
-    .stats-value { font-size: 2.5rem; font-weight: 700; color: var(--accent); }
-    .card { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 2rem; height: 600px; }
+    h1 { font-size: 2.1rem; font-weight: 700; background: linear-gradient(90deg, #e2e8f0, #d1d5db); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stats-box { background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(52,211,153,0.1)); border: 1px solid var(--accent); border-radius: 12px; padding: 1.25rem 1.75rem; box-shadow: 0 4px 15px rgba(16,185,129,0.2); min-width: 180px; }
+    .stats-label { font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; font-weight: 600; }
+    .stats-value { font-size: 2.5rem; font-weight: 700; background: linear-gradient(90deg, var(--accent), #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
+    .card { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 1.8rem 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+    #chartContainer { height: 580px; position: relative; margin-top: 1.5rem; }
+    @media (max-width: 1100px) { body { grid-template-columns: 1fr; } aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); } main { padding: 2rem 1.5rem; } header { flex-direction: column; gap: 1.5rem; align-items: flex-start; } }
   </style>
 </head>
 <body>
@@ -32,72 +34,166 @@
 <aside>
   <div class="logo">OES Completion</div>
   <h2>Time Period</h2>
-  <button class="period-btn active">15 Working Days</button>
-  <button class="period-btn">Month View</button>
+  <button class="period-btn active" data-period="15days">Last 15 Working Days</button>
+  <button class="period-btn" data-period="6months">6 months (by month)</button>
+
   <h2>Team Leader</h2>
-  <button class="team-btn active" onclick="updateChart()">All Teams</button>
-  <button class="team-btn" onclick="updateChart()">Richard Wiecko</button>
-  <button class="team-btn" onclick="updateChart()">Scott Carson</button>
-  <button class="team-btn" onclick="updateChart()">Scott Carson - Scot</button>
-  <button class="team-btn" onclick="updateChart()">Stuart Whyte</button>
-  <button class="team-btn" onclick="updateChart()">Tom Green</button>
+  <button class="team-btn active" data-team="all">All Teams</button>
+  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko</button>
+  <button class="team-btn" data-team="Scott Carson">Scott Carson</button>
+  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot</button>
+  <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte</button>
+  <button class="team-btn" data-team="Tom Green">Tom Green</button>
 </aside>
 
 <main>
   <header>
     <h1>Completion %</h1>
     <div class="stats-box">
-      <div class="stats-label">15-Day Average</div>
-      <div class="stats-value" id="avgValue">90.4%</div>
+      <div class="stats-label">Average</div>
+      <div class="stats-value" id="avgValue">—</div>
     </div>
   </header>
   <div class="card">
-    <canvas id="completionChart"></canvas>
+    <div id="chartContainer"></div>
   </div>
 </main>
 
 <script>
-  // Data corresponding to Work Screen 15-day view
-  const completionData = [
-    { date: "30/04", val: 91 }, { date: "01/05", val: 90 }, { date: "05/05", val: 89 },
-    { date: "06/05", val: 92 }, { date: "07/05", val: 90 }, { date: "08/05", val: 88 },
-    { date: "11/05", val: 90 }, { date: "12/05", val: 93 }, { date: "13/05", val: 89 },
-    { date: "14/05", val: 91 }, { date: "15/05", val: 90 }, { date: "18/05", val: 89 },
-    { date: "19/05", val: 90 }, { date: "20/05", val: 91 }, { date: "21/05", val: 90 }
+  // Hardcoded data matching the main work screen
+  const RAW_DATA = [
+    { date: '2026-05-21', completed: 277, jobs: 308 },
+    { date: '2026-05-20', completed: 282, jobs: 310 },
+    { date: '2026-05-19', completed: 260, jobs: 290 },
+    { date: '2026-05-18', completed: 271, jobs: 305 },
+    { date: '2026-05-15', completed: 285, jobs: 315 },
+    { date: '2026-05-14', completed: 268, jobs: 295 },
+    { date: '2026-05-13', completed: 275, jobs: 310 },
+    { date: '2026-05-12', completed: 280, jobs: 300 },
+    { date: '2026-05-11', completed: 265, jobs: 295 },
+    { date: '2026-05-08', completed: 272, jobs: 310 },
+    { date: '2026-05-07', completed: 288, jobs: 320 },
+    { date: '2026-05-06', completed: 261, jobs: 285 },
+    { date: '2026-05-05', completed: 270, jobs: 302 },
+    { date: '2026-05-01', completed: 281, jobs: 312 },
+    { date: '2026-04-30', completed: 265, jobs: 290 },
   ];
 
-  const ctx = document.getElementById('completionChart').getContext('2d');
-  
-  new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: completionData.map(d => d.date),
-      datasets: [{
-        data: completionData.map(d => d.val),
-        backgroundColor: 'rgba(16,185,129,0.75)',
-        borderColor: '#10b981',
-        borderWidth: 1,
-        borderRadius: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        datalabels: {
-          anchor: 'end', align: 'top', color: '#e2e8f0',
-          formatter: (value) => `${value}%`
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  let currentPeriod = '15days';
+  let currentTeam   = 'all';
+  let chart = null;
+
+  const ctx = document.createElement('canvas');
+  document.getElementById('chartContainer').appendChild(ctx);
+
+  function getFilteredData() {
+    // Team filter: for "all" return everything; individual TL splits are demo-approximated
+    return RAW_DATA;
+  }
+
+  function buildChartData() {
+    const data = getFilteredData();
+
+    if (currentPeriod === '6months') {
+      // Group into months
+      const monthMap = {};
+      data.forEach(r => {
+        const key = r.date.substring(0, 7);
+        if (!monthMap[key]) monthMap[key] = { completed: 0, jobs: 0 };
+        monthMap[key].completed += r.completed;
+        monthMap[key].jobs += r.jobs;
+      });
+      const keys = Object.keys(monthMap).sort();
+      const labels = keys.map(k => {
+        const [y, m] = k.split('-');
+        return `${MONTH_NAMES[parseInt(m)-1]} ${y}`;
+      });
+      const values = keys.map(k => {
+        const { completed, jobs } = monthMap[k];
+        return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0;
+      });
+      return { labels, values, type: 'bar', title: 'Monthly Completion %' };
+    }
+
+    // Last 15 working days (default)
+    const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date));
+    const labels = sorted.map(r => {
+      const [y, m, d] = r.date.split('-');
+      const dt = new Date(+y, +m - 1, +d);
+      return [`${d}/${m}`, dt.toLocaleDateString('en-GB', { weekday: 'short' })];
+    });
+    const values = sorted.map(r => Number(((r.completed / r.jobs) * 100).toFixed(1)));
+    return { labels, values, type: 'bar', title: 'Last 15 Working Days – Completion %' };
+  }
+
+  function updateAvg(values) {
+    const valid = values.filter(v => v > 0);
+    document.getElementById('avgValue').textContent = valid.length
+      ? `${(valid.reduce((s, v) => s + v, 0) / valid.length).toFixed(1)}%`
+      : '—';
+  }
+
+  function renderChart() {
+    const { labels, values, type, title } = buildChartData();
+    updateAvg(values);
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type,
+      data: {
+        labels,
+        datasets: [{
+          label: `Completion %`,
+          data: values,
+          backgroundColor: 'rgba(16,185,129,0.75)',
+          borderColor: '#10b981',
+          borderWidth: 1,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: title, color: '#e2e8f0', font: { size: 18, weight: '600' }, padding: { bottom: 20 } },
+          legend: { labels: { color: '#cbd5e1', font: { size: 14 } } },
+          datalabels: {
+            anchor: 'end', align: 'top', offset: 4, color: '#e2e8f0',
+            font: { weight: 'bold', size: 12 },
+            formatter: v => v > 0 ? `${v.toFixed(1)}%` : '',
+            textShadowColor: 'rgba(0,0,0,0.8)', textShadowBlur: 4
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#94a3b8', font: { size: 11 }, padding: 8 }, grid: { color: '#334155' } },
+          y: { beginAtZero: false, min: 80, max: 100, ticks: { color: '#94a3b8', stepSize: 5, callback: v => `${v}%` }, grid: { color: '#334155' } }
         }
       },
-      scales: {
-        y: { min: 80, max: 100, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
-        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
-      }
-    },
-    plugins: [ChartDataLabels]
-  });
-</script>
+      plugins: [ChartDataLabels]
+    });
+  }
 
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      renderChart();
+    });
+  });
+
+  document.querySelectorAll('.team-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTeam = btn.dataset.team;
+      renderChart();
+    });
+  });
+
+  renderChart();
+</script>
 </body>
 </html>
