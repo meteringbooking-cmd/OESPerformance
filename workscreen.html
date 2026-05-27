@@ -184,7 +184,7 @@
                         <span class="kpi-title">
                             Meters Installed
                             <button class="graph-button" onclick="openGraphPopup(event, 'Meters Graphs', 'https://oes-performance.vercel.app/workscreenmetersgraph-demo.html')">📊 Graphs</button>
-                           <button class="graph-button" onclick="openDailyPopup(event)">📅 Daily</button>
+                            <button class="graph-button" onclick="openDailyPopup(event, 0)">📅 Daily</button>
                         </span>
                         <span class="kpi-icon">🪛</span>
                     </div>
@@ -437,11 +437,13 @@
         <div class="popup-content" onclick="event.stopPropagation()">
             <div class="popup-header">
                 <div class="popup-title" id="popupTitle">📊 Performance Graphs</div>
+                
                 <div id="dailyNavControls" style="display:none; align-items:center; gap:8px;">
-                    <button id="dailyNavPrev" onclick="alert('Displaying static information for presentation')" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer;">◀ Older</button>
-                    <span id="dailyNavLabel" style="font-size:0.8em; color:#a8dadc; font-weight:600; min-width:80px; text-align:center;">26 May</span>
-                    <button id="dailyNavNext" onclick="alert('Displaying static information for presentation')" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer;">Newer ▶</button>
+                    <button id="dailyNavPrev" onclick="navigateDailyOffset(1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">◀ Older</button>
+                    <span id="dailyNavLabel" style="font-size:0.8em; color:#a8dadc; font-weight:600; min-width:80px; text-align:center;"></span>
+                    <button id="dailyNavNext" onclick="navigateDailyOffset(-1)" style="padding:6px 14px; background:rgba(0,210,255,0.15); border:1px solid rgba(0,210,255,0.4); border-radius:8px; color:#00d2ff; font-size:0.8em; font-weight:700; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.3)'" onmouseout="this.style.background='rgba(0,210,255,0.15)'">Newer ▶</button>
                 </div>
+                
                 <button class="popup-close" onclick="closeGraphPopup()">✕</button>
             </div>
             <iframe class="popup-iframe" id="graphIframe" src=""></iframe>
@@ -459,12 +461,26 @@
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:14px;">
+                        <select id="abortDateRangeSelect" onchange="loadDetailedAborts(parseInt(this.value))" style="background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);color:#00d2ff;border-radius:8px;padding:6px 12px;font-size:0.8em;font-weight:700;outline:none;cursor:pointer;text-transform:uppercase;">
+                            <option value="5">Last 5 Days</option>
+                            <option value="10">Last 10 Days</option>
+                            <option value="21">Last Month (21 Days)</option>
+                        </select>
+                        
+                        <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);border-radius:8px;padding:6px 12px;">
+                            <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Table</span>
+                            <div id="abortViewToggle" onclick="toggleAbortView()" style="width:42px;height:22px;background:rgba(0,210,255,0.2);border:1px solid rgba(0,210,255,0.4);border-radius:11px;cursor:pointer;position:relative;transition:background 0.3s;">
+                                <div id="abortToggleKnob" style="width:16px;height:16px;background:#00d2ff;border-radius:50%;position:absolute;top:2px;left:2px;transition:left 0.3s;box-shadow:0 0 6px rgba(0,210,255,0.8);"></div>
+                            </div>
+                            <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Chart</span>
+                        </div>
                         <button class="popup-close" onclick="closeAbortsPopup()">✕</button>
                     </div>
                 </div>
+                <div id="abortDayTabs" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
             </div>
             <div id="abortsDetailContainer" style="flex: 1; overflow-y: auto; padding: 24px 30px;">
-                <div style="text-align: center; padding: 60px; color: #a8dadc;"><div style="font-size: 2em;">⏳</div><div>Processing abort data...</div></div>
+                <div style="text-align: center; padding: 60px; color: #a8dadc;"><div style="font-size: 2em;">⏳</div><div>Loading abort data...</div></div>
             </div>
         </div>
     </div>
@@ -472,8 +488,392 @@
     <button class="export-pptx-btn" id="exportLongPptxBtn" onclick="alert('Export processing in background...')">📅 Long Export</button>
     <button class="export-pptx-btn" id="exportPptxBtn" onclick="alert('Export processing in background...')">📊 Export PowerPoint</button>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        
+        // Initialize Firebase for Aborts Data
+        const performanceApp = initializeApp({
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        }, "performance");
+        const performanceDb = getFirestore(performanceApp);
+
+        // --- DAILY BUTTON LOGIC ---
+        const BANK_HOLIDAYS = [
+            "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
+            "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+            "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28"
+        ];
+
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false;
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return !BANK_HOLIDAYS.includes(dateStr);
+        }
+
+        let _dailyOffset = 0;
+        
+        function getPrevWorkingDayByOffset(offset) {
+            let d = new Date(), count = 0;
+            while (count <= offset) { 
+                d.setDate(d.getDate() - 1); 
+                if (isWorkingDay(d)) count++; 
+            }
+            return d;
+        }
+        
+        function buildDailyUrl(offset) {
+            const d = getPrevWorkingDayByOffset(offset);
+            const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            return `https://oes-performance.vercel.app/workscreendailystats.html?showPrevious=true&date=${ds}`;
+        }
+
+        function updateDailyNavLabel(offset) {
+            const d = getPrevWorkingDayByOffset(offset);
+            const label = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+            document.getElementById('dailyNavLabel').textContent = label;
+            document.getElementById('dailyNavNext').style.opacity = offset === 0 ? '0.3' : '1';
+            document.getElementById('dailyNavNext').style.pointerEvents = offset === 0 ? 'none' : 'auto';
+            document.getElementById('dailyNavPrev').style.opacity = offset >= 4 ? '0.3' : '1';
+            document.getElementById('dailyNavPrev').style.pointerEvents = offset >= 4 ? 'none' : 'auto';
+        }
+
+        window.openDailyPopup = function(event, offset = 0) {
+            if (event) event.stopPropagation();
+            _dailyOffset = offset;
+            document.getElementById('popupTitle').textContent = '📅 Daily Stats';
+            document.getElementById('graphIframe').src = buildDailyUrl(offset);
+            const nav = document.getElementById('dailyNavControls');
+            nav.style.display = 'flex';
+            updateDailyNavLabel(offset);
+            document.getElementById('graphPopup').classList.add('active');
+        };
+
+        window.navigateDailyOffset = function(delta) {
+            _dailyOffset = Math.max(0, Math.min(4, _dailyOffset + delta));
+            document.getElementById('graphIframe').src = buildDailyUrl(_dailyOffset);
+            updateDailyNavLabel(_dailyOffset);
+        };
+
+
+        // --- ABORTS LOGIC ---
+        function getPreviousWorkingDays(count) {
+            const dates = []; let d = new Date();
+            while (dates.length < count) { 
+                d.setDate(d.getDate() - 1); 
+                if (isWorkingDay(d)) dates.push(new Date(d)); 
+            }
+            return dates;
+        }
+        function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+        const KNOWN_REASONS = ['Tech Abort','No Access','Refused Access','Higher Skill Set Required','Work Not Required','DNO Issue','Stock Issue','Wrong Details','H&S Issue','No Abort Code','Customer Cancellation','Left Open'];
+        const KNOWN_REASONS_LOWER = KNOWN_REASONS.map(r=>r.toLowerCase());
+        function matchKnownReason(fragment) { const f=fragment.trim().toLowerCase().replace(/\s+/g,' '); const idx=KNOWN_REASONS_LOWER.indexOf(f); return idx!==-1?KNOWN_REASONS[idx]:null; }
+        function titleCase(str) { return str.trim().split(' ').map((w,i)=>{ if(['&','and','or','of','the'].includes(w.toLowerCase())&&i>0) return w.toLowerCase(); return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase(); }).join(' '); }
+        function tokeniseReasons(rawParts) {
+            const results=[]; let i=0;
+            while(i<rawParts.length) {
+                let matched=false;
+                for(let w=Math.min(rawParts.length-i,3);w>=1;w--) { const candidate=rawParts.slice(i,i+w).join(', '); const canon=matchKnownReason(candidate); if(canon){results.push(canon);i+=w;matched=true;break;} }
+                if(!matched){results.push(titleCase(rawParts[i]));i++;}
+            }
+            return results;
+        }
+        function parseAbortReasons(rawReason, totalQty) {
+            if(!rawReason||typeof rawReason!=='string') return [{reason:'Unknown',qty:totalQty||1}];
+            const trimmed=rawReason.trim();
+            const multMatch=trimmed.match(/^(.+?)\s*[xX]\s*(\d+)$/);
+            if(multMatch&&!multMatch[1].includes(',')) { const base=multMatch[1].trim(); return [{reason:matchKnownReason(base)||titleCase(base),qty:parseInt(multMatch[2],10)}]; }
+            if(!trimmed.includes(',')) return [{reason:matchKnownReason(trimmed)||titleCase(trimmed),qty:totalQty||1}];
+            const rawParts=trimmed.split(/\s*,\s*/);
+            const fixedItems=[]; const plainParts=[];
+            for(const part of rawParts) { const pm=part.match(/^(.+?)\s*[xX]\s*(\d+)$/); if(pm){fixedItems.push({reason:matchKnownReason(pm[1].trim())||titleCase(pm[1].trim()),qty:parseInt(pm[2],10)});}else{plainParts.push(part);} }
+            const tokenised=tokeniseReasons(plainParts);
+            const fixedQty=fixedItems.reduce((s,p)=>s+p.qty,0);
+            const remaining=Math.max(tokenised.length,(totalQty||1)-fixedQty);
+            const count=tokenised.length;
+            const perPart=count>0?Math.floor(remaining/count):0;
+            const firstQty=count>0?remaining-perPart*(count-1):0;
+            const output=[...fixedItems];
+            tokenised.forEach((reason,idx)=>{output.push({reason,qty:Math.max(1,idx===0?firstQty:perPart)});});
+            return output;
+        }
+
+        let abortAllDaysData = [], abortSelectedDays = new Set([0]), abortChartMode = false, abortChartInstance = null;
+        const TEAM_DISPLAY_NAMES = {
+            'Richard Wiecko': 'Richard Wiecko','Scott Carson': 'Scott Carson',
+            'Scott Carson - Scot': 'Scott Carson - Scot','Stuart Whyte': 'Stuart Whyte','FTL 4': 'Tom Green'
+        };
+
+        window.toggleAborts = async function(event) {
+            event.stopPropagation();
+            document.getElementById('abortsPopup').classList.add('active');
+            const rangeSelect = document.getElementById('abortDateRangeSelect');
+            const daysToLoad = rangeSelect ? parseInt(rangeSelect.value) : 5;
+            await window.loadDetailedAborts(daysToLoad);
+        };
+        
+        window.closeAbortsPopup = function(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('abortsPopup').classList.remove('active');
+        };
+
+        window.toggleAbortView = function() {
+            abortChartMode = !abortChartMode;
+            const knob = document.getElementById('abortToggleKnob'), track = document.getElementById('abortViewToggle');
+            if (abortChartMode) { knob.style.left='22px'; track.style.background='rgba(0,210,255,0.4)'; }
+            else                { knob.style.left='2px';  track.style.background='rgba(0,210,255,0.2)'; }
+            renderAbortDays();
+        };
+
+        window.selectAbortDay = function(idx, event) {
+            if (event && (event.ctrlKey || event.metaKey)) {
+                if (abortSelectedDays.has(idx)) { if (abortSelectedDays.size > 1) abortSelectedDays.delete(idx); } else { abortSelectedDays.add(idx); }
+            } else { abortSelectedDays = new Set([idx]); }
+            refreshAbortTabs(); renderAbortDays();
+        };
+
+        function refreshAbortTabs() {
+            document.querySelectorAll('.abort-day-tab').forEach((t, i) => {
+                const selected = abortSelectedDays.has(i);
+                t.style.background  = selected ? 'rgba(239,68,68,0.35)' : 'rgba(0,0,0,0.3)';
+                t.style.borderColor = selected ? 'rgba(239,68,68,0.7)'  : 'rgba(0,210,255,0.2)';
+                t.style.color       = selected ? '#ffffff' : '#a8dadc';
+                t.style.fontWeight  = selected ? '800' : '600';
+            });
+        }
+
+        function getAggregatedDayData() {
+            const selectedDays = [...abortSelectedDays].map(i => abortAllDaysData[i]);
+            if (selectedDays.length === 1) return selectedDays[0];
+            const merged = { teamData: {}, total: 0, reasons: {}, label: selectedDays.map(d=>d.label).join(' + ') };
+            for (const day of selectedDays) {
+                merged.total += day.total;
+                for (const [r, q] of Object.entries(day.reasons)) { merged.reasons[r] = (merged.reasons[r]||0) + q; }
+                for (const [tl, tdata] of Object.entries(day.teamData)) {
+                    if (!merged.teamData[tl]) merged.teamData[tl] = { total:0, engineers:[] };
+                    merged.teamData[tl].total += tdata.total;
+                    for (const eng of tdata.engineers) {
+                        const existing = merged.teamData[tl].engineers.find(e => e.name === eng.name);
+                        if (existing) {
+                            existing.aborts += eng.aborts;
+                            for (const pr of eng.parsedReasons) { 
+                                const ep = existing.parsedReasons.find(r=>r.reason===pr.reason); 
+                                if (ep) ep.qty += pr.qty; 
+                                else existing.parsedReasons.push({...pr}); 
+                            }
+                            const rc = {};
+                            existing.parsedReasons.forEach(({reason,qty})=>{rc[reason]=(rc[reason]||0)+qty;});
+                            existing.reason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
+                        } else { 
+                            merged.teamData[tl].engineers.push({...eng, parsedReasons: eng.parsedReasons.map(r => ({...r}))}); 
+                        }
+                    }
+                }
+            }
+            for (const tdata of Object.values(merged.teamData)) { tdata.engineers.sort((a,b)=>a.name.localeCompare(b.name)); }
+            return merged;
+        }
+
+        function renderAbortDays() {
+            const container = document.getElementById('abortsDetailContainer');
+            if (!abortAllDaysData.length) return;
+            const aggregated = getAggregatedDayData();
+            if (abortChartMode) renderAbortChart(container, aggregated);
+            else                renderAbortTable(container, aggregated);
+        }
+
+        function renderAbortTable(container, dayData) {
+            if (abortChartInstance) { abortChartInstance.destroy(); abortChartInstance = null; }
+            const { teamData, total: grandTotal, label } = dayData;
+            const sortedTeams = Object.entries(teamData).sort((a,b)=>b[1].total-a[1].total);
+            let html = '';
+            if (sortedTeams.length === 0) {
+                html = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div><div style="font-size:0.8em;margin-top:10px;opacity:0.8;">All jobs completed successfully</div></div>`;
+            } else {
+                sortedTeams.forEach(([teamLeader, data]) => {
+                    const displayName = TEAM_DISPLAY_NAMES[teamLeader] || teamLeader;
+                    html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(239,68,68,0.3);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,0.2);">
+                            <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${displayName}</div>
+                            <div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total>1?'s':''}</div>
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead><tr style="background:rgba(0,210,255,0.15);">
+                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
+                                <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
+                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
+                            </tr></thead>
+                            <tbody>${data.engineers.map(eng=>`<tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
+                                <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
+                                <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
+                            </tr>`).join('')}</tbody>
+                        </table></div>`;
+                });
+                const allReasons = {};
+                sortedTeams.forEach(([,d])=>d.engineers.forEach(e=>e.parsedReasons.forEach(({reason,qty})=>{allReasons[reason]=(allReasons[reason]||0)+qty;})));
+                const sortedR = Object.entries(allReasons).sort((a,b)=>b[1]-a[1]);
+                if (sortedR.length > 1) {
+                    html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);">
+                        <div style="font-size:0.82em;font-weight:700;color:#00d2ff;margin-bottom:14px;text-transform:uppercase;letter-spacing:1.5px;">Abort Reasons Breakdown</div>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+                        ${sortedR.map(([r,q])=>`<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;"><span style="color:#a8dadc;font-size:0.85em;">${r}</span><span style="color:#ef4444;font-weight:800;font-size:1.1em;margin-left:8px;">${q}</span></div>`).join('')}
+                        </div></div>`;
+                }
+                html += `<div style="text-align:right;padding:20px;background:rgba(239,68,68,0.2);border-radius:12px;border:2px solid rgba(239,68,68,0.4);margin-bottom:24px;">
+                    <div style="font-size:1em;color:#a8dadc;margin-bottom:6px;">Total Aborts — ${label}</div>
+                    <div style="font-size:2.5em;font-weight:900;color:#ef4444;">${grandTotal}</div></div>`;
+            }
+            html += buildFiveDaySummaryTable();
+            container.innerHTML = html;
+        }
+
+        function buildFiveDaySummaryTable() {
+            if (!abortAllDaysData.length) return '';
+            const allReasons = {};
+            abortAllDaysData.forEach(d => { Object.entries(d.reasons).forEach(([r,q]) => { allReasons[r]=(allReasons[r]||0)+q; }); });
+            const sortedReasons = Object.keys(allReasons).sort((a,b)=>allReasons[b]-allReasons[a]);
+            if (sortedReasons.length === 0) return '';
+            const thStyle = `style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.78em;letter-spacing:0.3px;white-space:nowrap;"`;
+            const reasonHeaders = sortedReasons.map(r => `<th ${thStyle}>${r}</th>`).join('');
+            const displayDays = [...abortAllDaysData].reverse();
+            const summaryRows = displayDays.map((d, revIdx) => {
+                const origIdx = abortAllDaysData.length - 1 - revIdx;
+                const isSelected = abortSelectedDays.has(origIdx);
+                const rowBg = isSelected ? 'rgba(239,68,68,0.12)' : 'transparent';
+                const rowBorder = isSelected ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.08)';
+                const cells = sortedReasons.map(reason => {
+                    const val = d.reasons[reason] || 0;
+                    return `<td style="padding:10px 8px;text-align:center;color:${val>0?'#f59e0b':'rgba(255,255,255,0.2)'};font-weight:${val>0?'700':'400'};">${val>0?val:'–'}</td>`;
+                }).join('');
+                return `<tr style="border-bottom:${rowBorder};background:${rowBg};">
+                    <td style="padding:10px 14px;color:${isSelected?'#ffffff':'#e1e8ed'};font-weight:${isSelected?'700':'600'};white-space:nowrap;">${d.label}${isSelected?' ◀':''}</td>
+                    <td style="padding:10px 14px;text-align:center;font-weight:800;font-size:1.1em;color:${d.total>0?'#ef4444':'#10b981'};">${d.total}</td>
+                    ${cells}
+                </tr>`;
+            }).join('');
+            const grandTotalAll = abortAllDaysData.reduce((s,d)=>s+d.total,0);
+            const totalsRow = `<tr style="background:rgba(0,210,255,0.08);border-top:2px solid rgba(0,210,255,0.3);">
+                <td style="padding:10px 14px;color:#00d2ff;font-weight:800;text-transform:uppercase;font-size:0.85em;">Total</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:900;font-size:1.1em;color:#ef4444;">${grandTotalAll}</td>
+                ${sortedReasons.map(r=>`<td style="padding:10px 8px;text-align:center;color:#f59e0b;font-weight:800;">${allReasons[r]}</td>`).join('')}
+            </tr>`;
+            return `<div style="background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(0,210,255,0.2);overflow-x:auto;">
+                <div style="font-size:0.85em;font-weight:700;color:#00d2ff;margin-bottom:16px;text-transform:uppercase;letter-spacing:1.5px;">📅 ${abortAllDaysData.length}-Day Summary — Aborts by Type
+                    <span style="font-size:0.8em;color:#a8dadc;font-weight:400;text-transform:none;letter-spacing:0;margin-left:10px;">Selected days highlighted ◀</span>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:0.88em;min-width:500px;">
+                    <thead><tr style="background:rgba(0,210,255,0.15);">
+                        <th style="text-align:left;padding:10px 14px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Date</th>
+                        <th style="text-align:center;padding:10px 8px;color:#00d2ff;text-transform:uppercase;font-size:0.82em;">Total</th>
+                        ${reasonHeaders}
+                    </tr></thead>
+                    <tbody>${summaryRows}${totalsRow}</tbody>
+                </table>
+            </div>`;
+        }
+
+        function renderAbortChart(container, dayData) {
+            const { reasons: reasonCounts, label, total: grandTotal } = dayData;
+            const sortedR = Object.entries(reasonCounts).sort((a,b)=>b[1]-a[1]);
+            if (sortedR.length === 0) {
+                container.innerHTML=`<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div></div>`;
+                container.innerHTML += buildFiveDaySummaryTable(); return;
+            }
+            container.innerHTML = `
+            <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:1em;color:#a8dadc;">Abort reasons for <strong style="color:#00d2ff;">${label}</strong></div>
+                <div style="font-size:1.8em;font-weight:800;color:#ef4444;">${grandTotal} Total</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+                <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,210,255,0.2);border-radius:12px;padding:20px;">
+                    <div style="font-size:0.8em;color:#a8dadc;margin-bottom:12px;text-transform:uppercase;font-weight:700;">By Reason (Bar)</div>
+                    <canvas id="abortBarChart"></canvas>
+                </div>
+                <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(0,210,255,0.2);border-radius:12px;padding:20px;">
+                    <div style="font-size:0.8em;color:#a8dadc;margin-bottom:12px;text-transform:uppercase;font-weight:700;">Distribution</div>
+                    <canvas id="abortDoughnut"></canvas>
+                </div>
+            </div>
+            ${buildFiveDaySummaryTable()}`;
+            setTimeout(() => {
+                const COLORS=['#ef4444','#f59e0b','#3b82f6','#10b981','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#a78bfa'];
+                if (abortChartInstance) abortChartInstance.destroy();
+                const barCtx = document.getElementById('abortBarChart');
+                if (barCtx) abortChartInstance = new Chart(barCtx.getContext('2d'), {
+                    type:'bar', data:{labels:sortedR.map(([r])=>r),datasets:[{label:'Aborts',data:sortedR.map(([,q])=>q),backgroundColor:sortedR.map((_,i)=>COLORS[i%COLORS.length]+'CC'),borderColor:sortedR.map((_,i)=>COLORS[i%COLORS.length]),borderWidth:2,borderRadius:6}]},
+                    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#a8dadc',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}},y:{ticks:{color:'#a8dadc',stepSize:1},grid:{color:'rgba(255,255,255,0.08)'},beginAtZero:true}}}
+                });
+                const dCtx = document.getElementById('abortDoughnut');
+                if (dCtx) new Chart(dCtx.getContext('2d'),{
+                    type:'doughnut',data:{labels:sortedR.map(([r])=>r),datasets:[{data:sortedR.map(([,q])=>q),backgroundColor:sortedR.map((_,i)=>COLORS[i%COLORS.length]+'BB'),borderColor:sortedR.map((_,i)=>COLORS[i%COLORS.length]),borderWidth:2}]},
+                    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#a8dadc',font:{size:11},padding:10}},tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed/grandTotal*100)}%)`}}}}
+                });
+            }, 60);
+        }
+
+        window.loadDetailedAborts = async function(daysCount = 5) {
+            try {
+                const container = document.getElementById('abortsDetailContainer');
+                container.innerHTML = `<div style="text-align:center;padding:40px;color:#a8dadc;"><div style="font-size:2em;">⏳</div><div>Loading abort data...</div></div>`;
+                abortChartMode = false; abortSelectedDays = new Set([0]);
+                document.getElementById('abortToggleKnob').style.left = '2px';
+                document.getElementById('abortViewToggle').style.background = 'rgba(0,210,255,0.2)';
+                
+                const targetDays = getPreviousWorkingDays(daysCount).reverse();
+                const rawDays = await Promise.all(targetDays.map(async (d) => {
+                    const ds = formatDateForQuery(d);
+                    const snap = await getDocs(query(collection(performanceDb, "aborts"), where("date", "==", ds)));
+                    const teamData = {}; let total = 0; const reasons = {};
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        const tl = data.teamLeader || 'Unknown Team', eng = data.engineer || '';
+                        if (!eng) return;
+                        const parsed = parseAbortReasons(data.reason || '', data.total || 1);
+                        const docTotal = parsed.reduce((s,r)=>s+r.qty,0);
+                        total += docTotal;
+                        if (!teamData[tl]) teamData[tl] = { total:0, engineers:[] };
+                        teamData[tl].total += docTotal;
+                        const rc = {};
+                        parsed.forEach(({reason,qty})=>{ rc[reason]=(rc[reason]||0)+qty; reasons[reason]=(reasons[reason]||0)+qty; });
+                        const combinedReason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
+                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed });
+                    });
+                    Object.values(teamData).forEach(t=>t.engineers.sort((a,b)=>a.name.localeCompare(b.name)));
+                    return { date:d, label:formatDate(d), total, teamData, reasons };
+                }));
+                abortAllDaysData = rawDays.reverse();
+                const tabsEl = document.getElementById('abortDayTabs');
+                tabsEl.innerHTML = abortAllDaysData.map((day, i) => `
+                    <button class="abort-day-tab" onclick="selectAbortDay(${i}, event)"
+                        style="padding:8px 18px;border-radius:8px;font-size:0.82em;font-weight:${i===0?'800':'600'};cursor:pointer;transition:all 0.2s;white-space:nowrap;
+                               border:1px solid ${i===0?'rgba(239,68,68,0.7)':'rgba(0,210,255,0.2)'};
+                               background:${i===0?'rgba(239,68,68,0.35)':'rgba(0,0,0,0.3)'};
+                               color:${i===0?'#ffffff':'#a8dadc'};letter-spacing:0.5px;">
+                        ${i===0?'📅 ':''}${day.label}
+                        <span style="margin-left:6px;background:${day.total>0?'rgba(239,68,68,0.4)':'rgba(16,185,129,0.3)'};color:${day.total>0?'#fca5a5':'#6ee7b7'};border-radius:10px;padding:1px 7px;font-size:0.9em;">${day.total}</span>
+                    </button>`).join('');
+                renderAbortDays();
+            } catch (err) {
+                console.error("Error loading detailed aborts:", err);
+                document.getElementById('abortsDetailContainer').innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;"><div style="font-size:2em;margin-bottom:20px;">⚠️</div><div>Error loading abort data</div></div>`;
+            }
+        };
+    </script>
+    
     <script>
-        // Basic UI Interactivity Scripts
         window.toggleExpand = function(card) {
             card.classList.toggle('expanded');
         };
@@ -493,23 +893,6 @@
                 document.getElementById('popupTitle').textContent = '📊 Performance Graphs';
                 document.getElementById('dailyNavControls').style.display = 'none';
             }, 300);
-        };
-
-        window.openDailyPopup = function(event) {
-            if (event) event.stopPropagation();
-            document.getElementById('popupTitle').textContent = '📅 Daily Stats';
-            document.getElementById('dailyNavControls').style.display = 'flex';
-            document.getElementById('graphPopup').classList.add('active');
-        };
-
-        window.toggleAborts = function(event) {
-            event.stopPropagation();
-            document.getElementById('abortsPopup').classList.add('active');
-        };
-
-        window.closeAbortsPopup = function(event) {
-            if (event) event.stopPropagation();
-            document.getElementById('abortsPopup').classList.remove('active');
         };
     </script>
 </body>
