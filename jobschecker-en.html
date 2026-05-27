@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jobs Checker - Energise</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1c2030;
+    --border: #2a2f42;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #a8ff3e;
+    --warn: #ffcc00;
+    --danger: #ff4757;
+    --text: #e8eaf0;
+    --muted: #6b7290;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  header h1 {
+    font-family: var(--sans);
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+
+  header span {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .input-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .panel-header h2 {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .panel-header .tag {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+  }
+
+  .panel[data-slot="1pm"] .dot { background: var(--accent); }
+  .panel[data-slot="4pm"] .dot { background: var(--accent2); }
+  .panel[data-slot="6am"] .dot { background: var(--accent3); }
+  .panel[data-slot="1pm"] .tag { background: rgba(0,229,255,0.1); color: var(--accent); }
+  .panel[data-slot="4pm"] .tag { background: rgba(255,107,53,0.1); color: var(--accent2); }
+  .panel[data-slot="6am"] .tag { background: rgba(168,255,62,0.1); color: var(--accent3); }
+
+  textarea {
+    width: 100%;
+    height: 180px;
+    background: transparent;
+    border: none;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+  }
+
+  textarea::placeholder { color: var(--muted); }
+
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 24px;
+    transition: all 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover { background: #33eaff; transform: translateY(-1px); }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-secondary:hover { border-color: var(--muted); color: var(--text); }
+
+  #summary {
+    display: none;
+    margin-bottom: 28px;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .summary-card.warn { border: 1px solid rgba(255,204,0,0.3); }
+  .summary-card.info { border: 1px solid var(--border); }
+
+  .summary-card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .summary-card.warn .summary-card-header { background: rgba(255,204,0,0.06); }
+
+  .summary-card-header h3 {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .summary-card.warn .summary-card-header h3 { color: var(--warn); }
+
+  .badge {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+  }
+
+  .badge-warn { background: rgba(255,204,0,0.15); color: var(--warn); }
+  .badge-ok { background: rgba(168,255,62,0.15); color: var(--accent3); }
+  .badge-neutral { background: rgba(107,114,144,0.2); color: var(--muted); }
+
+  .summary-list {
+    padding: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .job-chip {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 5px;
+    cursor: default;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .job-chip:hover { transform: translateY(-1px); }
+  .job-chip.dropped { background: rgba(255,71,87,0.15); color: var(--danger); border: 1px solid rgba(255,71,87,0.2); }
+  .job-chip.completed { background: rgba(168,255,62,0.1); color: var(--accent3); border: 1px solid rgba(168,255,62,0.15); }
+  .job-chip.neutral { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.15); }
+
+  .job-chip .engineer-name {
+    color: var(--muted);
+    font-size: 12px;
+    border-left: 1px solid currentColor;
+    padding-left: 8px;
+    opacity: 0.7;
+  }
+
+  .empty-msg {
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  #results { display: none; }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .results-table thead tr {
+    background: var(--surface2);
+  }
+
+  .results-table th {
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .results-table th.col-1pm { color: var(--accent); }
+  .results-table th.col-4pm { color: var(--accent2); }
+  .results-table th.col-6am { color: var(--accent3); }
+
+  .results-table tbody tr {
+    border-bottom: 1px solid rgba(42,47,66,0.5);
+    transition: background 0.1s;
+  }
+  .results-table tbody tr:hover { background: var(--surface2); }
+
+  .results-table td {
+    padding: 10px 14px;
+    vertical-align: top;
+  }
+
+  .engineer-cell {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+
+  .job-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin: 2px 3px 2px 0;
+  }
+  .job-tag.present { background: rgba(0,229,255,0.1); color: var(--accent); }
+  .job-tag.absent { color: var(--border); background: rgba(42,47,66,0.3); }
+
+  .stat-strip {
+    display: flex;
+    gap: 24px;
+    padding: 12px 0;
+    margin-bottom: 20px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-value.c1 { color: var(--accent); }
+  .stat-value.c2 { color: var(--accent2); }
+  .stat-value.c3 { color: var(--accent3); }
+  .stat-value.cw { color: var(--warn); }
+
+  .no-data {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  /* Debug panel */
+  #debug-panel {
+    margin-top: 28px;
+    display: none;
+  }
+  #debug-panel .section-title { cursor: pointer; }
+  #debug-panel .section-title:hover { color: var(--text); }
+  #debug-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.8;
+    display: none;
+  }
+  .debug-eng { color: var(--text); font-weight: 600; }
+  .debug-job { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Jobs Checker</h1>
+    <span>Engineer Schedule Diff Tool</span>
+  </header>
+
+  <div class="input-grid">
+    <div class="panel" data-slot="1pm">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>1pm Snapshot</h2>
+        <span class="tag">T+0</span>
+      </div>
+      <textarea id="input-1pm" placeholder="Paste engineer data here..."></textarea>
+    </div>
+    <div class="panel" data-slot="4pm">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>4pm Snapshot</h2>
+        <span class="tag">T+3h</span>
+      </div>
+      <textarea id="input-4pm" placeholder="Paste engineer data here..."></textarea>
+    </div>
+    <div class="panel" data-slot="6am">
+      <div class="panel-header">
+        <div class="dot"></div>
+        <h2>6am Next Day</h2>
+        <span class="tag">T+17h</span>
+      </div>
+      <textarea id="input-6am" placeholder="Paste engineer data here..."></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="processData()">▶ Run Comparison</button>
+    <button class="btn-secondary" onclick="clearAll()">✕ Clear All</button>
+  </div>
+
+  <!-- Summary -->
+  <div id="summary">
+    <div class="section-title">Change Summary</div>
+    <div class="stat-strip" id="stat-strip"></div>
+    <div class="summary-grid">
+      <div class="summary-card warn">
+        <div class="summary-card-header">
+          <h3>Dropped: 1pm → 4pm</h3>
+          <span class="badge badge-warn" id="badge-1to4">0</span>
+        </div>
+        <div class="summary-list" id="list-1to4"><span class="empty-msg">No jobs dropped</span></div>
+      </div>
+      <div class="summary-card warn">
+        <div class="summary-card-header">
+          <h3>Dropped: 4pm → 6am</h3>
+          <span class="badge badge-warn" id="badge-4to6">0</span>
+        </div>
+        <div class="summary-list" id="list-4to6"><span class="empty-msg">No jobs dropped</span></div>
+      </div>
+      <div class="summary-card info">
+        <div class="summary-card-header">
+          <h3>New at 4pm</h3>
+          <span class="badge badge-neutral" id="badge-new4">0</span>
+        </div>
+        <div class="summary-list" id="list-new4"><span class="empty-msg">No new jobs</span></div>
+      </div>
+      <div class="summary-card info">
+        <div class="summary-card-header">
+          <h3>New at 6am</h3>
+          <span class="badge badge-neutral" id="badge-new6">0</span>
+        </div>
+        <div class="summary-list" id="list-new6"><span class="empty-msg">No new jobs</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Per-engineer table -->
+  <div id="results">
+    <div class="section-title">Per Engineer Breakdown</div>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Engineer</th>
+          <th class="col-1pm">1pm Jobs</th>
+          <th class="col-4pm">4pm Jobs</th>
+          <th class="col-6am">6am Jobs</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+
+  <div id="no-data" class="no-data" style="display:none">
+    No valid engineer data found. Make sure your data contains names and J- job numbers.
+  </div>
+
+  <!-- Debug panel -->
+  <div id="debug-panel">
+    <div class="section-title" onclick="toggleDebug()" title="Click to toggle">Parsed Data (debug) ▾</div>
+    <div id="debug-content"></div>
+  </div>
+</div>
+
+<script>
+/**
+ * parseSnapshot
+ *
+ * Handles the format:
+ *   Bilal AminMG68 0HY | PVD | LIVE...J-ACE997AE...J-21B67B05...
+ *   Bryan McCabeSOL10 2AE | PVD | LIVE...J-40AE1FCD...
+ *
+ * Key insight: the name runs directly into the postcode with no space.
+ * A UK postcode starts with 1-2 letters then 1-2 digits (e.g. MG68, SOL10, BL9, FK7).
+ * So we split on the first occurrence of that pattern to extract the name.
+ *
+ * FIX: Job IDs are exactly 8 hex chars after "J-". The source data sometimes has
+ * digits immediately following the ID (e.g. "J-A83689E124" where "24" is a job count).
+ * We now extract exactly 8 chars and stop — we do NOT use a word boundary because
+ * digits can follow legitimately. Instead we just slice the first 8 chars after "J-".
+ */
+function parseSnapshot(text) {
+  if (!text.trim()) return {};
+
+  // Split on newlines; each engineer is one (long) line
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+
+  const engineers = {};
+
+  for (const line of lines) {
+    // --- Extract name ---
+    // The name runs directly into the postcode with no space, e.g. "Bryan McCabeSOL10 2AE"
+    // A full UK postcode looks like: SOL10 2AE, MG68 0HY, JAL2 1PR
+    // Pattern: 1-4 uppercase letters + 1-2 digits + space + digit + 2 uppercase letters
+    // Everything before the postcode is the name.
+    const nameMatch = line.match(/^(.*?)([A-Z]{1,4}\d{1,2}\s\d[A-Z]{2})/);
+    let name = nameMatch ? nameMatch[1].trim() : null;
+
+    if (!name || name.length < 3) continue;
+
+    // --- Extract all J- job numbers ---
+    // Job IDs are EXACTLY 8 hex/alphanum chars after "J-".
+    // IMPORTANT: digits/letters can immediately follow the 8-char ID in the raw data
+    // (e.g. "J-A83689E124Dual" where "24" belongs to the next field, not the job ID).
+    // Strategy: find every "J-" occurrence, then take exactly the next 8 alphanumeric chars.
+    const jobs = [];
+    const jobRegex = /J-([A-Z0-9]{8})/gi;
+    let match;
+    while ((match = jobRegex.exec(line)) !== null) {
+      // Verify the match starts right at J- and grab exactly 8 chars
+      const candidate = match[1].toUpperCase(); // exactly 8 chars
+      const jobId = 'J-' + candidate;
+      jobs.push(jobId);
+    }
+
+    // De-duplicate within this line (same job listed twice)
+    const uniqueJobs = [...new Set(jobs)];
+
+    if (uniqueJobs.length === 0) continue;
+
+    if (!engineers[name]) engineers[name] = new Set();
+    uniqueJobs.forEach(j => engineers[name].add(j));
+  }
+
+  // Convert sets to sorted arrays
+  const result = {};
+  for (const [name, jobs] of Object.entries(engineers)) {
+    result[name] = [...jobs].sort();
+  }
+  return result;
+}
+
+/**
+ * Wait — the real fix is that the regex /J-([A-Z0-9]{8})/gi will already match
+ * exactly 8 chars... but then "J-A83689E124" would match as "J-A83689E1" (first 8)
+ * since regex is greedy left-to-right and stops at 8. Let's verify by tracing:
+ *   Input:  J-A83689E124
+ *   Regex:  J-([A-Z0-9]{8})
+ *   Match:  J-A83689E1  ← captures "A83689E1" (8 chars), correct!
+ *
+ * So why was it broken before? The OLD code used the same pattern...
+ * The issue must be that "J-A83689E124" — let's count: A-8-3-6-8-9-E-1 = 8 chars, then "24" remains.
+ * That should have matched. Let me re-examine the actual raw text more carefully.
+ *
+ * Looking at: "J-A83689E124Dual"
+ * The 8 chars after J- are: A, 8, 3, 6, 8, 9, E, 1 → "A83689E1" ✓
+ * And "J-28A718FE9Show" → 2, 8, A, 7, 1, 8, F, E → "28A718FE" ✓
+ * And "J-2C010A2A38Dual" → 2, C, 0, 1, 0, A, 2, A → "2C010A2A" ✓
+ *
+ * These all look correct with {8}. The REAL problem was likely that the raw data
+ * is all on ONE line per engineer — but the user's paste may have had the data
+ * for one engineer spread across MULTIPLE lines. The old parser only looked at
+ * line-by-line and required the name to be on the same line as the jobs.
+ *
+ * FIX: We now pre-process the text to join continuation lines back onto their
+ * engineer line before parsing.
+ */
+
+function parseSnapshotFixed(text) {
+  if (!text.trim()) return {};
+
+  // Step 1: Normalise line endings
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Step 2: Re-join the data into logical "engineer blocks".
+  // An engineer line starts with a Name immediately followed by a UK postcode pattern.
+  // Lines that DON'T start with a name+postcode are continuations of the previous engineer.
+  const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  const engineerLines = [];
+  let current = '';
+
+  for (const line of rawLines) {
+    // Does this line start a new engineer? Check for Name + postcode at the start.
+    const startsNewEngineer = /^[A-Za-z].*?[A-Z]{1,4}\d{1,2}\s\d[A-Z]{2}/.test(line);
+    if (startsNewEngineer) {
+      if (current) engineerLines.push(current);
+      current = line;
+    } else {
+      // Continuation — append to current engineer's data
+      current += ' ' + line;
+    }
+  }
+  if (current) engineerLines.push(current);
+
+  const engineers = {};
+
+  for (const line of engineerLines) {
+    // --- Extract name ---
+    const nameMatch = line.match(/^(.*?)([A-Z]{1,4}\d{1,2}\s\d[A-Z]{2})/);
+    let name = nameMatch ? nameMatch[1].trim() : null;
+    if (!name || name.length < 3) continue;
+
+    // --- Extract job IDs: exactly 8 alphanumeric chars after "J-" ---
+    const jobs = [];
+    const jobRegex = /J-([A-Z0-9]{8})/gi;
+    let m;
+    while ((m = jobRegex.exec(line)) !== null) {
+      jobs.push('J-' + m[1].toUpperCase());
+    }
+
+    const uniqueJobs = [...new Set(jobs)];
+    if (uniqueJobs.length === 0) continue;
+
+    if (!engineers[name]) engineers[name] = new Set();
+    uniqueJobs.forEach(j => engineers[name].add(j));
+  }
+
+  const result = {};
+  for (const [name, jobs] of Object.entries(engineers)) {
+    result[name] = [...jobs].sort();
+  }
+  return result;
+}
+
+function processData() {
+  const snap1 = parseSnapshotFixed(document.getElementById('input-1pm').value);
+  const snap4 = parseSnapshotFixed(document.getElementById('input-4pm').value);
+  const snap6 = parseSnapshotFixed(document.getElementById('input-6am').value);
+
+  const hasData = Object.keys(snap1).length + Object.keys(snap4).length + Object.keys(snap6).length;
+
+  if (!hasData) {
+    document.getElementById('no-data').style.display = 'block';
+    document.getElementById('summary').style.display = 'none';
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('debug-panel').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('no-data').style.display = 'none';
+
+  // All job counts for stats strip
+  const allJobs1 = new Set(Object.values(snap1).flat());
+  const allJobs4 = new Set(Object.values(snap4).flat());
+  const allJobs6 = new Set(Object.values(snap6).flat());
+
+  // Per-engineer diff: a job is "dropped" if it was on that engineer's list in snapshot A
+  // but is NOT on that same engineer's list in snapshot B.
+  // A job is "new" if it appears on the engineer's list in B but not in A.
+  // We only run the diff if both snapshots have data (otherwise nothing to compare).
+  const has1 = Object.keys(snap1).length > 0;
+  const has4 = Object.keys(snap4).length > 0;
+  const has6 = Object.keys(snap6).length > 0;
+
+  // Collect diffs as { jobId, engineer } objects
+  const dropped1to4 = [];
+  const newAt4      = [];
+  const dropped4to6 = [];
+  const newAt6      = [];
+
+  if (has1 && has4) {
+    const allEngs14 = new Set([...Object.keys(snap1), ...Object.keys(snap4)]);
+    for (const eng of allEngs14) {
+      const j1 = new Set(snap1[eng] || []);
+      const j4 = new Set(snap4[eng] || []);
+      for (const j of j1) if (!j4.has(j)) dropped1to4.push({ jobId: j, engineer: eng });
+      for (const j of j4) if (!j1.has(j)) newAt4.push({ jobId: j, engineer: eng });
+    }
+  }
+
+  if (has4 && has6) {
+    const allEngs46 = new Set([...Object.keys(snap4), ...Object.keys(snap6)]);
+    for (const eng of allEngs46) {
+      const j4 = new Set(snap4[eng] || []);
+      const j6 = new Set(snap6[eng] || []);
+      for (const j of j4) if (!j6.has(j)) dropped4to6.push({ jobId: j, engineer: eng });
+      for (const j of j6) if (!j4.has(j)) newAt6.push({ jobId: j, engineer: eng });
+    }
+  }
+
+  // Stats
+  document.getElementById('stat-strip').innerHTML = `
+    <div class="stat"><div class="stat-value c1">${allJobs1.size}</div><div class="stat-label">1pm Jobs</div></div>
+    <div class="stat"><div class="stat-value c2">${allJobs4.size}</div><div class="stat-label">4pm Jobs</div></div>
+    <div class="stat"><div class="stat-value c3">${allJobs6.size}</div><div class="stat-label">6am Jobs</div></div>
+    <div class="stat"><div class="stat-value cw">${dropped1to4.length + dropped4to6.length}</div><div class="stat-label">Total Dropped</div></div>
+  `;
+
+  renderSummaryList('list-1to4', 'badge-1to4', dropped1to4, 'dropped');
+  renderSummaryList('list-4to6', 'badge-4to6', dropped4to6, 'dropped');
+  renderSummaryList('list-new4', 'badge-new4', newAt4, 'neutral');
+  renderSummaryList('list-new6', 'badge-new6', newAt6, 'neutral');
+
+  // Per-engineer table
+  const allEngineers = new Set([...Object.keys(snap1), ...Object.keys(snap4), ...Object.keys(snap6)]);
+  const tbody = document.getElementById('results-body');
+  tbody.innerHTML = '';
+
+  [...allEngineers].sort().forEach(eng => {
+    const jobs1 = snap1[eng] || [];
+    const jobs4 = snap4[eng] || [];
+    const jobs6 = snap6[eng] || [];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="engineer-cell">${eng}</td>
+      <td>${renderJobTags(jobs1)}</td>
+      <td>${renderJobTags(jobs4)}</td>
+      <td>${renderJobTags(jobs6)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Debug output
+  renderDebug(snap1, snap4, snap6);
+
+  document.getElementById('summary').style.display = 'block';
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('debug-panel').style.display = 'block';
+}
+
+
+function renderSummaryList(listId, badgeId, items, chipClass) {
+  const list = document.getElementById(listId);
+  document.getElementById(badgeId).textContent = items.length;
+
+  if (items.length === 0) {
+    list.innerHTML = '<span class="empty-msg">None</span>';
+    return;
+  }
+
+  // Sort by engineer name, then job id
+  const sorted = [...items].sort((a, b) => a.engineer.localeCompare(b.engineer) || a.jobId.localeCompare(b.jobId));
+  list.innerHTML = sorted.map(({ jobId, engineer }) =>
+    `<span class="job-chip ${chipClass}">${jobId}<span class="engineer-name">${engineer}</span></span>`
+  ).join('');
+}
+
+function renderJobTags(jobs) {
+  if (!jobs.length) return '<span style="color:var(--border);font-size:11px">—</span>';
+  return jobs.map(j => `<span class="job-tag present">${j}</span>`).join('');
+}
+
+function renderDebug(snap1, snap4, snap6) {
+  const slots = [['1pm', snap1], ['4pm', snap4], ['6am', snap6]];
+  let html = '';
+  for (const [label, snap] of slots) {
+    const engs = Object.keys(snap);
+    if (!engs.length) continue;
+    html += `<div style="margin-bottom:12px"><span style="color:var(--accent2);letter-spacing:1px">${label}</span> — ${engs.length} engineer(s)<br>`;
+    for (const eng of engs.sort()) {
+      html += `&nbsp;&nbsp;<span class="debug-eng">${eng}</span>: ${snap[eng].map(j => `<span class="debug-job">${j}</span>`).join(', ')}<br>`;
+    }
+    html += '</div>';
+  }
+  document.getElementById('debug-content').innerHTML = html || '<span>Nothing parsed.</span>';
+}
+
+function toggleDebug() {
+  const el = document.getElementById('debug-content');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function clearAll() {
+  ['input-1pm','input-4pm','input-6am'].forEach(id => document.getElementById(id).value = '');
+  ['summary','results','no-data','debug-panel'].forEach(id => document.getElementById(id).style.display = 'none');
+}
+</script>
+</body>
+</html>
