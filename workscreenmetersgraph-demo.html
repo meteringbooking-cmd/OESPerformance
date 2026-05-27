@@ -5,6 +5,7 @@
 <title>Meters Dashboard • OES</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--accent:#6366f1;--text:#e2e8f0;--dim:#94a3b8;--border:#334155;}
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -26,6 +27,10 @@ h1{font-size:2rem;font-weight:700;background:linear-gradient(90deg,#e2e8f0,#cbd5
 .stat-value{font-size:1.8rem;font-weight:700;background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;}
 .card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:1.8rem 2rem;box-shadow:0 10px 30px rgba(0,0,0,.35);}
 #chartContainer{height:520px;position:relative;margin-top:1rem;}
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.hint { font-size: 0.85rem; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+#resetZoomBtn { display: none; width: auto; padding: 0.4rem 1rem; margin: 0; font-size: 0.85rem; font-weight: 600; background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+#resetZoomBtn:hover { background: rgba(239,68,68,0.25); border-color: rgba(239,68,68,0.6); }
 @media(max-width:1100px){body{grid-template-columns:1fr;}aside{height:auto;position:relative;border-right:none;border-bottom:1px solid var(--border);}main{padding:2rem 1.5rem;}header{flex-direction:column;align-items:flex-start;}}
 </style>
 </head>
@@ -49,7 +54,13 @@ h1{font-size:2rem;font-weight:700;background:linear-gradient(90deg,#e2e8f0,#cbd5
     <h1>Meters Installed</h1>
     <div class="stats" id="stats"></div>
   </header>
-  <div class="card"><div id="chartContainer"></div></div>
+  <div class="card">
+    <div class="toolbar">
+        <div class="hint">🖱️ <strong>Scroll wheel</strong> to zoom in on your cursor. <strong>Click & drag</strong> to pan.</div>
+        <button id="resetZoomBtn" class="btn">Reset Zoom</button>
+    </div>
+    <div id="chartContainer"></div>
+  </div>
 </main>
 <script>
 const HC = {all:41,'Richard Wiecko':9,'Scott Carson':9,'Scott Carson - Scot':4,'Stuart Whyte':7,'Tom Green':12};
@@ -57,30 +68,22 @@ const HC = {all:41,'Richard Wiecko':9,'Scott Carson':9,'Scott Carson - Scot':4,'
 // --- DATA GENERATOR (6 MONTHS) ---
 const ALL = [];
 const TEAMS = {
-  'Richard Wiecko': [],
-  'Scott Carson': [],
-  'Scott Carson - Scot': [],
-  'Stuart Whyte': [],
-  'Tom Green': []
+  'Richard Wiecko': [], 'Scott Carson': [], 'Scott Carson - Scot': [], 'Stuart Whyte': [], 'Tom Green': []
 };
 
-// Generate roughly 6 months of data ending May 26, 2026
 let currentDate = new Date('2025-11-26');
 const endDate = new Date('2026-05-26');
 
 while (currentDate <= endDate) {
   const day = currentDate.getDay();
-  if (day !== 0 && day !== 6) { // Skip weekends
+  if (day !== 0 && day !== 6) { 
     const dateStr = currentDate.toISOString().slice(0, 10);
-    
-    // Generate realistic random bounds based on original data
     const rW = Math.floor(Math.random() * (118 - 95 + 1)) + 95;
     const sC = Math.floor(Math.random() * (118 - 95 + 1)) + 95;
     const sCS = Math.floor(Math.random() * (54 - 43 + 1)) + 43;
     const sW = Math.floor(Math.random() * (92 - 73 + 1)) + 73;
     const tG = Math.floor(Math.random() * (156 - 125 + 1)) + 125;
 
-    // Kraken is usually +1 to +4 higher
     const rW_K = rW + Math.floor(Math.random() * 4) + 1;
     const sC_K = sC + Math.floor(Math.random() * 4) + 1;
     const sCS_K = sCS + Math.floor(Math.random() * 3) + 1;
@@ -107,7 +110,7 @@ function toISO(d){return d.toISOString().slice(0,10);}
 
 function getRows(){
   const src = currentTeam==='all' ? ALL : (TEAMS[currentTeam]||ALL);
-  const today=new Date('2026-05-26'); // Hardcoding to match the end of generated data
+  const today=new Date('2026-05-26'); 
   const daysBack={'7days':7,'4weeks':28,'all':185}[currentPeriod]||7;
   const cutoff=new Date(today); cutoff.setDate(cutoff.getDate()-daysBack);
   const cutStr=toISO(cutoff);
@@ -129,7 +132,6 @@ function render(){
   
   const hash = s => Math.abs(Math.sin(s.split('').reduce((a,b)=>Math.imul(31,a)+b.charCodeAt(0)|0,0)));
   
-  // Calculate End MPH first, then base Start MPH off of it plus a small randomized margin
   const endMph = rows.map(r => r[1] > 0 ? +(5.4 + hash(r[0] + 'e') * 0.7).toFixed(1) : null);
   const startMph = rows.map((r, i) => r[2] > 0 ? +(endMph[i] + 0.1 + hash(r[0] + 's') * 0.3).toFixed(1) : null);
   
@@ -145,8 +147,9 @@ function render(){
     `<div class="stat-box"><div class="stat-label">Headcount</div><div class="stat-value">${hc}</div></div>`+
     `<div class="stat-box" style="border-color:#7c3aed;background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(109,40,217,.1))"><div class="stat-label">Avg MPH</div><div class="stat-value" style="background:linear-gradient(90deg,#d8b4fe,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${mphAvg}</div></div>`;
 
-  // Determine if we should show datalabels based on dataset size to prevent extreme crowding
+  // Hide datalabels if zooming out too far to prevent clutter
   const hideLabels = rows.length > 35;
+  document.getElementById('resetZoomBtn').style.display = 'none';
 
   if(chart) chart.destroy();
   chart=new Chart(ctx,{
@@ -175,7 +178,26 @@ function render(){
           if(c.dataset.label==='End MPH (Meters)') return c.raw!==null?` End MPH: ${c.raw}`:'';
           if(c.dataset.label==='Kraken Meters') return ` Kraken: ${c.raw}`;
           return ` Meters: ${c.raw}`;
-        }}}
+        }}},
+        // NEW: ZOOM CONFIGURATION
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: 'x', // Allow dragging left/right
+          },
+          zoom: {
+            wheel: {
+              enabled: true, // Allow scroll wheel zooming
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: 'x',
+            onZoomComplete: function() {
+               document.getElementById('resetZoomBtn').style.display = 'block';
+            }
+          }
+        }
       },
       scales:{
         x:{ticks:{color:'#94a3b8',font:{size:10},padding:8, maxTicksLimit: hideLabels ? 15 : null},grid:{color:'#334155'}},
@@ -186,6 +208,14 @@ function render(){
     plugins:[ChartDataLabels]
   });
 }
+
+// Reset Zoom Button Logic
+document.getElementById('resetZoomBtn').addEventListener('click', () => {
+    if(chart) {
+        chart.resetZoom();
+        document.getElementById('resetZoomBtn').style.display = 'none';
+    }
+});
 
 document.querySelectorAll('[data-period]').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('[data-period]').forEach(x=>x.classList.remove('active'));
