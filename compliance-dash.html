@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>NGU Compliance Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -142,7 +145,6 @@
 <body>
 
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
             <div class="logo">Compliance Dashboard</div>
@@ -150,7 +152,6 @@
             <div class="last-updated" style="font-size: 0.8em; opacity: 0.6;">Secure Access Portal</div>
         </div>
 
-        <!-- Submit Audit Section -->
         <div class="kpi-card" style="margin-bottom: 24px;">
             <div class="kpi-header" style="margin-bottom: 8px;">
                 <span class="kpi-title">Submit New Audit Record</span>
@@ -218,7 +219,24 @@
             </form>
         </div>
 
-        <!-- Weekly & Monthly Performance -->
+        <div class="kpi-card" style="margin-bottom: 24px;">
+            <div class="kpi-header" style="margin-bottom: 8px;">
+                <span class="kpi-title">Bulk Upload Audits (Excel / CSV)</span>
+            </div>
+            
+            <div class="form-grid">
+                <div class="field-group">
+                    <label class="field-label">Select File</label>
+                    <input type="file" id="fileUpload" class="field-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+                </div>
+            </div>
+
+            <div style="margin-top: 16px; text-align: right; display: flex; justify-content: space-between; align-items: center;">
+                <div id="uploadStatus" style="font-size: 0.85em; color: #a8dadc; font-weight: 500;"></div>
+                <button type="button" class="btn-submit" id="uploadBtn" onclick="processUpload()">Upload & Process</button>
+            </div>
+        </div>
+
         <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
             <div class="kpi-card">
                 <div class="kpi-header"><span class="kpi-title">Current Week</span></div>
@@ -285,7 +303,6 @@
             </div>
         </div>
 
-        <!-- Failure Categories -->
         <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
             <div class="kpi-card" style="border-color: rgba(239,68,68,0.3);">
                 <div class="kpi-header"><span class="kpi-title" style="color: #fca5a5;">Cat 1 Fails</span></div>
@@ -330,9 +347,7 @@
             </div>
         </div>
 
-        <!-- Data Tables -->
         <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); align-items: start;">
-            <!-- CM Worst Offenders -->
             <div class="kpi-card" style="min-height: 480px;">
                 <div class="kpi-header"><span class="kpi-title">Worst Offenders - Current Month</span></div>
                 <div class="table-wrap">
@@ -351,7 +366,6 @@
                 </div>
             </div>
 
-            <!-- PM Worst Offenders -->
             <div class="kpi-card" style="min-height: 480px;">
                 <div class="kpi-header"><span class="kpi-title">Worst Offenders - Previous Month</span></div>
                 <div class="table-wrap">
@@ -370,7 +384,6 @@
                 </div>
             </div>
 
-            <!-- Longest Since WIP -->
             <div class="kpi-card" style="min-height: 480px;">
                 <div class="kpi-header"><span class="kpi-title">Longest Time Since WIP</span></div>
                 <div class="table-wrap">
@@ -392,7 +405,6 @@
 
     </div>
 
-    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
@@ -515,7 +527,7 @@
             }
         }
 
-        // --- DB Interaction ---
+        // --- DB Interaction (Manual Submit) ---
         async function submitAudit(e) {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
@@ -549,6 +561,153 @@
             } finally {
                 btn.disabled = false; btn.textContent = 'Submit Record';
             }
+        }
+
+        // --- Bulk Upload Logic ---
+        async function processUpload() {
+            const fileInput = document.getElementById('fileUpload');
+            const statusDiv = document.getElementById('uploadStatus');
+            const btn = document.getElementById('uploadBtn');
+
+            if (!fileInput.files.length) {
+                alert("Please select a file first.");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+            statusDiv.textContent = "Reading file...";
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // cellDates: true forces Excel dates into native JS Date objects
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    // Convert sheet to an array of arrays
+                    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                    let recordsToUpload = [];
+
+                    // Skip the first row (headers), start at i = 1
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        if (!row || row.length === 0) continue;
+
+                        // Map Columns to 0-based index: 
+                        // E=4, I=8, N=13, W=22, AC=28, AG=32
+                        const auditTypeRaw = String(row[4] || '').toUpperCase();
+                        const dateRaw = row[8];
+                        const engineerRaw = String(row[13] || '').trim();
+                        const resultRaw = String(row[22] || '').trim();
+                        const elecDefects = String(row[28] || '').toUpperCase();
+                        const gasDefects = String(row[32] || '').toUpperCase();
+
+                        // 1. Filter by Audit Type (PC or WIP)
+                        let parsedAuditType = "";
+                        if (auditTypeRaw.includes("PC")) {
+                            parsedAuditType = "Post Complete";
+                        } else if (auditTypeRaw.includes("WIP")) {
+                            parsedAuditType = "WIP";
+                        } else {
+                            continue; // Skip this row if neither PC nor WIP
+                        }
+
+                        // 2. Parse Date Safely
+                        let parsedDate = "";
+                        if (dateRaw instanceof Date) {
+                            // Fix timezone offset issues native to JS/Excel conversions
+                            const offsetDate = new Date(dateRaw.getTime() - (dateRaw.getTimezoneOffset() * 60000));
+                            parsedDate = offsetDate.toISOString().split('T')[0];
+                        } else if (typeof dateRaw === 'string') {
+                            const tempDate = new Date(dateRaw);
+                            if (!isNaN(tempDate)) parsedDate = tempDate.toISOString().split('T')[0];
+                        }
+                        
+                        if (!parsedDate) continue; // Skip if date is blank or invalid
+
+                        // 3. Autopopulate Team Leader / Contract from existing array
+                        const eng = engineersData.find(e => e.name.toLowerCase() === engineerRaw.toLowerCase());
+                        const teamLeader = eng ? eng.leader : "Unknown";
+                        const contract = eng ? eng.contract : "Unknown";
+
+                        // 4. Parse Result & Categories
+                        let parsedResult = "";
+                        if (resultRaw.toUpperCase() === "PASS") parsedResult = "Pass";
+                        else if (resultRaw.toUpperCase() === "FAIL") parsedResult = "Fail";
+                        else continue; // Skip if result isn't explicitly pass/fail
+
+                        let failCategory = "";
+                        if (parsedResult === "Fail") {
+                            // Combine both columns to search for the string
+                            const defects = elecDefects + " " + gasDefects;
+                            
+                            if (defects.includes("_CAT 1")) failCategory = "Cat 1";
+                            else if (defects.includes("_CAT 2")) failCategory = "Cat 2";
+                            else if (defects.includes("_CAT 3")) failCategory = "Cat 3";
+                            else failCategory = "Cat Unspecified"; 
+                        }
+
+                        // 5. Build the Firebase Record
+                        const record = {
+                            engineerName: eng ? eng.name : engineerRaw, // Keeps casing uniform
+                            teamLeader: teamLeader,
+                            contract: contract,
+                            auditType: parsedAuditType,
+                            date: parsedDate,
+                            result: parsedResult,
+                            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+
+                        if (parsedResult === "Fail") {
+                            record.failCategory = failCategory;
+                            record.failReason = "Bulk Uploaded Defect"; 
+                        }
+
+                        recordsToUpload.push(record);
+                    }
+
+                    statusDiv.textContent = `Found ${recordsToUpload.length} valid records. Writing to database...`;
+
+                    // 6. Batch Write to Firestore (Max 500 per batch)
+                    const batch = db.batch();
+                    let batchCount = 0;
+
+                    for (const record of recordsToUpload) {
+                        const docRef = db.collection("Compliance Dashboard").doc();
+                        batch.set(docRef, record);
+                        batchCount++;
+
+                        if (batchCount === 500) {
+                            await batch.commit();
+                            batchCount = 0;
+                        }
+                    }
+
+                    if (batchCount > 0) {
+                        await batch.commit(); // Commit any remainders
+                    }
+
+                    alert(`Successfully uploaded ${recordsToUpload.length} records!`);
+                    fileInput.value = ''; // Reset input field
+                    statusDiv.textContent = "";
+                    loadDashboardData();  // Refresh your UI metrics instantly
+
+                } catch (error) {
+                    console.error("Upload Error:", error);
+                    alert("Error processing file: " + error.message);
+                    statusDiv.textContent = "Upload failed.";
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Upload & Process';
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
         }
 
         // --- Date Utilities ---
