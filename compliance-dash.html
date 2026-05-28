@@ -116,6 +116,11 @@
         .btn-submit:hover { background: linear-gradient(135deg, rgba(0,210,255,0.4), rgba(58,123,213,0.5)); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,210,255,0.3); }
         .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+        .btn-hide {
+            background: transparent; border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; margin-left: 8px; transition: all 0.2s;
+        }
+        .btn-hide:hover { background: rgba(239,68,68,0.2); color: #fff; border-color: rgba(239,68,68,0.8); }
+
         #failFields { display: none; margin-top: 16px; padding: 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; border-left: 4px solid #ef4444; }
 
         /* Tables */
@@ -533,6 +538,24 @@
             }
         }
 
+        // --- Hide Engineer From WIP List ---
+        async function hideFromWip(engineerName) {
+            if (!confirm(`Are you sure you want to hide ${engineerName} from the WIP tracking list? \n\nTheir performance metrics and failures will still be counted everywhere else.`)) return;
+            
+            try {
+                // Save exclusion record
+                await db.collection("WipExclusions").add({ 
+                    name: engineerName,
+                    excludedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                // Immediately refresh the dashboard
+                loadDashboardData(); 
+            } catch (error) {
+                console.error("Error hiding engineer:", error);
+                alert("Failed to hide engineer. " + error.message);
+            }
+        }
 
         // --- DB Interaction (Manual Submit) ---
         async function submitAudit(e) {
@@ -871,9 +894,14 @@
         // --- Load & Calculate Data ---
         async function loadDashboardData() {
             try {
+                // Fetch the core audit data
                 const snap = await db.collection("Compliance Dashboard").get();
                 const audits = [];
                 snap.forEach(doc => audits.push(doc.data()));
+
+                // Fetch the excluded WIP engineers
+                const exclSnap = await db.collection("WipExclusions").get();
+                const excludedWipNames = exclSnap.docs.map(doc => doc.data().name);
 
                 audits.sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -884,7 +912,6 @@
                 const prevMonth = getMonthRange(prevMonthDate);
                 const runningYear = getRollingYearRange(now);
                 
-                // Baseline Date for WIP calculations
                 const baselineDate = new Date('2026-01-01T00:00:00');
 
                 let stats = {
@@ -969,7 +996,7 @@
                         }
                     }
 
-                    // Track latest WIP audit
+                    // Track latest WIP audit (ignores exclusions during data collection)
                     if (a.auditType === 'WIP') {
                         if (!engineerWIPs[a.engineerName] || aDate > engineerWIPs[a.engineerName]) {
                             engineerWIPs[a.engineerName] = aDate;
@@ -1014,42 +1041,55 @@
                 renderOffendersTable(engineerFailsCM, '#offendersTableCM tbody');
                 renderOffendersTable(engineerFailsPM, '#offendersTablePM tbody');
 
-                // Build Longest Time Since WIP Table
-                let wipArr = Object.keys(engineerWIPs).map(name => {
-                    const lastDate = engineerWIPs[name];
-                    let daysAgo = 0;
-                    if (lastDate) {
-                        const diffTime = Math.abs(now - lastDate);
-                        daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    } else {
-                        // Count from January 1st, 2026 if no WIP exists
-                        const diffTime = Math.abs(now - baselineDate);
-                        daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    }
-                    return { name, lastDate, daysAgo };
-                });
+                // Build Longest Time Since WIP Table (Filtering out excluded names)
+                let wipArr = Object.keys(engineerWIPs)
+                    .filter(name => !excludedWipNames.includes(name)) // FILTER APPLIED HERE
+                    .map(name => {
+                        const lastDate = engineerWIPs[name];
+                        let daysAgo = 0;
+                        if (lastDate) {
+                            const diffTime = Math.abs(now - lastDate);
+                            daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        } else {
+                            const diffTime = Math.abs(now - baselineDate);
+                            daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        }
+                        return { name, lastDate, daysAgo };
+                    });
 
                 wipArr.sort((a,b) => b.daysAgo - a.daysAgo);
 
                 const wipTbody = document.querySelector('#wipTable tbody');
                 wipTbody.innerHTML = '';
-                wipArr.slice(0, 20).forEach(e => {
-                    const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'No WIP Found';
-                    const daysStr = `${e.daysAgo} Days`;
-                    
-                    let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
-                    if (e.daysAgo > 30) {
-                        bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
-                    } else if (e.daysAgo > 14) {
-                        bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
-                    }
+                
+                if (wipArr.length === 0) {
+                     wipTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#a8dadc;">No visible engineers.</td></tr>';
+                } else {
+                    wipArr.slice(0, 20).forEach(e => {
+                        const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'No WIP Found';
+                        const daysStr = `${e.daysAgo} Days`;
+                        
+                        let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
+                        if (e.daysAgo > 30) {
+                            bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
+                        } else if (e.daysAgo > 14) {
+                            bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
+                        }
 
-                    wipTbody.innerHTML += `<tr>
-                        <td><strong style="color: #fff;">${e.name}</strong></td>
-                        <td style="font-family:'JetBrains Mono', monospace; font-size:0.9em; color: #a8dadc;">${dateStr}</td>
-                        <td style="text-align: right;"><span class="badge" style="background:${bgCol}; color:${txtCol}; border: 1px solid ${borCol};">${daysStr}</span></td>
-                    </tr>`;
-                });
+                        let safeName = e.name.replace(/'/g, "\\'"); 
+
+                        wipTbody.innerHTML += `<tr>
+                            <td>
+                                <div style="display: flex; align-items: center;">
+                                    <strong style="color: #fff;">${e.name}</strong>
+                                    <button class="btn-hide" onclick="hideFromWip('${safeName}')" title="Hide from WIP tracker">✕</button>
+                                </div>
+                            </td>
+                            <td style="font-family:'JetBrains Mono', monospace; font-size:0.9em; color: #a8dadc;">${dateStr}</td>
+                            <td style="text-align: right;"><span class="badge" style="background:${bgCol}; color:${txtCol}; border: 1px solid ${borCol};">${daysStr}</span></td>
+                        </tr>`;
+                    });
+                }
 
             } catch (error) {
                 console.error("Error loading dashboard data:", error);
