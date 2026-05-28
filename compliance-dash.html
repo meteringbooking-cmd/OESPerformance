@@ -683,8 +683,6 @@
                 const dateRaw = colDate >= 0 ? row[colDate] : null;
                 const engineerRaw = colEngineer >= 0 ? String(row[colEngineer] || '').trim() : '';
                 const resultRaw = colResult >= 0 ? String(row[colResult] || '').trim() : '';
-                const elecDefects = colElec >= 0 ? String(row[colElec] || '').toUpperCase() : '';
-                const gasDefects = colGas >= 0 ? String(row[colGas] || '').toUpperCase() : '';
 
                 let parsedAuditType = "";
                 if (auditTypeRaw.includes("PC")) {
@@ -711,19 +709,10 @@
                 const contract = eng ? eng.contract : "Unknown";
 
                 let parsedResult = "Pass"; 
-                if (resultRaw.toUpperCase() === "FAIL" || resultRaw.toUpperCase() === "FAILED") {
+                if (resultRaw.toUpperCase().includes("FAIL")) {
                     parsedResult = "Fail";
-                } else if (resultRaw.toUpperCase() === "PASS" || resultRaw.toUpperCase() === "PASSED") {
+                } else if (resultRaw.toUpperCase().includes("PASS")) {
                     parsedResult = "Pass";
-                }
-
-                let failCategory = "";
-                if (parsedResult === "Fail") {
-                    const defects = elecDefects + " " + gasDefects;
-                    if (defects.includes("_CAT 1")) failCategory = "Cat 1";
-                    else if (defects.includes("_CAT 2")) failCategory = "Cat 2";
-                    else if (defects.includes("_CAT 3")) failCategory = "Cat 3";
-                    else failCategory = "Cat Unspecified"; 
                 }
 
                 const record = {
@@ -737,8 +726,27 @@
                 };
 
                 if (parsedResult === "Fail") {
-                    record.failCategory = failCategory;
-                    record.failReason = "Bulk Uploaded Defect"; 
+                    // Pull the exact strings for the DB so you can read them
+                    const rawElec = colElec >= 0 ? String(row[colElec] || '').trim() : '';
+                    const rawGas = colGas >= 0 ? String(row[colGas] || '').trim() : '';
+                    const combinedReason = [rawElec, rawGas].filter(Boolean).join(" | ");
+                    
+                    // Uppercase purely for Regex matching logic
+                    const searchStr = combinedReason.toUpperCase();
+
+                    // Regex is highly resilient: handles "_CAT 1", "_CAT1", "_Cat  1"
+                    if (/_CAT\s*1/.test(searchStr)) {
+                        record.failCategory = "Cat 1";
+                    } else if (/_CAT\s*2/.test(searchStr)) {
+                        record.failCategory = "Cat 2";
+                    } else if (/_CAT\s*3/.test(searchStr)) {
+                        record.failCategory = "Cat 3";
+                    } else {
+                        record.failCategory = "Cat Unspecified"; 
+                    }
+
+                    // Save the specific string you mentioned!
+                    record.failReason = combinedReason || "Bulk Uploaded Defect"; 
                 }
 
                 recordsToUpload.push(record);
