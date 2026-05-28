@@ -269,22 +269,6 @@
 
         <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
             <div class="kpi-card">
-                <div class="kpi-header"><span class="kpi-title">Current Week</span></div>
-                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
-                    <div class="metric-group">
-                        <div class="kpi-value color-green" id="currWeekPass" style="margin-bottom: 0;">0</div>
-                        <div class="metric-label">Pass</div>
-                    </div>
-                    <div class="divider">/</div>
-                    <div class="metric-group">
-                        <div class="kpi-value color-red" id="currWeekFail" style="margin-bottom: 0;">0</div>
-                        <div class="metric-label">Fail</div>
-                    </div>
-                </div>
-                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="currWeekPct" style="font-size: 1.2em;">0%</strong></div>
-            </div>
-
-            <div class="kpi-card">
                 <div class="kpi-header"><span class="kpi-title">Previous Week</span></div>
                 <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
                     <div class="metric-group">
@@ -330,6 +314,22 @@
                     </div>
                 </div>
                 <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="prevMonthPct" style="font-size: 1.2em;">0%</strong></div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header"><span class="kpi-title">Running Year</span></div>
+                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
+                    <div class="metric-group">
+                        <div class="kpi-value color-green" id="runYearPass" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Pass</div>
+                    </div>
+                    <div class="divider">/</div>
+                    <div class="metric-group">
+                        <div class="kpi-value color-red" id="runYearFail" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Fail</div>
+                    </div>
+                </div>
+                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="runYearPct" style="font-size: 1.2em;">0%</strong></div>
             </div>
         </div>
 
@@ -386,7 +386,7 @@
                             <tr>
                                 <th>Engineer</th>
                                 <th>Team Leader</th>
-                                <th style="text-align: right;">Fails</th>
+                                <th style="text-align: right;">Fails (Breakdown)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -404,25 +404,7 @@
                             <tr>
                                 <th>Engineer</th>
                                 <th>Team Leader</th>
-                                <th style="text-align: right;">Fails</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td colspan="3" style="text-align:center; font-style:italic;">Loading data...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="kpi-card" style="min-height: 480px;">
-                <div class="kpi-header"><span class="kpi-title">Longest Time Since WIP</span></div>
-                <div class="table-wrap">
-                    <table class="historical-table" id="wipTable">
-                        <thead>
-                            <tr>
-                                <th>Engineer</th>
-                                <th>Last WIP Date</th>
-                                <th style="text-align: right;">Days Ago</th>
+                                <th style="text-align: right;">Fails (Breakdown)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -657,7 +639,6 @@
             const btn = document.getElementById('uploadBtn');
             const statusDiv = document.getElementById('uploadStatus');
 
-            // Safely parse the mapped column index. If left unmapped it returns -1.
             const getCol = (id) => {
                 const val = document.getElementById(id).value;
                 return val === "" ? -1 : parseInt(val, 10);
@@ -714,13 +695,11 @@
                 const teamLeader = eng ? eng.leader : "Unknown";
                 const contract = eng ? eng.contract : "Unknown";
 
-                // Pull the exact strings for the DB so you can read them
                 const rawElec = colElec >= 0 ? String(row[colElec] || '').trim() : '';
                 const rawGas = colGas >= 0 ? String(row[colGas] || '').trim() : '';
                 const combinedReason = [rawElec, rawGas].filter(Boolean).join(" | ");
                 const searchStr = combinedReason.toUpperCase();
 
-                // Determine Pass or Fail
                 let parsedResult = "Pass"; 
                 if (resultRaw.toUpperCase().includes("FAIL")) {
                     parsedResult = "Fail";
@@ -728,7 +707,6 @@
                     parsedResult = "Pass";
                 }
 
-                // SAFETY NET: If the Result column was blank or omitted, but we detect a CAT tag, force it to FAIL
                 if (parsedResult === "Pass" && (searchStr.includes("CAT") || searchStr.includes("CAT 1") || searchStr.includes("CAT 2") || searchStr.includes("CAT 3"))) {
                     parsedResult = "Fail";
                 }
@@ -744,9 +722,6 @@
                 };
 
                 if (parsedResult === "Fail") {
-                    
-                    // Regex Priority Check: Checks highest severity (Cat 1) down to lowest (Cat 3)
-                    // Allows handling cells like "_CAT 3 : EC2 : ... _CAT 2 : EB17" natively.
                     if (/CAT[\s_\-]*1/.test(searchStr)) {
                         record.failCategory = "Cat 1";
                     } else if (/CAT[\s_\-]*2/.test(searchStr)) {
@@ -756,8 +731,6 @@
                     } else {
                         record.failCategory = "Cat Unspecified"; 
                     }
-
-                    // Store the raw string exactly as it appears so you can refer to it
                     record.failReason = combinedReason || "Bulk Uploaded Defect"; 
                 }
 
@@ -825,6 +798,16 @@
             return { start, end };
         }
 
+        // Calculates a rolling 365 days from the current date
+        function getRollingYearRange(date) {
+            const end = new Date(date);
+            end.setHours(23,59,59,999);
+            const start = new Date(date);
+            start.setFullYear(start.getFullYear() - 1);
+            start.setHours(0,0,0,0);
+            return { start, end };
+        }
+
         function calculatePassRate(pass, fail) {
             const total = pass + fail;
             if (total === 0) return '0%';
@@ -835,14 +818,29 @@
             const arr = Object.values(dataObj).filter(e => e.fails > 0).sort((a,b) => b.fails - a.fails);
             const tbody = document.querySelector(tbodyId);
             tbody.innerHTML = '';
+            
             if (arr.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#a8dadc;">No failed audits in this period.</td></tr>';
             } else {
                 arr.forEach(e => {
+                    // Create the category breakdown string
+                    let breakdown = [];
+                    if (e.cat1 > 0) breakdown.push(`CAT 1 x${e.cat1}`);
+                    if (e.cat2 > 0) breakdown.push(`CAT 2 x${e.cat2}`);
+                    if (e.cat3 > 0) breakdown.push(`CAT 3 x${e.cat3}`);
+                    if (e.catU > 0) breakdown.push(`Unspec x${e.catU}`);
+                    
+                    let breakdownHTML = breakdown.length > 0 
+                        ? `<div style="font-size: 0.8em; color: #fca5a5; margin-top: 4px; font-weight: 500;">(${breakdown.join(', ')})</div>` 
+                        : '';
+
                     tbody.innerHTML += `<tr>
                         <td><strong style="color: #fff;">${e.name}</strong></td>
                         <td style="font-family:'JetBrains Mono', monospace; font-size:0.85em; color: #a8dadc;">${e.leader}</td>
-                        <td style="text-align: right;"><span class="badge red">${e.fails} Fails</span></td>
+                        <td style="text-align: right;">
+                            <span class="badge red">${e.fails} Fails</span>
+                            ${breakdownHTML}
+                        </td>
                     </tr>`;
                 });
             }
@@ -856,16 +854,16 @@
                 snap.forEach(doc => audits.push(doc.data()));
 
                 const now = new Date();
-                const currWeek = getWeekRange(now);
                 const prevWeek = getWeekRange(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
-                
                 const currMonth = getMonthRange(now);
                 const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 const prevMonth = getMonthRange(prevMonthDate);
+                const runningYear = getRollingYearRange(now);
 
                 let stats = {
-                    cwPass: 0, cwFail: 0, pwPass: 0, pwFail: 0,
+                    pwPass: 0, pwFail: 0,
                     cmPass: 0, cmFail: 0, pmPass: 0, pmFail: 0,
+                    ryPass: 0, ryFail: 0,
                     cat1CM: 0, cat1PM: 0, 
                     cat2CM: 0, cat2PM: 0, 
                     cat3CM: 0, cat3PM: 0
@@ -873,12 +871,11 @@
 
                 let engineerFailsCM = {};
                 let engineerFailsPM = {};
-                let engineerWIPs = {};
 
                 engineersData.forEach(e => {
-                    engineerFailsCM[e.name] = { name: e.name, leader: e.leader, fails: 0 };
-                    engineerFailsPM[e.name] = { name: e.name, leader: e.leader, fails: 0 };
-                    engineerWIPs[e.name] = null; 
+                    // Added categorical trackers for the tables
+                    engineerFailsCM[e.name] = { name: e.name, leader: e.leader, fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
+                    engineerFailsPM[e.name] = { name: e.name, leader: e.leader, fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
                 });
 
                 audits.forEach(a => {
@@ -887,10 +884,12 @@
                     const isPass = a.result === 'Pass';
                     const isFail = a.result === 'Fail';
 
-                    if (aDate >= currWeek.start && aDate <= currWeek.end) {
-                        if(isPass) stats.cwPass++; if(isFail) stats.cwFail++;
-                    } else if (aDate >= prevWeek.start && aDate <= prevWeek.end) {
+                    if (aDate >= prevWeek.start && aDate <= prevWeek.end) {
                         if(isPass) stats.pwPass++; if(isFail) stats.pwFail++;
+                    }
+
+                    if (aDate >= runningYear.start && aDate <= runningYear.end) {
+                        if(isPass) stats.ryPass++; if(isFail) stats.ryFail++;
                     }
 
                     const isCurrMonth = aDate >= currMonth.start && aDate <= currMonth.end;
@@ -911,26 +910,31 @@
                             if (isCat1) stats.cat1CM++;
                             if (isCat2) stats.cat2CM++;
                             if (isCat3) stats.cat3CM++;
-                            if (engineerFailsCM[a.engineerName]) engineerFailsCM[a.engineerName].fails++;
+                            
+                            if (engineerFailsCM[a.engineerName]) {
+                                engineerFailsCM[a.engineerName].fails++;
+                                if (isCat1) engineerFailsCM[a.engineerName].cat1++;
+                                else if (isCat2) engineerFailsCM[a.engineerName].cat2++;
+                                else if (isCat3) engineerFailsCM[a.engineerName].cat3++;
+                                else engineerFailsCM[a.engineerName].catU++;
+                            }
                         } else if (isPrevMonth) {
                             if (isCat1) stats.cat1PM++;
                             if (isCat2) stats.cat2PM++;
                             if (isCat3) stats.cat3PM++;
-                            if (engineerFailsPM[a.engineerName]) engineerFailsPM[a.engineerName].fails++;
-                        }
-                    }
-
-                    if (a.auditType === 'WIP') {
-                        if (!engineerWIPs[a.engineerName] || aDate > engineerWIPs[a.engineerName]) {
-                            engineerWIPs[a.engineerName] = aDate;
+                            
+                            if (engineerFailsPM[a.engineerName]) {
+                                engineerFailsPM[a.engineerName].fails++;
+                                if (isCat1) engineerFailsPM[a.engineerName].cat1++;
+                                else if (isCat2) engineerFailsPM[a.engineerName].cat2++;
+                                else if (isCat3) engineerFailsPM[a.engineerName].cat3++;
+                                else engineerFailsPM[a.engineerName].catU++;
+                            }
                         }
                     }
                 });
 
-                document.getElementById('currWeekPass').innerText = stats.cwPass;
-                document.getElementById('currWeekFail').innerText = stats.cwFail;
-                document.getElementById('currWeekPct').innerText = calculatePassRate(stats.cwPass, stats.cwFail);
-
+                // Update Summary DOM
                 document.getElementById('prevWeekPass').innerText = stats.pwPass;
                 document.getElementById('prevWeekFail').innerText = stats.pwFail;
                 document.getElementById('prevWeekPct').innerText = calculatePassRate(stats.pwPass, stats.pwFail);
@@ -943,6 +947,10 @@
                 document.getElementById('prevMonthFail').innerText = stats.pmFail;
                 document.getElementById('prevMonthPct').innerText = calculatePassRate(stats.pmPass, stats.pmFail);
 
+                document.getElementById('runYearPass').innerText = stats.ryPass;
+                document.getElementById('runYearFail').innerText = stats.ryFail;
+                document.getElementById('runYearPct').innerText = calculatePassRate(stats.ryPass, stats.ryFail);
+
                 document.getElementById('cat1CM').innerText = stats.cat1CM;
                 document.getElementById('cat1PM').innerText = stats.cat1PM;
                 document.getElementById('cat2CM').innerText = stats.cat2CM;
@@ -950,40 +958,9 @@
                 document.getElementById('cat3CM').innerText = stats.cat3CM;
                 document.getElementById('cat3PM').innerText = stats.cat3PM;
 
+                // Render Categorical Tables
                 renderOffendersTable(engineerFailsCM, '#offendersTableCM tbody');
                 renderOffendersTable(engineerFailsPM, '#offendersTablePM tbody');
-
-                let wipArr = Object.keys(engineerWIPs).map(name => {
-                    const lastDate = engineerWIPs[name];
-                    let daysAgo = Infinity;
-                    if (lastDate) {
-                        const diffTime = Math.abs(now - lastDate);
-                        daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    }
-                    return { name, lastDate, daysAgo };
-                });
-
-                wipArr.sort((a,b) => b.daysAgo - a.daysAgo);
-
-                const wipTbody = document.querySelector('#wipTable tbody');
-                wipTbody.innerHTML = '';
-                wipArr.slice(0, 20).forEach(e => {
-                    const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'Never';
-                    const daysStr = e.daysAgo === Infinity ? 'N/A' : `${e.daysAgo} Days`;
-                    
-                    let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
-                    if (e.daysAgo === Infinity || e.daysAgo > 30) {
-                        bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
-                    } else if (e.daysAgo > 14) {
-                        bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
-                    }
-
-                    wipTbody.innerHTML += `<tr>
-                        <td><strong style="color: #fff;">${e.name}</strong></td>
-                        <td style="font-family:'JetBrains Mono', monospace; font-size:0.9em; color: #a8dadc;">${dateStr}</td>
-                        <td style="text-align: right;"><span class="badge" style="background:${bgCol}; color:${txtCol}; border: 1px solid ${borCol};">${daysStr}</span></td>
-                    </tr>`;
-                });
 
             } catch (error) {
                 console.error("Error loading dashboard data:", error);
