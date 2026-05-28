@@ -1648,6 +1648,44 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
 <script>
+// --- BULLETPROOF UI FUNCTIONS ---
+// Defining these right at the top ensures the HTML buttons can always find them
+window.togglePw = function() {
+    const inp = document.getElementById('loginPassword');
+    const btn = document.querySelector('.pw-toggle');
+    if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+    else { inp.type = 'password'; btn.textContent = '👁️'; }
+};
+
+window.handleLogin = async function() {
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!username) { showLoginError('Please enter your username'); return; }
+    if (!password) { showLoginError('Please enter your password'); return; }
+    
+    if (engineersWithPasswords.length === 0) await loadEngineers();
+    const eng = engineersWithPasswords.find(e => e.name === username);
+    if (!eng) { showLoginError('Username not found. Please check and try again.'); return; }
+    if (!eng.password) { showLoginError('No password set. Contact your administrator.'); return; }
+    if (password !== eng.password) { showLoginError('Incorrect password. Please try again.'); return; }
+    
+    currentEngineer = username;
+    currentEngineerId = eng.id;
+    
+    localStorage.setItem('ngu_username', username);
+    localStorage.setItem('ngu_login_date', new Date().toDateString());
+    
+    document.getElementById('loginUsername').value = '';
+    document.getElementById('loginPassword').value = '';
+    document.getElementById('loginError').style.display = 'none';
+
+    document.getElementById('welcomeName').textContent = currentEngineer.toUpperCase();
+    setScreen('welcomeScreen');
+    setBreadcrumb('WELCOME');
+    setTimeout(() => showHub(), 2000);
+};
+
 // --- LOGIC: Theme Switcher ---
 const savedTheme = localStorage.getItem('ngu_theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
@@ -1733,13 +1771,6 @@ async function loadEngineers() {
     } catch(e) { console.error(e); }
 }
 
-window.togglePw = function() {
-    const inp = document.getElementById('loginPassword');
-    const btn = document.querySelector('.pw-toggle');
-    if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
-    else { inp.type = 'password'; btn.textContent = '👁️'; }
-};
-
 function showLoginError(msg) {
     const el = document.getElementById('loginError');
     el.textContent = '⚠ ' + msg;
@@ -1778,7 +1809,6 @@ function applyBonusRestriction() {
         bonusPolicyBtn.style.display = (isBonusRestricted || isQBonusRestricted) ? 'none' : 'block';
     }
 }
-
 window.handleLogin = async function() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
