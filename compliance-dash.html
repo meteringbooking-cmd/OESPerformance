@@ -416,6 +416,24 @@
                     </table>
                 </div>
             </div>
+
+            <div class="kpi-card" style="min-height: 480px;">
+                <div class="kpi-header"><span class="kpi-title">Longest Time Since WIP</span></div>
+                <div class="table-wrap">
+                    <table class="historical-table" id="wipTable">
+                        <thead>
+                            <tr>
+                                <th>Engineer</th>
+                                <th>Last WIP Date</th>
+                                <th style="text-align: right;">Days Ago</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="3" style="text-align:center; font-style:italic;">Loading data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
     </div>
@@ -482,10 +500,9 @@
 
         // --- Assign New Team Leader to Unknowns ---
         async function updateTeamLeader(engineerName, newLeader) {
-            if (!newLeader) return; // Ignore if they select the empty placeholder
+            if (!newLeader) return; 
 
             try {
-                // Find all records in the database belonging to this engineer
                 const snapshot = await db.collection("Compliance Dashboard")
                                          .where("engineerName", "==", engineerName)
                                          .get();
@@ -508,7 +525,7 @@
                     await batch.commit();
                 }
 
-                loadDashboardData(); // Refresh the data tables instantly
+                loadDashboardData(); 
 
             } catch (error) {
                 console.error("Error updating Team Leader:", error);
@@ -539,7 +556,6 @@
                 data.cat2Qty = parseInt(document.getElementById('cat2Qty').value, 10) || 0;
                 data.cat3Qty = parseInt(document.getElementById('cat3Qty').value, 10) || 0;
                 
-                // Keep backward compatibility for simple category label tracking
                 if (data.cat1Qty > 0) data.failCategory = "Cat 1";
                 else if (data.cat2Qty > 0) data.failCategory = "Cat 2";
                 else if (data.cat3Qty > 0) data.failCategory = "Cat 3";
@@ -679,7 +695,6 @@
                 
                 if (!parsedDate) continue; 
 
-                // Look up in our dynamic engineers array.
                 const eng = engineersData.find(e => e.name.toLowerCase() === engineerRaw.toLowerCase());
                 const teamLeader = eng ? eng.leader : "Unknown";
                 const contract = eng ? eng.contract : "Unknown";
@@ -711,7 +726,6 @@
                 };
 
                 if (parsedResult === "Fail") {
-                    
                     let c1Count = (searchStr.match(/CAT[\s_\-]*1/g) || []).length;
                     let c2Count = (searchStr.match(/CAT[\s_\-]*2/g) || []).length;
                     let c3Count = (searchStr.match(/CAT[\s_\-]*3/g) || []).length;
@@ -827,11 +841,9 @@
                         ? `<div style="font-size: 0.8em; color: #fca5a5; margin-top: 4px; font-weight: 500;">(${breakdown.join(', ')})</div>` 
                         : '';
 
-                    // IF LEADER IS UNKNOWN: Render a small Dropdown to assign them
                     let leaderHTML = `<span style="font-family:'JetBrains Mono', monospace; font-size:0.85em; color: #a8dadc;">${e.leader}</span>`;
                     
                     if (e.leader === 'Unknown' || e.leader === 'UNKNOWN' || e.leader === '') {
-                        // Replace ' inside names so it doesnt break the HTML function call
                         let safeName = e.name.replace(/'/g, "\\'"); 
                         leaderHTML = `
                             <select class="field-select" style="padding: 4px 8px; font-size: 0.85em; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); width: 140px; color: #fca5a5; background-position: right 0.5rem center;" onchange="updateTeamLeader('${safeName}', this.value)">
@@ -863,7 +875,6 @@
                 const audits = [];
                 snap.forEach(doc => audits.push(doc.data()));
 
-                // Sort audits newest first to ensure we grab the most recent Team Leader for the dynamic dropdown
                 audits.sort((a, b) => new Date(b.date) - new Date(a.date));
 
                 const now = new Date();
@@ -872,6 +883,9 @@
                 const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 const prevMonth = getMonthRange(prevMonthDate);
                 const runningYear = getRollingYearRange(now);
+                
+                // Baseline Date for WIP calculations
+                const baselineDate = new Date('2026-01-01T00:00:00');
 
                 let stats = {
                     pwPass: 0, pwFail: 0,
@@ -885,11 +899,11 @@
                 let dynamicEngineers = {};
                 let engineerFailsCM = {};
                 let engineerFailsPM = {};
+                let engineerWIPs = {};
 
                 audits.forEach(a => {
                     if (!a.date || !a.engineerName) return;
 
-                    // Dynamically build our unique engineers list from Firebase
                     if (!dynamicEngineers[a.engineerName]) {
                         dynamicEngineers[a.engineerName] = {
                             name: a.engineerName,
@@ -898,10 +912,10 @@
                         };
                     }
 
-                    // Initialize tracker if we haven't seen this engineer yet
                     if (!engineerFailsCM[a.engineerName]) {
                         engineerFailsCM[a.engineerName] = { name: a.engineerName, leader: a.teamLeader || "Unknown", fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
                         engineerFailsPM[a.engineerName] = { name: a.engineerName, leader: a.teamLeader || "Unknown", fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
+                        engineerWIPs[a.engineerName] = null;
                     }
 
                     const aDate = new Date(a.date);
@@ -954,9 +968,15 @@
                             engineerFailsPM[a.engineerName].catU += cU;
                         }
                     }
+
+                    // Track latest WIP audit
+                    if (a.auditType === 'WIP') {
+                        if (!engineerWIPs[a.engineerName] || aDate > engineerWIPs[a.engineerName]) {
+                            engineerWIPs[a.engineerName] = aDate;
+                        }
+                    }
                 });
 
-                // Overwrite the global array with our dynamic database array and update the dropdown
                 engineersData = Object.values(dynamicEngineers).sort((a,b) => a.name.localeCompare(b.name));
                 const select = document.getElementById('engineerName');
                 const currentValue = select.value;
@@ -993,6 +1013,43 @@
 
                 renderOffendersTable(engineerFailsCM, '#offendersTableCM tbody');
                 renderOffendersTable(engineerFailsPM, '#offendersTablePM tbody');
+
+                // Build Longest Time Since WIP Table
+                let wipArr = Object.keys(engineerWIPs).map(name => {
+                    const lastDate = engineerWIPs[name];
+                    let daysAgo = 0;
+                    if (lastDate) {
+                        const diffTime = Math.abs(now - lastDate);
+                        daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    } else {
+                        // Count from January 1st, 2026 if no WIP exists
+                        const diffTime = Math.abs(now - baselineDate);
+                        daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    }
+                    return { name, lastDate, daysAgo };
+                });
+
+                wipArr.sort((a,b) => b.daysAgo - a.daysAgo);
+
+                const wipTbody = document.querySelector('#wipTable tbody');
+                wipTbody.innerHTML = '';
+                wipArr.slice(0, 20).forEach(e => {
+                    const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'No WIP Found';
+                    const daysStr = `${e.daysAgo} Days`;
+                    
+                    let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
+                    if (e.daysAgo > 30) {
+                        bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
+                    } else if (e.daysAgo > 14) {
+                        bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
+                    }
+
+                    wipTbody.innerHTML += `<tr>
+                        <td><strong style="color: #fff;">${e.name}</strong></td>
+                        <td style="font-family:'JetBrains Mono', monospace; font-size:0.9em; color: #a8dadc;">${dateStr}</td>
+                        <td style="text-align: right;"><span class="badge" style="background:${bgCol}; color:${txtCol}; border: 1px solid ${borCol};">${daysStr}</span></td>
+                    </tr>`;
+                });
 
             } catch (error) {
                 console.error("Error loading dashboard data:", error);
