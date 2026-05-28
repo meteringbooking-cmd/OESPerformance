@@ -24,7 +24,6 @@
             pointer-events: none; z-index: 0;
         }
         
-        /* Expanded container to use more screen space */
         .container { max-width: 96%; margin: 0 auto; position: relative; z-index: 1; }
         
         /* Header */
@@ -126,7 +125,6 @@
         .historical-table tr:last-child td { border-bottom: none; }
         .historical-table tr:hover { background: rgba(0,210,255,0.08); }
         .table-wrap { overflow-y: auto; max-height: 400px; flex: 1; -webkit-overflow-scrolling: touch; }
-        /* Custom scrollbar for tables */
         .table-wrap::-webkit-scrollbar { width: 6px; }
         .table-wrap::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
         .table-wrap::-webkit-scrollbar-thumb { background: rgba(0,210,255,0.3); border-radius: 4px; }
@@ -224,16 +222,48 @@
                 <span class="kpi-title">Bulk Upload Audits (Excel / CSV)</span>
             </div>
             
-            <div class="form-grid">
+            <div class="form-grid" id="uploadStep1">
                 <div class="field-group">
-                    <label class="field-label">Select File</label>
-                    <input type="file" id="fileUpload" class="field-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+                    <label class="field-label">Step 1: Select File</label>
+                    <input type="file" id="fileUpload" class="field-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onchange="handleFileSelection(event)">
                 </div>
             </div>
+            <div id="fileReadStatus" style="font-size: 0.85em; color: #a8dadc; font-weight: 500; margin-top: 8px;"></div>
 
-            <div style="margin-top: 16px; text-align: right; display: flex; justify-content: space-between; align-items: center;">
-                <div id="uploadStatus" style="font-size: 0.85em; color: #a8dadc; font-weight: 500;"></div>
-                <button type="button" class="btn-submit" id="uploadBtn" onclick="processUpload()">Upload & Process</button>
+            <div id="mappingSection" style="display: none; margin-top: 20px; border-top: 1px solid rgba(0,210,255,0.2); padding-top: 20px;">
+                <label class="field-label" style="display: block; margin-bottom: 12px; color: #00d2ff;">Step 2: Map Your Columns</label>
+                
+                <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                    <div class="field-group">
+                        <label class="field-label">Audit Type</label>
+                        <select class="field-select map-dropdown" id="mapAuditType"></select>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Date</label>
+                        <select class="field-select map-dropdown" id="mapDate"></select>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Engineer Name</label>
+                        <select class="field-select map-dropdown" id="mapEngineer"></select>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Result (Pass/Fail)</label>
+                        <select class="field-select map-dropdown" id="mapResult"></select>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Elec Defects</label>
+                        <select class="field-select map-dropdown" id="mapElecDefects"></select>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Gas Defects</label>
+                        <select class="field-select map-dropdown" id="mapGasDefects"></select>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: right; display: flex; justify-content: space-between; align-items: center;">
+                    <div id="uploadStatus" style="font-size: 0.85em; color: #fcd34d; font-weight: 500;"></div>
+                    <button type="button" class="btn-submit" id="uploadBtn" onclick="executeMappedUpload()">Confirm & Upload</button>
+                </div>
             </div>
         </div>
 
@@ -480,12 +510,10 @@
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Set Date Display
             const now = new Date();
             document.getElementById('statsDate').innerText = now.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
             document.getElementById('auditDate').valueAsDate = now;
             
-            // Populate Dropdown
             const select = document.getElementById('engineerName');
             engineersData.sort((a,b) => a.name.localeCompare(b.name)).forEach(eng => {
                 const opt = document.createElement('option');
@@ -554,7 +582,7 @@
                 document.getElementById('auditForm').reset();
                 document.getElementById('auditDate').valueAsDate = new Date();
                 toggleFailFields();
-                loadDashboardData(); // Refresh Data
+                loadDashboardData();
             } catch (err) {
                 console.error(err);
                 alert("Error submitting audit: " + err.message);
@@ -563,151 +591,203 @@
             }
         }
 
-        // --- Bulk Upload Logic ---
-        async function processUpload() {
-            const fileInput = document.getElementById('fileUpload');
-            const statusDiv = document.getElementById('uploadStatus');
-            const btn = document.getElementById('uploadBtn');
+        // --- Bulk Upload Variables ---
+        let globalExcelRows = [];
 
-            if (!fileInput.files.length) {
-                alert("Please select a file first.");
+        // --- Read File & Prepare Mapping ---
+        function handleFileSelection(event) {
+            const file = event.target.files[0];
+            const statusDiv = document.getElementById('fileReadStatus');
+            const mappingSection = document.getElementById('mappingSection');
+            
+            if (!file) {
+                mappingSection.style.display = 'none';
+                return;
+            }
+
+            statusDiv.textContent = "Reading file headers...";
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    globalExcelRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                    if (globalExcelRows.length < 2) {
+                        throw new Error("File appears to be empty or missing data.");
+                    }
+
+                    const headers = globalExcelRows[0].map((h, i) => h ? String(h).trim() : `Column ${i + 1}`);
+
+                    const dropdowns = document.querySelectorAll('.map-dropdown');
+                    dropdowns.forEach(select => {
+                        select.innerHTML = '<option value="">-- Ignore / Not Present --</option>';
+                        headers.forEach((header, index) => {
+                            select.innerHTML += `<option value="${index}">${header}</option>`;
+                        });
+                    });
+
+                    const findCol = (keyword) => headers.findIndex(h => h.toLowerCase().includes(keyword));
+                    
+                    document.getElementById('mapAuditType').value = findCol('type') >= 0 ? findCol('type') : "";
+                    document.getElementById('mapDate').value = findCol('date') >= 0 ? findCol('date') : "";
+                    document.getElementById('mapEngineer').value = findCol('engineer') >= 0 ? findCol('engineer') : "";
+                    document.getElementById('mapResult').value = findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : "");
+                    document.getElementById('mapElecDefects').value = findCol('elec') >= 0 ? findCol('elec') : "";
+                    document.getElementById('mapGasDefects').value = findCol('gas') >= 0 ? findCol('gas') : "";
+
+                    statusDiv.textContent = `Found ${globalExcelRows.length - 1} data rows. Please map the columns below.`;
+                    mappingSection.style.display = 'block';
+
+                } catch (error) {
+                    console.error(error);
+                    statusDiv.textContent = "Error reading file: " + error.message;
+                    mappingSection.style.display = 'none';
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- Execute Upload based on Mapping ---
+        async function executeMappedUpload() {
+            const btn = document.getElementById('uploadBtn');
+            const statusDiv = document.getElementById('uploadStatus');
+
+            const colAuditType = parseInt(document.getElementById('mapAuditType').value) || -1;
+            const colDate = parseInt(document.getElementById('mapDate').value) || -1;
+            const colEngineer = parseInt(document.getElementById('mapEngineer').value) || -1;
+            const colResult = parseInt(document.getElementById('mapResult').value) || -1;
+            const colElec = parseInt(document.getElementById('mapElecDefects').value) || -1;
+            const colGas = parseInt(document.getElementById('mapGasDefects').value) || -1;
+
+            if (colAuditType === -1 || colDate === -1 || colEngineer === -1) {
+                alert("You must map at least the Audit Type, Date, and Engineer Name.");
                 return;
             }
 
             btn.disabled = true;
             btn.textContent = 'Processing...';
-            statusDiv.textContent = "Reading file...";
+            statusDiv.textContent = "Preparing data...";
 
-            const file = fileInput.files[0];
-            const reader = new FileReader();
+            let recordsToUpload = [];
 
-            reader.onload = async (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    // cellDates: true forces Excel dates into native JS Date objects
-                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    
-                    // Convert sheet to an array of arrays
-                    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            for (let i = 1; i < globalExcelRows.length; i++) {
+                const row = globalExcelRows[i];
+                if (!row || row.length === 0) continue;
 
-                    let recordsToUpload = [];
+                const auditTypeRaw = colAuditType >= 0 ? String(row[colAuditType] || '').toUpperCase() : '';
+                const dateRaw = colDate >= 0 ? row[colDate] : null;
+                const engineerRaw = colEngineer >= 0 ? String(row[colEngineer] || '').trim() : '';
+                const resultRaw = colResult >= 0 ? String(row[colResult] || '').trim() : '';
+                const elecDefects = colElec >= 0 ? String(row[colElec] || '').toUpperCase() : '';
+                const gasDefects = colGas >= 0 ? String(row[colGas] || '').toUpperCase() : '';
 
-                    // Skip the first row (headers), start at i = 1
-                    for (let i = 1; i < rows.length; i++) {
-                        const row = rows[i];
-                        if (!row || row.length === 0) continue;
-
-                        // Map Columns to 0-based index: 
-                        // E=4, I=8, N=13, W=22, AC=28, AG=32
-                        const auditTypeRaw = String(row[4] || '').toUpperCase();
-                        const dateRaw = row[8];
-                        const engineerRaw = String(row[13] || '').trim();
-                        const resultRaw = String(row[22] || '').trim();
-                        const elecDefects = String(row[28] || '').toUpperCase();
-                        const gasDefects = String(row[32] || '').toUpperCase();
-
-                        // 1. Filter by Audit Type (PC or WIP)
-                        let parsedAuditType = "";
-                        if (auditTypeRaw.includes("PC")) {
-                            parsedAuditType = "Post Complete";
-                        } else if (auditTypeRaw.includes("WIP")) {
-                            parsedAuditType = "WIP";
-                        } else {
-                            continue; // Skip this row if neither PC nor WIP
-                        }
-
-                        // 2. Parse Date Safely
-                        let parsedDate = "";
-                        if (dateRaw instanceof Date) {
-                            // Fix timezone offset issues native to JS/Excel conversions
-                            const offsetDate = new Date(dateRaw.getTime() - (dateRaw.getTimezoneOffset() * 60000));
-                            parsedDate = offsetDate.toISOString().split('T')[0];
-                        } else if (typeof dateRaw === 'string') {
-                            const tempDate = new Date(dateRaw);
-                            if (!isNaN(tempDate)) parsedDate = tempDate.toISOString().split('T')[0];
-                        }
-                        
-                        if (!parsedDate) continue; // Skip if date is blank or invalid
-
-                        // 3. Autopopulate Team Leader / Contract from existing array
-                        const eng = engineersData.find(e => e.name.toLowerCase() === engineerRaw.toLowerCase());
-                        const teamLeader = eng ? eng.leader : "Unknown";
-                        const contract = eng ? eng.contract : "Unknown";
-
-                        // 4. Parse Result & Categories
-                        let parsedResult = "";
-                        if (resultRaw.toUpperCase() === "PASS") parsedResult = "Pass";
-                        else if (resultRaw.toUpperCase() === "FAIL") parsedResult = "Fail";
-                        else continue; // Skip if result isn't explicitly pass/fail
-
-                        let failCategory = "";
-                        if (parsedResult === "Fail") {
-                            // Combine both columns to search for the string
-                            const defects = elecDefects + " " + gasDefects;
-                            
-                            if (defects.includes("_CAT 1")) failCategory = "Cat 1";
-                            else if (defects.includes("_CAT 2")) failCategory = "Cat 2";
-                            else if (defects.includes("_CAT 3")) failCategory = "Cat 3";
-                            else failCategory = "Cat Unspecified"; 
-                        }
-
-                        // 5. Build the Firebase Record
-                        const record = {
-                            engineerName: eng ? eng.name : engineerRaw, // Keeps casing uniform
-                            teamLeader: teamLeader,
-                            contract: contract,
-                            auditType: parsedAuditType,
-                            date: parsedDate,
-                            result: parsedResult,
-                            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                        };
-
-                        if (parsedResult === "Fail") {
-                            record.failCategory = failCategory;
-                            record.failReason = "Bulk Uploaded Defect"; 
-                        }
-
-                        recordsToUpload.push(record);
-                    }
-
-                    statusDiv.textContent = `Found ${recordsToUpload.length} valid records. Writing to database...`;
-
-                    // 6. Batch Write to Firestore (Max 500 per batch)
-                    const batch = db.batch();
-                    let batchCount = 0;
-
-                    for (const record of recordsToUpload) {
-                        const docRef = db.collection("Compliance Dashboard").doc();
-                        batch.set(docRef, record);
-                        batchCount++;
-
-                        if (batchCount === 500) {
-                            await batch.commit();
-                            batchCount = 0;
-                        }
-                    }
-
-                    if (batchCount > 0) {
-                        await batch.commit(); // Commit any remainders
-                    }
-
-                    alert(`Successfully uploaded ${recordsToUpload.length} records!`);
-                    fileInput.value = ''; // Reset input field
-                    statusDiv.textContent = "";
-                    loadDashboardData();  // Refresh your UI metrics instantly
-
-                } catch (error) {
-                    console.error("Upload Error:", error);
-                    alert("Error processing file: " + error.message);
-                    statusDiv.textContent = "Upload failed.";
-                } finally {
-                    btn.disabled = false;
-                    btn.textContent = 'Upload & Process';
+                let parsedAuditType = "";
+                if (auditTypeRaw.includes("PC")) {
+                    parsedAuditType = "Post Complete";
+                } else if (auditTypeRaw.includes("WIP")) {
+                    parsedAuditType = "WIP";
+                } else {
+                    continue; 
                 }
-            };
 
-            reader.readAsArrayBuffer(file);
+                let parsedDate = "";
+                if (dateRaw instanceof Date) {
+                    const offsetDate = new Date(dateRaw.getTime() - (dateRaw.getTimezoneOffset() * 60000));
+                    parsedDate = offsetDate.toISOString().split('T')[0];
+                } else if (typeof dateRaw === 'string' || typeof dateRaw === 'number') {
+                    const tempDate = new Date(dateRaw);
+                    if (!isNaN(tempDate)) parsedDate = tempDate.toISOString().split('T')[0];
+                }
+                
+                if (!parsedDate) continue; 
+
+                const eng = engineersData.find(e => e.name.toLowerCase() === engineerRaw.toLowerCase());
+                const teamLeader = eng ? eng.leader : "Unknown";
+                const contract = eng ? eng.contract : "Unknown";
+
+                let parsedResult = "Pass"; 
+                if (resultRaw.toUpperCase() === "FAIL" || resultRaw.toUpperCase() === "FAILED") {
+                    parsedResult = "Fail";
+                } else if (resultRaw.toUpperCase() === "PASS" || resultRaw.toUpperCase() === "PASSED") {
+                    parsedResult = "Pass";
+                }
+
+                let failCategory = "";
+                if (parsedResult === "Fail") {
+                    const defects = elecDefects + " " + gasDefects;
+                    if (defects.includes("_CAT 1")) failCategory = "Cat 1";
+                    else if (defects.includes("_CAT 2")) failCategory = "Cat 2";
+                    else if (defects.includes("_CAT 3")) failCategory = "Cat 3";
+                    else failCategory = "Cat Unspecified"; 
+                }
+
+                const record = {
+                    engineerName: eng ? eng.name : engineerRaw,
+                    teamLeader: teamLeader,
+                    contract: contract,
+                    auditType: parsedAuditType,
+                    date: parsedDate,
+                    result: parsedResult,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                if (parsedResult === "Fail") {
+                    record.failCategory = failCategory;
+                    record.failReason = "Bulk Uploaded Defect"; 
+                }
+
+                recordsToUpload.push(record);
+            }
+
+            if (recordsToUpload.length === 0) {
+                statusDiv.textContent = "0 valid records found. Check your mapping and file data.";
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Upload';
+                return;
+            }
+
+            statusDiv.textContent = `Uploading ${recordsToUpload.length} valid records...`;
+
+            try {
+                const batch = db.batch();
+                let batchCount = 0;
+
+                for (const record of recordsToUpload) {
+                    const docRef = db.collection("Compliance Dashboard").doc();
+                    batch.set(docRef, record);
+                    batchCount++;
+
+                    if (batchCount === 500) {
+                        await batch.commit();
+                        batchCount = 0;
+                    }
+                }
+                if (batchCount > 0) {
+                    await batch.commit(); 
+                }
+
+                alert(`Successfully uploaded ${recordsToUpload.length} records!`);
+                
+                document.getElementById('fileUpload').value = ''; 
+                document.getElementById('mappingSection').style.display = 'none';
+                document.getElementById('fileReadStatus').textContent = '';
+                statusDiv.textContent = "";
+                
+                loadDashboardData(); 
+
+            } catch (error) {
+                console.error("Upload Error:", error);
+                alert("Error writing to database: " + error.message);
+                statusDiv.textContent = "Upload failed.";
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Upload';
+            }
         }
 
         // --- Date Utilities ---
@@ -775,11 +855,10 @@
                 let engineerFailsPM = {};
                 let engineerWIPs = {};
 
-                // Initialize lists
                 engineersData.forEach(e => {
                     engineerFailsCM[e.name] = { name: e.name, leader: e.leader, fails: 0 };
                     engineerFailsPM[e.name] = { name: e.name, leader: e.leader, fails: 0 };
-                    engineerWIPs[e.name] = null; // null means never
+                    engineerWIPs[e.name] = null; 
                 });
 
                 audits.forEach(a => {
@@ -788,14 +867,12 @@
                     const isPass = a.result === 'Pass';
                     const isFail = a.result === 'Fail';
 
-                    // Weekly
                     if (aDate >= currWeek.start && aDate <= currWeek.end) {
                         if(isPass) stats.cwPass++; if(isFail) stats.cwFail++;
                     } else if (aDate >= prevWeek.start && aDate <= prevWeek.end) {
                         if(isPass) stats.pwPass++; if(isFail) stats.pwFail++;
                     }
 
-                    // Monthly
                     const isCurrMonth = aDate >= currMonth.start && aDate <= currMonth.end;
                     const isPrevMonth = aDate >= prevMonth.start && aDate <= prevMonth.end;
 
@@ -805,7 +882,6 @@
                         if(isPass) stats.pmPass++; if(isFail) stats.pmFail++;
                     }
 
-                    // Categories & League Tables
                     if (isFail && a.failCategory) {
                         const isCat1 = a.failCategory === 'Cat 1';
                         const isCat2 = a.failCategory === 'Cat 2';
@@ -824,7 +900,6 @@
                         }
                     }
 
-                    // Track WIP
                     if (a.auditType === 'WIP') {
                         if (!engineerWIPs[a.engineerName] || aDate > engineerWIPs[a.engineerName]) {
                             engineerWIPs[a.engineerName] = aDate;
@@ -832,7 +907,6 @@
                     }
                 });
 
-                // Update Summary DOM
                 document.getElementById('currWeekPass').innerText = stats.cwPass;
                 document.getElementById('currWeekFail').innerText = stats.cwFail;
                 document.getElementById('currWeekPct').innerText = calculatePassRate(stats.cwPass, stats.cwFail);
@@ -849,7 +923,6 @@
                 document.getElementById('prevMonthFail').innerText = stats.pmFail;
                 document.getElementById('prevMonthPct').innerText = calculatePassRate(stats.pmPass, stats.pmFail);
 
-                // Update Categories
                 document.getElementById('cat1CM').innerText = stats.cat1CM;
                 document.getElementById('cat1PM').innerText = stats.cat1PM;
                 document.getElementById('cat2CM').innerText = stats.cat2CM;
@@ -857,11 +930,9 @@
                 document.getElementById('cat3CM').innerText = stats.cat3CM;
                 document.getElementById('cat3PM').innerText = stats.cat3PM;
 
-                // Render League Tables
                 renderOffendersTable(engineerFailsCM, '#offendersTableCM tbody');
                 renderOffendersTable(engineerFailsPM, '#offendersTablePM tbody');
 
-                // Build Longest Time Since WIP Table
                 let wipArr = Object.keys(engineerWIPs).map(name => {
                     const lastDate = engineerWIPs[name];
                     let daysAgo = Infinity;
@@ -872,7 +943,6 @@
                     return { name, lastDate, daysAgo };
                 });
 
-                // Sort: Infinity (Never) first, then longest days ago
                 wipArr.sort((a,b) => b.daysAgo - a.daysAgo);
 
                 const wipTbody = document.querySelector('#wipTable tbody');
@@ -881,11 +951,11 @@
                     const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'Never';
                     const daysStr = e.daysAgo === Infinity ? 'N/A' : `${e.daysAgo} Days`;
                     
-                    let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; // Green
+                    let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
                     if (e.daysAgo === Infinity || e.daysAgo > 30) {
-                        bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; // Red
+                        bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
                     } else if (e.daysAgo > 14) {
-                        bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; // Amber
+                        bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
                     }
 
                     wipTbody.innerHTML += `<tr>
