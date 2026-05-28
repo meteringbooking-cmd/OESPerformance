@@ -480,6 +480,43 @@
             }
         }
 
+        // --- Assign New Team Leader to Unknowns ---
+        async function updateTeamLeader(engineerName, newLeader) {
+            if (!newLeader) return; // Ignore if they select the empty placeholder
+
+            try {
+                // Find all records in the database belonging to this engineer
+                const snapshot = await db.collection("Compliance Dashboard")
+                                         .where("engineerName", "==", engineerName)
+                                         .get();
+                
+                let batch = db.batch();
+                let batchCount = 0;
+
+                snapshot.docs.forEach(doc => {
+                    batch.update(doc.ref, { teamLeader: newLeader });
+                    batchCount++;
+
+                    if (batchCount === 500) {
+                        batch.commit();
+                        batch = db.batch();
+                        batchCount = 0;
+                    }
+                });
+
+                if (batchCount > 0) {
+                    await batch.commit();
+                }
+
+                loadDashboardData(); // Refresh the data tables instantly
+
+            } catch (error) {
+                console.error("Error updating Team Leader:", error);
+                alert("Failed to update Team Leader. " + error.message);
+            }
+        }
+
+
         // --- DB Interaction (Manual Submit) ---
         async function submitAudit(e) {
             e.preventDefault();
@@ -704,7 +741,6 @@
             statusDiv.textContent = `Uploading ${recordsToUpload.length} valid records...`;
 
             try {
-                // FIXED BATCH LOGIC
                 let batch = db.batch();
                 let batchCount = 0;
 
@@ -715,7 +751,7 @@
 
                     if (batchCount === 500) {
                         await batch.commit();
-                        batch = db.batch(); // CREATE NEW BATCH
+                        batch = db.batch();
                         batchCount = 0;
                     }
                 }
@@ -791,9 +827,26 @@
                         ? `<div style="font-size: 0.8em; color: #fca5a5; margin-top: 4px; font-weight: 500;">(${breakdown.join(', ')})</div>` 
                         : '';
 
+                    // IF LEADER IS UNKNOWN: Render a small Dropdown to assign them
+                    let leaderHTML = `<span style="font-family:'JetBrains Mono', monospace; font-size:0.85em; color: #a8dadc;">${e.leader}</span>`;
+                    
+                    if (e.leader === 'Unknown' || e.leader === 'UNKNOWN' || e.leader === '') {
+                        // Replace ' inside names so it doesnt break the HTML function call
+                        let safeName = e.name.replace(/'/g, "\\'"); 
+                        leaderHTML = `
+                            <select class="field-select" style="padding: 4px 8px; font-size: 0.85em; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); width: 140px; color: #fca5a5; background-position: right 0.5rem center;" onchange="updateTeamLeader('${safeName}', this.value)">
+                                <option value="">Assign Leader</option>
+                                <option value="Richard Wiecko">Richard Wiecko</option>
+                                <option value="Scott Carson">Scott Carson</option>
+                                <option value="Stuart Whyte">Stuart Whyte</option>
+                                <option value="Tom Green">Tom Green</option>
+                            </select>
+                        `;
+                    }
+
                     tbody.innerHTML += `<tr>
                         <td><strong style="color: #fff;">${e.name}</strong></td>
-                        <td style="font-family:'JetBrains Mono', monospace; font-size:0.85em; color: #a8dadc;">${e.leader}</td>
+                        <td>${leaderHTML}</td>
                         <td style="text-align: right;">
                             <span class="badge red">${e.fails} Fails</span>
                             ${breakdownHTML}
