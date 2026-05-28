@@ -657,12 +657,18 @@
             const btn = document.getElementById('uploadBtn');
             const statusDiv = document.getElementById('uploadStatus');
 
-            const colAuditType = parseInt(document.getElementById('mapAuditType').value) || -1;
-            const colDate = parseInt(document.getElementById('mapDate').value) || -1;
-            const colEngineer = parseInt(document.getElementById('mapEngineer').value) || -1;
-            const colResult = parseInt(document.getElementById('mapResult').value) || -1;
-            const colElec = parseInt(document.getElementById('mapElecDefects').value) || -1;
-            const colGas = parseInt(document.getElementById('mapGasDefects').value) || -1;
+            // Safely parse the mapped column index. If left unmapped it returns -1.
+            const getCol = (id) => {
+                const val = document.getElementById(id).value;
+                return val === "" ? -1 : parseInt(val, 10);
+            };
+
+            const colAuditType = getCol('mapAuditType');
+            const colDate = getCol('mapDate');
+            const colEngineer = getCol('mapEngineer');
+            const colResult = getCol('mapResult');
+            const colElec = getCol('mapElecDefects');
+            const colGas = getCol('mapGasDefects');
 
             if (colAuditType === -1 || colDate === -1 || colEngineer === -1) {
                 alert("You must map at least the Audit Type, Date, and Engineer Name.");
@@ -708,11 +714,23 @@
                 const teamLeader = eng ? eng.leader : "Unknown";
                 const contract = eng ? eng.contract : "Unknown";
 
+                // Pull the exact strings for the DB so you can read them
+                const rawElec = colElec >= 0 ? String(row[colElec] || '').trim() : '';
+                const rawGas = colGas >= 0 ? String(row[colGas] || '').trim() : '';
+                const combinedReason = [rawElec, rawGas].filter(Boolean).join(" | ");
+                const searchStr = combinedReason.toUpperCase();
+
+                // Determine Pass or Fail
                 let parsedResult = "Pass"; 
                 if (resultRaw.toUpperCase().includes("FAIL")) {
                     parsedResult = "Fail";
                 } else if (resultRaw.toUpperCase().includes("PASS")) {
                     parsedResult = "Pass";
+                }
+
+                // SAFETY NET: If the Result column was blank or omitted, but we detect a CAT tag, force it to FAIL
+                if (parsedResult === "Pass" && (searchStr.includes("CAT") || searchStr.includes("CAT 1") || searchStr.includes("CAT 2") || searchStr.includes("CAT 3"))) {
+                    parsedResult = "Fail";
                 }
 
                 const record = {
@@ -726,26 +744,20 @@
                 };
 
                 if (parsedResult === "Fail") {
-                    // Pull the exact strings for the DB so you can read them
-                    const rawElec = colElec >= 0 ? String(row[colElec] || '').trim() : '';
-                    const rawGas = colGas >= 0 ? String(row[colGas] || '').trim() : '';
-                    const combinedReason = [rawElec, rawGas].filter(Boolean).join(" | ");
                     
-                    // Uppercase purely for Regex matching logic
-                    const searchStr = combinedReason.toUpperCase();
-
-                    // Regex is highly resilient: handles "_CAT 1", "_CAT1", "_Cat  1"
-                    if (/_CAT\s*1/.test(searchStr)) {
+                    // Regex Priority Check: Checks highest severity (Cat 1) down to lowest (Cat 3)
+                    // Allows handling cells like "_CAT 3 : EC2 : ... _CAT 2 : EB17" natively.
+                    if (/CAT[\s_\-]*1/.test(searchStr)) {
                         record.failCategory = "Cat 1";
-                    } else if (/_CAT\s*2/.test(searchStr)) {
+                    } else if (/CAT[\s_\-]*2/.test(searchStr)) {
                         record.failCategory = "Cat 2";
-                    } else if (/_CAT\s*3/.test(searchStr)) {
+                    } else if (/CAT[\s_\-]*3/.test(searchStr)) {
                         record.failCategory = "Cat 3";
                     } else {
                         record.failCategory = "Cat Unspecified"; 
                     }
 
-                    // Save the specific string you mentioned!
+                    // Store the raw string exactly as it appears so you can refer to it
                     record.failReason = combinedReason || "Bulk Uploaded Defect"; 
                 }
 
