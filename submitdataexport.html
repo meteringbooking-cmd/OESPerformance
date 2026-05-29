@@ -242,6 +242,53 @@
         .btn-export:hover { background: #FFB93A; transform: translateY(-1px); }
         .btn-export:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+        /* ── MATRIX EXPORT SECTION ── */
+        .matrix-export-section {
+            border-top: 1px solid var(--border);
+            margin-top: 16px;
+            padding-top: 16px;
+        }
+        .matrix-section-label {
+            font-family: 'DM Mono', monospace; font-size: 0.65rem;
+            letter-spacing: 0.15em; text-transform: uppercase;
+            color: var(--cyan); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .matrix-section-label::after { content: ''; flex: 1; height: 1px; background: rgba(43,228,195,0.2); }
+        .matrix-row {
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+        }
+        .matrix-desc {
+            font-family: 'DM Mono', monospace; font-size: 0.72rem;
+            color: var(--text-dim); flex: 1;
+            min-width: 200px;
+        }
+        .matrix-desc span { color: var(--text-mid); }
+
+        .ctrl-select {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem;
+            border-radius: 6px; font-family: 'DM Mono', monospace;
+            font-size: 0.82rem; transition: border 0.2s; cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237A8FA6' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+        }
+        .ctrl-select:focus { outline: none; border-color: var(--cyan); }
+
+        .btn-matrix-export {
+            display: flex; align-items: center; gap: 8px;
+            background: transparent; border: 1px solid var(--cyan);
+            color: var(--cyan); padding: 0.6rem 1.4rem;
+            border-radius: 6px; font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-matrix-export:hover { background: rgba(43,228,195,0.1); transform: translateY(-1px); }
+        .btn-matrix-export:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
         /* ── MESSAGE ── */
         .message {
             padding: 12px 16px; border-radius: 8px;
@@ -393,11 +440,37 @@
             </div>
             <div class="eng-grid" id="engGrid"></div>
 
-            <!-- Actions -->
+            <!-- Standard export actions -->
             <div class="action-bar">
                 <div class="action-status" id="actionStatus">No engineers selected.</div>
                 <button class="btn-preview" id="previewBtn" onclick="fetchPreview()" disabled>🔍 Preview</button>
-                <button class="btn-export" id="exportBtn" onclick="exportXLSX()" disabled>⬇ Export Excel</button>
+                <button class="btn-export" id="exportBtn" onclick="exportXLSX()" disabled>⬇ Export Full</button>
+            </div>
+
+            <!-- Matrix export section -->
+            <div class="matrix-export-section">
+                <div class="matrix-section-label">Matrix Export — Values Only</div>
+                <div class="matrix-row">
+                    <div class="matrix-desc">
+                        Engineers as rows · Dates as columns · <span>one value per cell</span>
+                    </div>
+                    <div class="filter-group">
+                        <span class="filter-label">Metric</span>
+                        <select id="matrixMetric" class="ctrl-select">
+                            <option value="value">Value (£)</option>
+                            <option value="jobs">Jobs</option>
+                            <option value="completed">Completed</option>
+                            <option value="aborted">Aborted</option>
+                            <option value="meters">Meters</option>
+                            <option value="duals">Duals</option>
+                            <option value="singles">Singles</option>
+                            <option value="comms">Comms / Site Visits</option>
+                            <option value="dualRemoval">Dual Removal</option>
+                            <option value="singleRemoval">Single Removal</option>
+                        </select>
+                    </div>
+                    <button class="btn-matrix-export" id="matrixExportBtn" onclick="exportMatrix()" disabled>⬇ Export Matrix</button>
+                </div>
             </div>
 
         </div>
@@ -568,6 +641,7 @@
             const hasSelection = n > 0;
             document.getElementById('previewBtn').disabled = !hasSelection;
             document.getElementById('exportBtn').disabled = !hasSelection;
+            document.getElementById('matrixExportBtn').disabled = !hasSelection;
         }
 
         /* ── FETCH RECORDS ── */
@@ -592,7 +666,6 @@
                 .filter(e => selectedIds.has(e.id))
                 .map(e => e.engineerName);
 
-            // Firestore "in" query supports max 30 items at a time
             const chunks = [];
             for (let i = 0; i < selectedNames.length; i += 30) {
                 chunks.push(selectedNames.slice(i, i + 30));
@@ -612,7 +685,6 @@
                 snap.forEach(doc => records.push({ docId: doc.id, ...doc.data() }));
             }
 
-            // Sort overall
             records.sort((a, b) => a.date.localeCompare(b.date) || a.engineerName.localeCompare(b.engineerName));
             return records;
         }
@@ -697,7 +769,7 @@
             return `${d}/${m}/${y}`;
         }
 
-        /* ── EXPORT ── */
+        /* ── FULL EXPORT ── */
         window.exportXLSX = async function() {
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
@@ -717,7 +789,6 @@
                 const dateFrom = document.getElementById('dateFrom').value;
                 const dateTo   = document.getElementById('dateTo').value;
 
-                // Build worksheet data
                 const wsData = [
                     ['Engineer', 'Team Leader', 'Date', 'Jobs', 'Completed', 'Aborted',
                      'Meters', 'Value (£)', 'Duals', 'Singles', 'Comms/Site Visits',
@@ -742,7 +813,6 @@
                     ]);
                 });
 
-                // Totals row
                 wsData.push([
                     'TOTAL', '', '',
                     records.reduce((s, r) => s + (r.jobs        ?? 0), 0),
@@ -758,8 +828,6 @@
                 ]);
 
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-                // Column widths
                 ws['!cols'] = [
                     { wch: 24 }, { wch: 20 }, { wch: 12 },
                     { wch: 8 }, { wch: 11 }, { wch: 9 },
@@ -780,7 +848,99 @@
                 showMessage('Export failed. Please try again.', 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = '⬇ Export Excel';
+                btn.textContent = '⬇ Export Full';
+                updateStatus();
+            }
+        };
+
+        /* ── MATRIX EXPORT ── */
+        window.exportMatrix = async function() {
+            const btn = document.getElementById('matrixExportBtn');
+            btn.disabled = true;
+            btn.textContent = 'Fetching…';
+
+            try {
+                // Use cached records if available, otherwise fetch
+                let records = fetchedRecords;
+                if (records.length === 0) {
+                    records = await fetchRecords();
+                    if (!records || records.length === 0) {
+                        showMessage('No records to export.', 'warning');
+                        return;
+                    }
+                    fetchedRecords = records;
+                }
+
+                const dateFrom   = document.getElementById('dateFrom').value;
+                const dateTo     = document.getElementById('dateTo').value;
+                const metricKey  = document.getElementById('matrixMetric').value;
+                const metricLabel = document.getElementById('matrixMetric').selectedOptions[0].text;
+
+                // Collect unique sorted dates and engineer names
+                const datesSet = new Set(records.map(r => r.date));
+                const dates = Array.from(datesSet).sort();
+
+                // Use selected engineer order (same as chip sort: teamLeader then name)
+                const selectedEngNames = engineers
+                    .filter(e => selectedIds.has(e.id))
+                    .map(e => e.engineerName);
+
+                // Build lookup: engineerName -> date -> value
+                const lookup = {};
+                records.forEach(r => {
+                    if (!lookup[r.engineerName]) lookup[r.engineerName] = {};
+                    lookup[r.engineerName][r.date] = r[metricKey] ?? 0;
+                });
+
+                // Header row: blank cell, then dates formatted as DD/MM/YYYY, then Total
+                const headerRow = ['Engineer', ...dates.map(formatDate), 'Total'];
+                const wsData = [headerRow];
+
+                // One row per engineer
+                selectedEngNames.forEach(name => {
+                    const engData = lookup[name] || {};
+                    const dayValues = dates.map(d => engData[d] ?? 0);
+                    const rowTotal = dayValues.reduce((s, v) => s + v, 0);
+                    wsData.push([name, ...dayValues, rowTotal]);
+                });
+
+                // Totals row across all engineers
+                const totalRow = ['Total'];
+                let grandTotal = 0;
+                dates.forEach((d, i) => {
+                    const colSum = selectedEngNames.reduce((s, name) => {
+                        return s + ((lookup[name] || {})[d] ?? 0);
+                    }, 0);
+                    totalRow.push(colSum);
+                    grandTotal += colSum;
+                });
+                totalRow.push(grandTotal);
+                wsData.push(totalRow);
+
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+                // Column widths: name col wide, date cols narrow, total col medium
+                ws['!cols'] = [
+                    { wch: 26 },
+                    ...dates.map(() => ({ wch: 11 })),
+                    { wch: 10 }
+                ];
+
+                const wb = XLSX.utils.book_new();
+                const sheetName = metricLabel.replace(/[^a-zA-Z0-9 ]/g, '').substring(0, 31);
+                XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+                const filename = `OES_Matrix_${metricKey}_${dateFrom}_to_${dateTo}.xlsx`;
+                XLSX.writeFile(wb, filename);
+
+                showMessage(`Matrix exported — ${selectedEngNames.length} engineers × ${dates.length} dates`, 'success');
+
+            } catch (err) {
+                console.error(err);
+                showMessage('Matrix export failed. Please try again.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⬇ Export Matrix';
                 updateStatus();
             }
         };
