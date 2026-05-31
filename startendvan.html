@@ -133,6 +133,12 @@
         .nwd-banner.visible { display: flex; }
         .nwd-banner .nwd-icon { font-size: 1.3em; }
 
+        /* ── EARLY FINISH TABLE ── */
+        .early4-table thead tr { background: rgba(56,189,248,0.06); }
+        .early4-table th { color: var(--accent-cyan); opacity: 0.8; }
+        .early4-table td.reg { color: var(--accent-cyan); }
+        .early4-table tbody tr:hover { background: rgba(56,189,248,0.04); }
+
         /* ══ EXPORT MODAL ══ */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 24px; }
         .modal-overlay.visible { display: flex; }
@@ -214,6 +220,14 @@
                     <div class="report-option-info">
                         <div class="report-option-name">Start of Day</div>
                         <div class="report-option-desc">First journey per vehicle — flags starts after 08:00</div>
+                    </div>
+                </label>
+                <label class="report-option selected" id="optEF">
+                    <input type="checkbox" id="chkEF" checked onchange="toggleOption('optEF',this)">
+                    <span class="report-option-icon">🏠</span>
+                    <div class="report-option-info">
+                        <div class="report-option-name">Home Before 4:30 PM</div>
+                        <div class="report-option-desc">Vehicles whose last journey ended before 16:30</div>
                     </div>
                 </label>
                 <label class="report-option selected" id="optAH">
@@ -349,7 +363,30 @@
                 <th class="sort-th" onclick="sortSod('miles')"     data-sod-col="miles">Total Miles <span class="sort-icon" id="sod-si-miles">⇅</span></th>
                 <th class="sort-th" onclick="sortSod('journeys')"  data-sod-col="journeys">Journeys <span class="sort-icon" id="sod-si-journeys">⇅</span></th>
             </tr></thead>
-            <tbody id="sodBody"><tr><td colspan="6"><div class="empty-state"><div class="icon">🌅</div><p>Select a date and click Refresh</p></div></td></tr></tbody>
+            <tbody id="sodBody"><tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>Select a date and click Refresh</p></div></td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══ HOME BEFORE 4:30PM ══ -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-icon" style="background:linear-gradient(135deg,rgba(56,189,248,0.2),rgba(45,212,191,0.2))">🏠</div>
+            <div>
+                <div class="panel-title">Home Before 4:30 PM</div>
+                <div class="panel-subtitle">Vehicles whose last journey ended before 16:30 — sorted by earliest finish</div>
+            </div>
+        </div>
+        <div class="summary-row" id="early4SummaryRow"></div>
+        <div class="table-wrap">
+            <table class="early4-table"><thead><tr>
+                <th class="sort-th" onclick="sortEarly4('reg')"      data-e4-col="reg">Registration <span class="sort-icon" id="e4-si-reg">⇅</span></th>
+                <th class="sort-th" onclick="sortEarly4('name')"     data-e4-col="name">Engineer Name <span class="sort-icon" id="e4-si-name">⇅</span></th>
+                <th class="sort-th" onclick="sortEarly4('lastMins')" data-e4-col="lastMins" style="color:var(--accent-cyan);">Last Journey End <span class="sort-icon" id="e4-si-lastMins">▲</span></th>
+                <th class="sort-th" onclick="sortEarly4('miles')"    data-e4-col="miles">Total Miles <span class="sort-icon" id="e4-si-miles">⇅</span></th>
+                <th class="sort-th" onclick="sortEarly4('journeys')" data-e4-col="journeys">Journeys <span class="sort-icon" id="e4-si-journeys">⇅</span></th>
+            </tr></thead>
+            <tbody id="early4Body"><tr><td colspan="5"><div class="empty-state"><div class="icon">🏠</div><p>Select a date and click Refresh</p></div></td></tr></tbody>
             </table>
         </div>
     </div>
@@ -549,12 +586,13 @@ async function runExport() {
     const from = document.getElementById('exportDateFrom').value;
     const to   = document.getElementById('exportDateTo').value;
     const wantSOD = document.getElementById('chkSOD').checked;
+    const wantEF  = document.getElementById('chkEF').checked;
     const wantAH  = document.getElementById('chkAH').checked;
     const wantMWO = document.getElementById('chkMWO').checked;
 
     if (!from || !to) { showExportStatus('Please select a date range.', 'error'); return; }
     if (from > to)    { showExportStatus('From date must be before or equal to To date.', 'error'); return; }
-    if (!wantSOD && !wantAH && !wantMWO) { showExportStatus('Please select at least one report.', 'error'); return; }
+    if (!wantSOD && !wantEF && !wantAH && !wantMWO) { showExportStatus('Please select at least one report.', 'error'); return; }
 
     const btn = document.getElementById('exportRunBtn');
     btn.disabled = true;
@@ -564,7 +602,6 @@ async function runExport() {
     try {
         const dates = dateRange(from, to);
 
-        // Fetch all journey data
         const jSnap = await window._getDocs(window._collection(window._db, 'Van Start and End'));
         const allJourneys = {};
         jSnap.forEach(d => {
@@ -574,7 +611,6 @@ async function runExport() {
             if (!EXCLUDED_PLATES.has(plate)) allJourneys[j.journeyDate].push({...j, _plate: plate});
         });
 
-        // Fetch all attendance data
         const aSnap = await window._getDocs(window._collection(window._db, 'Van Attendance'));
         const allAtt = {};
         aSnap.forEach(d => {
@@ -590,6 +626,8 @@ async function runExport() {
         if (wantSOD) {
             const rows = [['Date','Registration','Engineer Name','First Journey','After 08:00?','After 09:00?','Total Miles','Total Journeys']];
             dates.forEach(dv => {
+                const nwd = getNonWorkingDayInfo(dv);
+                if (nwd.isNonWorkingDay) return;
                 const journeys = (allJourneys[dv] || []).slice().sort((a,b)=>(a.startTime?new Date(a.startTime):0)-(b.startTime?new Date(b.startTime):0));
                 const plateMap = allAtt[dv] || {};
                 const byP = {};
@@ -610,6 +648,33 @@ async function runExport() {
             const ws = XLSX.utils.aoa_to_sheet(rows);
             ws['!cols'] = [{wch:12},{wch:14},{wch:24},{wch:16},{wch:14},{wch:14},{wch:12},{wch:14}];
             XLSX.utils.book_append_sheet(workbook, ws, 'Start of Day');
+        }
+
+        if (wantEF) {
+            const rows = [['Date','Registration','Engineer Name','Last Journey End','Before 14:00?','Total Miles','Total Journeys']];
+            dates.forEach(dv => {
+                const nwd = getNonWorkingDayInfo(dv);
+                if (nwd.isNonWorkingDay) return;
+                const cutoffMins = 16 * 60 + 30;
+                const journeys = (allJourneys[dv] || []).slice().sort((a,b)=>(a.startTime?new Date(a.startTime):0)-(b.startTime?new Date(b.startTime):0));
+                const plateMap = allAtt[dv] || {};
+                const byP = {};
+                journeys.forEach(j => {
+                    const p = j._plate||'?';
+                    const et = j.endTime ? new Date(j.endTime) : null;
+                    if(!byP[p]) byP[p]={reg:p,name:'',lastTime:null,lastMins:9999,journeys:0,miles:0};
+                    byP[p].journeys++; byP[p].miles+=j.miles;
+                    if(et&&(!byP[p].lastTime||et>byP[p].lastTime)){byP[p].lastTime=et;byP[p].lastMins=et.getHours()*60+et.getMinutes();}
+                });
+                Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+                Object.values(byP).filter(g=>g.lastTime&&g.lastMins<cutoffMins).sort((a,b)=>a.lastMins-b.lastMins).forEach(g=>{
+                    rows.push([dv, g.reg, g.name||'', g.lastTime?timeStr(g.lastTime):'', g.lastMins<14*60?'Yes':'No', parseFloat(g.miles.toFixed(1)), g.journeys]);
+                    totalRows++;
+                });
+            });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [{wch:12},{wch:14},{wch:24},{wch:18},{wch:14},{wch:12},{wch:14}];
+            XLSX.utils.book_append_sheet(workbook, ws, 'Home Before 4.30pm');
         }
 
         if (wantAH) {
@@ -657,7 +722,6 @@ async function runExport() {
                 if (nwd.isNonWorkingDay) {
                     Object.values(byPlate).forEach(g=>{
                         const att = plateMap[g.reg]||null;
-                        const isAbsent = att ? ABSENT_CODES.has(att.attendance.toLowerCase()) : false;
                         rows.push([dv, dayType, g.reg, att?att.engineerName:'', att?att.attendance:'', att?att.source:'', g.journeys, parseFloat(g.miles.toFixed(1)), minsToHM(g.durationMins), g.earliest?timeStr(g.earliest):'', g.latest?timeStr(g.latest):'']);
                         totalRows++;
                     });
@@ -691,11 +755,9 @@ async function runExport() {
         if (_exportFormat === 'XLSX') {
             XLSX.writeFile(workbook, fileName);
         } else {
-            // For CSV with multiple sheets, zip into separate files or combine with separators
             if (workbook.SheetNames.length === 1) {
                 XLSX.writeFile(workbook, fileName, {bookType:'csv'});
             } else {
-                // Download each sheet as a separate CSV
                 workbook.SheetNames.forEach(name => {
                     const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
                     const blob = new Blob([csv], {type:'text/csv'});
@@ -883,12 +945,12 @@ async function loadJourneys(){
     const dv=document.getElementById('viewDate').value; if(!dv) return;
     const nwd=getNonWorkingDayInfo(dv);
 
-    ['journeyBody','after5Body','absentBody','sodBody'].forEach(id=>{
-        const cols={'journeyBody':6,'after5Body':7,'absentBody':9,'sodBody':6};
+    ['journeyBody','after5Body','absentBody','sodBody','early4Body'].forEach(id=>{
+        const cols={'journeyBody':6,'after5Body':7,'absentBody':9,'sodBody':5,'early4Body':5};
         document.getElementById(id).innerHTML=`<tr><td colspan="${cols[id]}"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>`;
     });
-    ['summaryRow','after5SummaryRow','absentSummaryRow','sodSummaryRow'].forEach(id=>document.getElementById(id).innerHTML='');
-    window._sodData=[]; window._after5Data=[]; window._usageData=[];
+    ['summaryRow','after5SummaryRow','absentSummaryRow','sodSummaryRow','early4SummaryRow'].forEach(id=>document.getElementById(id).innerHTML='');
+    window._sodData=[]; window._after5Data=[]; window._usageData=[]; window._early4Data=[];
 
     const aIcon=document.getElementById('after5PanelIcon'), aTitle=document.getElementById('after5PanelTitle'), aSub=document.getElementById('after5PanelSubtitle');
     const aTbl=document.getElementById('after5Table'), aLCol=document.getElementById('after5LastCol');
@@ -949,7 +1011,7 @@ async function loadJourneys(){
 
         // ── START OF DAY ──
         if(!journeys.length){
-            document.getElementById('sodBody').innerHTML=`<tr><td colspan="4"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dv}</p></div></td></tr>`;
+            document.getElementById('sodBody').innerHTML=`<tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>No journeys found for ${dv}</p></div></td></tr>`;
         } else {
             const byP={};
             journeys.forEach(j=>{const p=j._plate||'?';const st=j.startTime?new Date(j.startTime):null;if(!byP[p]) byP[p]={reg:p,name:'',firstTime:null,firstMins:9999,journeys:0,miles:0};byP[p].journeys++;byP[p].miles+=j.miles;if(st&&j.miles>0.1&&(!byP[p].firstTime||st<byP[p].firstTime)){byP[p].firstTime=st;byP[p].firstMins=st.getHours()*60+st.getMinutes();}});
@@ -957,8 +1019,39 @@ async function loadJourneys(){
             window._sodData=Object.values(byP).filter(r=>r.firstTime&&r.firstMins>=8*60);
             const total=Object.keys(byP).length,late=window._sodData.length;
             document.getElementById('sodSummaryRow').innerHTML=`<div class="chip amber">⚠️ ${late} Vehicle${late!==1?'s':''} First Journey After 08:00</div><div class="chip green">✅ ${total-late} Started Before 08:00</div><div class="chip">🚐 ${total} Total Vehicles</div>`;
-            if(!late) document.getElementById('sodBody').innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>';
+            if(!late) document.getElementById('sodBody').innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">✅</div><p>All vehicles started before 08:00</p></div></td></tr>';
             else renderSodTable('firstMins','asc');
+        }
+
+        // ── HOME BEFORE 4:30PM ──
+        if (nwd.isNonWorkingDay) {
+            document.getElementById('early4SummaryRow').innerHTML='';
+            document.getElementById('early4Body').innerHTML=`<tr><td colspan="5"><div class="empty-state"><div class="icon">📅</div><p>Not applicable on ${nwd.label}</p></div></td></tr>`;
+        } else if (!journeys.length) {
+            document.getElementById('early4Body').innerHTML=`<tr><td colspan="5"><div class="empty-state"><div class="icon">🏠</div><p>No journeys found for ${dv}</p></div></td></tr>`;
+        } else {
+            const cutoffMins = 16 * 60 + 30;
+            const byP={};
+            journeys.forEach(j=>{
+                const p=j._plate||'?';
+                const et=j.endTime?new Date(j.endTime):null;
+                if(!byP[p]) byP[p]={reg:p,name:'',lastTime:null,lastMins:9999,journeys:0,miles:0};
+                byP[p].journeys++;
+                byP[p].miles+=j.miles;
+                if(et&&(!byP[p].lastTime||et>byP[p].lastTime)){byP[p].lastTime=et;byP[p].lastMins=et.getHours()*60+et.getMinutes();}
+            });
+            Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+            window._early4Data=Object.values(byP).filter(r=>r.lastTime&&r.lastMins<cutoffMins);
+            const count=window._early4Data.length, total=Object.keys(byP).length;
+            document.getElementById('early4SummaryRow').innerHTML=
+                `<div class="chip amber">🏠 ${count} Vehicle${count!==1?'s':''} Finished Before 16:30</div>`+
+                `<div class="chip green">✅ ${total-count} Active Past 16:30</div>`+
+                `<div class="chip">🚐 ${total} Total Vehicles</div>`;
+            if(!count){
+                document.getElementById('early4Body').innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">✅</div><p>All vehicles were active past 4:30 PM</p></div></td></tr>';
+            } else {
+                renderEarly4Table('lastMins','asc');
+            }
         }
 
         // ── AFTER 5PM ──
@@ -1036,18 +1129,52 @@ async function loadJourneys(){
 }
 window.loadJourneys=loadJourneys;
 
-/* ══ SORT & RENDER ══ */
+/* ══ SORT & RENDER — START OF DAY ══ */
 let _sSC='firstMins',_sSD='asc';
 function renderSodTable(col,dir){_sSC=col;_sSD=dir;
     const data=(window._sodData||[]).slice().sort((a,b)=>{const av=typeof a[col]==='string'?a[col].toLowerCase():(a[col]??9999),bv=typeof b[col]==='string'?b[col].toLowerCase():(b[col]??9999);return av<bv?(dir==='asc'?-1:1):av>bv?(dir==='asc'?1:-1):0;});
     ['reg','name','firstMins','miles','journeys'].forEach(c=>{const si=document.getElementById(`sod-si-${c}`),th=document.querySelector(`[data-sod-col="${c}"]`);if(si&&th){th.classList.toggle('active',c===col);si.textContent=c===col?(dir==='desc'?'▼':'▲'):'⇅';}});
     const tbody=document.getElementById('sodBody');
-    if(!data.length){tbody.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="icon">🌅</div><p>No data</p></div></td></tr>';return;}
+    if(!data.length){tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">🌅</div><p>No data</p></div></td></tr>';return;}
     tbody.innerHTML=data.map(g=>{const vl=g.firstMins>=9*60,lbl=g.firstTime?timeStr(g.firstTime):'—',tag=`<span style="margin-left:8px;font-size:0.72em;padding:2px 7px;border-radius:5px;background:${vl?'rgba(251,113,133,0.15)':'rgba(245,158,11,0.15)'};border:1px solid ${vl?'rgba(251,113,133,0.35)':'rgba(245,158,11,0.35)'};">${vl?'09:00+':'After 08:00'}</span>`;return`<tr><td class="reg" style="color:var(--success)">${esc(g.reg)}</td><td class="muted">${esc(g.name||'—')}</td><td class="${vl?'late-flag very-late':'late-flag'}">${lbl}${tag}</td><td class="miles">${g.miles.toFixed(1)}</td><td style="color:var(--accent-violet);font-weight:600">${g.journeys}</td></tr>`;}).join('');
 }
 function sortSod(col){renderSodTable(col,(_sSC===col&&_sSD==='asc')?'desc':'asc');}
 window.sortSod=sortSod;
 
+/* ══ SORT & RENDER — HOME BEFORE 4:30PM ══ */
+let _e4SC='lastMins',_e4SD='asc';
+function renderEarly4Table(col,dir){
+    _e4SC=col;_e4SD=dir;
+    const data=(window._early4Data||[]).slice().sort((a,b)=>{
+        const av=typeof a[col]==='string'?a[col].toLowerCase():(a[col]??9999);
+        const bv=typeof b[col]==='string'?b[col].toLowerCase():(b[col]??9999);
+        return av<bv?(dir==='asc'?-1:1):av>bv?(dir==='asc'?1:-1):0;
+    });
+    ['reg','name','lastMins','miles','journeys'].forEach(c=>{
+        const si=document.getElementById(`e4-si-${c}`),th=document.querySelector(`[data-e4-col="${c}"]`);
+        if(si&&th){th.classList.toggle('active',c===col);si.textContent=c===col?(dir==='asc'?'▲':'▼'):'⇅';}
+    });
+    const tbody=document.getElementById('early4Body');
+    if(!data.length){
+        tbody.innerHTML='<tr><td colspan="5"><div class="empty-state"><div class="icon">🏠</div><p>No vehicles finished before 4:30 PM</p></div></td></tr>';
+        return;
+    }
+    tbody.innerHTML=data.map(g=>{
+        const veryEarly=g.lastMins<14*60;
+        const tag=`<span style="margin-left:8px;font-size:0.72em;padding:2px 7px;border-radius:5px;background:${veryEarly?'rgba(251,113,133,0.15)':'rgba(56,189,248,0.12)'};border:1px solid ${veryEarly?'rgba(251,113,133,0.35)':'rgba(56,189,248,0.3)'};">${veryEarly?'Before 14:00':'Before 16:30'}</span>`;
+        return`<tr>
+            <td class="reg">${esc(g.reg)}</td>
+            <td class="muted">${esc(g.name||'—')}</td>
+            <td style="color:var(--accent-teal);font-weight:600">${g.lastTime?timeStr(g.lastTime):'—'}${tag}</td>
+            <td class="miles">${g.miles.toFixed(1)}</td>
+            <td style="color:var(--accent-violet);font-weight:600">${g.journeys}</td>
+        </tr>`;
+    }).join('');
+}
+function sortEarly4(col){renderEarly4Table(col,(_e4SC===col&&_e4SD==='asc')?'desc':'asc');}
+window.sortEarly4=sortEarly4;
+
+/* ══ SORT & RENDER — AFTER 5PM ══ */
 let _a5SC='latestMins',_a5SD='desc';
 function renderAfter5Table(col,dir){_a5SC=col;_a5SD=dir;
     const data=(window._after5Data||[]).slice().sort((a,b)=>{const av=typeof a[col]==='string'?a[col].toLowerCase():(a[col]??0),bv=typeof b[col]==='string'?b[col].toLowerCase():(b[col]??0);return av<bv?(dir==='asc'?-1:1):av>bv?(dir==='asc'?1:-1):0;});
@@ -1059,6 +1186,7 @@ function renderAfter5Table(col,dir){_a5SC=col;_a5SD=dir;
 function sortAfter5(col){renderAfter5Table(col,(_a5SC===col&&_a5SD==='desc')?'asc':'desc');}
 window.sortAfter5=sortAfter5;
 
+/* ══ SORT & RENDER — DAY'S USAGE ══ */
 let _uSC='miles',_uSD='desc';
 function renderUsageTable(col,dir){_uSC=col;_uSD=dir;
     const data=(window._usageData||[]).slice().sort((a,b)=>{const av=typeof a[col]==='string'?a[col].toLowerCase():a[col],bv=typeof b[col]==='string'?b[col].toLowerCase():b[col];return av<bv?(dir==='asc'?-1:1):av>bv?(dir==='asc'?1:-1):0;});
