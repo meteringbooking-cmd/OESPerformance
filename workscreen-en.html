@@ -313,36 +313,7 @@
                     </div>
                 </div>
 
-                <div class="kpi-card expandable" onclick="toggleExpand(this)" style="
-                    background: linear-gradient(135deg, rgba(26,32,44,0.9), rgba(45,55,72,0.9));
-                    border: 2px solid rgba(16,185,129,0.6);
-                    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.1);
-                ">
-                    <span class="expand-indicator" style="color:#10b981;">▼</span>
-                    <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#10b981,#34d399,#10b981);border-radius:16px 16px 0 0;opacity:0.9;"></div>
-                    <div class="kpi-header" style="border-bottom:2px solid rgba(16,185,129,0.25);">
-                        <span class="kpi-title" style="color:#34d399;">
-                            SP Completion Rate
-                            <button class="graph-button" style="border-color:rgba(16,185,129,0.5);color:#34d399;background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(52,211,153,0.1));" onclick="openGraphPopup(event, 'SP Jobs Completed', 'https://sp-performance.vercel.app/jobscompleted.html')">📊 View Detail</button>
-                        </span>
-                        <span class="kpi-icon" style="filter:drop-shadow(0 2px 8px rgba(16,185,129,0.6));">✅</span>
-                    </div>
-                    <div class="kpi-value" style="background:linear-gradient(135deg,#ffffff 0%,#34d399 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;"><span id="spCompletionActual">—</span>%<span class="status-indicator" id="spCompletionStatus"></span></div>
-                    <div class="kpi-target" style="color:#a8dadc;">Target: <strong style="color:#34d399;">90%</strong> · <span id="spCompletionDateLabel">Loading…</span></div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="spCompletionProgress" style="width:0%;background:linear-gradient(90deg,#10b981,#34d399);box-shadow:0 0 12px rgba(16,185,129,0.6);"></div>
-                    </div>
-                    <div class="progress-text" id="spCompletionProgressText" style="color:#a8dadc;">Loading…</div>
-                    <div class="historical-data">
-                        <div class="historical-title" style="color:#34d399;">Previous 5 Working Days</div>
-                        <table class="historical-table">
-                            <thead><tr style="background:rgba(16,185,129,0.12);">
-                                <th style="color:#34d399;">Date</th><th style="color:#34d399;">Completed</th><th style="color:#34d399;">Total Jobs</th><th style="color:#34d399;">%</th>
-                            </tr></thead>
-                            <tbody id="spCompletionHistory"></tbody>
-                        </table>
-                    </div>
-                </div>
+
 
                 <div class="kpi-card expandable" onclick="toggleExpand(this)">
                     <span class="expand-indicator">▼</span>
@@ -1276,11 +1247,11 @@
                 const prevDay=getPreviousWorkingDay(),dateStr=formatDateForQuery(prevDay);
                 document.getElementById('statsDate').textContent=`Stats for ${formatDate(prevDay)}`;
                 const staffSnap=await getDocs(collection(staffDb,"employees energise"));
-                let oes=0,sp=0,edf=0,bo=0;
+                let oes=7,sp=0,edf=0,bo=0;
                 staffSnap.forEach(doc=>{
                     const d=doc.data();if(d.leaveDate)return;
                     const loc=d.Location||d.location,tl=d['Team Leader']||d.teamLeader;
-                    if(tl==='Back Office')bo++;else if(loc==='OES')oes++;else if(loc==='Scottish Power')sp++;else if(loc==='EDF')edf++;
+                    if(tl==='Back Office')bo++;else if(loc==='Scottish Power')sp++;else if(loc==='EDF')edf++;
                 });
                 oesEngineerCount=oes;
                 const totalEng=oes+sp+edf;
@@ -1291,7 +1262,7 @@
                 document.getElementById('edfCount').textContent=edf;
                 document.getElementById('backOfficeCount').textContent=bo;
                 document.getElementById('metersTarget').textContent=Math.round(oes*6*0.9);
-                const perfSnap=await getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr)));
+                const perfSnap=await getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr)));
                 let meters=0,jobs=0,completed=0;
                 perfSnap.forEach(doc=>{const d=doc.data();meters+=d.meters||0;jobs+=d.jobs||0;completed+=d.completed||0;});
                 const metersTarget=Math.round(oes*6*0.9);
@@ -1338,8 +1309,6 @@
                     document.getElementById('krakenPrevDayMeters').textContent = 'Error';
                 }
 
-                const spDate = getSPCompletionDate();
-                await loadSPCompletion(spDate);
                 await loadComplianceData();
                 await loadHistoricalData();
                 populateHistoricalTables();
@@ -1361,7 +1330,7 @@
             for(const date of getPreviousWorkingDays(10)){
                 const ds=formatDateForQuery(date),disp=formatDate(date);
                 const [perfSnap, gsSnap, krakenSnap] = await Promise.all([
-                    getDocs(query(collection(performanceDb,"performance energise"),where("date","==",ds))),
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",ds))),
                     getDocs(query(collection(performanceDb,"garethstats energise"),where("date","==",ds))),
                     getDocs(query(collection(performanceDb,"KrakenAM Energise"),where("date","==",ds)))
                 ]);
@@ -1403,15 +1372,15 @@
         async function queryPerfSnap(dateStr, dataKey) {
             if (dataKey === 'FTL 4') {
                 const [s1, s2, s3] = await Promise.all([
-                    getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr),where("teamLeader","==","FTL 4"))),
-                    getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr),where("teamLeader","==","FTL4"))),
-                    getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","FTL 4"))),
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","FTL4"))),
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
                 ]);
                 return mergeSnaps(s1, s2, s3);
             } else if (dataKey) {
-                return getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
+                return getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
             } else {
-                return getDocs(query(collection(performanceDb,"performance energise"),where("date","==",dateStr)));
+                return getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr)));
             }
         }
         async function queryAbortSnap(dateStr, dataKey) {
