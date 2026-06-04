@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Meters Dashboard • OES</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #6366f1;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #334155;
+      --error: #f87171;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --orange: #f97316;
+      --dark-purple: #581c87;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+    }
+    aside {
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow-y: auto;
+    }
+    .logo {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2.5rem;
+      text-align: center;
+    }
+    h2 {
+      font-size: 1.1rem;
+      color: var(--text-dim);
+      margin: 1.8rem 0 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    .period-btn, .team-btn, .month-btn {
+      display: block;
+      width: 100%;
+      padding: 0.95rem 1.2rem;
+      margin: 0.4rem 0;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-size: 0.97rem;
+    }
+    .period-btn:hover, .team-btn:hover, .month-btn:hover {
+      background: rgba(99,102,241,0.08);
+      border-color: var(--accent);
+    }
+    .period-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      box-shadow: 0 3px 12px rgba(99,102,241,0.3);
+    }
+    .team-btn.active {
+      background: rgba(99,102,241,0.25);
+      color: white;
+      font-weight: 600;
+      border-color: var(--accent);
+    }
+    .month-btn {
+      padding: 0.65rem 1rem;
+      font-size: 0.88rem;
+    }
+    .month-btn.active {
+      background: rgba(16,185,129,0.25);
+      color: white;
+      font-weight: 600;
+      border-color: var(--success);
+    }
+    .month-btn:hover {
+      background: rgba(16,185,129,0.08);
+      border-color: var(--success);
+    }
+    .months-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+    }
+    .months-grid .month-btn {
+      margin: 0;
+      text-align: center;
+      padding: 0.55rem 0.4rem;
+      font-size: 0.82rem;
+    }
+
+    /* ── View Toggle ── */
+    .view-toggle {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.35rem;
+    }
+    .view-tab {
+      flex: 1;
+      padding: 0.7rem 0.5rem;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .view-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+    .view-tab.active {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+    }
+    .view-tab.active.tab-mix   { background: #6366f1; }
+    .view-tab.active.tab-types { background: #10b981; }
+    .view-tab.active.tab-abort { background: #f97316; }
+
+    /* headcount badge */
+    .headcount-badge {
+      display: inline-block;
+      background: rgba(99,102,241,0.18);
+      border: 1px solid rgba(99,102,241,0.4);
+      border-radius: 6px;
+      font-size: 0.72rem;
+      color: #a78bfa;
+      padding: 2px 7px;
+      margin-left: 6px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+
+    main {
+      padding: 2.5rem 3rem;
+      max-width: 1600px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      gap: 2rem;
+    }
+    h1 {
+      font-size: 2.1rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #e2e8f0, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-container {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .stats-box {
+      background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      box-shadow: 0 4px 15px rgba(99,102,241,0.2);
+      min-width: 130px;
+    }
+    .stats-box.green {
+      background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(52,211,153,0.1));
+      border-color: var(--success);
+      box-shadow: 0 4px 15px rgba(16,185,129,0.2);
+    }
+    .stats-box.orange {
+      background: linear-gradient(135deg, rgba(249,115,22,0.15), rgba(251,146,60,0.1));
+      border-color: var(--orange);
+      box-shadow: 0 4px 15px rgba(249,115,22,0.2);
+    }
+    .stats-box.dark-purple {
+      background: linear-gradient(135deg, rgba(88,28,135,0.25), rgba(107,33,168,0.15));
+      border-color: var(--dark-purple);
+      box-shadow: 0 4px 15px rgba(88,28,135,0.2);
+    }
+    .stats-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.4rem;
+      font-weight: 600;
+    }
+    .stats-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+    .stats-value.large { font-size: 2rem; }
+    .stats-value.success {
+      background: linear-gradient(90deg, var(--success), #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.warning {
+      background: linear-gradient(90deg, var(--warning), #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.error {
+      background: linear-gradient(90deg, var(--error), #fca5a5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.orange-grad {
+      background: linear-gradient(90deg, var(--orange), #fb923c);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stats-value.dark-purple-grad {
+      background: linear-gradient(90deg, #d8b4fe, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 1.8rem 2rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    #chartContainer {
+      height: 520px;
+      position: relative;
+      margin-top: 1.5rem;
+    }
+
+    /* ── Aborts Table ── */
+    #abortsContainer {
+      display: none;
+      margin-top: 1.5rem;
+    }
+    .abort-filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .abort-filter-label {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+    .abort-date-range {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .abort-date-input {
+      padding: 0.55rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .abort-date-input:focus { outline: none; border-color: var(--orange); }
+    .abort-load-btn {
+      padding: 0.55rem 1rem;
+      background: var(--orange);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .abort-load-btn:hover { opacity: 0.85; }
+
+    .loading, .error-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 1.2rem;
+      background: rgba(15,23,42,0.6);
+      border-radius: 12px;
+      text-align: center;
+      padding: 2rem;
+      z-index: 10;
+    }
+    .error-msg { color: var(--error) !important; font-weight: 500; }
+
+    @media (max-width: 1100px) {
+      body { grid-template-columns: 1fr; }
+      aside { height: auto; position: relative; border-right: none; border-bottom: 1px solid var(--border); }
+      main { padding: 2rem 1.5rem; }
+      header { flex-direction: column; align-items: flex-start; }
+      .stats-container { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">OES Meters</div>
+
+  <div class="view-toggle">
+    <button class="view-tab tab-mix active" data-view="mix">📊 Meters &amp; Completion</button>
+    <button class="view-tab tab-types" data-view="types">⚡ Install Types</button>
+    <button class="view-tab tab-abort" data-view="aborts">🚫 Aborts</button>
+  </div>
+
+  <div id="periodSection">
+    <h2>Time Period</h2>
+    <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
+    <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
+    <button class="period-btn" data-period="6months">6 months (line)</button>
+    <button class="period-btn" data-period="year">Year to date (line)</button>
+  </div>
+
+  <h2>Team Leader</h2>
+  <button class="team-btn active" data-team="all">All Teams <span class="headcount-badge" id="hc_all">…</span></button>
+  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
+  <button class="team-btn" data-team="Scott Carson">Scott Carson <span class="headcount-badge" id="hc_scott">…</span></button>
+  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot <span class="headcount-badge" id="hc_scottscot">…</span></button>
+  <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
+  <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
+
+  <div id="monthSection">
+    <h2>2026 Monthly View</h2>
+    <div class="months-grid">
+      <button class="month-btn" data-month="2026-01">Jan</button>
+      <button class="month-btn" data-month="2026-02">Feb</button>
+      <button class="month-btn" data-month="2026-03">Mar</button>
+      <button class="month-btn" data-month="2026-04">Apr</button>
+      <button class="month-btn" data-month="2026-05">May</button>
+      <button class="month-btn" data-month="2026-06">Jun</button>
+      <button class="month-btn" data-month="2026-07">Jul</button>
+      <button class="month-btn" data-month="2026-08">Aug</button>
+      <button class="month-btn" data-month="2026-09">Sep</button>
+      <button class="month-btn" data-month="2026-10">Oct</button>
+      <button class="month-btn" data-month="2026-11">Nov</button>
+      <button class="month-btn" data-month="2026-12">Dec</button>
+    </div>
+  </div>
+</aside>
+
+<main>
+  <header>
+    <h1 id="pageTitle">Meters Installed</h1>
+    <div class="stats-container" id="statsContainer">
+    </div>
+  </header>
+
+  <div class="card">
+    <div id="chartContainer">
+      <div class="loading">Loading performance data…</div>
+    </div>
+    <div id="abortsContainer">
+      <div class="abort-filters">
+        <span class="abort-filter-label">Date range:</span>
+        <div class="abort-date-range">
+          <input type="date" class="abort-date-input" id="abortFrom">
+          <span style="color:var(--text-dim)">→</span>
+          <input type="date" class="abort-date-input" id="abortTo">
+        </div>
+        <button class="abort-load-btn" id="abortLoadBtn">Load</button>
+      </div>
+      <div id="abortsChartContainer" style="height:480px;position:relative;margin-top:1rem;">
+        <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim)">Select a date range and click Load.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const perfConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+  const staffConfig = {
+    apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+    authDomain: "pingu-solar.firebaseapp.com",
+    projectId: "pingu-solar",
+    storageBucket: "pingu-solar.firebasestorage.app",
+    messagingSenderId: "232764952866",
+    appId: "1:232764952866:web:5923b7f419de6355d6157b",
+    measurementId: "G-PFH059DZ64"
+  };
+
+  const existingApps = getApps();
+  const perfApp  = existingApps.find(a=>a.name==='perf-graph')  || initializeApp(perfConfig,  'perf-graph');
+  const staffApp = existingApps.find(a=>a.name==='staff-graph') || initializeApp(staffConfig, 'staff-graph');
+  const db      = getFirestore(perfApp);
+  const staffDb = getFirestore(staffApp);
+
+  const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
+
+  const ctx = document.createElement('canvas');
+  document.querySelector('#chartContainer').appendChild(ctx);
+  let chart = null;
+
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  const periods = {
+    "7days":   { label: "Last 7 days",    daysBack: 7,   color: "#6366f1", type: "bar"  },
+    "4weeks":  { label: "4 week rolling", daysBack: 28,  color: "#8b5cf6", type: "bar"  },
+    "6months": { label: "Last 6 months",  daysBack: 180, color: "#a78bfa", type: "line" },
+    "year":    { label: "Year to date",   daysBack: 365, color: "#c084fc", type: "line" },
+  };
+
+  let currentView   = "mix";
+  let currentPeriod = "7days";
+  let currentTeam   = "all";
+  let currentMonth  = null;
+
+  let engineerHeadcount = { "all": 0, "Richard Wiecko": 0, "Scott Carson": 0, "Scott Carson - Scot": 0, "Stuart Whyte": 0, "Tom Green": 0 };
+  let headcountLoaded = false;
+
+  async function loadHeadcount() {
+    try {
+      const staffSnap = await getDocs(collection(staffDb, "employees"));
+      Object.keys(engineerHeadcount).forEach(k => engineerHeadcount[k] = 0);
+      staffSnap.forEach(doc => {
+        const d = doc.data();
+        if (d.leaveDate) return;
+        const loc = (d.Location || d.location || '').trim();
+        if (loc !== 'OES') return;
+        const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
+        const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
+        engineerHeadcount["all"]++;
+        if (engineerHeadcount[tl] !== undefined) engineerHeadcount[tl]++;
+      });
+      headcountLoaded = true;
+
+      engineerHeadcount["Scott Carson"]        = 9;
+      engineerHeadcount["Scott Carson - Scot"] = 4;
+      engineerHeadcount["all"] =
+        engineerHeadcount["Richard Wiecko"] +
+        engineerHeadcount["Scott Carson"] +
+        engineerHeadcount["Scott Carson - Scot"] +
+        engineerHeadcount["Stuart Whyte"] +
+        engineerHeadcount["Tom Green"];
+
+      document.getElementById('hc_all').textContent        = engineerHeadcount["all"];
+      document.getElementById('hc_richard').textContent   = engineerHeadcount["Richard Wiecko"];
+      document.getElementById('hc_scott').textContent     = engineerHeadcount["Scott Carson"];
+      document.getElementById('hc_scottscot').textContent = engineerHeadcount["Scott Carson - Scot"];
+      document.getElementById('hc_stuart').textContent    = engineerHeadcount["Stuart Whyte"];
+      document.getElementById('hc_tom').textContent       = engineerHeadcount["Tom Green"];
+    } catch (err) {
+      console.warn('Could not load dynamic headcount, using fallback values:', err);
+      engineerHeadcount["Richard Wiecko"]       = 9;
+      engineerHeadcount["Scott Carson"]         = 9;
+      engineerHeadcount["Scott Carson - Scot"]  = 4;
+      engineerHeadcount["Stuart Whyte"]         = 7;
+      engineerHeadcount["Tom Green"]            = 12;
+      engineerHeadcount["all"] = 41;
+      headcountLoaded = true;
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  // HELPER: Convert date to YYYY-MM-DD in LOCAL time (ignores UTC shift)
+  function toLocalIsoString(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  let abortChart = null;
+  const today = new Date();
+  const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
+  document.getElementById('abortFrom').value = toLocalIsoString(sevenAgo);
+  document.getElementById('abortTo').value   = toLocalIsoString(today);
+
+  async function fetchRecordsForRange(startDate, endDate, team) {
+    const q = query(
+      collection(db, "performance - Energise"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc")
+    );
+    const snap = await getDocs(q);
+    const recs = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const normalisedTeam = normTeam(d.teamLeader);
+      if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
+    });
+    return recs;
+  }
+
+  async function fetchKrakenMphData(startDate, endDate, team) {
+    try {
+      const qMeters = query(collection(db, "KrakenAM Energise"), where("date", ">=", startDate), where("date", "<=", endDate));
+      const snapMeters = await getDocs(qMeters);
+      const krakenMeters = {};
+
+      snapMeters.forEach(doc => {
+        const d = doc.data();
+        const rawTeam = d.team || d.teamLeader || '';
+        const t = normTeam(rawTeam);
+        if (team === "all" || t === team) {
+          krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
+        }
+      });
+
+      // Fetch Headcount
+      const qHc = query(collection(db, "krakenAm Headcount Energise"), where("date", ">=", startDate), where("date", "<=", endDate));
+      const snapHc = await getDocs(qHc);
+      const krakenHc = {};
+
+      snapHc.forEach(doc => {
+        const d = doc.data();
+        krakenHc[d.date] = Number(d.headcount || 0);
+      });
+
+      return { krakenMeters, krakenHc };
+    } catch (err) {
+      console.warn("Could not fetch KrakenAM specific data:", err);
+      return { krakenMeters: {}, krakenHc: {} };
+    }
+  }
+
+  // Calculate MPH by passing either End Meters or Kraken Meters
+  function computeMphForDate(meters, date, krakenHc, team, hcFallback) {
+    const m = meters || 0;
+    if (m <= 0) return null;
+    let hc;
+    if (team === "all") {
+      hc = (krakenHc[date] && krakenHc[date] > 0) ? krakenHc[date] : (hcFallback || 0);
+    } else {
+      hc = hcFallback || 0;
+    }
+    return hc > 0 ? Number((m / hc).toFixed(1)) : null;
+  }
+
+  function getWeekdayDates(start, end) {
+    const dates = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) dates.push(toLocalIsoString(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }
+
+  function formatDayLabel(dateStr, multiLine) {
+    // FIXED: Ensure strict local time parsing to prevent midnight UTC rollback
+    const d = new Date(dateStr + 'T00:00:00'); 
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' });
+    return multiLine ? [`${dd}/${mm}`, weekday] : `${dd}/${mm}`;
+  }
+
+  function setStats(html) {
+    document.getElementById('statsContainer').innerHTML = html;
+  }
+
+  // ── VIEW: Meters + Completion (mix) ──────────────────────────────────────────
+
+  async function fetchMonthDataMix(monthKey, team) {
+    const [year, mon] = monthKey.split('-').map(Number);
+    const startOfMonth = new Date(year, mon-1, 1);
+    const endOfMonth   = new Date(year, mon, 0);
+    const effectiveEnd = endOfMonth < today ? endOfMonth : today;
+    
+    const startDate = toLocalIsoString(startOfMonth);
+    const endDate   = toLocalIsoString(effectiveEnd);
+
+    const records = await fetchRecordsForRange(startDate, endDate, team);
+    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+
+    const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
+    const dateMap   = {};
+    weekdays.forEach(d => dateMap[d] = { meters:0, completed:0, jobs:0 });
+
+    records.forEach(r => {
+      if (dateMap[r.date] !== undefined) {
+        dateMap[r.date].meters    += Number(r.meters||0);
+        dateMap[r.date].completed += Number(r.completed||0);
+        dateMap[r.date].jobs      += Number(r.jobs||0);
+      }
+    });
+
+    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+    
+    // Calculate Start MPH (Kraken Meters / Headcount)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
+    // Calculate End MPH (Meters Installed / Headcount)
+    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
+
+    return {
+      rawDates: weekdays,
+      labels: weekdays.map(d => formatDayLabel(d, true)),
+      metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
+      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      startMphValues,
+      endMphValues
+    };
+  }
+
+  async function fetchPeriodDataMix(periodKey, team) {
+    const cfg = periods[periodKey];
+    const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
+    
+    const startDate = toLocalIsoString(start);
+    const endDate = toLocalIsoString(today);
+
+    const records = await fetchRecordsForRange(startDate, endDate, team);
+    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+
+    const weekdays = getWeekdayDates(start, today);
+    const dateMap  = {};
+    weekdays.forEach(d => dateMap[d] = 0);
+    records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
+
+    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+
+    // Calculate Start MPH (Kraken Meters / Headcount)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
+    // Calculate End MPH (Meters Installed / Headcount)
+    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d]||0, d, krakenHc, team, hcFallback));
+
+    const isBar = cfg.type === 'bar';
+    return {
+      rawDates: weekdays,
+      labels: weekdays.map(d => formatDayLabel(d, isBar)),
+      values: weekdays.map(d => Math.round(dateMap[d]||0)),
+      krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      workingDays: weekdays.length,
+      startMphValues,
+      endMphValues
+    };
+  }
+
+  // Passing rawDates array to add click drill-down
+  function dualAxisOptions(title, rawDates) {
+    const scales = {
+      x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
+      yMeters: { type:'linear', position:'left', beginAtZero:true, grace:'20%', ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
+      yMph: { type:'linear', position:'right', beginAtZero:true, suggestedMax: 10, grace:'20%', ticks:{ color:'#d8b4fe', stepSize:2 }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'MPH', color:'#d8b4fe', font:{size:12,weight:'600'} } }
+    };
+
+    return {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      
+      // DRILL DOWN ON CLICK EVENT
+      onClick: (event, elements) => {
+        if (elements.length > 0 && rawDates) {
+          const index = elements[0].index;
+          const clickedDateStr = rawDates[index]; // e.g., "2026-05-14"
+          if (clickedDateStr) {
+            const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+            const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
+            if (targetBtn && !targetBtn.classList.contains('active')) {
+              targetBtn.click(); // Triggers the sidebar button logic naturally
+            }
+          }
+        }
+      },
+      // POINTER CURSOR ON HOVER
+      onHover: (event, elements) => {
+        const target = event.native ? event.native.target : event.target;
+        target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+
+      plugins: {
+        title: { display:true, text:title, color:'#e2e8f0', font:{size:17,weight:'600'}, padding:{bottom:20} },
+        legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
+              if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
+              if (c.dataset.label === 'KrakenAM Meters') return c.raw > 0 ? ` KrakenAM Meters: ${c.raw}` : '';
+              return ` Meters: ${c.raw}`;
+            }
+          }
+        }
+      },
+      scales: scales
+    };
+  }
+
+  async function renderMix() {
+    const container = document.querySelector('#chartContainer');
+    container.innerHTML = '<div class="loading">Loading…</div>';
+
+    if (currentMonth) {
+      const [year, mon] = currentMonth.split('-').map(Number);
+      const label = `${monthNames[mon-1]} ${year}`;
+      document.getElementById('pageTitle').textContent = `Meters — ${label}`;
+
+      const data = await fetchMonthDataMix(currentMonth, currentTeam);
+
+      const total = data.metersValues.reduce((s,v) => s+v, 0);
+      const pop = data.metersValues.filter(v=>v>0).length;
+      
+      const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
+      const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
+
+      setStats(
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
+        `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>`
+      );
+
+      container.innerHTML = ''; container.appendChild(ctx);
+      if (chart) chart.destroy();
+      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, data.rawDates);
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Meters Installed',
+              data: data.metersValues,
+              backgroundColor: 'rgba(99,102,241,1)', // Solid Purple
+              borderColor: '#6366f1',
+              borderWidth: 1,
+              borderRadius: 6,
+              yAxisID: 'yMeters',
+              order: 1, // Drawn on top
+              grouped: false,
+              barPercentage: 0.5, // Thinner, centered
+              categoryPercentage: 0.8,
+              datalabels: {
+                anchor: 'start', align: 'top',
+                offset: (context) => {
+                  const chart = context.chart;
+                  if (!chart.chartArea) return 0;
+                  const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
+                  const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
+                  return (base - chart.chartArea.top) - 34; // Lower position row
+                },
+                color: '#ffffff',
+                backgroundColor: 'rgba(99,102,241,0.85)',
+                borderRadius: 4,
+                padding: { top: 2, bottom: 2, left: 4, right: 4 },
+                font: { weight: 'bold', size: 11 },
+                formatter: v => v > 0 ? v : ''
+              }
+            },
+            {
+              type: 'bar',
+              label: 'KrakenAM Meters',
+              data: data.krakenMetersPerDay,
+              backgroundColor: 'rgba(249,115,22,0.45)', // Faded Orange
+              borderColor: '#f97316',
+              borderWidth: 1,
+              borderRadius: 4,
+              yAxisID: 'yMeters',
+              order: 2, // Drawn behind Purple
+              grouped: false,
+              barPercentage: 1.0, // Across the whole day
+              categoryPercentage: 1.0, // Across the whole day
+              datalabels: {
+                display: true,
+                anchor: 'start', align: 'top',
+                offset: (context) => {
+                  const chart = context.chart;
+                  if (!chart.chartArea) return 0;
+                  const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
+                  const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
+                  return (base - chart.chartArea.top) - 13; // Upper position row
+                },
+                color: '#ffffff',
+                backgroundColor: 'rgba(249,115,22,0.85)',
+                borderRadius: 4,
+                padding: { top: 2, bottom: 2, left: 4, right: 4 },
+                font: { weight: 'bold', size: 10 },
+                formatter: v => v > 0 ? v : ''
+              }
+            },
+            {
+              type: 'line', label: 'Start MPH', data: data.startMphValues,
+              borderColor: '#f97316', backgroundColor: '#f97316',
+              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
+              pointHoverRadius: 8, pointBackgroundColor: '#f97316',
+              yAxisID: 'yMph', spanGaps: true, order: 0,
+              datalabels: {
+                display: true, anchor:'top', align:'top', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              }
+            },
+            {
+              type: 'line', label: 'End MPH', data: data.endMphValues,
+              borderColor: '#581c87', backgroundColor: '#581c87',
+              borderWidth: 3, tension: 0.35, fill: false, pointRadius: 5,
+              pointHoverRadius: 8, pointBackgroundColor: '#581c87',
+              yAxisID: 'yMph', spanGaps: true, order: 0,
+              datalabels: {
+                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#d8b4fe',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              }
+            }
+          ]
+        },
+        options: monthOpts,
+        plugins: [ChartDataLabels]
+      });
+
+    } else {
+      document.getElementById('pageTitle').textContent = 'Meters Installed';
+      const cfg = periods[currentPeriod];
+      const data = await fetchPeriodDataMix(currentPeriod, currentTeam);
+
+      const total = data.values.reduce((s,v)=>s+v,0);
+      const pop   = data.values.filter(v=>v>0).length;
+
+      const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
+      const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
+
+      const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 39;
+
+      let targetHTML = '';
+      if (currentPeriod === '7days') {
+        const last5  = data.values.filter(v=>v>0).slice(-5);
+        const l5tot  = last5.reduce((s,v)=>s+v,0);
+        const target = hc * 6 * 0.9 * last5.length;
+        const pct    = target > 0 ? (l5tot/target)*100 : 0;
+        const cls    = pct>=100 ? 'success' : pct>=80 ? 'warning' : 'error';
+        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
+      }
+
+      setStats(
+        `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Headcount (OES DB)</div><div class="stats-value">${hc}</div></div>` +
+        `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>` +
+        targetHTML
+      );
+
+      container.innerHTML = ''; container.appendChild(ctx);
+      if (chart) chart.destroy();
+      
+      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`, data.rawDates);
+      
+      chart = new Chart(ctx, {
+        type: cfg.type,
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              type: 'bar',
+              label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
+              data: data.values,
+              yAxisID: 'yMeters',
+              order: 1, // Drawn on top
+              grouped: false,
+              barPercentage: 0.5,
+              categoryPercentage: 0.8,
+              backgroundColor: cfg.type==='bar' ? 'rgba(99,102,241,1)' : 'rgba(99,102,241,0.12)',
+              borderColor: cfg.color,
+              borderWidth: cfg.type==='bar' ? 1 : 3,
+              borderRadius: cfg.type==='bar' ? 6 : 0,
+              tension: cfg.type==='line' ? 0.35 : 0,
+              fill: cfg.type==='line',
+              pointRadius: cfg.type==='bar' ? 0 : 3,
+              pointHoverRadius: 7,
+              datalabels: cfg.type==='bar' ? {
+                anchor: 'start', align: 'top',
+                offset: (context) => {
+                  const chart = context.chart;
+                  if (!chart.chartArea) return 0;
+                  const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
+                  const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
+                  return (base - chart.chartArea.top) - 34; // Lower position row
+                },
+                color: '#ffffff',
+                backgroundColor: 'rgba(99,102,241,0.85)',
+                borderRadius: 4,
+                padding: { top: 2, bottom: 2, left: 4, right: 4 },
+                font: { weight: 'bold', size: 12 },
+                formatter: v => v > 0 ? v : ''
+              } : { display: false }
+            },
+            {
+              type: 'bar',
+              label: 'KrakenAM Meters',
+              data: data.krakenMetersPerDay,
+              backgroundColor: 'rgba(249,115,22,0.45)', // Faded orange behind purple
+              borderColor: '#f97316',
+              borderWidth: 1,
+              borderRadius: 4,
+              yAxisID: 'yMeters',
+              order: 2, // Drawn behind Purple
+              grouped: false,
+              barPercentage: 1.0, // Across the whole day
+              categoryPercentage: 1.0, // Across the whole day
+              datalabels: cfg.type === 'bar' ? {
+                display: true,
+                anchor: 'start', align: 'top',
+                offset: (context) => {
+                  const chart = context.chart;
+                  if (!chart.chartArea) return 0;
+                  const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
+                  const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
+                  return (base - chart.chartArea.top) - 13; // Upper position row
+                },
+                color: '#ffffff',
+                backgroundColor: 'rgba(249,115,22,0.85)',
+                borderRadius: 4,
+                padding: { top: 2, bottom: 2, left: 4, right: 4 },
+                font: { weight: 'bold', size: 10 },
+                formatter: v => v > 0 ? v : ''
+              } : { display: false }
+            },
+            {
+              type: 'line',
+              label: 'Start MPH',
+              data: data.startMphValues,
+              yAxisID: 'yMph',
+              borderColor: '#f97316',
+              backgroundColor: '#f97316',
+              borderWidth: 3,
+              tension: 0.35,
+              fill: false,
+              pointRadius: cfg.type==='bar'?0:3,
+              pointHoverRadius: 7,
+              pointBackgroundColor: '#f97316',
+              spanGaps: true,
+              order: 0,
+              datalabels: cfg.type==='bar' ? {
+                display: true, anchor:'top', align:'top', offset:6, color:'#fcd34d',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              } : { display: false }
+            },
+            {
+              type: 'line',
+              label: 'End MPH',
+              data: data.endMphValues,
+              yAxisID: 'yMph',
+              borderColor: '#581c87',
+              backgroundColor: '#581c87',
+              borderWidth: 3,
+              tension: 0.35,
+              fill: false,
+              pointRadius: cfg.type==='bar'?0:3,
+              pointHoverRadius: 7,
+              pointBackgroundColor: '#581c87',
+              spanGaps: true,
+              order: 0,
+              datalabels: cfg.type==='bar' ? {
+                display: true, anchor:'bottom', align:'bottom', offset:6, color:'#d8b4fe',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: 4,
+                padding: { top: 3, bottom: 3, left: 6, right: 6 },
+                font:{weight:'bold',size:11}, formatter: v => (v!==null&&v>0) ? v.toFixed(1) : '',
+                textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+              } : { display: false }
+            }
+          ]
+        },
+        options: periodOpts,
+        plugins: [ChartDataLabels]
+      });
+    }
+  }
+
+  // ── VIEW: Install Types ───────────────────────────────────────────────────────
+  async function fetchTypesData(periodKey, monthKey, team) {
+    let startDate, endDate, weekdays, label, isBar;
+
+    if (monthKey) {
+      const [year, mon] = monthKey.split('-').map(Number);
+      const startOfMonth = new Date(year, mon-1, 1);
+      const endOfMonth   = new Date(year, mon, 0);
+      const effectiveEnd = endOfMonth < today ? endOfMonth : today;
+      
+      startDate = toLocalIsoString(startOfMonth);
+      endDate   = toLocalIsoString(effectiveEnd);
+      
+      weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
+      label     = `${monthNames[mon-1]} ${year}`;
+      isBar     = true;
+    } else {
+      const cfg  = periods[periodKey];
+      const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
+      
+      startDate  = toLocalIsoString(start);
+      endDate    = toLocalIsoString(today);
+      
+      weekdays   = getWeekdayDates(start, today);
+      label      = cfg.label;
+      isBar      = cfg.type === 'bar';
+    }
+
+    const records = await fetchRecordsForRange(startDate, endDate, "all");
+    const dateMap = {};
+    weekdays.forEach(d => dateMap[d] = { duals:0, singles:0, comms:0 });
+    records.forEach(r => {
+      if (dateMap[r.date] !== undefined) {
+        dateMap[r.date].duals   += Number(r.duals||0);
+        dateMap[r.date].singles += Number(r.singles||0);
+        dateMap[r.date].comms   += Number(r.comms||0);
+      }
+    });
+
+    return {
+      rawDates: weekdays,
+      labels:  weekdays.map(d => formatDayLabel(d, isBar)),
+      duals:  weekdays.map(d => dateMap[d].duals),
+      singles: weekdays.map(d => dateMap[d].singles),
+      comms:   weekdays.map(d => dateMap[d].comms),
+      label, isBar
+    };
+  }
+
+  async function renderTypes() {
+    const container = document.querySelector('#chartContainer');
+    container.innerHTML = '<div class="loading">Loading…</div>';
+    document.getElementById('pageTitle').textContent = 'Install Types';
+
+    const data = await fetchTypesData(currentPeriod, currentMonth, currentTeam);
+
+    const totDuals   = data.duals.reduce((s,v)=>s+v,0);
+    const totSingles = data.singles.reduce((s,v)=>s+v,0);
+    const totComms   = data.comms.reduce((s,v)=>s+v,0);
+    const totAll     = totDuals + totSingles + totComms;
+
+    const pDual = totAll > 0 ? ((totDuals/totAll)*100).toFixed(1) : '—';
+    const pSing = totAll > 0 ? ((totSingles/totAll)*100).toFixed(1) : '—';
+    const pComm = totAll > 0 ? ((totComms/totAll)*100).toFixed(1) : '—';
+
+    setStats(
+      `<div class="stats-box green"><div class="stats-label">Duals</div><div class="stats-value success">${totDuals} <small style="font-size:0.55em;opacity:0.7">${pDual}%</small></div></div>` +
+      `<div class="stats-box"><div class="stats-label">Singles</div><div class="stats-value">${totSingles} <small style="font-size:0.55em;opacity:0.7">${pSing}%</small></div></div>` +
+      `<div class="stats-box orange"><div class="stats-label">Comms/Site</div><div class="stats-value orange-grad">${totComms} <small style="font-size:0.55em;opacity:0.7">${pComm}%</small></div></div>`
+    );
+
+    container.innerHTML = ''; container.appendChild(ctx);
+    if (chart) chart.destroy();
+
+    const chartType = data.isBar ? 'bar' : 'line';
+    chart = new Chart(ctx, {
+      type: chartType,
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: 'Duals', data: data.duals,
+            backgroundColor: chartType==='bar' ? 'rgba(16,185,129,0.75)' : 'rgba(16,185,129,0.15)',
+            borderColor: '#10b981', borderWidth: chartType==='bar'?1:3,
+            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
+            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
+            datalabels: chartType==='bar' ? {
+              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+            } : { display: false }
+          },
+          {
+            label: 'Singles', data: data.singles,
+            backgroundColor: chartType==='bar' ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.15)',
+            borderColor: '#6366f1', borderWidth: chartType==='bar'?1:3,
+            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
+            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
+            datalabels: chartType==='bar' ? {
+              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+            } : { display: false }
+          },
+          {
+            label: 'Comms/Site Visits', data: data.comms,
+            backgroundColor: chartType==='bar' ? 'rgba(249,115,22,0.75)' : 'rgba(249,115,22,0.15)',
+            borderColor: '#f97316', borderWidth: chartType==='bar'?1:3,
+            borderRadius: chartType==='bar'?6:0, tension:0.35, fill: chartType==='line',
+            pointRadius: chartType==='bar'?0:3, pointHoverRadius:7,
+            datalabels: chartType==='bar' ? {
+              anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:10},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+            } : { display: false }
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        
+        // DRILL DOWN ON CLICK EVENT
+        onClick: (event, elements) => {
+          if (elements.length > 0 && data.rawDates) {
+            const index = elements[0].index;
+            const clickedDateStr = data.rawDates[index];
+            if (clickedDateStr) {
+              const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+              const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
+              if (targetBtn && !targetBtn.classList.contains('active')) {
+                targetBtn.click();
+              }
+            }
+          }
+        },
+        // POINTER CURSOR ON HOVER
+        onHover: (event, elements) => {
+          const target = event.native ? event.native.target : event.target;
+          target.style.cursor = elements.length ? 'pointer' : 'default';
+        },
+
+        plugins: {
+          title: { display:true, text:`${data.label} – Install Types (All Teams)`, color:'#e2e8f0', font:{size:18,weight:'600'}, padding:{bottom:20} },
+          legend: { labels:{ color:'#cbd5e1', font:{size:14} } }
+        },
+        scales: {
+          x: { ticks:{ color:'#94a3b8', font:{size:chartType==='bar'?11:12}, padding:8 }, grid:{color:'#334155'} },
+          y: { beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:5 }, grid:{color:'#334155'} }
+        }
+      },
+      plugins: [ChartDataLabels]
+    });
+  }
+
+  // ── VIEW: Aborts ──────────────────────────────────────────────────────────────
+
+  const ABORT_REASONS = [
+    'Tech abort','No access','Refused access','Higher skill set required',
+    'Work not required','DNO Issue','Stock issue','Wrong details',
+    'H&S issue','No abort code','Customer Cancellation','Left open',
+  ];
+
+  function normaliseReason(raw) {
+    if (!raw) return ['No abort code'];
+    const str = raw.trim();
+    const multMatch = str.match(/^(.+?)\s*[xX×](\d+)\s*$/);
+    let baseStr = str, multiplier = 1;
+    if (multMatch) { baseStr = multMatch[1].trim(); multiplier = parseInt(multMatch[2]) || 1; }
+    const parts = baseStr.split(',').map(p => p.trim()).filter(Boolean);
+    const results = [];
+    parts.forEach(part => { const matched = fuzzyMatchReason(part); for (let i=0;i<multiplier;i++) results.push(matched); });
+    return results;
+  }
+
+  function fuzzyMatchReason(str) {
+    const s = str.toLowerCase().replace(/[^a-z0-9 &]/g,'').trim();
+    const map = {
+      'tech abort':'Tech abort','technical abort':'Tech abort',
+      'no access':'No access','refused access':'Refused access','refused':'Refused access',
+      'higher skill set required':'Higher skill set required','higher skill':'Higher skill set required','skill set':'Higher skill set required',
+      'work not required':'Work not required','not required':'Work not required',
+      'dno issue':'DNO Issue','dno':'DNO Issue',
+      'stock issue':'Stock issue','stock':'Stock issue',
+      'wrong details':'Wrong details','wrong detail':'Wrong details',
+      'hs issue':'H&S issue','h&s issue':'H&S issue','h&s':'H&S issue','health and safety':'H&S issue',
+      'no abort code':'No abort code','no code':'No abort code',
+      'customer cancellation':'Customer Cancellation','customer cancel':'Customer Cancellation','cancellation':'Customer Cancellation',
+      'left open':'Left open',
+    };
+    if (map[s]) return map[s];
+    for (const [key,val] of Object.entries(map)) { if (s.includes(key)||key.includes(s)) return val; }
+    for (const canon of ABORT_REASONS) { if (s.includes(canon.toLowerCase())||canon.toLowerCase().includes(s)) return canon; }
+    return 'No abort code';
+  }
+
+  async function loadAborts() {
+    const fromDate = document.getElementById('abortFrom').value;
+    const toDate   = document.getElementById('abortTo').value;
+    if (!fromDate || !toDate) return;
+
+    const abortsChartEl = document.getElementById('abortsChartContainer');
+    abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">Loading…</div>';
+
+    try {
+      const q = query(collection(db,"aborts energise"),where("date",">=",fromDate),where("date","<=",toDate),orderBy("date","asc"));
+      const snap = await getDocs(q);
+      const allAborts = [];
+      snap.forEach(doc => { const d = doc.data(); allAborts.push({...d, teamLeader: normTeam(d.teamLeader)}); });
+
+      const filtered = currentTeam==='all' ? allAborts : allAborts.filter(r=>r.teamLeader===currentTeam);
+
+      if (filtered.length === 0) {
+        abortsChartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:1.1rem">No abort records found for this period.</div>';
+        setStats(`<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">0</div></div>`);
+        return;
+      }
+
+      const reasonTotals = {};
+      ABORT_REASONS.forEach(r => reasonTotals[r] = 0);
+      filtered.forEach(row => {
+        const rawTotal = Number(row.total)||1;
+        const resolved = normaliseReason(row.reason||'');
+        const share = rawTotal/resolved.length;
+        resolved.forEach(canon => { reasonTotals[canon] = (reasonTotals[canon]||0) + share; });
+      });
+      ABORT_REASONS.forEach(r => { reasonTotals[r] = Math.round(reasonTotals[r]); });
+
+      const grandTotal = ABORT_REASONS.reduce((s,r)=>s+reasonTotals[r],0);
+      const topReason  = ABORT_REASONS.slice().sort((a,b)=>reasonTotals[b]-reasonTotals[a])[0];
+      const uniqueEng  = new Set(filtered.map(r=>r.engineer)).size;
+
+      setStats(
+        `<div class="stats-box orange"><div class="stats-label">Total Aborts</div><div class="stats-value orange-grad large">${grandTotal}</div></div>` +
+        `<div class="stats-box"><div class="stats-label">Engineers</div><div class="stats-value">${uniqueEng}</div></div>` +
+        `<div class="stats-box" style="min-width:200px"><div class="stats-label">Top Reason</div><div class="stats-value orange-grad" style="font-size:1rem;line-height:1.3;padding-top:2px">${topReason}</div></div>`
+      );
+
+      abortsChartEl.innerHTML = '';
+      const abortCtx = document.createElement('canvas');
+      abortsChartEl.appendChild(abortCtx);
+      if (abortChart) abortChart.destroy();
+
+      const chartData = ABORT_REASONS.map(r => reasonTotals[r]);
+      abortChart = new Chart(abortCtx, {
+        type: 'bar',
+        data: {
+          labels: ABORT_REASONS,
+          datasets: [{
+            label: 'Aborts', data: chartData,
+            backgroundColor: chartData.map(v => v===Math.max(...chartData)?'rgba(239,68,68,0.8)':'rgba(249,115,22,0.75)'),
+            borderColor: chartData.map(v => v===Math.max(...chartData)?'#ef4444':'#f97316'),
+            borderWidth: 1, borderRadius: 5,
+            datalabels: {
+              display: true, anchor:'end', align:'top', offset:2, color:'#e2e8f0', font:{weight:'bold',size:12},
+              formatter: v => v>0?v:'', textShadowColor:'rgba(0,0,0,0.8)', textShadowBlur:4
+            }
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          layout: { padding:{ top:24 } },
+          plugins: {
+            title: { display:true, text:`Aborts by Reason — ${currentTeam==='all'?'All Teams':currentTeam} (${fromDate} → ${toDate})`, color:'#e2e8f0', font:{size:16,weight:'600'}, padding:{bottom:20} },
+            legend: { display:false },
+            tooltip: { callbacks:{ label: c=>` Total: ${c.raw}` } }
+          },
+          scales: {
+            x: { ticks:{ color:'#94a3b8', font:{size:11}, padding:4, maxRotation:90, minRotation:90, autoSkip:false }, grid:{color:'#334155'} },
+            y: { beginAtZero:true, ticks:{ color:'#94a3b8', precision:0 }, grid:{color:'#334155'} }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('abortsChartContainer').innerHTML =
+        `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);font-size:1rem">${err.message}</div>`;
+    }
+  }
+
+  // ── Main render dispatcher ────────────────────────────────────────────────────
+
+  async function updateView() {
+    const chartContainer  = document.getElementById('chartContainer');
+    const abortsContainer = document.getElementById('abortsContainer');
+    const periodSection   = document.getElementById('periodSection');
+    const monthSection    = document.getElementById('monthSection');
+
+    if (currentView === 'aborts') {
+      chartContainer.style.display  = 'none';
+      abortsContainer.style.display = 'block';
+      periodSection.style.display   = 'none';
+      monthSection.style.display    = 'none';
+      document.getElementById('pageTitle').textContent = 'Aborts Breakdown';
+      await loadAborts();
+    } else {
+      chartContainer.style.display  = 'block';
+      abortsContainer.style.display = 'none';
+      periodSection.style.display   = 'block';
+      monthSection.style.display    = 'block';
+      chartContainer.innerHTML = '<div class="loading">Loading…</div>';
+      chartContainer.appendChild(ctx);
+      try {
+        if (currentView === 'mix')   await renderMix();
+        if (currentView === 'types') await renderTypes();
+      } catch (err) {
+        console.error(err);
+        chartContainer.innerHTML = `<div class="error-msg">${err.message}<br><small>F12 → Console for details</small></div>`;
+      }
+    }
+  }
+
+  // ── Event listeners ───────────────────────────────────────────────────────────
+
+  document.querySelectorAll('.view-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentView = btn.dataset.view;
+      updateView();
+    });
+  });
+
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+      currentMonth  = null;
+      updateView();
+    });
+  });
+
+  document.querySelectorAll('.team-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTeam = btn.dataset.team;
+      updateView();
+    });
+  });
+
+  document.querySelectorAll('.month-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentMonth  = btn.dataset.month;
+      currentPeriod = null;
+      updateView();
+    });
+  });
+
+  document.getElementById('abortLoadBtn').addEventListener('click', loadAborts);
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────────────
+  await loadHeadcount();
+  updateView();
+</script>
+
+</body>
+</html>
