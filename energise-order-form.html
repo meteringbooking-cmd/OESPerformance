@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Energise — Stock Order Form</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #e8ff47;
+    --accent2: #47c8ff;
+    --text: #f0f0f0;
+    --text-muted: #888;
+    --in-stock: #4ade80;
+    --backorder: #f59e0b;
+    --out: #f87171;
+    --radius: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .basket-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 9px 20px;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .basket-btn:hover { transform: translateY(-1px); background: #d4eb30; }
+
+  .basket-count {
+    background: #000;
+    color: var(--accent);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* FILTERS + SEARCH */
+  .toolbar {
+    padding: 20px 32px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+  }
+  .search-wrap svg {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+  }
+  input[type="search"], select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 12px 9px 36px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  select { padding-left: 12px; cursor: pointer; }
+  input[type="search"]:focus, select:focus { border-color: var(--accent); }
+  input[type="search"]::placeholder { color: var(--text-muted); }
+
+  .filter-select { min-width: 160px; }
+
+  .results-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* MAIN LAYOUT */
+  .main {
+    display: flex;
+    gap: 0;
+  }
+
+  /* TABLE */
+  .table-wrap {
+    flex: 1;
+    overflow-x: auto;
+    padding: 24px 32px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead tr {
+    border-bottom: 2px solid var(--accent);
+  }
+
+  th {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 10px 14px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th.th-img { width: 60px; }
+  th.th-sku { width: 80px; }
+  th.th-uom { width: 90px; }
+  th.th-stock { width: 130px; }
+  th.th-action { width: 160px; text-align: center; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+  }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr.added-row { background: rgba(232, 255, 71, 0.04); }
+
+  td {
+    padding: 10px 14px;
+    vertical-align: middle;
+  }
+
+  .item-img {
+    width: 44px;
+    height: 44px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .item-name {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    max-width: 280px;
+  }
+
+  .sku {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .uom-badge {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+    white-space: nowrap;
+  }
+
+  .stock-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .stock-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .stock-in { color: var(--in-stock); }
+  .stock-in::before { background: var(--in-stock); box-shadow: 0 0 6px var(--in-stock); }
+  .stock-back { color: var(--backorder); }
+  .stock-back::before { background: var(--backorder); }
+  .stock-out { color: var(--out); }
+  .stock-out::before { background: var(--out); }
+
+  /* ACTION CELL */
+  .action-cell {
+    text-align: center;
+  }
+
+  .add-simple {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .add-simple:hover { border-color: var(--accent); color: var(--accent); }
+
+  .qty-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+  .qty-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 28px;
+    height: 30px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, color 0.12s;
+    line-height: 1;
+  }
+  .qty-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .qty-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  .qty-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+  .qty-input {
+    width: 42px;
+    height: 30px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-right: none;
+    color: var(--text);
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  .qty-input::-webkit-inner-spin-button,
+  .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  .add-qty-btn {
+    margin-left: 6px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .add-qty-btn:hover { background: #d4eb30; }
+
+  .added-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--in-stock);
+    font-weight: 600;
+  }
+
+  /* BASKET PANEL */
+  .basket-panel {
+    width: 340px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    min-height: calc(100vh - 61px);
+    position: sticky;
+    top: 61px;
+    height: calc(100vh - 61px);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+  }
+
+  .basket-panel.hidden {
+    display: none;
+  }
+
+  .basket-header {
+    padding: 20px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .basket-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .basket-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .basket-clear:hover { color: var(--out); }
+
+  .basket-items {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 0;
+  }
+  .basket-items::-webkit-scrollbar { width: 4px; }
+  .basket-items::-webkit-scrollbar-track { background: transparent; }
+  .basket-items::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .basket-item {
+    padding: 10px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .bi-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--surface2);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .bi-info { flex: 1; }
+  .bi-name {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 2px;
+  }
+  .bi-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .bi-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+  .bi-remove:hover { color: var(--out); }
+
+  .basket-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px 20px;
+    font-size: 13px;
+  }
+
+  .basket-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .basket-summary {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .basket-summary strong { color: var(--text); }
+
+  .submit-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 12px;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .submit-btn:hover { background: #d4eb30; transform: translateY(-1px); }
+  .submit-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; transform: none; }
+
+  /* PRINT MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 560px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-head {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-head h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .modal-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .modal-table th {
+    text-align: left;
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .modal-table tr:last-child td { border-bottom: none; }
+  .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  .btn-secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary {
+    background: var(--accent);
+    border: none;
+    color: #000;
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: #d4eb30; }
+
+  /* PRINT STYLES */
+  @media print {
+    header, .toolbar, .basket-panel, .modal-overlay { display: none !important; }
+    .table-wrap { padding: 0; }
+    body { background: white; color: black; }
+    .item-img { background: #eee; }
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .basket-panel { display: none; }
+    .basket-panel.mobile-open {
+      display: flex;
+      position: fixed;
+      right: 0;
+      top: 0;
+      height: 100vh;
+      z-index: 150;
+    }
+  }
+  @media (max-width: 600px) {
+    header, .toolbar { padding: 14px 16px; }
+    .table-wrap { padding: 16px; }
+    .item-name { max-width: 160px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">energise<span>.</span></div>
+  <div class="header-right">
+    <button class="basket-btn" id="toggleBasketBtn" onclick="toggleBasket()">
+      🛒 Order Basket
+      <span class="basket-count" id="basketCount">0</span>
+    </button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input type="search" id="searchInput" placeholder="Search by name or SKU…" oninput="filterItems()">
+  </div>
+  <select class="filter-select" id="stockFilter" onchange="filterItems()">
+    <option value="">All Stock Status</option>
+    <option value="in">In Stock</option>
+    <option value="back">Available on Backorder</option>
+    <option value="out">Out of Stock</option>
+  </select>
+  <select class="filter-select" id="uomFilter" onchange="filterItems()">
+    <option value="">All Unit Types</option>
+    <option value="ea">EA (Each)</option>
+    <option value="pk">Packs</option>
+    <option value="rl">Rolls</option>
+  </select>
+  <span class="results-count" id="resultsCount"></span>
+</div>
+
+<div class="main">
+  <div class="table-wrap">
+    <table id="itemsTable">
+      <thead>
+        <tr>
+          <th class="th-img"></th>
+          <th>Name</th>
+          <th class="th-sku">SKU</th>
+          <th class="th-uom">Unit</th>
+          <th class="th-stock">Stock</th>
+          <th class="th-action">Add to Order</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <aside class="basket-panel" id="basketPanel">
+    <div class="basket-header">
+      <span class="basket-title">Order Basket</span>
+      <button class="basket-clear" onclick="clearBasket()">Clear all</button>
+    </div>
+    <div class="basket-items" id="basketItems">
+      <div class="basket-empty">No items added yet.</div>
+    </div>
+    <div class="basket-footer">
+      <div class="basket-summary" id="basketSummary">0 line items</div>
+      <button class="submit-btn" id="submitBtn" onclick="openModal()" disabled>Review & Submit Order</button>
+    </div>
+  </aside>
+</div>
+
+<!-- Review Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Review Order</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <table class="modal-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>SKU</th>
+            <th>Unit</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody id="modalBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="printOrder()">🖨 Print</button>
+      <button class="btn-secondary" onclick="copyCSV()">📋 Copy CSV</button>
+      <button class="btn-primary" onclick="closeModal()">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ITEMS = [
+  { name: '1 1/4" BS746 SEALING CAP WASHER', sku: '36515', uom: 'PK-10', stock: 'back', emoji: '🔩' },
+  { name: '1 ½" BS746 SEALING CAP WASHER – 7430IN', sku: '36514', uom: 'PK-100', stock: 'back', emoji: '🔩' },
+  { name: '1 INCH METER CAP', sku: '36188', uom: 'PK-50', stock: 'back', emoji: '🧢' },
+  { name: '1 INCH WASHER', sku: '36160', uom: 'PK-10', stock: 'back', emoji: '⭕' },
+  { name: '1" - 3/4 ADAPTOR', sku: '36010', uom: 'PK-10', stock: 'back', emoji: '🔗' },
+  { name: '1" BS 746 X 3/4" BS 746 MALE GROOVED', sku: '36038', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '1" BS746 BRASS CAP WITH 5.5mm TESTPOINT', sku: '36190', uom: 'EA', stock: 'back', emoji: '🔵' },
+  { name: '1" HOLLOW PLUGS', sku: '36097', uom: 'PK-10', stock: 'out', emoji: '🔌' },
+  { name: '1" METER INTERNAL END CAP', sku: '36505', uom: 'PK-50', stock: 'back', emoji: '🧢' },
+  { name: '1" 746F X 1" BSPM METER ADAPTOR', sku: '36007', uom: 'PK-10', stock: 'back', emoji: '🔗' },
+  { name: '1" BS746 SEALING CAP', sku: '36008', uom: 'EA', stock: 'back', emoji: '🔒' },
+  { name: '1" F/F ELBOW', sku: '36131', uom: 'PK-3', stock: 'back', emoji: '↩️' },
+  { name: '1" M/F ELBOW', sku: '36136', uom: 'PK-10', stock: 'in', emoji: '↩️' },
+  { name: '1" UNION (SOUTH UTILITA & ENERGY ASSET ONLY)', sku: '36052', uom: 'EA', stock: 'back', emoji: '🔗' },
+  { name: '1/4" SOLID PLUG', sku: '36402', uom: 'PK-10', stock: 'back', emoji: '🔌' },
+  { name: '10 LITE WASHER', sku: '36159', uom: 'PK-250', stock: 'in', emoji: '⭕' },
+  { name: '100 amp fuse ME', sku: '36214', uom: 'PK-10', stock: 'back', emoji: '⚡' },
+  { name: '100 amp fuse MF', sku: '36213', uom: 'PK-10', stock: 'in', emoji: '⚡' },
+  { name: '1000V INSULATED SHROUD BLANKET (900MM X 600MM)', sku: '36249', uom: 'EA', stock: 'back', emoji: '🛡️' },
+  { name: '16MM ELEC CABLE BLUE', sku: '36221', uom: 'RL-10M', stock: 'back', emoji: '🔵' },
+  { name: '16MM ELEC CABLE BROWN', sku: '36222', uom: 'RL-10M', stock: 'back', emoji: '🟤' },
+  { name: '22 mm COPPER END FEED CAP', sku: '36063', uom: 'PK-5', stock: 'in', emoji: '🔶' },
+  { name: '22MM COPPER PIPE 0.5 METRE LENGTH', sku: '36179', uom: 'PK-2', stock: 'back', emoji: '🪛' },
+  { name: '22MM COUPLE', sku: '36047', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '22MM END FEED COPPER TEE', sku: '36503', uom: 'PK-5', stock: 'back', emoji: '🔶' },
+  { name: '22MM STREET ELBOW', sku: '36065', uom: 'PK-5', stock: 'back', emoji: '↩️' },
+  { name: '22mm x 15mm reducer', sku: '36060', uom: 'PK-5', stock: 'back', emoji: '🔻' },
+  { name: '22MM X 3/4 FEMALE COPPER ADAPTOR', sku: '36185', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '22MM X 3/4 MALE COPPER ADAPTOR', sku: '36040', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '22MM-END-FEED-45-DEGREE-ELBOW', sku: '36498', uom: 'PK-5', stock: 'back', emoji: '↗️' },
+  { name: '25MM ELEC CABLE BLUE/BLUE', sku: '36219', uom: 'RL-10M', stock: 'in', emoji: '🔵' },
+  { name: '25MM ELEC CABLE BROWN/BROWN', sku: '36220', uom: 'RL-10M', stock: 'back', emoji: '🟤' },
+  { name: '28MM X 22MM COPPER REDUCER', sku: '36504', uom: 'PK-3', stock: 'back', emoji: '🔻' },
+  { name: '3/4" - 3/4" LIVERPOOL FITTING', sku: '36039', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '3/4" BS746 MALE x 3/4" BSPT MALE ADAPTOR', sku: '36003', uom: 'PK-10', stock: 'back', emoji: '🔗' },
+  { name: '3/4" BSPT F X 3/4" BS5200 M MP ADAPTOR', sku: '36244', uom: 'EA', stock: 'back', emoji: '🔗' },
+  { name: '3/4" BSPT M X BS5200 MP ADAPTOR C/W 3/4" NUT', sku: '36247', uom: 'EA', stock: 'back', emoji: '🔗' },
+  { name: '3/4" INCH METER CAP', sku: '36187', uom: 'PK-10', stock: 'back', emoji: '🧢' },
+  { name: '3/4" INCH WASHER', sku: '36158', uom: 'PK-100', stock: 'back', emoji: '⭕' },
+  { name: '3/4" METER INTERNAL END CAP', sku: '36481', uom: 'PK-50', stock: 'back', emoji: '🧢' },
+  { name: '3/4in x 22mm Imperial metric Adptr', sku: '36055', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '3/8 SOLID PLUG', sku: '36403', uom: 'PK-10', stock: 'back', emoji: '🔌' },
+  { name: '¾" 746F X 1" 746M ADAPTOR', sku: '36001', uom: 'PK-5', stock: 'back', emoji: '🔗' },
+  { name: '¾" BS746 SEALING CAP', sku: '36005', uom: 'PK-10', stock: 'back', emoji: '🔒' },
+  { name: '¾" M/F ELBOW', sku: '36127', uom: 'PK-5', stock: 'back', emoji: '↩️' },
+  { name: '5 LITE WASHER', sku: '36157', uom: 'PK-10', stock: 'back', emoji: '⭕' },
+  { name: '63 amp fuse ME', sku: '36218', uom: 'EA', stock: 'back', emoji: '⚡' },
+  { name: '63 amp fuse MF', sku: '36217', uom: 'EA', stock: 'back', emoji: '⚡' },
+  { name: '8 x 1.5" Pozi Woodscrew', sku: '36202', uom: 'PK-200', stock: 'in', emoji: '🪛' },
+  { name: '80 amp fuse ME', sku: '36216', uom: 'EA', stock: 'back', emoji: '⚡' },
+  { name: '80 amp fuse MF', sku: '36215', uom: 'EA', stock: 'back', emoji: '⚡' },
+  { name: 'Allens Leak Detector Fluid 500ml - YELLOW', sku: '36601', uom: 'EA', stock: 'back', emoji: '🧪' },
+  { name: 'BATTERY AAA', sku: '36101', uom: 'EA', stock: 'back', emoji: '🔋' },
+  { name: 'BATTERY COVER SEAL FOR SECURE LIB200 GAS METERS', sku: '36711', uom: 'EA', stock: 'in', emoji: '🔋' },
+  { name: 'Blue Roll', sku: '36411', uom: 'EA', stock: 'back', emoji: '🧻' },
+  { name: 'Brown Rawl Plugs', sku: '36145', uom: 'PK-100', stock: 'back', emoji: '🟤' },
+  { name: 'Cable Strapping 12mm', sku: '36526', uom: 'EA', stock: 'back', emoji: '📎' },
+  { name: 'CASTLE FITTING', sku: '36021', uom: 'PK-5', stock: 'back', emoji: '🏰' },
+  { name: 'CUTOUTBUNGS', sku: '36206', uom: 'PK-100', stock: 'back', emoji: '🔌' },
+  { name: 'DURACELL PROCELL 9V BATTERY', sku: '36110', uom: 'EA', stock: 'back', emoji: '🔋' },
+  { name: 'Earth Clip Single Tag', sku: '36412', uom: 'PK-25', stock: 'back', emoji: '🏷️' },
+  { name: 'ECV Handle - Split Pin ECV', sku: '36525', uom: 'EA', stock: 'back', emoji: '🔧' },
+  { name: 'ELECTRIC TAPE - BLACK', sku: '36436', uom: 'EA', stock: 'back', emoji: '⬛' },
+  { name: 'ELECTRIC TAPE - BLUE', sku: '36437', uom: 'EA', stock: 'back', emoji: '🔵' },
+  { name: 'ELECTRIC TAPE - BROWN', sku: '36435', uom: 'EA', stock: 'back', emoji: '🟤' },
+  { name: 'Electrical Compound', sku: '36567', uom: 'EA', stock: 'back', emoji: '🧴' },
+  { name: 'FLUE JOINTING COMPOUND', sku: '36141', uom: 'EA', stock: 'back', emoji: '🧴' },
+  { name: 'Flux 100G Tin', sku: '36140', uom: 'EA', stock: 'back', emoji: '🥫' },
+  { name: 'GAS MARKER TAPE', sku: '36513', uom: 'EA', stock: 'back', emoji: '⚠️' },
+  { name: 'GENERAL WORK GLOVES CUT 1 - SIZE 06', sku: '36104', uom: 'EA', stock: 'back', emoji: '🧤' },
+  { name: 'GENERAL WORK GLOVES CUT 1 - SIZE 07', sku: '36105', uom: 'EA', stock: 'back', emoji: '🧤' },
+  { name: 'GENERAL WORK GLOVES CUT 1 - SIZE 10', sku: '36108', uom: 'EA', stock: 'back', emoji: '🧤' },
+  { name: 'GENERAL WORK GLOVES CUT 1 - SIZE 11', sku: '36109', uom: 'EA', stock: 'back', emoji: '🧤' },
+  { name: 'LIVERPOOL FITTING 1" x 1"', sku: '36015', uom: 'PK-5', stock: 'in', emoji: '🔗' },
+  { name: 'METER BOX REPAIR KIT TO INC PINS', sku: '36233', uom: 'EA', stock: 'back', emoji: '🧰' },
+  { name: 'METER SEALING WIRE 150MM / FERRULE 12MM', sku: '36600', uom: 'PK-100', stock: 'back', emoji: '🔒' },
+  { name: 'METER SEALS BLUE', sku: '36210', uom: 'PK-100', stock: 'back', emoji: '🔵' },
+  { name: 'METER SEALS BROWN SMCLIPBRL', sku: '36209', uom: 'PK-100', stock: 'back', emoji: '🟤' },
+  { name: 'Meter Separation/Backboard', sku: '36226', uom: 'EA', stock: 'back', emoji: '📋' },
+  { name: 'METER SLOT ADAPTOR', sku: '36002', uom: 'PK-10', stock: 'back', emoji: '🔗' },
+  { name: 'ON/OFF TAPE', sku: '36512', uom: 'EA', stock: 'back', emoji: '🎗️' },
+  { name: 'PACK OF OVERSHOE COVERS', sku: '36468', uom: 'PK-100', stock: 'back', emoji: '👟' },
+  { name: 'PIPE JOINTING COMPOUND', sku: '36142', uom: 'EA', stock: 'in', emoji: '🧴' },
+  { name: 'Plasterboard Fixing', sku: '36196', uom: 'PK-100', stock: 'back', emoji: '🔩' },
+  { name: 'Plastic P Clip 11mm', sku: '36499', uom: 'EA', stock: 'back', emoji: '📎' },
+  { name: 'PLASTIC YELLOW GAS KEY', sku: '36192', uom: 'PK-10', stock: 'back', emoji: '🔑' },
+  { name: 'Pozi Woodscrew 8 x 1"', sku: '36201', uom: 'PK-200', stock: 'in', emoji: '🪛' },
+  { name: 'Red Rawl Plugs', sku: '36146', uom: 'PK-100', stock: 'back', emoji: '🔴' },
+  { name: 'REGULATOR METER UNION', sku: '36006', uom: 'PK-10', stock: 'back', emoji: '🔗' },
+  { name: 'ROTHENBERGER U GAGE MANOMETER FLUID 60ML', sku: '36102', uom: 'EA', stock: 'back', emoji: '🧪' },
+  { name: 'SCREW No 8 x 2" CSK POZI BZP', sku: '36203', uom: 'PK-200', stock: 'back', emoji: '🪛' },
+  { name: 'SHEAR BOLT FOR METER BRACKET', sku: '36516', uom: 'PK-200', stock: 'in', emoji: '🔩' },
+  { name: 'Shear Bolt including Locating Washer', sku: '36152', uom: 'PK-25', stock: 'in', emoji: '🔩' },
+  { name: 'Small Brass Bolt', sku: '36425', uom: 'PK-20', stock: 'back', emoji: '🔩' },
+  { name: 'Un-Leaded Solder', sku: '36156', uom: 'EA', stock: 'back', emoji: '🪡' },
+  { name: 'WHITE REGULATOR ADAPTOR', sku: '36037', uom: 'PK-10', stock: 'in', emoji: '⬜' },
+  { name: 'Wire Wool', sku: '36147', uom: 'EA', stock: 'back', emoji: '🧶' },
+];
+
+let basket = {};
+let filteredItems = [...ITEMS];
+
+function isEA(uom) {
+  return uom.toUpperCase() === 'EA';
+}
+
+function stockClass(s) {
+  return s === 'in' ? 'stock-in' : s === 'back' ? 'stock-back' : 'stock-out';
+}
+function stockLabel(s) {
+  return s === 'in' ? 'In Stock' : s === 'back' ? 'On Backorder' : 'Out of Stock';
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  filteredItems.forEach((item, i) => {
+    const inBasket = basket[item.sku];
+    const tr = document.createElement('tr');
+    if (inBasket) tr.classList.add('added-row');
+    tr.id = 'row-' + item.sku;
+
+    const actionHTML = buildActionCell(item, inBasket);
+
+    tr.innerHTML = `
+      <td><div class="item-img">${item.emoji}</div></td>
+      <td><div class="item-name">${item.name}</div></td>
+      <td><span class="sku">${item.sku}</span></td>
+      <td><span class="uom-badge">${item.uom}</span></td>
+      <td><span class="stock-pill ${stockClass(item.stock)}">${stockLabel(item.stock)}</span></td>
+      <td class="action-cell" id="action-${item.sku}">${actionHTML}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('resultsCount').textContent = `${filteredItems.length} item${filteredItems.length !== 1 ? 's' : ''}`;
+}
+
+function buildActionCell(item, inBasket) {
+  if (inBasket) {
+    return `<span class="added-badge">✓ Added (${inBasket.qty})</span>
+            <button class="basket-clear" style="margin-left:8px;font-size:11px;" onclick="removeItem('${item.sku}')">Remove</button>`;
+  }
+  if (isEA(item.uom)) {
+    return `
+      <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <div class="qty-group">
+          <button class="qty-btn" onclick="changeQty('${item.sku}', -1)">−</button>
+          <input class="qty-input" type="number" id="qty-${item.sku}" value="1" min="1" max="999">
+          <button class="qty-btn" onclick="changeQty('${item.sku}', 1)">+</button>
+        </div>
+        <button class="add-qty-btn" onclick="addItem('${item.sku}')">ADD</button>
+      </div>`;
+  } else {
+    return `<button class="add-simple" onclick="addItem('${item.sku}')">+ Add</button>`;
+  }
+}
+
+function changeQty(sku, delta) {
+  const input = document.getElementById('qty-' + sku);
+  if (!input) return;
+  let val = parseInt(input.value) || 1;
+  val = Math.max(1, val + delta);
+  input.value = val;
+}
+
+function addItem(sku) {
+  const item = ITEMS.find(i => i.sku === sku);
+  if (!item) return;
+  let qty = 1;
+  if (isEA(item.uom)) {
+    const input = document.getElementById('qty-' + sku);
+    qty = input ? (parseInt(input.value) || 1) : 1;
+  }
+  basket[sku] = { ...item, qty };
+  updateBasket();
+  // Update just the action cell and row
+  const actionCell = document.getElementById('action-' + sku);
+  if (actionCell) actionCell.innerHTML = buildActionCell(item, basket[sku]);
+  const row = document.getElementById('row-' + sku);
+  if (row) row.classList.add('added-row');
+}
+
+function removeItem(sku) {
+  delete basket[sku];
+  updateBasket();
+  const item = ITEMS.find(i => i.sku === sku);
+  const actionCell = document.getElementById('action-' + sku);
+  if (actionCell) actionCell.innerHTML = buildActionCell(item, null);
+  const row = document.getElementById('row-' + sku);
+  if (row) row.classList.remove('added-row');
+}
+
+function clearBasket() {
+  basket = {};
+  updateBasket();
+  renderTable();
+}
+
+function updateBasket() {
+  const items = Object.values(basket);
+  const count = items.length;
+  document.getElementById('basketCount').textContent = count;
+  document.getElementById('submitBtn').disabled = count === 0;
+  document.getElementById('basketSummary').innerHTML = `<strong>${count}</strong> line item${count !== 1 ? 's' : ''}`;
+
+  const container = document.getElementById('basketItems');
+  if (count === 0) {
+    container.innerHTML = '<div class="basket-empty">No items added yet.</div>';
+    return;
+  }
+
+  container.innerHTML = items.map(item => `
+    <div class="basket-item">
+      <div class="bi-icon">${item.emoji}</div>
+      <div class="bi-info">
+        <div class="bi-name">${item.name}</div>
+        <div class="bi-meta">${item.sku} · ${item.uom} · Qty: ${item.qty}</div>
+      </div>
+      <button class="bi-remove" onclick="removeItem('${item.sku}')" title="Remove">×</button>
+    </div>
+  `).join('');
+}
+
+function filterItems() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  const stockF = document.getElementById('stockFilter').value;
+  const uomF = document.getElementById('uomFilter').value;
+
+  filteredItems = ITEMS.filter(item => {
+    const matchQ = !q || item.name.toLowerCase().includes(q) || item.sku.includes(q);
+    const matchStock = !stockF || item.stock === stockF;
+    const matchUom = !uomF || item.uom.toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl');
+    return matchQ && matchStock && matchUom;
+  });
+
+  renderTable();
+}
+
+function toggleBasket() {
+  const panel = document.getElementById('basketPanel');
+  panel.classList.toggle('mobile-open');
+}
+
+function openModal() {
+  const items = Object.values(basket);
+  const tbody = document.getElementById('modalBody');
+  tbody.innerHTML = items.map(item => `
+    <tr>
+      <td>${item.name}</td>
+      <td><span class="sku">${item.sku}</span></td>
+      <td><span class="uom-badge">${item.uom}</span></td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;">${item.qty}</td>
+    </tr>
+  `).join('');
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+function printOrder() {
+  window.print();
+}
+
+function copyCSV() {
+  const items = Object.values(basket);
+  const header = 'Name,SKU,Unit of Measure,Quantity';
+  const rows = items.map(i => `"${i.name}",${i.sku},${i.uom},${i.qty}`);
+  const csv = [header, ...rows].join('\n');
+  navigator.clipboard.writeText(csv).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+// Close modal on overlay click
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Init
+renderTable();
+</script>
+</body>
+</html>
