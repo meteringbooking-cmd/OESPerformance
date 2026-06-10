@@ -667,6 +667,43 @@
   @media (max-width: 480px) {
     .items-grid { grid-template-columns: 1fr; }
   }
+  /* PRICE FIELD */
+  .card-price-row {
+    padding: 0 16px 14px;
+    display: flex;
+    align-items: center;
+  }
+  .price-prefix {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: var(--radius) 0 0 var(--radius);
+    padding: 6px 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .price-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    padding: 6px 10px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -moz-appearance: textfield;
+  }
+  .price-input::-webkit-inner-spin-button,
+  .price-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .price-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,255,71,0.12); }
+  .price-input.saved  { border-color: var(--in-stock); box-shadow: 0 0 0 2px rgba(74,222,128,0.12); }
 </style>
 </head>
 <body>
@@ -879,7 +916,8 @@
   ];
 
   // State
-  const imageState = {}; // sku => { url, storagePath }
+  const imageState = {};
+  const priceState = {}; // sku → price string // sku => { url, storagePath }
   let filteredItems = [...ITEMS];
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1026,12 +1064,31 @@
         if (data.sku && data.downloadURL) {
           imageState[data.sku] = { url: data.downloadURL, storagePath: data.storagePath };
         }
+        if (data.sku && data.price != null) {
+          priceState[data.sku] = data.price;
+        }
       });
       renderGrid();
       updateStats();
     } catch (err) {
       console.error('Could not load existing images:', err);
       renderGrid();
+    }
+  }
+
+  async function savePriceForSku(sku, price) {
+    try {
+      const item = ITEMS.find(i => i.sku === sku);
+      await setDoc(doc(db, COLLECTION, sku), {
+        sku,
+        name: item?.name || '',
+        category: item?.category || '',
+        price: price === '' ? null : parseFloat(price),
+      }, { merge: true });
+      priceState[sku] = price;
+    } catch (err) {
+      console.error('Price save failed:', err);
+      showToast('Could not save price: ' + err.message, 'error');
     }
   }
 
@@ -1091,6 +1148,12 @@
           <span class="uom-badge">${item.uom}</span>
         </div>
       </div>
+      <div class="card-price-row">
+        <span class="price-prefix">£</span>
+        <input class="price-input" type="number" step="0.01" min="0" placeholder="0.00"
+               id="price-${item.sku}" data-sku="${item.sku}"
+               value="${priceState[item.sku] != null ? priceState[item.sku] : ''}">
+      </div>
       <div class="card-footer">
         <div class="status-dot"></div>
         <span class="status-label">${imgUrl ? 'Image uploaded' : 'No image yet'}</span>
@@ -1118,6 +1181,18 @@
     fileInput.addEventListener('change', () => {
       if (fileInput.files[0]) uploadImageForSku(item.sku, fileInput.files[0]);
       fileInput.value = '';
+    });
+
+    // Price auto-save on blur
+    const priceInput = card.querySelector('.price-input');
+    priceInput.addEventListener('blur', async () => {
+      const val = priceInput.value.trim();
+      await savePriceForSku(item.sku, val);
+      priceInput.classList.add('saved');
+      setTimeout(() => priceInput.classList.remove('saved'), 1800);
+    });
+    priceInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') priceInput.blur();
     });
 
     return card;
