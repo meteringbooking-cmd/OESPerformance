@@ -1218,6 +1218,108 @@
 
 
 
+  /* IMAGE HOVER PREVIEW */
+
+  .img-preview-card {
+
+    position: fixed;
+
+    z-index: 9000;
+
+    pointer-events: none;
+
+    background: #1a1a1a;
+
+    border: 1px solid #2e2e2e;
+
+    border-radius: 10px;
+
+    box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(232,255,71,0.08);
+
+    overflow: hidden;
+
+    width: 200px;
+
+    opacity: 0;
+
+    transform: scale(0.92) translateY(4px);
+
+    transition: opacity 0.18s ease, transform 0.18s ease;
+
+    will-change: transform, opacity;
+
+  }
+
+  .img-preview-card.visible {
+
+    opacity: 1;
+
+    transform: scale(1) translateY(0);
+
+  }
+
+  .img-preview-img {
+
+    width: 200px;
+
+    height: 150px;
+
+    object-fit: cover;
+
+    display: block;
+
+  }
+
+  .img-preview-none {
+
+    width: 200px;
+
+    height: 150px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    color: #555;
+
+    font-size: 12px;
+
+    background: #141414;
+
+  }
+
+  .img-preview-none svg { opacity: 0.3; }
+
+  .img-preview-footer {
+
+    padding: 8px 12px;
+
+    font-size: 11px;
+
+    color: #666;
+
+    font-family: 'DM Mono', monospace;
+
+    border-top: 1px solid #2e2e2e;
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+  }
+
+  .img-preview-footer .pf-sku { color: var(--accent2); }
+
+
+
   /* RESPONSIVE */
 
   @media (max-width: 900px) {
@@ -1466,6 +1568,20 @@
 
 
 
+<!-- Floating image hover preview -->
+<div class="img-preview-card" id="imgPreviewCard">
+  <div class="img-preview-none" id="imgPreviewNone">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+    No image uploaded
+  </div>
+  <img class="img-preview-img" id="imgPreviewImg" src="" alt="" style="display:none">
+  <div class="img-preview-footer" id="imgPreviewFooter"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 
@@ -1474,7 +1590,7 @@
 
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 
-  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 
 
@@ -1501,6 +1617,136 @@
   const app = initializeApp(firebaseConfig);
 
   const db = getFirestore(app);
+
+
+
+  // ── Product image map (sku → downloadURL) ──────────────────────────────
+
+  const productImages = {};
+
+  async function loadProductImages() {
+
+    try {
+
+      const snap = await getDocs(collection(db, 'energise order images'));
+
+      snap.forEach(d => {
+
+        const data = d.data();
+
+        if (data.sku && data.downloadURL) productImages[data.sku] = data.downloadURL;
+
+      });
+
+    } catch (e) {
+
+      console.warn('Could not load product images:', e);
+
+    }
+
+  }
+
+
+
+  // ── Hover preview logic ────────────────────────────────────────────────
+
+  const previewCard  = document.getElementById('imgPreviewCard');
+
+  const previewImg   = document.getElementById('imgPreviewImg');
+
+  const previewNone  = document.getElementById('imgPreviewNone');
+
+  const previewFoot  = document.getElementById('imgPreviewFooter');
+
+  let hideTimer = null;
+
+
+
+  function showPreview(sku, name, mouseX, mouseY) {
+
+    clearTimeout(hideTimer);
+
+    const url = productImages[sku];
+
+    if (url) {
+
+      previewImg.src = url;
+
+      previewImg.style.display = 'block';
+
+      previewNone.style.display = 'none';
+
+    } else {
+
+      previewImg.style.display = 'none';
+
+      previewNone.style.display = 'flex';
+
+    }
+
+    previewFoot.innerHTML = `<span class="pf-sku">${sku}</span>  ${name.length > 28 ? name.slice(0, 28) + '…' : name}`;
+
+    positionPreview(mouseX, mouseY);
+
+    previewCard.classList.add('visible');
+
+  }
+
+
+
+  function positionPreview(mx, my) {
+
+    const pw = 200, ph = 200;
+
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    let left = mx + 18;
+
+    let top  = my - 60;
+
+    if (left + pw > vw - 12) left = mx - pw - 18;
+
+    if (top + ph > vh - 12) top = vh - ph - 12;
+
+    if (top < 8) top = 8;
+
+    previewCard.style.left = left + 'px';
+
+    previewCard.style.top  = top  + 'px';
+
+  }
+
+
+
+  function hidePreview() {
+
+    hideTimer = setTimeout(() => previewCard.classList.remove('visible'), 120);
+
+  }
+
+
+
+  // Wire hover events onto table rows after render
+
+  function attachRowHover() {
+
+    document.querySelectorAll('#tableBody tr[id^="row-"]').forEach(tr => {
+
+      const sku  = tr.id.replace('row-', '');
+
+      const item = ITEMS.find(i => i.sku === sku);
+
+      if (!item) return;
+
+      tr.addEventListener('mouseenter', e => showPreview(sku, item.name, e.clientX, e.clientY));
+
+      tr.addEventListener('mousemove',  e => positionPreview(e.clientX, e.clientY));
+
+      tr.addEventListener('mouseleave', hidePreview);
+
+    });
+
+  }
 
 
 
@@ -1976,7 +2222,10 @@ window.clearBasket = function() {
 
   renderTable();
 
+  if (typeof attachRowHover === 'function') attachRowHover();
+
 };
+
 
 
 
@@ -2051,6 +2300,8 @@ window.filterItems = function() {
 
 
   renderTable();
+
+  if (typeof attachRowHover === 'function') attachRowHover();
 
 };
 
@@ -2184,11 +2435,20 @@ document.getElementById('submitterName').addEventListener('input', function() {
 
 // Init
 
-renderTable();
+  // Patch renderTable to also attach hover events after each render
+
+  const _origRenderTable = renderTable;
+
+  window._patchedRender = function() { _origRenderTable(); attachRowHover(); };
+
+
+
+  // Load images then render
+
+  loadProductImages().then(() => { renderTable(); attachRowHover(); });
 
 </script>
 
 </body>
 
-</html> 
 
