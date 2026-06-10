@@ -492,10 +492,11 @@
       if (latestKrDate) {
         const dtm = dateTeamEngs[latestKrDate];
         const countTeam = (tName) => dtm[tName] ? dtm[tName].size : 0;
-        const scotEngs  = dtm['Scott Carson'] ? [...dtm['Scott Carson']].filter(e => SCOT_TEAM_MEMBERS.has(e)).length : 0;
+        const scotEngs     = dtm['Scott Carson'] ? [...dtm['Scott Carson']].filter(e => SCOT_TEAM_MEMBERS.has(e)).length : 0;
+        const scottMainEngs = dtm['Scott Carson'] ? [...dtm['Scott Carson']].filter(e => !SCOT_TEAM_MEMBERS.has(e)).length : 0;
 
         document.getElementById('hc_richard').textContent   = countTeam('Richard Wiecko') || '—';
-        document.getElementById('hc_scott').textContent     = countTeam('Scott Carson') || '—';
+        document.getElementById('hc_scott').textContent     = scottMainEngs || '—';
         document.getElementById('hc_scottscot').textContent = scotEngs || '—';
         document.getElementById('hc_stuart').textContent    = countTeam('Stuart Whyte') || '—';
         document.getElementById('hc_tom').textContent       = countTeam('Tom Green') || '—';
@@ -524,16 +525,19 @@
         if (rec.attendance !== 'Sick' && rec.attendance !== 'AAUP') return;
         const tl = normTeam((rec.teamLeader || '').trim());
         // Filter by team
+        const eng = (rec.engineerName || '').trim();
+        // Normalise attendance teamLeader: treat 'Scott Carson - Scot' variants as belonging to the Scot sub-team
+        const isScotSubMember = SCOT_TEAM_MEMBERS.has(eng) && tl === 'Scott Carson' ||
+                                tl === 'Scott Carson - Scot';
         if (team !== 'all') {
           if (team === 'Scott Carson - Scot') {
-            // Only count Scot sub-team members who are absent
-            const eng = (rec.engineerName || '').trim();
-            if (tl !== 'Scott Carson' || !SCOT_TEAM_MEMBERS.has(eng)) return;
+            // Only absent Scot sub-team members count
+            if (!isScotSubMember) return;
+          } else if (team === 'Scott Carson') {
+            // Only absent main Scott Carson engineers (exclude Scot sub-team)
+            if (tl !== 'Scott Carson' || isScotSubMember) return;
           } else if (tl !== team) {
             return;
-          } else {
-            // For Scott Carson (full team), exclude the Scot sub-team members so they aren't double-counted
-            // The "Scott Carson" button represents ALL of Scott Carson's engineers including Scot sub-team
           }
         }
         const dt = rec.date;
@@ -565,7 +569,11 @@
 
       let belongs = false;
       if (team === 'Scott Carson - Scot') {
+        // Scot sub-team: only the 4 named engineers under Scott Carson
         belongs = (t === 'Scott Carson') && SCOT_TEAM_MEMBERS.has(eng);
+      } else if (team === 'Scott Carson') {
+        // Main Scott Carson team: exclude the Scot sub-team members
+        belongs = (t === 'Scott Carson') && !SCOT_TEAM_MEMBERS.has(eng);
       } else {
         belongs = (t === team);
       }
@@ -623,17 +631,28 @@
         const rawTeam = d.team || d.teamLeader || '';
         const t = normTeam(rawTeam);
         krakenRawRecs.push({ ...d, _normTeam: t });
+        // Accumulate meters — Scott Carson split is handled below
         if (team === "all" || t === team ||
-            (team === 'Scott Carson - Scot' && t === 'Scott Carson')) {
+            (team === 'Scott Carson - Scot' && t === 'Scott Carson') ||
+            (team === 'Scott Carson' && t === 'Scott Carson')) {
           krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
         }
       });
 
-      // For Scott Carson - Scot, only count meters from the 4 Scot sub-team members
+      // Recalculate Scott Carson meters with correct sub-team split
       if (team === 'Scott Carson - Scot') {
-        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; }); // reset
+        // Only meters from the 4 Scot sub-team members
+        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
         krakenRawRecs.forEach(d => {
           if (d._normTeam === 'Scott Carson' && SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
+            krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
+          }
+        });
+      } else if (team === 'Scott Carson') {
+        // Only meters from main Scott Carson (exclude Scot sub-team members)
+        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
+        krakenRawRecs.forEach(d => {
+          if (d._normTeam === 'Scott Carson' && !SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
             krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
           }
         });
