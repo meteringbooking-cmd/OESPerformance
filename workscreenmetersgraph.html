@@ -516,6 +516,35 @@
   document.getElementById('abortFrom').value = toLocalIsoString(sevenAgo);
   document.getElementById('abortTo').value   = toLocalIsoString(today);
 
+  // ── NEW: Fetch attendance headcounts per day from the attendance collection ──
+  // Returns an object keyed by date string (YYYY-MM-DD) → count of engineers marked "X" (In)
+  // Filters by teamLeader if team !== "all"
+  async function fetchAttendanceHeadcounts(startDate, endDate, team) {
+    try {
+      const q = query(
+        collection(db, "attendance"),
+        where("date", ">=", startDate),
+        where("date", "<=", endDate)
+      );
+      const snap = await getDocs(q);
+      const counts = {};
+      snap.forEach(doc => {
+        const d = doc.data();
+        // Only count engineers who were actually In (attendance === 'X')
+        if (d.attendance !== 'X') return;
+        const recordTeam = normTeam(d.teamLeader || '');
+        // Filter by team if a specific team is selected
+        if (team !== 'all' && recordTeam !== team) return;
+        const dateKey = d.date;
+        if (dateKey) counts[dateKey] = (counts[dateKey] || 0) + 1;
+      });
+      return counts;
+    } catch (err) {
+      console.warn('Could not fetch attendance headcounts, will fall back to roster headcount:', err);
+      return {};
+    }
+  }
+
   async function fetchRecordsForRange(startDate, endDate, team) {
     const q = query(
       collection(db, "performance"),
@@ -548,7 +577,7 @@
         }
       });
 
-      // Fetch Headcount
+      // Fetch KrakenAM Headcount (used as fallback only if attendance data is missing)
       const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
       const snapHc = await getDocs(qHc);
       const krakenHc = {};
@@ -565,16 +594,29 @@
     }
   }
 
-  // Calculate MPH by passing either End Meters or Kraken Meters
-  function computeMphForDate(meters, date, krakenHc, team, hcFallback) {
+  // ── UPDATED: MPH now uses attendance headcount first, then KrakenAM HC, then roster fallback ──
+  // attendanceHc: object of date→count from the attendance collection (engineers marked "X")
+  // krakenHc: object of date→count from KrakenAM Headcount (legacy fallback)
+  // rosterFallback: static engineer roster count (final fallback)
+  function computeMphForDate(meters, date, attendanceHc, krakenHc, team, rosterFallback) {
     const m = meters || 0;
     if (m <= 0) return null;
-    let hc;
-    if (team === "all") {
-      hc = (krakenHc[date] && krakenHc[date] > 0) ? krakenHc[date] : (hcFallback || 0);
-    } else {
-      hc = hcFallback || 0;
+
+    let hc = 0;
+
+    // Priority 1: Actual attendance headcount for that day (engineers marked "X" = In)
+    if (attendanceHc[date] && attendanceHc[date] > 0) {
+      hc = attendanceHc[date];
     }
+    // Priority 2: KrakenAM headcount (only used for "all teams" if attendance missing)
+    else if (team === "all" && krakenHc[date] && krakenHc[date] > 0) {
+      hc = krakenHc[date];
+    }
+    // Priority 3: Static roster headcount
+    else {
+      hc = rosterFallback || 0;
+    }
+
     return hc > 0 ? Number((m / hc).toFixed(1)) : null;
   }
 
@@ -613,8 +655,11 @@
     const startDate = toLocalIsoString(startOfMonth);
     const endDate   = toLocalIsoString(effectiveEnd);
 
-    const records = await fetchRecordsForRange(startDate, endDate, team);
-    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+    const [records, { krakenMeters, krakenHc }, attendanceHc] = await Promise.all([
+      fetchRecordsForRange(startDate, endDate, team),
+      fetchKrakenMphData(startDate, endDate, team),
+      fetchAttendanceHeadcounts(startDate, endDate, team)
+    ]);
 
     const weekdays  = getWeekdayDates(startOfMonth, effectiveEnd);
     const dateMap   = {};
@@ -628,18 +673,20 @@
       }
     });
 
-    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+    const rosterFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
     
-    // Calculate Start MPH (Kraken Meters / Headcount)
-    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
-    // Calculate End MPH (Meters Installed / Headcount)
-    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, krakenHc, team, hcFallback));
+    // Start MPH: Kraken Meters ÷ attendance headcount (or fallback)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, attendanceHc, krakenHc, team, rosterFallback));
+    // End MPH: Meters Installed ÷ attendance headcount (or fallback)
+    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d].meters, d, attendanceHc, krakenHc, team, rosterFallback));
 
     return {
       rawDates: weekdays,
       labels: weekdays.map(d => formatDayLabel(d, true)),
       metersValues: weekdays.map(d => Math.round(dateMap[d].meters)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      // Expose per-day attendance counts for tooltip use
+      attendancePerDay: weekdays.map(d => attendanceHc[d] || null),
       startMphValues,
       endMphValues
     };
@@ -652,20 +699,23 @@
     const startDate = toLocalIsoString(start);
     const endDate = toLocalIsoString(today);
 
-    const records = await fetchRecordsForRange(startDate, endDate, team);
-    const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
+    const [records, { krakenMeters, krakenHc }, attendanceHc] = await Promise.all([
+      fetchRecordsForRange(startDate, endDate, team),
+      fetchKrakenMphData(startDate, endDate, team),
+      fetchAttendanceHeadcounts(startDate, endDate, team)
+    ]);
 
     const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
 
-    const hcFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
+    const rosterFallback = (team === "all") ? engineerHeadcount["all"] : engineerHeadcount[team];
 
-    // Calculate Start MPH (Kraken Meters / Headcount)
-    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, krakenHc, team, hcFallback));
-    // Calculate End MPH (Meters Installed / Headcount)
-    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d]||0, d, krakenHc, team, hcFallback));
+    // Start MPH: Kraken Meters ÷ attendance headcount (or fallback)
+    const startMphValues = weekdays.map(d => computeMphForDate(krakenMeters[d], d, attendanceHc, krakenHc, team, rosterFallback));
+    // End MPH: Meters Installed ÷ attendance headcount (or fallback)
+    const endMphValues = weekdays.map(d => computeMphForDate(dateMap[d]||0, d, attendanceHc, krakenHc, team, rosterFallback));
 
     const isBar = cfg.type === 'bar';
     return {
@@ -673,6 +723,7 @@
       labels: weekdays.map(d => formatDayLabel(d, isBar)),
       values: weekdays.map(d => Math.round(dateMap[d]||0)),
       krakenMetersPerDay: weekdays.map(d => Math.round(krakenMeters[d] || 0)),
+      attendancePerDay: weekdays.map(d => attendanceHc[d] || null),
       workingDays: weekdays.length,
       startMphValues,
       endMphValues
@@ -680,7 +731,8 @@
   }
 
   // Passing rawDates array to add click drill-down
-  function dualAxisOptions(title, rawDates) {
+  // attendancePerDay: array of per-day attendance counts for tooltips
+  function dualAxisOptions(title, rawDates, attendancePerDay) {
     const scales = {
       x: { ticks:{ color:'#94a3b8', font:{size:10}, padding:8 }, grid:{color:'#334155'} },
       yMeters: { type:'linear', position:'left', beginAtZero:true, grace:'20%', ticks:{ color:'#94a3b8', stepSize:50 }, grid:{color:'#334155'}, title:{ display:true, text:'Meters Installed', color:'#6366f1', font:{size:12,weight:'600'} } },
@@ -695,12 +747,12 @@
       onClick: (event, elements) => {
         if (elements.length > 0 && rawDates) {
           const index = elements[0].index;
-          const clickedDateStr = rawDates[index]; // e.g., "2026-05-14"
+          const clickedDateStr = rawDates[index];
           if (clickedDateStr) {
-            const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+            const monthKey = clickedDateStr.substring(0, 7);
             const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
             if (targetBtn && !targetBtn.classList.contains('active')) {
-              targetBtn.click(); // Triggers the sidebar button logic naturally
+              targetBtn.click();
             }
           }
         }
@@ -716,6 +768,16 @@
         legend: { labels:{ color:'#cbd5e1', font:{size:13}, usePointStyle:true } },
         tooltip: {
           callbacks: {
+            // Show attendance count in the tooltip footer when available
+            afterBody: (tooltipItems) => {
+              if (!attendancePerDay) return [];
+              const idx = tooltipItems[0]?.dataIndex;
+              const att = (idx !== undefined) ? attendancePerDay[idx] : null;
+              if (att !== null && att !== undefined) {
+                return [``, `👷 Attendance (In): ${att} engineers`];
+              }
+              return [``, `👷 Attendance: using roster fallback`];
+            },
             label: c => {
               if (c.dataset.label === 'Start MPH') return c.raw !== null ? ` Start MPH: ${c.raw}` : ' Start MPH: No data';
               if (c.dataset.label === 'End MPH') return c.raw !== null ? ` End MPH: ${c.raw}` : ' End MPH: No data';
@@ -746,15 +808,22 @@
       const validEndMph = data.endMphValues.filter(v=>v!==null&&v>0);
       const avgEndMph = validEndMph.length > 0 ? (validEndMph.reduce((s,v)=>s+v,0)/validEndMph.length).toFixed(1) : '—';
 
+      // Show how many days have real attendance data vs fallback
+      const daysWithAttendance = data.attendancePerDay.filter(v => v !== null && v > 0).length;
+      const attendanceNote = daysWithAttendance > 0
+        ? `${daysWithAttendance}/${data.rawDates.length} days`
+        : 'roster fallback';
+
       setStats(
         `<div class="stats-box"><div class="stats-label">Total</div><div class="stats-value large">${total.toLocaleString()}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop > 0 ? (total/pop).toFixed(1) : '—'}</div></div>` +
-        `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>`
+        `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>` +
+        `<div class="stats-box" style="border-color:#334155;background:rgba(51,65,85,0.3)"><div class="stats-label">Attendance Data</div><div class="stats-value" style="font-size:1rem;background:linear-gradient(90deg,#94a3b8,#cbd5e1);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${attendanceNote}</div></div>`
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
-      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, data.rawDates);
+      const monthOpts = dualAxisOptions(`${label} – Metrics (${currentTeam==='all'?'All Teams':currentTeam})`, data.rawDates, data.attendancePerDay);
 
       chart = new Chart(ctx, {
         type: 'bar',
@@ -765,14 +834,14 @@
               type: 'bar',
               label: 'Meters Installed',
               data: data.metersValues,
-              backgroundColor: 'rgba(99,102,241,1)', // Solid Purple
+              backgroundColor: 'rgba(99,102,241,1)',
               borderColor: '#6366f1',
               borderWidth: 1,
               borderRadius: 6,
               yAxisID: 'yMeters',
-              order: 1, // Drawn on top
+              order: 1,
               grouped: false,
-              barPercentage: 0.5, // Thinner, centered
+              barPercentage: 0.5,
               categoryPercentage: 0.8,
               datalabels: {
                 anchor: 'start', align: 'top',
@@ -781,7 +850,7 @@
                   if (!chart.chartArea) return 0;
                   const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
                   const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
-                  return (base - chart.chartArea.top) - 34; // Lower position row
+                  return (base - chart.chartArea.top) - 34;
                 },
                 color: '#ffffff',
                 backgroundColor: 'rgba(99,102,241,0.85)',
@@ -795,15 +864,15 @@
               type: 'bar',
               label: 'KrakenAM Meters',
               data: data.krakenMetersPerDay,
-              backgroundColor: 'rgba(249,115,22,0.45)', // Faded Orange
+              backgroundColor: 'rgba(249,115,22,0.45)',
               borderColor: '#f97316',
               borderWidth: 1,
               borderRadius: 4,
               yAxisID: 'yMeters',
-              order: 2, // Drawn behind Purple
+              order: 2,
               grouped: false,
-              barPercentage: 1.0, // Across the whole day
-              categoryPercentage: 1.0, // Across the whole day
+              barPercentage: 1.0,
+              categoryPercentage: 1.0,
               datalabels: {
                 display: true,
                 anchor: 'start', align: 'top',
@@ -812,7 +881,7 @@
                   if (!chart.chartArea) return 0;
                   const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
                   const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
-                  return (base - chart.chartArea.top) - 13; // Upper position row
+                  return (base - chart.chartArea.top) - 13;
                 },
                 color: '#ffffff',
                 backgroundColor: 'rgba(249,115,22,0.85)',
@@ -869,6 +938,11 @@
 
       const hc = engineerHeadcount[currentTeam] || engineerHeadcount["all"] || 39;
 
+      const daysWithAttendance = data.attendancePerDay.filter(v => v !== null && v > 0).length;
+      const attendanceNote = daysWithAttendance > 0
+        ? `${daysWithAttendance}/${data.rawDates.length} days`
+        : 'roster fallback';
+
       let targetHTML = '';
       if (currentPeriod === '7days') {
         const last5  = data.values.filter(v=>v>0).slice(-5);
@@ -884,13 +958,14 @@
         `<div class="stats-box"><div class="stats-label">Daily Avg</div><div class="stats-value">${pop>0?(total/pop).toFixed(1):'—'}</div></div>` +
         `<div class="stats-box"><div class="stats-label">Headcount (OES DB)</div><div class="stats-value">${hc}</div></div>` +
         `<div class="stats-box dark-purple"><div class="stats-label">Avg End MPH</div><div class="stats-value dark-purple-grad">${avgEndMph}</div></div>` +
+        `<div class="stats-box" style="border-color:#334155;background:rgba(51,65,85,0.3)"><div class="stats-label">Attendance Data</div><div class="stats-value" style="font-size:1rem;background:linear-gradient(90deg,#94a3b8,#cbd5e1);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${attendanceNote}</div></div>` +
         targetHTML
       );
 
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
       
-      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`, data.rawDates);
+      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`, data.rawDates, data.attendancePerDay);
       
       chart = new Chart(ctx, {
         type: cfg.type,
@@ -902,7 +977,7 @@
               label: `Meters (${currentTeam==='all'?'All Teams':currentTeam})`,
               data: data.values,
               yAxisID: 'yMeters',
-              order: 1, // Drawn on top
+              order: 1,
               grouped: false,
               barPercentage: 0.5,
               categoryPercentage: 0.8,
@@ -921,7 +996,7 @@
                   if (!chart.chartArea) return 0;
                   const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
                   const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
-                  return (base - chart.chartArea.top) - 34; // Lower position row
+                  return (base - chart.chartArea.top) - 34;
                 },
                 color: '#ffffff',
                 backgroundColor: 'rgba(99,102,241,0.85)',
@@ -935,15 +1010,15 @@
               type: 'bar',
               label: 'KrakenAM Meters',
               data: data.krakenMetersPerDay,
-              backgroundColor: 'rgba(249,115,22,0.45)', // Faded orange behind purple
+              backgroundColor: 'rgba(249,115,22,0.45)',
               borderColor: '#f97316',
               borderWidth: 1,
               borderRadius: 4,
               yAxisID: 'yMeters',
-              order: 2, // Drawn behind Purple
+              order: 2,
               grouped: false,
-              barPercentage: 1.0, // Across the whole day
-              categoryPercentage: 1.0, // Across the whole day
+              barPercentage: 1.0,
+              categoryPercentage: 1.0,
               datalabels: cfg.type === 'bar' ? {
                 display: true,
                 anchor: 'start', align: 'top',
@@ -952,7 +1027,7 @@
                   if (!chart.chartArea) return 0;
                   const el = chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
                   const base = el.base !== undefined ? el.base : chart.chartArea.bottom;
-                  return (base - chart.chartArea.top) - 13; // Upper position row
+                  return (base - chart.chartArea.top) - 13;
                 },
                 color: '#ffffff',
                 backgroundColor: 'rgba(249,115,22,0.85)',
@@ -1141,7 +1216,7 @@
             const index = elements[0].index;
             const clickedDateStr = data.rawDates[index];
             if (clickedDateStr) {
-              const monthKey = clickedDateStr.substring(0, 7); // Extracts "2026-05"
+              const monthKey = clickedDateStr.substring(0, 7);
               const targetBtn = document.querySelector(`.month-btn[data-month="${monthKey}"]`);
               if (targetBtn && !targetBtn.classList.contains('active')) {
                 targetBtn.click();
