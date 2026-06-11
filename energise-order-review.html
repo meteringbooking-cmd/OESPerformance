@@ -505,9 +505,85 @@
   .toast.error { border-color: var(--red); color: var(--red); }
   .toast.show   { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* ── PROCESSED SECTION ───────────────────────────────────── */
+  .processed-section {
+    padding: 0 36px 48px;
+  }
+  .processed-section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    padding: 14px 0;
+    border-top: 2px solid var(--border);
+    margin-bottom: 0;
+  }
+  .processed-section-head:hover .processed-toggle-label { color: var(--green); }
+  .processed-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green); flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+  }
+  .processed-toggle-label {
+    font-size: 13px; font-weight: 700; color: var(--text-muted);
+    letter-spacing: 0.04em; transition: color 0.15s; flex: 1;
+  }
+  .processed-count-badge {
+    background: var(--green-lt); border: 1px solid rgba(22,163,74,0.25);
+    color: var(--green); font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .processed-chevron {
+    color: var(--text-muted); transition: transform 0.25s;
+  }
+  .processed-section.open .processed-chevron { transform: rotate(180deg); }
+  .processed-list { display: none; padding-top: 12px; }
+  .processed-section.open .processed-list { display: block; }
+
+  .processed-card {
+    background: var(--surface);
+    border: 1px solid rgba(22,163,74,0.2);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    opacity: 0.85;
+    transition: opacity 0.15s;
+  }
+  .processed-card:hover { opacity: 1; }
+  .processed-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--green) 0%, #86efac 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+    color: #fff; flex-shrink: 0;
+  }
+  .processed-meta { flex: 1; min-width: 0; }
+  .processed-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .processed-dates { font-size: 12px; color: var(--text-muted); }
+  .processed-badge {
+    background: var(--green-lt); border: 1px solid rgba(22,163,74,0.25);
+    color: var(--green); font-size: 11px; font-weight: 700;
+    padding: 4px 10px; border-radius: 20px; display: flex; align-items: center; gap: 5px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  @keyframes slideOut {
+    from { opacity: 1; transform: translateX(0); max-height: 200px; }
+    to   { opacity: 0; transform: translateX(40px); max-height: 0; padding: 0; margin: 0; }
+  }
+  .order-card.processing-out {
+    animation: slideOut 0.4s ease forwards;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   /* ── RESPONSIVE ─────────────────────────────────────────── */
   @media (max-width: 700px) {
-    header, .toolbar, .orders-wrap, .summary-bar { padding-left: 16px; padding-right: 16px; }
+    header, .toolbar, .orders-wrap, .summary-bar, .processed-section { padding-left: 16px; padding-right: 16px; }
     .order-badges { flex-direction: column; gap: 4px; }
     .summary-bar { grid-template-columns: repeat(2, 1fr); }
     .items-table { font-size: 13px; }
@@ -576,6 +652,19 @@
   </div>
 </div>
 
+<!-- Processed orders section -->
+<div class="processed-section" id="processedSection" style="display:none">
+  <div class="processed-section-head" onclick="toggleProcessedSection()">
+    <div class="processed-dot"></div>
+    <span class="processed-toggle-label">Processed Orders</span>
+    <span class="processed-count-badge" id="processedCountBadge">0</span>
+    <svg class="processed-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+  <div class="processed-list" id="processedList"></div>
+</div>
+
 <!-- Confirm delete dialog -->
 <div class="confirm-overlay" id="confirmOverlay">
   <div class="confirm-box">
@@ -630,12 +719,14 @@
           submittedBy: data.submittedBy || 'Unknown',
           submittedAt: data.submittedAt ? data.submittedAt.toDate() : null,
           itemCount:   data.itemCount   || (data.items ? data.items.length : 0),
-          items:       (data.items || []).map(i => ({ ...i }))   // mutable copy
+          items:       (data.items || []).map(i => ({ ...i })),
+          processedAt: data.processedAt ? new Date(data.processedAt) : null
         };
       });
 
       updateStats();
       applyFilters();
+      renderProcessed();
     } catch (err) {
       console.error(err);
       showState('⚠️', 'Failed to load orders: ' + err.message);
@@ -668,6 +759,7 @@
     const sort    = document.getElementById('sortOrder').value;
 
     let filtered = allOrders.filter(o => {
+      if (o.processedAt) return false;           // hide processed from main list
       if (q && !o.submittedBy.toLowerCase().includes(q)) return false;
       if (o.submittedAt) {
         const dateStr = o.submittedAt.toISOString().split('T')[0];
@@ -783,6 +875,47 @@
         <p>${escHtml(msg)}</p>
       </div>`;
   }
+
+  // ── Processed section ────────────────────────────────────
+  function renderProcessed() {
+    const processed = allOrders.filter(o => o.processedAt);
+    const section   = document.getElementById('processedSection');
+    const list      = document.getElementById('processedList');
+    const badge     = document.getElementById('processedCountBadge');
+
+    if (processed.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    badge.textContent = processed.length;
+
+    list.innerHTML = processed
+      .sort((a, b) => (b.processedAt - a.processedAt))
+      .map(order => {
+        const initials = order.submittedBy.trim().split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+        const submittedStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
+        const processedStr = formatDate(order.processedAt) + ' at ' + formatTime(order.processedAt);
+        return `
+          <div class="processed-card">
+            <div class="processed-avatar">${initials || '?'}</div>
+            <div class="processed-meta">
+              <div class="processed-name">${escHtml(order.submittedBy)}</div>
+              <div class="processed-dates">Submitted ${submittedStr} &nbsp;&middot;&nbsp; Processed ${processedStr}</div>
+            </div>
+            <div class="processed-badge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              ${order.itemCount} item${order.itemCount !== 1 ? 's' : ''}
+            </div>
+          </div>`;
+      }).join('');
+  }
+
+  window.toggleProcessedSection = function() {
+    document.getElementById('processedSection').classList.toggle('open');
+  };
+
 
   // ── Toggle card ───────────────────────────────────────────
   window.toggleCard = function(id) {
@@ -942,12 +1075,29 @@
 
     try {
       await emailjs.send('service_ushej2v', 'template_uo288rg', templateParams);
-      btn.classList.add('sent');
-      btn.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        Processed ✓`;
+
+      // Save processedAt to Firestore
+      const now = new Date();
+      await updateDoc(doc(db, 'Energise Orders', orderId), { processedAt: now.toISOString() });
+
+      // Mark in memory
+      order.processedAt = now;
+
+      // Animate card out, then re-render
+      const card = document.getElementById('card-' + orderId);
+      if (card) {
+        card.classList.add('processing-out');
+        setTimeout(() => {
+          applyFilters();
+          renderProcessed();
+          // Auto-open the processed section
+          document.getElementById('processedSection').classList.add('open');
+        }, 420);
+      } else {
+        applyFilters();
+        renderProcessed();
+      }
+
       showToast('✓ Order processed and email sent!', false);
     } catch (err) {
       console.error('EmailJS error:', err);
