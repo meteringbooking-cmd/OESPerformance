@@ -903,44 +903,25 @@
       </svg>
       Sending…`;
 
-    // Build a plain-text itemised list for the email template
+    // Build a padded plain-text table for the email template
     const dateStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
     const timeStr = order.submittedAt ? formatTime(order.submittedAt) : '';
 
-    const itemLines = order.items.map((item, i) =>
-      `${i + 1}. ${item.name}\n   SKU: ${item.sku}  |  Unit: ${item.uom}  |  Qty: ${item.qty ?? 1}`
-    ).join('\n\n');
-
-    // HTML version for richer email clients
-    const itemsHtml = `<table style="border-collapse:collapse;width:100%;font-family:sans-serif;font-size:14px;">
-      <thead>
-        <tr style="background:#f4f6f9;">
-          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">#</th>
-          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">Product</th>
-          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">SKU</th>
-          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">Unit</th>
-          <th style="text-align:center;padding:8px 12px;border-bottom:2px solid #d8dde6;">Qty</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${order.items.map((item, i) => `
-          <tr style="border-bottom:1px solid #e5e7eb;">
-            <td style="padding:8px 12px;color:#6b7280;">${i + 1}</td>
-            <td style="padding:8px 12px;font-weight:500;">${item.name || ''}</td>
-            <td style="padding:8px 12px;font-family:monospace;color:#6b7280;">${item.sku || ''}</td>
-            <td style="padding:8px 12px;">${item.uom || ''}</td>
-            <td style="padding:8px 12px;text-align:center;font-weight:700;">${item.qty ?? 1}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>`;
+    // Fixed-width columns so it lines up in monospace email clients
+    const pad = (str, len) => String(str ?? '').slice(0, len).padEnd(len);
+    const header = `${'#'.padEnd(4)} ${'Product'.padEnd(42)} ${'SKU'.padEnd(8)} ${'Unit'.padEnd(8)} Qty`;
+    const divider = '-'.repeat(header.length);
+    const rows = order.items.map((item, i) =>
+      `${String(i + 1).padEnd(4)} ${pad(item.name, 42)} ${pad(item.sku, 8)} ${pad(item.uom, 8)} ${item.qty ?? 1}`
+    );
+    const itemsList = [header, divider, ...rows, divider].join('\n');
 
     const templateParams = {
-      submitted_by:  order.submittedBy,
-      submitted_at:  `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-      item_count:    order.items.length,
-      items_list:    itemLines,          // plain text
-      items_html:    itemsHtml,          // HTML table
-      order_id:      orderId,
+      submitted_by: order.submittedBy,
+      submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+      item_count:   order.items.length,
+      items_list:   itemsList,
+      order_id:     orderId,
     };
 
     try {
