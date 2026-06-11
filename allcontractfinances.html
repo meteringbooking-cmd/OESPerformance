@@ -60,6 +60,10 @@
         @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .status-message.success { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
         .status-message.error { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+
+        /* Dynamic manual entry field hint */
+        .field-hint { font-size: 0.8em; color: #64748b; margin-top: 4px; font-style: italic; }
+
         @media (max-width: 768px) { .stats-container { grid-template-columns: 1fr; } h1 { font-size: 2em; } .stat-value { font-size: 2.5em; } }
     </style>
 </head>
@@ -149,8 +153,24 @@
                 <div class="upload-area">
                     <div class="manual-entry-grid">
                         <div class="upload-group"><label>Date</label><input type="date" id="manualDate"></div>
-                        <div class="upload-group"><label>Contract</label><select id="manualContract"><option value="SP">SP (&#163;405/day)</option><option value="Energise">Energise (&#163;396/day)</option></select></div>
-                        <div class="upload-group"><label>Days</label><input type="number" id="manualDays" min="0" step="0.5" placeholder="0.0"></div>
+                        <div class="upload-group"><label>Contract</label>
+                            <select id="manualContract" onchange="handleContractChange()">
+                                <option value="SP">SP (&#163;405/day)</option>
+                                <option value="Energise">Energise (direct value)</option>
+                            </select>
+                        </div>
+                        <!-- Days field: shown for SP -->
+                        <div class="upload-group" id="daysField">
+                            <label>Days</label>
+                            <input type="number" id="manualDays" min="0" step="0.5" placeholder="0.0">
+                            <span class="field-hint">Calculated at &#163;405/day</span>
+                        </div>
+                        <!-- Direct value field: shown for Energise -->
+                        <div class="upload-group" id="valueField" style="display:none;">
+                            <label>Amount (&#163;)</label>
+                            <input type="number" id="manualValue" min="0" step="0.01" placeholder="0.00">
+                            <span class="field-hint">Enter the total monetary value directly</span>
+                        </div>
                     </div>
                     <button class="btn" onclick="addManualEntry()">Add Manual Entry</button>
                     <div id="manualStatus" class="status-message"></div>
@@ -205,6 +225,21 @@
         initializeDashboard();
     </script>
     <script>
+        function handleContractChange() {
+            const contract = document.getElementById('manualContract').value;
+            const daysField = document.getElementById('daysField');
+            const valueField = document.getElementById('valueField');
+            if (contract === 'Energise') {
+                daysField.style.display = 'none';
+                valueField.style.display = 'flex';
+                document.getElementById('manualDays').value = '';
+            } else {
+                daysField.style.display = 'flex';
+                valueField.style.display = 'none';
+                document.getElementById('manualValue').value = '';
+            }
+        }
+
         function initializeDashboard() {
             const today = new Date();
             const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -226,7 +261,6 @@
             const endDate = new Date(document.getElementById('endDate').value);
             endDate.setHours(23, 59, 59, 999);
 
-            // Previous full calendar month boundaries
             const prevMonthStart = new Date(startDate.getFullYear(), startDate.getMonth() - 1, 1);
             prevMonthStart.setHours(0, 0, 0, 0);
             const prevMonthEnd = new Date(startDate.getFullYear(), startDate.getMonth(), 0);
@@ -238,10 +272,8 @@
             try {
                 const querySnapshot = await getDocs(collection(window.db, "all contract financial"));
 
-                // Current period accumulators
                 let oesTotal = 0, spTotal = 0, EnergiseTotal = 0;
                 let oesDates = new Set(), spDates = new Set(), EnergiseDates = new Set();
-                // Previous month accumulators
                 let oesPrevTotal = 0, spPrevTotal = 0, EnergisePrevTotal = 0;
                 let oesPrevDates = new Set(), spPrevDates = new Set(), EnergisePrevDates = new Set();
 
@@ -254,13 +286,11 @@
                     const value = parseFloat(data.value) || 0;
                     const dateKey = docDate.toDateString();
 
-                    // Current selected period
                     if (docDate >= startDate && docDate <= endDate) {
                         if (data.contract === 'OES') { oesTotal += value; oesDates.add(dateKey); }
                         else if (data.contract === 'SP') { spTotal += value; spDates.add(dateKey); }
                         else if (data.contract === 'Energise') { EnergiseTotal += value; EnergiseDates.add(dateKey); }
                     }
-                    // Previous full calendar month
                     if (docDate >= prevMonthStart && docDate <= prevMonthEnd) {
                         if (data.contract === 'OES') { oesPrevTotal += value; oesPrevDates.add(dateKey); }
                         else if (data.contract === 'SP') { spPrevTotal += value; spPrevDates.add(dateKey); }
@@ -268,19 +298,16 @@
                     }
                 });
 
-                // Current period: rolling avg * working days in selected range
                 const totalWorkingDays = getWeekdaysInRange(startDate, endDate);
                 const oesForecast = oesDates.size > 0 ? (oesTotal / oesDates.size) * totalWorkingDays : 0;
                 const spForecast  = spDates.size  > 0 ? (spTotal  / spDates.size)  * totalWorkingDays : 0;
                 const EnergiseForecast = EnergiseDates.size > 0 ? (EnergiseTotal / EnergiseDates.size) * totalWorkingDays : 0;
 
-                // Previous month: same algorithm applied over previous month's full working days
                 const prevMonthWorkingDays = getWeekdaysInRange(prevMonthStart, prevMonthEnd);
                 const oesPrevForecast = oesPrevDates.size > 0 ? (oesPrevTotal / oesPrevDates.size) * prevMonthWorkingDays : 0;
                 const spPrevForecast  = spPrevDates.size  > 0 ? (spPrevTotal  / spPrevDates.size)  * prevMonthWorkingDays : 0;
                 const EnergisePrevForecast = EnergisePrevDates.size > 0 ? (EnergisePrevTotal / EnergisePrevDates.size) * prevMonthWorkingDays : 0;
 
-                // Outgoings
                 const outgoingsSnapshot = await getDocs(collection(window.db, "outgoings data"));
                 let currentOutgoings = {OES:0, SP:0, Energise:0};
                 let previousOutgoings = {OES:0, SP:0, Energise:0};
@@ -300,7 +327,6 @@
                 document.getElementById('oesOutgoings').textContent = fmt(currentOutgoings.OES);
                 document.getElementById('spOutgoings').textContent  = fmt(currentOutgoings.SP);
                 document.getElementById('EnergiseOutgoings').textContent = fmt(currentOutgoings.Energise);
-                // Previous month forecast now comes from actual financial data calculation
                 document.getElementById('oesPrevForecast').textContent = fmt(oesPrevForecast);
                 document.getElementById('spPrevForecast').textContent  = fmt(spPrevForecast);
                 document.getElementById('EnergisePrevForecast').textContent = fmt(EnergisePrevForecast);
@@ -386,15 +412,38 @@
         async function addManualEntry() {
             const dateInput = document.getElementById('manualDate').value;
             const contract = document.getElementById('manualContract').value;
-            const days = parseFloat(document.getElementById('manualDays').value);
-            if (!dateInput || !days || days <= 0) { showStatus('Please fill in all fields', 'error', 'manualStatus'); return; }
-            const rate = contract === 'SP' ? 405 : 396;
-            const value = days * rate;
-            try {
-                await addDoc(collection(window.db, "all contract financial"), { contract, date:new Date(dateInput), days, rate, value, manualEntry:true, timestamp:serverTimestamp() });
-                showStatus('Successfully added ' + contract + ' entry: ' + days + ' days x £' + rate + ' = £' + value.toFixed(2), 'success', 'manualStatus');
-                updateDashboard(); document.getElementById('manualDays').value = '';
-            } catch (error) { showStatus('Error adding entry: ' + error.message, 'error', 'manualStatus'); }
+            if (!dateInput) { showStatus('Please fill in all fields', 'error', 'manualStatus'); return; }
+
+            let value, successMsg;
+
+            if (contract === 'Energise') {
+                // Direct monetary value entry
+                value = parseFloat(document.getElementById('manualValue').value);
+                if (!value || value <= 0) { showStatus('Please enter a valid amount', 'error', 'manualStatus'); return; }
+                successMsg = 'Successfully added Energise entry: £' + value.toFixed(2);
+                try {
+                    await addDoc(collection(window.db, "all contract financial"), {
+                        contract, date: new Date(dateInput), value, manualEntry: true, timestamp: serverTimestamp()
+                    });
+                } catch (error) { showStatus('Error adding entry: ' + error.message, 'error', 'manualStatus'); return; }
+            } else {
+                // Days × rate entry (SP)
+                const days = parseFloat(document.getElementById('manualDays').value);
+                if (!days || days <= 0) { showStatus('Please enter a valid number of days', 'error', 'manualStatus'); return; }
+                const rate = 405;
+                value = days * rate;
+                successMsg = 'Successfully added ' + contract + ' entry: ' + days + ' days x £' + rate + ' = £' + value.toFixed(2);
+                try {
+                    await addDoc(collection(window.db, "all contract financial"), {
+                        contract, date: new Date(dateInput), days, rate, value, manualEntry: true, timestamp: serverTimestamp()
+                    });
+                } catch (error) { showStatus('Error adding entry: ' + error.message, 'error', 'manualStatus'); return; }
+            }
+
+            showStatus(successMsg, 'success', 'manualStatus');
+            updateDashboard();
+            document.getElementById('manualDays').value = '';
+            document.getElementById('manualValue').value = '';
         }
 
         async function addForecastEnd() {
@@ -433,6 +482,7 @@
         window.addForecastEnd = addForecastEnd;
         window.addOutgoings = addOutgoings;
         window.updateDashboard = updateDashboard;
+        window.handleContractChange = handleContractChange;
     </script>
 </body>
 </html>
