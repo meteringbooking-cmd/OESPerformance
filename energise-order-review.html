@@ -6,6 +6,11 @@
 <title>Energise — Order Submissions</title>
 <meta name="description" content="Review and manage all Energise stock order submissions">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  // ── Replace with your EmailJS public key (Account → API Keys) ──
+  emailjs.init('YOUR_EMAILJS_PUBLIC_KEY');
+</script>
 <style>
   :root {
     --bg:         #f4f6f9;
@@ -422,6 +427,31 @@
   .btn-save:hover { background: #dcfce7; border-color: var(--green); }
   .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  .btn-process {
+    background: #1a56db;
+    border: 1px solid #1a56db;
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    margin-left: auto;
+  }
+  .btn-process:hover { background: #1648c0; transform: translateY(-1px); }
+  .btn-process:disabled { background: #93a8d6; border-color: #93a8d6; cursor: not-allowed; transform: none; }
+  .btn-process.sent {
+    background: var(--green);
+    border-color: var(--green);
+    cursor: default;
+    pointer-events: none;
+  }
+
   /* ── CONFIRM DIALOG ─────────────────────────────────────── */
   .confirm-overlay {
     display: none;
@@ -736,6 +766,10 @@
               </svg>
               Delete Order
             </button>
+            <button class="btn-process" id="process-${order.id}" onclick="processOrder('${order.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Process Order
+            </button>
           </div>
         </div>
       </div>
@@ -848,7 +882,90 @@
     }
   };
 
+  // ── Process Order (send email via EmailJS) ───────────────
+  window.processOrder = async function(orderId) {
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    // Warn if there are unsaved changes
+    const saveBtn = document.getElementById('save-' + orderId);
+    if (saveBtn && saveBtn.style.display !== 'none') {
+      if (!confirm('You have unsaved changes. Save them before processing, or proceed and send the current saved version?')) return;
+    }
+
+    const btn = document.getElementById('process-' + orderId);
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           style="animation:spin 0.8s linear infinite">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      Sending…`;
+
+    // Build a plain-text itemised list for the email template
+    const dateStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
+    const timeStr = order.submittedAt ? formatTime(order.submittedAt) : '';
+
+    const itemLines = order.items.map((item, i) =>
+      `${i + 1}. ${item.name}\n   SKU: ${item.sku}  |  Unit: ${item.uom}  |  Qty: ${item.qty ?? 1}`
+    ).join('\n\n');
+
+    // HTML version for richer email clients
+    const itemsHtml = `<table style="border-collapse:collapse;width:100%;font-family:sans-serif;font-size:14px;">
+      <thead>
+        <tr style="background:#f4f6f9;">
+          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">#</th>
+          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">Product</th>
+          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">SKU</th>
+          <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #d8dde6;">Unit</th>
+          <th style="text-align:center;padding:8px 12px;border-bottom:2px solid #d8dde6;">Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${order.items.map((item, i) => `
+          <tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:8px 12px;color:#6b7280;">${i + 1}</td>
+            <td style="padding:8px 12px;font-weight:500;">${item.name || ''}</td>
+            <td style="padding:8px 12px;font-family:monospace;color:#6b7280;">${item.sku || ''}</td>
+            <td style="padding:8px 12px;">${item.uom || ''}</td>
+            <td style="padding:8px 12px;text-align:center;font-weight:700;">${item.qty ?? 1}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+    const templateParams = {
+      submitted_by:  order.submittedBy,
+      submitted_at:  `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+      item_count:    order.items.length,
+      items_list:    itemLines,          // plain text
+      items_html:    itemsHtml,          // HTML table
+      order_id:      orderId,
+    };
+
+    try {
+      await emailjs.send('service_ushej2v', 'template_uo288rg', templateParams);
+      btn.classList.add('sent');
+      btn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Processed ✓`;
+      showToast('✓ Order processed and email sent!', false);
+    } catch (err) {
+      console.error('EmailJS error:', err);
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Process Order`;
+      showToast('Email failed: ' + (err.text || err.message || JSON.stringify(err)), true);
+    }
+  };
+
   // ── Delete whole order ────────────────────────────────────
+
   window.confirmDelete = function(id) {
     pendingDeleteId = id;
     document.getElementById('confirmOverlay').classList.add('open');
