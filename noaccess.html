@@ -31,7 +31,7 @@
         .header img { height: 56px; opacity: 0.9; flex-shrink: 0; }
 
         .container { max-width: 1400px; margin: 0 auto; padding: 36px 24px; }
-        
+
         .main-layout { display: flex; gap: 28px; align-items: flex-start; }
         .main-content { flex: 1; min-width: 0; }
         .sidebar { width: 340px; flex-shrink: 0; position: sticky; top: 24px; }
@@ -188,7 +188,7 @@
 
 <div class="container">
     <div class="main-layout">
-        
+
         <div class="main-content">
             <div class="panel">
                 <div class="panel-header">
@@ -341,7 +341,7 @@ function getOverallStatus(doc) {
 function updateDuplicateSidebar() {
     const counts = {};
     const container = document.getElementById('duplicateSidebarContent');
-    
+
     window._naData.forEach(r => {
         const pc = (r.postcode || '').trim().toUpperCase();
         if (!pc || pc === '—') return;
@@ -548,12 +548,16 @@ function buildAttemptBox(docId, att, index, allAttempts) {
         if (att.outcome === 'no-answer') {
             const sn = att.secondNumber || {};
             const triedLabel = sn.tried === 'yes' ? '✓ Yes' : sn.tried === 'no' ? '✗ No' : '—';
+            const availLabel = sn.available === 'yes' ? '✓ Yes' : sn.available === 'no' ? '✗ No' : '—';
             secondNumHtml = `
                 <div class="attempt-row" style="margin-top:6px"><span class="attempt-row-label">Another number tried?</span><span class="attempt-row-val" style="color:${sn.tried==='yes'?'var(--success)':'var(--accent-rose)'}">${triedLabel}</span></div>
                 ${sn.tried==='yes' ? `
                     <div class="attempt-row"><span class="attempt-row-label">2nd Attempt Date</span><span class="attempt-row-val">${esc(fmtDate(sn.date||''))}</span></div>
                     <div class="attempt-row"><span class="attempt-row-label">2nd Outcome</span><span class="attempt-row-val">${esc(sn.outcome||'—')}</span></div>
                     ${sn.disposition ? `<div class="attempt-row"><span class="attempt-row-label">2nd Disposition</span><span class="attempt-row-val" style="color:var(--accent-violet)">${esc(sn.disposition)}</span></div>` : ''}
+                ` : ''}
+                ${sn.tried==='no' ? `
+                    <div class="attempt-row"><span class="attempt-row-label">Another number available?</span><span class="attempt-row-val" style="color:${sn.available==='yes'?'var(--success)':'var(--accent-rose)'}">${availLabel}</span></div>
                 ` : ''}
             `;
         }
@@ -592,10 +596,12 @@ function buildAttemptBox(docId, att, index, allAttempts) {
     const snDate    = sn.date  || today;
     const snOutcome = sn.outcome || '';
     const snDisp    = sn.disposition || '';
+    const snAvailable = sn.available || '';
 
     const showNoAnswerExtra = selVal === 'no-answer';
     const showRebookFields  = selVal === 'rebooked';
     const showSnForm        = showNoAnswerExtra && snTried === 'yes';
+    const showAvailableForm = showNoAnswerExtra && snTried === 'no';
 
     return `<div class="${boxClass}">
         <div class="attempt-number">Attempt <span>${index+1}</span></div>
@@ -651,6 +657,14 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                             </select>
                         </div>
                     </div>
+
+                    <div id="sn-available-wrap-${docId}-${index}" style="display:${showAvailableForm?'flex':'none'};flex-direction:column;gap:10px;margin-top:10px">
+                        <div class="sub-section-label">Was another number available when asked?</div>
+                        <div class="toggle-group">
+                            <button type="button" class="toggle-btn ${snAvailable==='yes'?'active-yes':''}" id="sn-avail-yes-${docId}-${index}" onclick="setSnAvailable('${docId}',${index},'yes')">Yes</button>
+                            <button type="button" class="toggle-btn ${snAvailable==='no'?'active-no':''}" id="sn-avail-no-${docId}-${index}" onclick="setSnAvailable('${docId}',${index},'no')">No</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -698,11 +712,13 @@ function setSnTried(docId, index, val) {
     const yesBtn  = document.getElementById(`sn-yes-${docId}-${index}`);
     const noBtn   = document.getElementById(`sn-no-${docId}-${index}`);
     const snForm  = document.getElementById(`sn-form-${docId}-${index}`);
+    const availWrap = document.getElementById(`sn-available-wrap-${docId}-${index}`);
     if (!yesBtn || !noBtn || !snForm) return;
 
     yesBtn.className = 'toggle-btn' + (val === 'yes' ? ' active-yes' : '');
     noBtn.className  = 'toggle-btn' + (val === 'no'  ? ' active-no'  : '');
     snForm.style.display = val === 'yes' ? 'flex' : 'none';
+    if (availWrap) availWrap.style.display = val === 'no' ? 'flex' : 'none';
 
     /* store on in-memory rec so it survives re-renders if needed */
     const rec = window._naData.find(r => r.id === docId);
@@ -712,6 +728,23 @@ function setSnTried(docId, index, val) {
     }
 }
 window.setSnTried = setSnTried;
+
+/* ── SET SECOND NUMBER AVAILABLE ── */
+function setSnAvailable(docId, index, val) {
+    const yesBtn = document.getElementById(`sn-avail-yes-${docId}-${index}`);
+    const noBtn  = document.getElementById(`sn-avail-no-${docId}-${index}`);
+    if (!yesBtn || !noBtn) return;
+
+    yesBtn.className = 'toggle-btn' + (val === 'yes' ? ' active-yes' : '');
+    noBtn.className  = 'toggle-btn' + (val === 'no'  ? ' active-no'  : '');
+
+    const rec = window._naData.find(r => r.id === docId);
+    if (rec && rec.attempts[index]) {
+        if (!rec.attempts[index].secondNumber) rec.attempts[index].secondNumber = {};
+        rec.attempts[index].secondNumber.available = val;
+    }
+}
+window.setSnAvailable = setSnAvailable;
 
 /* ── SAVE ATTEMPT ── */
 async function saveAttempt(docId, index) {
@@ -740,6 +773,11 @@ async function saveAttempt(docId, index) {
             secondNumber.date        = snDateEl    ? snDateEl.value    : '';
             secondNumber.outcome     = snOutcomeEl ? snOutcomeEl.value : '';
             secondNumber.disposition = snDispEl    ? snDispEl.value    : '';
+        } else {
+            const availYesBtn = document.getElementById(`sn-avail-yes-${docId}-${index}`);
+            const availNoBtn  = document.getElementById(`sn-avail-no-${docId}-${index}`);
+            if (availYesBtn && availYesBtn.classList.contains('active-yes')) secondNumber.available = 'yes';
+            else if (availNoBtn && availNoBtn.classList.contains('active-no')) secondNumber.available = 'no';
         }
         attemptData.secondNumber = secondNumber;
     }
