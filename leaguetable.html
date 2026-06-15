@@ -40,7 +40,11 @@
     .summary-label{font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--dim);font-weight:700;margin-bottom:.4rem;}
     .summary-val{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:1px;line-height:1;}
     .summary-sub{font-size:.72rem;color:var(--dim);margin-top:.2rem;}
-    .glow-blue{color:#60a5fa;}.glow-green{color:var(--green);}.glow-red{color:var(--red);}.glow-purple{color:#a78bfa;}.glow-amber{color:var(--amber);}
+    .glow-blue{color:#60a5fa;}
+    .glow-green{color:var(--green);}
+    .glow-red{color:var(--red);}
+    .glow-purple{color:#a78bfa;}
+    .glow-amber{color:var(--amber);}
     .podium-section{margin-bottom:3rem;}
     .section-title{font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:3px;color:var(--dim);text-transform:uppercase;margin-bottom:1.2rem;text-align:center;}
     .podium{display:flex;justify-content:center;align-items:flex-end;gap:1rem;max-width:780px;margin:0 auto;}
@@ -90,12 +94,17 @@
     .abort-0{background:rgba(16,185,129,.1);color:var(--green);border-color:rgba(16,185,129,.3);}
     .abort-lo{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.3);}
     .abort-hi{background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.3);}
+    
+    /* Attendance / Absence Chips */
     .att-chip{display:inline-block;padding:3px 8px;border-radius:6px;font-size:.72rem;font-weight:700;border:1px solid;margin:1px;}
     .att-in{background:rgba(16,185,129,.1);color:var(--green);border-color:rgba(16,185,129,.3);}
     .att-hol{background:rgba(59,130,246,.1);color:#93c5fd;border-color:rgba(59,130,246,.3);}
     .att-sick{background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.3);}
     .att-abs{background:rgba(100,116,139,.1);color:var(--dim);border-color:rgba(100,116,139,.3);}
+    .att-aaup{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.3);}
+
     .days-count{font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--dim);}
+    
     /* Compliance column */
     .comp-pass{font-family:'JetBrains Mono',monospace;font-size:.88rem;font-weight:700;color:#a78bfa;}
     .comp-none{font-size:.78rem;color:var(--dim);}
@@ -128,7 +137,6 @@
     <button class="mode-btn" id="spModeBtn" onclick="setMode('sp')">&#128268; Scottish Power</button>
   </div>
 
-  <!-- OES controls -->
   <div id="oesCtrls">
     <div class="sort-bar">
       <span class="bar-label">Rank by:</span>
@@ -149,7 +157,6 @@
     </div>
   </div>
 
-  <!-- SP controls -->
   <div id="spCtrls" style="display:none;">
     <div class="sort-bar">
       <span class="bar-label">Rank by:</span>
@@ -180,7 +187,6 @@
 
   <div id="stateBox" class="state-box"><div class="icon">&#9203;</div><div>Loading data&hellip;</div></div>
 
-  <!-- OES table -->
   <div class="table-wrap" id="oesTableWrap" style="display:none;">
     <table>
       <thead>
@@ -193,14 +199,13 @@
           <th data-col="aborts">Aborts <span class="sa"></span></th>
           <th data-col="compliancePass">Compliance <span class="sa"></span></th>
           <th data-col="daysActive">Days Active <span class="sa"></span></th>
-          <th>Attendance</th>
+          <th>Absences</th>
         </tr>
       </thead>
       <tbody id="oesTableBody"></tbody>
     </table>
   </div>
 
-  <!-- SP table -->
   <div class="table-wrap" id="spTableWrap" style="display:none;">
     <table>
       <thead>
@@ -212,6 +217,7 @@
           <th data-col="completion">Completion % <span class="sa"></span></th>
           <th data-col="aborts">Full Aborts <span class="sa"></span></th>
           <th data-col="compliancePass">Compliance <span class="sa"></span></th>
+          <th>Absences</th>
           <th data-col="team">Team Leader <span class="sa"></span></th>
           <th>Job Types</th>
         </tr>
@@ -337,16 +343,41 @@
     return map;
   }
 
+  // ── Fetch Absences from Establishment Report ──────────────────────────────
+  async function fetchAbsences(s, e, wdSet) {
+    const snap = await getDocs(query(
+      collection(db, 'Establishment Report'),
+      where('_type', '==', 'entry'),
+      where('date', '>=', s),
+      where('date', '<=', e)
+    ));
+    const map = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!wdSet.has(d.date)) return;
+      const name = (d.staffName || '').trim().toLowerCase();
+      if (!name) return;
+      const st = d.status || '';
+      
+      // Specifically targetting Sick and AAUP absences
+      if (st === 'Sick' || st === 'AAUP') {
+        if (!map[name]) map[name] = { Sick: 0, AAUP: 0 };
+        map[name][st]++;
+      }
+    });
+    return map;
+  }
+
   // ── OES data fetch ────────────────────────────────────────────────────────
   async function fetchOES(p){
     const{s,e}=range(p);
     const wd=weekdays(new Date(s),new Date(e));
     const wdSet=new Set(wd);
-    const[pSnap,aSnap,abSnap,compMap]=await Promise.all([
+    const[pSnap,abSnap,compMap,absMap]=await Promise.all([
       getDocs(query(collection(db,'performance'),where('date','>=',s),where('date','<=',e),orderBy('date'))),
-      getDocs(query(collection(db,'attendance'),where('date','>=',s),where('date','<=',e))),
       getDocs(query(collection(db,'aborts'),where('date','>=',s),where('date','<=',e))),
-      fetchCompliance(s, e)
+      fetchCompliance(s, e),
+      fetchAbsences(s, e, wdSet)
     ]);
     const map={};
     pSnap.forEach(doc=>{
@@ -354,7 +385,7 @@
       if(!d.engineerName||!wdSet.has(d.date))return;
       const k=d.engineerName.trim();
       const tlNorm=normTL(d.teamLeader);
-      if(!map[k])map[k]={name:k,team:tlNorm,meters:0,jobs:0,completed:0,aborts:0,days:new Set(),att:{}};
+      if(!map[k])map[k]={name:k,team:tlNorm,meters:0,jobs:0,completed:0,aborts:0,days:new Set()};
       const r=map[k];
       r.meters+=Number(d.meters||0);r.jobs+=Number(d.jobs||0);r.completed+=Number(d.completed||0);r.days.add(d.date);
     });
@@ -364,30 +395,27 @@
       const k=d.engineer.trim();
       if(map[k])map[k].aborts+=Number(d.total)||1;
     });
-    aSnap.forEach(doc=>{
-      const d=doc.data();
-      if(!d.engineerName||!wdSet.has(d.date))return;
-      const k=d.engineerName.trim();
-      if(!map[k])return;
-      const code=(d.attendance||'X').toUpperCase();
-      map[k].att[code]=(map[k].att[code]||0)+1;
-    });
 
     oesRows=Object.values(map).filter(r=>r.meters>0||r.jobs>0).map(r=>{
       const da=r.days.size;
-      // Look up compliance by engineer name (case-insensitive)
-      const cData = compMap[r.name.toLowerCase()];
+      const nameKey = r.name.toLowerCase();
+      
+      // Look up compliance by engineer name
+      const cData = compMap[nameKey];
       const compPassed  = cData ? cData.passed : null;
       const compTotal   = cData ? cData.total  : null;
       const compPct     = (compTotal && compTotal > 0) ? +((compPassed/compTotal)*100).toFixed(1) : null;
+      
+      // Look up absences
+      const absData = absMap[nameKey] || { Sick: 0, AAUP: 0 };
 
       return{
         name:r.name, team:r.team, meters:r.meters, jobs:r.jobs, completed:r.completed,
         aborts:r.aborts, daysActive:da, totalWd:wd.length,
         completion:r.jobs>0?+((r.completed/r.jobs)*100).toFixed(1):0,
         avgDay:da>0?+(r.meters/da).toFixed(1):0,
-        daysIn:r.att['X']||0, daysHol:(r.att['H']||0)+(r.att['H/H']||0),
-        daysSick:r.att['SICK']||0, daysAbs:(r.att['AAUP']||0)+(r.att['AAP']||0)+(r.att['TOFD']||0),
+        daysSick: absData.Sick,
+        daysAAUP: absData.AAUP,
         compliancePass: compPct,
         compliancePassed: compPassed,
         complianceTotal: compTotal,
@@ -433,17 +461,25 @@
       if(jt)r.jobTypes[jt]=(r.jobTypes[jt]||0)+1;
     });
     const compMap = await fetchCompliance(s, e);
+    const absMap = await fetchAbsences(s, e, new Set(wd));
+    
     spRows=Object.values(map).map(r=>{
-      const cData = compMap[r.name.toLowerCase()];
+      const nameKey = r.name.toLowerCase();
+      const cData = compMap[nameKey];
       const compPassed  = cData ? cData.passed : null;
       const compTotal   = cData ? cData.total  : null;
       const compPct     = (compTotal && compTotal > 0) ? +((compPassed/compTotal)*100).toFixed(1) : null;
+      
+      const absData = absMap[nameKey] || { Sick: 0, AAUP: 0 };
+
       return{
         ...r,
         completion:r.jobs>0?+((r.completed/r.jobs)*100).toFixed(1):0,
         compliancePass: compPct,
         compliancePassed: compPassed,
         complianceTotal: compTotal,
+        daysSick: absData.Sick,
+        daysAAUP: absData.AAUP,
       };
     });
     return{s,e,wd};
@@ -547,12 +583,10 @@
   const oesPodiumLbl=()=>({meters:'Meters Installed',completion:'Completion Rate',avgDay:'Avg Meters / Day',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[oesSortBy]);
   const spPodiumLbl=()=>({jobs:'Total Jobs',completed:'Jobs Completed',completion:'Completion Rate',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[spSortBy]);
 
-  function attHtml(r){
+  function absHtml(r){
     const p=[];
-    if(r.daysIn)p.push(`<span class="att-chip att-in">${r.daysIn}d in</span>`);
-    if(r.daysHol)p.push(`<span class="att-chip att-hol">${r.daysHol}d hol</span>`);
-    if(r.daysSick)p.push(`<span class="att-chip att-sick">${r.daysSick}d sick</span>`);
-    if(r.daysAbs)p.push(`<span class="att-chip att-abs">${r.daysAbs}d abs</span>`);
+    if(r.daysSick)p.push(`<span class="att-chip att-sick">${r.daysSick}d Sick</span>`);
+    if(r.daysAAUP)p.push(`<span class="att-chip att-aaup">${r.daysAAUP}d AAUP</span>`);
     return p.join('')||'<span style="color:var(--dim);font-size:.78rem;">&#8212;</span>';
   }
 
@@ -625,7 +659,7 @@
         <td><span class="abort-pill ${abortCls(r.aborts)}">${r.aborts===0?'&#10003; 0':r.aborts}</span></td>
         <td>${complianceHtml(r)}</td>
         <td><span class="days-count">${r.daysActive} / ${r.totalWd}</span></td>
-        <td>${attHtml(r)}</td>
+        <td>${absHtml(r)}</td>
       </tr>`
     ).join('');
 
@@ -680,6 +714,7 @@
         <td><div class="comp-wrap"><span class="comp-value" style="color:${compColor(r.completion)}">${r.completion}%</span><div class="comp-bar-bg"><div class="comp-bar-fill" style="width:${Math.min(r.completion,100)}%;background:${compColor(r.completion)}"></div></div></div></td>
         <td><span class="abort-pill ${abortCls(r.aborts)}">${r.aborts===0?'&#10003; 0':r.aborts}</span></td>
         <td>${complianceHtml(r)}</td>
+        <td>${absHtml(r)}</td>
         <td><div class="eng-team">${r.team}</div></td>
         <td>${jobTypesHtml(r.jobTypes)}</td>
       </tr>`
