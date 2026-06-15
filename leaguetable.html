@@ -35,8 +35,6 @@
     /* Absence specific active states */
     .sort-btn.abs-sort.active {border-color:var(--red);color:var(--red);background:rgba(239,68,68,.1);}
     .sort-btn.abs-sort:hover {border-color:var(--red);color:var(--text);}
-    .team-btn.abs-filter.active {border-color:var(--red);color:var(--red);background:rgba(239,68,68,.1);}
-    .team-btn.abs-filter:hover {border-color:var(--red);color:var(--text);}
 
     .team-btn:hover{border-color:#8b5cf6;color:var(--text);}
     .team-btn.active{border-color:#8b5cf6;color:#a78bfa;background:rgba(139,92,246,.1);}
@@ -111,10 +109,6 @@
     .att-sick{background:rgba(239,68,68,.1);color:var(--red);border-color:rgba(239,68,68,.3);}
     .att-abs{background:rgba(100,116,139,.1);color:var(--dim);border-color:rgba(100,116,139,.3);}
     .att-aaup{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.3);}
-    
-    /* Role Badges */
-    .role-eng {display:inline-block; font-size:0.7rem; font-weight:700; color:#38bdf8; background:rgba(56,189,248,.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(56,189,248,.3);}
-    .role-noneng {display:inline-block; font-size:0.7rem; font-weight:700; color:#fbbf24; background:rgba(251,191,36,.1); padding:2px 6px; border-radius:4px; border:1px solid rgba(251,191,36,.3);}
 
     .days-count{font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--dim);}
     
@@ -192,15 +186,9 @@
   <div id="absCtrls" style="display:none;">
     <div class="sort-bar">
       <span class="bar-label">Rank by:</span>
-      <button class="sort-btn abs-sort active" data-sort="sick">Fewest Sick Days</button>
-      <button class="sort-btn abs-sort" data-sort="aaup">Fewest AAUP</button>
-      <button class="sort-btn abs-sort" data-sort="total">Fewest Total Absences</button>
-    </div>
-    <div class="team-filter" id="absTeamFilter">
-      <span class="bar-label">Staff Type:</span>
-      <button class="team-btn abs-filter active" data-filter="all">All Staff</button>
-      <button class="team-btn abs-filter" data-filter="eng">Engineers Only</button>
-      <button class="team-btn abs-filter" data-filter="noneng">Non-Engineers</button>
+      <button class="sort-btn abs-sort active" data-sort="sick">Sick Days</button>
+      <button class="sort-btn abs-sort" data-sort="aaup">AAUP</button>
+      <button class="sort-btn abs-sort" data-sort="total">Total Absences</button>
     </div>
   </div>
 
@@ -266,9 +254,8 @@
       <thead>
         <tr>
           <th class="col-rank">#</th>
-          <th data-col="name">Staff Member <span class="sa"></span></th>
-          <th>Role</th>
-          <th data-col="sick" class="sorted-abs">Sick Days <span class="sa">&#8593;</span></th>
+          <th data-col="name">Engineer <span class="sa"></span></th>
+          <th data-col="sick" class="sorted-abs">Sick Days <span class="sa">&#8595;</span></th>
           <th data-col="aaup">AAUP Days <span class="sa"></span></th>
           <th data-col="total">Total Absences <span class="sa"></span></th>
         </tr>
@@ -313,7 +300,7 @@
   let period='curr-month';
   let oesSortBy='meters', oesTeam='all';
   let spSortBy='jobs',   spTeam='all';
-  let absSortBy='sick',  absFilter='all';
+  let absSortBy='sick';
   let oesRows=[], spRows=[], absRows=[], spTeamLeaders=[];
   let complianceCache={};
 
@@ -333,7 +320,7 @@
     let title = 'League Table';
     if(m==='oes') title = 'League<br>Table';
     if(m==='sp') title = 'League<br>Table';
-    if(m==='abs') title = 'Staff<br>Absences';
+    if(m==='abs') title = 'Engineer<br>Absences';
     
     document.getElementById('eyebrow').textContent = m==='oes' ? 'OES Performance System' : m==='sp' ? 'Scottish Power Performance' : 'Establishment Report';
     document.getElementById('pageTitle').innerHTML = title;
@@ -341,10 +328,10 @@
     // Summary Labels
     document.getElementById('sum1Label').textContent = m==='oes' ? 'Total Meters' : m==='sp' ? 'Total Jobs' : 'Total Sick Days';
     document.getElementById('sum2Label').textContent = m==='abs' ? 'Total AAUP Days' : 'Avg Completion';
-    document.getElementById('sum3Label').textContent = m==='oes' ? 'Total Aborts' : m==='sp' ? 'Full Aborts' : 'Total Staff';
+    document.getElementById('sum3Label').textContent = m==='oes' ? 'Total Aborts' : m==='sp' ? 'Full Aborts' : 'Total Engineers';
     document.getElementById('sum4Label').textContent = m==='abs' ? 'Zero Absences' : 'Engineers Active';
     
-    document.getElementById('sum2Sub').textContent = m==='abs' ? 'across all active staff' : 'across active engineers';
+    document.getElementById('sum2Sub').textContent = m==='abs' ? 'across all engineers' : 'across active engineers';
     document.getElementById('sum4Sub').textContent = m==='abs' ? 'in this time period' : 'with recorded data';
 
     load();
@@ -420,12 +407,14 @@
     const wd = weekdays(new Date(s), new Date(e));
     const wdSet = new Set(wd);
     
-    // 1. Get all staff
+    // 1. Get ONLY engineers
     const staffSnap = await getDocs(query(collection(db, 'Establishment Report'), where('_type', '==', 'staff')));
     const staffMap = {};
     staffSnap.forEach(d => {
        const data = d.data();
-       staffMap[d.id] = { id: d.id, name: data.name, isNonEng: !!data.nonEngineer, sick: 0, aaup: 0, total: 0 };
+       if (!data.nonEngineer) {
+         staffMap[d.id] = { id: d.id, name: data.name, sick: 0, aaup: 0, total: 0 };
+       }
     });
 
     // 2. Get absence entries
@@ -437,7 +426,6 @@
       const sid = d.staffId || null; 
       let target = staffMap[sid];
       if (!target) {
-        // Fallback to name match
         const match = Object.values(staffMap).find(x => x.name.toLowerCase() === (d.staffName||'').toLowerCase());
         if (match) target = match;
       }
@@ -619,13 +607,11 @@
 
   function sortedAbs(){
     let out=[...absRows];
-    if (absFilter === 'eng') out = out.filter(r => !r.isNonEng);
-    if (absFilter === 'noneng') out = out.filter(r => r.isNonEng);
-    
+    // Sort descending so the people with the highest absences are at the top
     out.sort((a,b) => {
-      if (absSortBy === 'sick') return a.sick !== b.sick ? a.sick - b.sick : a.aaup - b.aaup;
-      if (absSortBy === 'aaup') return a.aaup !== b.aaup ? a.aaup - b.aaup : a.sick - b.sick;
-      if (absSortBy === 'total') return a.total !== b.total ? a.total - b.total : a.name.localeCompare(b.name);
+      if (absSortBy === 'sick') return b.sick !== a.sick ? b.sick - a.sick : b.total - a.total;
+      if (absSortBy === 'aaup') return b.aaup !== a.aaup ? b.aaup - a.aaup : b.total - a.total;
+      if (absSortBy === 'total') return b.total !== a.total ? b.total - a.total : a.name.localeCompare(b.name);
       return 0;
     });
     return out;
@@ -672,7 +658,7 @@
 
   const oesPodiumLbl=()=>({meters:'Meters Installed',completion:'Completion Rate',avgDay:'Avg Meters / Day',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[oesSortBy]);
   const spPodiumLbl=()=>({jobs:'Total Jobs',completed:'Jobs Completed',completion:'Completion Rate',aborts:'Fewest Aborts',compliancePass:'Compliance Pass %'}[spSortBy]);
-  const absPodiumLbl=()=>({sick:'Sick Days',aaup:'AAUP Days',total:'Total Absences'}[absSortBy]);
+  const absPodiumLbl=()=>({sick:'Highest Sick Days',aaup:'Highest AAUP Days',total:'Highest Total Absences'}[absSortBy]);
 
   function absHtml(r){
     const p=[];
@@ -693,6 +679,12 @@
     document.getElementById('podiumMetricLabel').textContent=lblFn();
     let podData = data;
     if (filterFn) podData = data.filter(filterFn);
+    
+    // For absences wall-of-shame, we don't put 0s on the podium
+    if(mode === 'abs'){
+      podData = podData.filter(r => valFn(r) > 0);
+    }
+    
     if(!podData.length){pod.innerHTML='';return;}
     const slots=
       podData.length>=3?[{r:podData[1],rank:2,m:'&#129688;'},{r:podData[0],rank:1,m:'&#129687;'},{r:podData[2],rank:3,m:'&#129689;'}]:
@@ -833,19 +825,16 @@
     
     document.getElementById('oesTableWrap').style.display='none';
     document.getElementById('spTableWrap').style.display='none';
-    document.getElementById('sumComplianceCard').style.display='none'; // No compliance on Abs table
-    
-    // For absences, we will actually rank top 3 with 0 sick days, etc.
+    document.getElementById('sumComplianceCard').style.display='none';
     document.getElementById('podiumSection').style.display='block';
 
     if(!data.length){
-      sb.innerHTML='<div class="icon">&#128235;</div><div>No Staff data found for this period.</div>';
+      sb.innerHTML='<div class="icon">&#128235;</div><div>No Engineer data found for this period.</div>';
       sb.style.display='block';tw.style.display='none';
       document.getElementById('podium').innerHTML='';return;
     }
     sb.style.display='none';tw.style.display='block';
     
-    // Summary Cards for Absences
     const tSick = data.reduce((s,r)=>s+r.sick,0);
     const tAaup = data.reduce((s,r)=>s+r.aaup,0);
     const zeroAbsCount = data.filter(r=>r.total===0).length;
@@ -864,7 +853,6 @@
       `<tr style="animation-delay:${Math.min(i*25,600)}ms">
         <td class="col-rank"><div class="rank-badge ${rnkCls(i)}">${i+1}</div></td>
         <td><div class="eng-name">${r.name}</div></td>
-        <td><span class="${r.isNonEng ? 'role-noneng' : 'role-eng'}">${r.isNonEng ? 'Non-Engineer' : 'Engineer'}</span></td>
         <td><span class="val-meters" style="color:${r.sick>0?'var(--red)':'var(--dim)'}">${r.sick}</span></td>
         <td><span class="val-meters" style="color:${r.aaup>0?'var(--amber)':'var(--dim)'}">${r.aaup}</span></td>
         <td><span class="val-meters" style="color:${r.total>0?'#fff':'var(--green)'}">${r.total}</span></td>
@@ -877,7 +865,7 @@
     const ath=document.querySelector(`#absTableWrap thead th[data-col="${absSortBy}"]`);
     if(ath){
       ath.classList.add('sorted-abs');
-      ath.querySelector('.sa').textContent='↑'; // Absences always sort ascending (best = lowest)
+      ath.querySelector('.sa').textContent='↓'; // Descending sorting indicator
     }
   }
 
@@ -958,12 +946,6 @@
     this.classList.add('active');spTeam='all';renderSP();
   });
   
-  // Absences Filter
-  document.querySelectorAll('.abs-filter').forEach(b=>b.addEventListener('click',()=>{
-    document.querySelectorAll('.abs-filter').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');absFilter=b.dataset.filter;renderAbs();
-  }));
-
   // Table Headers Click (OES)
   document.querySelectorAll('#oesTableWrap thead th[data-col]').forEach(th=>th.addEventListener('click',()=>{
     const m={meters:'meters',completion:'completion',aborts:'aborts',avgDay:'avgDay',compliancePass:'compliancePass'};
