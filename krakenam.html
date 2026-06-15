@@ -89,6 +89,25 @@
         .headcount-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .view-btn-group { display: flex; gap: 10px; margin-top: 10px; }
         .view-btn-group .btn { flex: 1; }
+
+        /* Matrix Export Section */
+        .matrix-preview-wrap { display: none; margin-top: 30px; }
+        .matrix-preview-wrap.show { display: block; }
+        .matrix-scroll { overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 12px; margin-bottom: 20px; }
+        #matrixTable { width: 100%; border-collapse: collapse; font-size: 0.88em; min-width: 600px; }
+        #matrixTable th { background: linear-gradient(135deg, #0099ff 0%, #8a2be2 100%); color: white; padding: 12px 10px; text-align: center; font-weight: 700; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.5px; white-space: nowrap; }
+        #matrixTable th.name-col { text-align: left; min-width: 160px; }
+        #matrixTable td { padding: 10px 10px; border-bottom: 1px solid #eee; text-align: center; }
+        #matrixTable td.name-col { text-align: left; font-weight: 600; color: #333; background: rgba(0,212,255,0.04); border-right: 2px solid rgba(0,212,255,0.2); }
+        #matrixTable td.total-col { font-weight: 700; background: linear-gradient(135deg, rgba(0,212,255,0.08) 0%, rgba(138,43,226,0.08) 100%); color: #0099ff; border-left: 2px solid rgba(0,212,255,0.2); }
+        #matrixTable tbody tr:hover td { background-color: #f8f9ff; }
+        #matrixTable tbody tr:hover td.name-col { background: rgba(0,212,255,0.08); }
+        #matrixTable tbody tr:hover td.total-col { background: rgba(0,212,255,0.12); }
+        #matrixTable .zero-cell { color: #ccc; }
+        .matrix-summary { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
+        .matrix-badge { background: linear-gradient(135deg, rgba(0,212,255,0.1) 0%, rgba(138,43,226,0.1) 100%); border: 1px solid rgba(0,212,255,0.3); border-radius: 10px; padding: 12px 20px; font-size: 0.9em; color: #333; }
+        .matrix-badge strong { color: #0099ff; font-size: 1.1em; }
+
         @media (max-width: 768px) { .container { padding: 20px; } .date-range-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr; } .percentage-grid { grid-template-columns: 1fr 1fr; } .headcount-input-grid { grid-template-columns: 1fr; } .view-btn-group { flex-direction: column; } }
     </style>
 </head>
@@ -101,6 +120,7 @@
         
         <div id="message" class="message"></div>
 
+        <!-- VIEW SECTION -->
         <div class="form-section">
             <h2 class="section-title">📊 View Team Data</h2>
             <div class="info-box">
@@ -168,6 +188,7 @@
 
         <div class="section-divider"></div>
 
+        <!-- HEADCOUNT SECTION -->
         <div class="form-section">
             <h2 class="section-title">👷 Engineers Available</h2>
             <div class="info-box">
@@ -195,6 +216,7 @@
 
         <div class="section-divider"></div>
 
+        <!-- UPLOAD SECTION -->
         <div class="form-section">
             <h2 class="section-title">📤 Upload Data</h2>
             <div class="info-box">
@@ -234,7 +256,51 @@
                 </div>
             </form>
         </div>
-    </div>
+
+        <div class="section-divider"></div>
+
+        <!-- MATRIX EXPORT SECTION -->
+        <div class="form-section">
+            <h2 class="section-title">📐 Meters Matrix Export</h2>
+            <div class="info-box">
+                <h3>Engineer × Date Meters Grid</h3>
+                <p>Select a date range to generate a matrix with engineer names down the left and dates across the top. Each cell shows the total meters for that engineer on that day. Export to CSV for use in Excel.</p>
+            </div>
+            <form id="matrixForm">
+                <div class="date-range-grid">
+                    <div class="form-group">
+                        <label for="matrixStartDate">Start Date</label>
+                        <input type="date" id="matrixStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="matrixEndDate">End Date</label>
+                        <input type="date" id="matrixEndDate" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="matrixTeamFilter">Team (Optional — leave blank for all teams)</label>
+                    <select id="matrixTeamFilter">
+                        <option value="">All Teams</option>
+                    </select>
+                </div>
+                <div class="view-btn-group">
+                    <button type="submit" class="btn">Generate Matrix</button>
+                    <button type="button" class="btn btn-export" id="matrixExportBtn" style="display:none;">⬇ Export Matrix CSV</button>
+                </div>
+            </form>
+
+            <div class="matrix-preview-wrap" id="matrixPreviewWrap">
+                <div class="matrix-summary" id="matrixSummary"></div>
+                <div class="matrix-scroll">
+                    <table id="matrixTable">
+                        <thead><tr id="matrixHeaderRow"></tr></thead>
+                        <tbody id="matrixBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end .container -->
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script type="module">
@@ -254,24 +320,28 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Revenue rates
         const RATES = { dual: 139.05, single: 113.30, comms: 72.10, removal: 92.70 };
 
         const today = new Date();
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        const weekAgo = new Date(today);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        
+
         document.getElementById('uploadDate').valueAsDate = yesterday;
         document.getElementById('startDate').valueAsDate = today;
         document.getElementById('endDate').valueAsDate = today;
         document.getElementById('headcountDate').valueAsDate = yesterday;
+        document.getElementById('matrixStartDate').valueAsDate = yesterday;
+        document.getElementById('matrixEndDate').valueAsDate = today;
 
-        // Store loaded records globally for export
         let loadedRecords = [];
+        let allTeams = new Set();
+        let currentHeadcount = null;
+        let headcountByDate = {};
 
-        // Auto-load today's data on page open
+        // Matrix state
+        let matrixData = null; // { engineers, dates, grid }
+
+        // ─── Auto-load today ───────────────────────────────────────────────
         (async () => {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -293,44 +363,28 @@
             } catch (err) { console.error('Auto-load error:', err); }
         })();
 
-        let uploadData = [];
-        let allTeams = new Set();
-        let currentHeadcount = null;
-
-        // Export button handler
+        // ─── Standard export ───────────────────────────────────────────────
         document.getElementById('exportBtn').addEventListener('click', () => {
             if (!loadedRecords || loadedRecords.length === 0) {
                 showMessage('No data loaded to export. Please view data first.', 'error');
                 return;
             }
-
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             const teamFilter = document.getElementById('teamFilter').value;
 
-            // Group records by date
             const dateGroups = {};
             loadedRecords.forEach(r => {
                 const date = r.date || 'Unknown';
                 if (!dateGroups[date]) dateGroups[date] = [];
                 dateGroups[date].push(r);
             });
-
             const sortedDates = Object.keys(dateGroups).sort();
-
             const headers = ['Date', 'Total Jobs', 'Total Dual', 'Total Single', 'Total Comms', 'Total Removal', 'Total Meters', 'Engineers Available', 'Jobs Per Head', 'Meters Per Head', 'Avg Rev Per Head', 'Dual %', 'Single %', 'Comms %', 'Removal %'];
-
             const dataRows = sortedDates.map(date => {
                 const recs = dateGroups[date];
                 let t = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
-                recs.forEach(r => {
-                    t.jobs += r.totalJobs || 0;
-                    t.dual += r.dual || 0;
-                    t.single += r.single || 0;
-                    t.comms += r.comms || 0;
-                    t.removal += r.removal || 0;
-                    t.meters += r.totalMeters || 0;
-                });
+                recs.forEach(r => { t.jobs += r.totalJobs || 0; t.dual += r.dual || 0; t.single += r.single || 0; t.comms += r.comms || 0; t.removal += r.removal || 0; t.meters += r.totalMeters || 0; });
                 const totalTypes = t.dual + t.single + t.comms + t.removal;
                 const pct = (val) => totalTypes > 0 ? (val / totalTypes * 100).toFixed(1) + '%' : '0.0%';
                 const hc = headcountByDate[date] != null ? headcountByDate[date] : '';
@@ -340,25 +394,12 @@
                 const revPH = hc > 0 ? '£' + Math.round(totalRev / hc) : '-';
                 return [date, t.jobs, t.dual, t.single, t.comms, t.removal, Math.round(t.meters), hc !== '' ? hc : '-', jobsPH, metersPH, revPH, pct(t.dual), pct(t.single), pct(t.comms), pct(t.removal)];
             });
-
-            const csvContent = [headers, ...dataRows]
-                .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-                .join('\n');
-
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            const fileTeamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
-            link.href = url;
-            link.download = `KrakenAM_Summary_${startDate}_to_${endDate}${fileTeamLabel}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
+            const csvContent = [headers, ...dataRows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            downloadCSV(csvContent, `KrakenAM_Summary_${startDate}_to_${endDate}${teamFilter ? '_' + teamFilter.replace(/\s+/g,'_') : '_All_Teams'}.csv`);
             showMessage(`Exported summary for ${sortedDates.length} date(s) successfully!`, 'success');
         });
 
+        // ─── Headcount form ────────────────────────────────────────────────
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const date = document.getElementById('headcountDate').value;
@@ -389,6 +430,8 @@
             } catch (err) { console.error('Error loading headcount:', err); }
         });
 
+        // ─── Upload ────────────────────────────────────────────────────────
+        let uploadData = [];
         const uploadArea = document.getElementById('uploadArea');
         const csvInput = document.getElementById('csvFile');
         uploadArea.addEventListener('click', () => csvInput.click());
@@ -412,14 +455,8 @@
                     for (let i = 1; i < rows.length; i++) {
                         const row = rows[i];
                         if (row.length >= 8) {
-                            const record = {
-                                team: row[0]?.trim() || '', engineer: row[1]?.trim() || '',
-                                totalJobs: parseInt(row[2]) || 0, dual: parseInt(row[3]) || 0,
-                                single: parseInt(row[4]) || 0, comms: parseInt(row[5]) || 0,
-                                removal: parseInt(row[6]) || 0, totalMeters: parseFloat(row[7]) || 0
-                            };
-                            uploadData.push(record);
-                            allTeams.add(record.team);
+                            uploadData.push({ team: row[0]?.trim() || '', engineer: row[1]?.trim() || '', totalJobs: parseInt(row[2]) || 0, dual: parseInt(row[3]) || 0, single: parseInt(row[4]) || 0, comms: parseInt(row[5]) || 0, removal: parseInt(row[6]) || 0, totalMeters: parseFloat(row[7]) || 0 });
+                            allTeams.add(uploadData[uploadData.length - 1].team);
                         }
                     }
                     if (uploadData.length === 0) { showMessage('No valid data found in CSV', 'error'); return; }
@@ -434,35 +471,17 @@
             const preview = document.getElementById('previewSection');
             const headerRow = document.getElementById('previewHeader');
             const tbody = document.getElementById('previewBody');
-            headerRow.innerHTML = '';
-            tbody.innerHTML = '';
-            const headers = ['Team', 'Engineer', 'Total Jobs', 'Dual', 'Single', 'Comms', 'Removal', 'Total Meters'];
-            headers.forEach(header => { const th = document.createElement('th'); th.textContent = header; headerRow.appendChild(th); });
+            headerRow.innerHTML = ''; tbody.innerHTML = '';
+            ['Team', 'Engineer', 'Total Jobs', 'Dual', 'Single', 'Comms', 'Removal', 'Total Meters'].forEach(h => { const th = document.createElement('th'); th.textContent = h; headerRow.appendChild(th); });
             uploadData.forEach((record, rowIdx) => {
                 const tr = document.createElement('tr');
-                const fields = [
-                    { field: 'team', type: 'text', value: record.team },
-                    { field: 'engineer', type: 'text', value: record.engineer },
-                    { field: 'totalJobs', type: 'number', value: record.totalJobs },
-                    { field: 'dual', type: 'number', value: record.dual },
-                    { field: 'single', type: 'number', value: record.single },
-                    { field: 'comms', type: 'number', value: record.comms },
-                    { field: 'removal', type: 'number', value: record.removal },
-                    { field: 'totalMeters', type: 'number', value: record.totalMeters, step: '0.01' }
-                ];
-                fields.forEach(({ field, type, value, step }) => {
+                [{ field: 'team', type: 'text', value: record.team }, { field: 'engineer', type: 'text', value: record.engineer }, { field: 'totalJobs', type: 'number', value: record.totalJobs }, { field: 'dual', type: 'number', value: record.dual }, { field: 'single', type: 'number', value: record.single }, { field: 'comms', type: 'number', value: record.comms }, { field: 'removal', type: 'number', value: record.removal }, { field: 'totalMeters', type: 'number', value: record.totalMeters, step: '0.01' }].forEach(({ field, type, value, step }) => {
                     const td = document.createElement('td');
                     const input = document.createElement('input');
-                    input.type = type; input.value = value;
-                    input.dataset.row = rowIdx; input.dataset.field = field;
+                    input.type = type; input.value = value; input.dataset.row = rowIdx; input.dataset.field = field;
                     if (type === 'number') { input.min = '0'; if (step) input.step = step; }
-                    input.addEventListener('change', (e) => {
-                        const idx = parseInt(e.target.dataset.row);
-                        const fld = e.target.dataset.field;
-                        uploadData[idx][fld] = type === 'number' ? (fld === 'totalMeters' ? parseFloat(e.target.value) || 0 : parseInt(e.target.value) || 0) : e.target.value;
-                    });
-                    td.appendChild(input);
-                    tr.appendChild(td);
+                    input.addEventListener('change', (e) => { uploadData[parseInt(e.target.dataset.row)][e.target.dataset.field] = type === 'number' ? (field === 'totalMeters' ? parseFloat(e.target.value) || 0 : parseInt(e.target.value) || 0) : e.target.value; });
+                    td.appendChild(input); tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
             });
@@ -470,15 +489,17 @@
         }
 
         function updateTeamFilter() {
-            const select = document.getElementById('teamFilter');
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">All Teams</option>';
-            Array.from(allTeams).sort().forEach(team => {
-                const option = document.createElement('option');
-                option.value = team; option.textContent = team;
-                select.appendChild(option);
+            ['teamFilter', 'matrixTeamFilter'].forEach(id => {
+                const select = document.getElementById(id);
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">All Teams</option>';
+                Array.from(allTeams).sort().forEach(team => {
+                    const option = document.createElement('option');
+                    option.value = team; option.textContent = team;
+                    select.appendChild(option);
+                });
+                if (currentValue && allTeams.has(currentValue)) select.value = currentValue;
             });
-            if (currentValue && allTeams.has(currentValue)) select.value = currentValue;
         }
 
         document.getElementById('cancelBtn').addEventListener('click', () => {
@@ -500,12 +521,7 @@
             try {
                 for (let i = 0; i < uploadData.length; i++) {
                     const record = uploadData[i];
-                    await addDoc(collection(db, "KrakenAM"), {
-                        date, team: record.team, engineer: record.engineer,
-                        totalJobs: record.totalJobs, dual: record.dual, single: record.single,
-                        comms: record.comms, removal: record.removal, totalMeters: record.totalMeters,
-                        submittedAt: serverTimestamp()
-                    });
+                    await addDoc(collection(db, "KrakenAM"), { date, team: record.team, engineer: record.engineer, totalJobs: record.totalJobs, dual: record.dual, single: record.single, comms: record.comms, removal: record.removal, totalMeters: record.totalMeters, submittedAt: serverTimestamp() });
                     fill.style.width = ((i + 1) / uploadData.length * 100) + '%';
                 }
                 showMessage(`Successfully saved ${uploadData.length} records!`, 'success');
@@ -515,11 +531,11 @@
                 document.getElementById('uploadDate').valueAsDate = yesterday;
                 document.getElementById('progressBar').classList.remove('show');
                 uploadData = [];
-            } catch (err) {
-                showMessage('Error saving data: ' + err.message, 'error');
-            } finally { btn.disabled = false; }
+            } catch (err) { showMessage('Error saving data: ' + err.message, 'error'); }
+            finally { btn.disabled = false; }
         });
 
+        // ─── View form ─────────────────────────────────────────────────────
         document.getElementById('viewForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const startDate = document.getElementById('startDate').value;
@@ -529,17 +545,8 @@
                 let q = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "desc"));
                 const querySnapshot = await getDocs(q);
                 const records = [];
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    if (!teamFilter || data.team === teamFilter) records.push(data);
-                });
-                if (records.length === 0) {
-                    showMessage('No data found for the selected date range and team', 'error');
-                    document.getElementById('statsContainer').classList.remove('show');
-                    document.getElementById('exportBtn').style.display = 'none';
-                    loadedRecords = [];
-                    return;
-                }
+                querySnapshot.forEach((d) => { const data = d.data(); if (!teamFilter || data.team === teamFilter) records.push(data); });
+                if (records.length === 0) { showMessage('No data found for the selected date range and team', 'error'); document.getElementById('statsContainer').classList.remove('show'); document.getElementById('exportBtn').style.display = 'none'; loadedRecords = []; return; }
                 loadedRecords = records;
                 await fetchHeadcountForRange(startDate, endDate);
                 displayStatistics(records);
@@ -550,8 +557,7 @@
             } catch (err) { showMessage('Error fetching data: ' + err.message, 'error'); }
         });
 
-        let headcountByDate = {};
-
+        // ─── Headcount fetch ───────────────────────────────────────────────
         async function fetchHeadcountForRange(startDate, endDate) {
             headcountByDate = {};
             try {
@@ -559,29 +565,17 @@
                 const querySnapshot = await getDocs(q);
                 if (!querySnapshot.empty) {
                     let totalHeadcount = 0, count = 0;
-                    querySnapshot.forEach((doc) => {
-                        const d = doc.data();
-                        headcountByDate[d.date] = d.headcount || 0;
-                        totalHeadcount += d.headcount || 0;
-                        count++;
-                    });
+                    querySnapshot.forEach((doc) => { const d = doc.data(); headcountByDate[d.date] = d.headcount || 0; totalHeadcount += d.headcount || 0; count++; });
                     const avgHeadcount = count > 0 ? Math.round(totalHeadcount / count) : 0;
                     currentHeadcount = avgHeadcount;
                     document.getElementById('engineersAvailable').textContent = avgHeadcount;
-                } else {
-                    currentHeadcount = null;
-                    document.getElementById('engineersAvailable').textContent = '-';
-                }
+                } else { currentHeadcount = null; document.getElementById('engineersAvailable').textContent = '-'; }
             } catch (err) { currentHeadcount = null; document.getElementById('engineersAvailable').textContent = '-'; }
         }
 
         function displayStatistics(records) {
             let totals = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
-            records.forEach(record => {
-                totals.jobs += record.totalJobs || 0; totals.dual += record.dual || 0;
-                totals.single += record.single || 0; totals.comms += record.comms || 0;
-                totals.removal += record.removal || 0; totals.meters += record.totalMeters || 0;
-            });
+            records.forEach(r => { totals.jobs += r.totalJobs || 0; totals.dual += r.dual || 0; totals.single += r.single || 0; totals.comms += r.comms || 0; totals.removal += r.removal || 0; totals.meters += r.totalMeters || 0; });
             document.getElementById('totalJobs').textContent = totals.jobs;
             document.getElementById('totalDual').textContent = totals.dual;
             document.getElementById('totalSingle').textContent = totals.single;
@@ -591,15 +585,9 @@
             if (currentHeadcount && currentHeadcount > 0) {
                 document.getElementById('jobsPerHead').textContent = (totals.jobs / currentHeadcount).toFixed(1);
                 document.getElementById('metersPerHead').textContent = (totals.meters / currentHeadcount).toFixed(1);
-                // Avg Rev Per Head calculation
                 const totalRevenue = (totals.dual * RATES.dual) + (totals.single * RATES.single) + (totals.comms * RATES.comms) + (totals.removal * RATES.removal);
-                const avgRevPerHead = totalRevenue / currentHeadcount;
-                document.getElementById('avgRevPerHead').textContent = '£' + Math.round(avgRevPerHead);
-            } else {
-                document.getElementById('jobsPerHead').textContent = '-';
-                document.getElementById('metersPerHead').textContent = '-';
-                document.getElementById('avgRevPerHead').textContent = '-';
-            }
+                document.getElementById('avgRevPerHead').textContent = '£' + Math.round(totalRevenue / currentHeadcount);
+            } else { document.getElementById('jobsPerHead').textContent = '-'; document.getElementById('metersPerHead').textContent = '-'; document.getElementById('avgRevPerHead').textContent = '-'; }
             const totalJobTypes = totals.dual + totals.single + totals.comms + totals.removal;
             document.getElementById('dualPercent').textContent = (totalJobTypes > 0 ? (totals.dual / totalJobTypes * 100) : 0).toFixed(1) + '%';
             document.getElementById('singlePercent').textContent = (totalJobTypes > 0 ? (totals.single / totalJobTypes * 100) : 0).toFixed(1) + '%';
@@ -610,85 +598,226 @@
         function displayDataTable(records) {
             const tbody = document.getElementById('dataTableBody');
             tbody.innerHTML = '';
-            
             const teamGroups = {};
-            records.forEach(record => {
-                const team = record.team || 'Unknown';
-                if (!teamGroups[team]) teamGroups[team] = [];
-                teamGroups[team].push(record);
-            });
-            
-            const sortedTeams = Object.keys(teamGroups).sort();
-            
-            sortedTeams.forEach(team => {
+            records.forEach(r => { const team = r.team || 'Unknown'; if (!teamGroups[team]) teamGroups[team] = []; teamGroups[team].push(r); allTeams.add(team); });
+            updateTeamFilter();
+            Object.keys(teamGroups).sort().forEach(team => {
                 const teamRecords = teamGroups[team];
-                const teamTotals = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
-                teamRecords.forEach(record => {
-                    teamTotals.jobs += record.totalJobs || 0; teamTotals.dual += record.dual || 0;
-                    teamTotals.single += record.single || 0; teamTotals.comms += record.comms || 0;
-                    teamTotals.removal += record.removal || 0; teamTotals.meters += record.totalMeters || 0;
-                });
-                const totalJobTypes = teamTotals.dual + teamTotals.single + teamTotals.comms + teamTotals.removal;
-                const dualPct = totalJobTypes > 0 ? (teamTotals.dual / totalJobTypes * 100).toFixed(1) : 0;
-                const singlePct = totalJobTypes > 0 ? (teamTotals.single / totalJobTypes * 100).toFixed(1) : 0;
-                const commsPct = totalJobTypes > 0 ? (teamTotals.comms / totalJobTypes * 100).toFixed(1) : 0;
-                const removalPct = totalJobTypes > 0 ? (teamTotals.removal / totalJobTypes * 100).toFixed(1) : 0;
+                const tt = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
+                teamRecords.forEach(r => { tt.jobs += r.totalJobs || 0; tt.dual += r.dual || 0; tt.single += r.single || 0; tt.comms += r.comms || 0; tt.removal += r.removal || 0; tt.meters += r.totalMeters || 0; });
+                const totalJobTypes = tt.dual + tt.single + tt.comms + tt.removal;
+                const pct = v => totalJobTypes > 0 ? (v / totalJobTypes * 100).toFixed(1) : 0;
 
                 const breakdownRow = document.createElement('tr');
                 breakdownRow.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.08) 0%, rgba(0, 212, 255, 0.08) 100%)';
-                breakdownRow.innerHTML = `<td colspan="9" style="padding: 12px 10px; text-align: center;"><strong style="color: #8a2be2;">📊 ${team} Split:</strong><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Dual: ${dualPct}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Single: ${singlePct}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Comms: ${commsPct}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Removal: ${removalPct}%</span></td>`;
+                breakdownRow.innerHTML = `<td colspan="9" style="padding: 12px 10px; text-align: center;"><strong style="color: #8a2be2;">📊 ${team} Split:</strong><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Dual: ${pct(tt.dual)}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Single: ${pct(tt.single)}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Comms: ${pct(tt.comms)}%</span><span style="margin: 0 15px; color: #0099ff; font-weight: 600;">Removal: ${pct(tt.removal)}%</span></td>`;
                 tbody.appendChild(breakdownRow);
 
                 const headerRow = document.createElement('tr');
                 headerRow.style.background = 'linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(138, 43, 226, 0.15) 100%)';
-                headerRow.style.fontWeight = 'bold';
-                headerRow.innerHTML = `<td colspan="9" style="padding: 15px 10px; font-size: 1.1em; color: #0099ff;"><strong>🔷 ${team}</strong> — Total: ${teamTotals.jobs} Jobs | ${teamTotals.dual} Dual | ${teamTotals.single} Single | ${teamTotals.comms} Comms | ${teamTotals.removal} Removal | ${Math.round(teamTotals.meters)} Meters</td>`;
+                headerRow.innerHTML = `<td colspan="9" style="padding: 15px 10px; font-size: 1.1em; color: #0099ff; font-weight: bold;">🔷 ${team} — Total: ${tt.jobs} Jobs | ${tt.dual} Dual | ${tt.single} Single | ${tt.comms} Comms | ${tt.removal} Removal | ${Math.round(tt.meters)} Meters</td>`;
                 tbody.appendChild(headerRow);
 
-                const columnHeaderRow = document.createElement('tr');
-                columnHeaderRow.style.background = 'linear-gradient(135deg, #0099ff 0%, #8a2be2 100%)';
-                columnHeaderRow.style.color = 'white';
-                columnHeaderRow.style.fontWeight = '700';
-                columnHeaderRow.innerHTML = `<th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Date</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Team</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Engineer</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Total Jobs</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Dual</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Single</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Comms</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Removal</th><th style="padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">Total Meters</th>`;
-                tbody.appendChild(columnHeaderRow);
+                const colHeaderRow = document.createElement('tr');
+                colHeaderRow.style.background = 'linear-gradient(135deg, #0099ff 0%, #8a2be2 100%)';
+                colHeaderRow.style.color = 'white';
+                colHeaderRow.innerHTML = `<th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Date</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Team</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Engineer</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Total Jobs</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Dual</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Single</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Comms</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Removal</th><th style="padding:12px 10px;text-align:left;text-transform:uppercase;font-size:0.85em;letter-spacing:0.5px;">Total Meters</th>`;
+                tbody.appendChild(colHeaderRow);
 
                 const dateGroups = {};
-                teamRecords.forEach(record => {
-                    const date = record.date || 'Unknown';
-                    if (!dateGroups[date]) dateGroups[date] = [];
-                    dateGroups[date].push(record);
-                });
-
-                const sortedDates = Object.keys(dateGroups).sort().reverse();
-
-                sortedDates.forEach(date => {
+                teamRecords.forEach(r => { const date = r.date || 'Unknown'; if (!dateGroups[date]) dateGroups[date] = []; dateGroups[date].push(r); });
+                Object.keys(dateGroups).sort().reverse().forEach(date => {
                     const dateRecords = dateGroups[date];
-                    const dateSubtotals = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
-                    dateRecords.forEach(record => {
-                        dateSubtotals.jobs += record.totalJobs || 0; dateSubtotals.dual += record.dual || 0;
-                        dateSubtotals.single += record.single || 0; dateSubtotals.comms += record.comms || 0;
-                        dateSubtotals.removal += record.removal || 0; dateSubtotals.meters += record.totalMeters || 0;
-                    });
-
-                    const dateHeaderRow = document.createElement('tr');
-                    dateHeaderRow.style.background = 'rgba(0, 153, 255, 0.08)';
-                    dateHeaderRow.style.fontWeight = '600';
-                    dateHeaderRow.innerHTML = `<td colspan="3" style="padding: 10px; color: #0099ff;">📅 ${date}</td><td style="padding: 10px;">${dateSubtotals.jobs}</td><td style="padding: 10px;">${dateSubtotals.dual}</td><td style="padding: 10px;">${dateSubtotals.single}</td><td style="padding: 10px;">${dateSubtotals.comms}</td><td style="padding: 10px;">${dateSubtotals.removal}</td><td style="padding: 10px;">${Math.round(dateSubtotals.meters)}</td>`;
-                    tbody.appendChild(dateHeaderRow);
-
-                    dateRecords.sort((a, b) => (a.engineer || '').localeCompare(b.engineer || ''));
-
-                    dateRecords.forEach(record => {
+                    const ds = { jobs: 0, dual: 0, single: 0, comms: 0, removal: 0, meters: 0 };
+                    dateRecords.forEach(r => { ds.jobs += r.totalJobs || 0; ds.dual += r.dual || 0; ds.single += r.single || 0; ds.comms += r.comms || 0; ds.removal += r.removal || 0; ds.meters += r.totalMeters || 0; });
+                    const dhr = document.createElement('tr');
+                    dhr.style.background = 'rgba(0, 153, 255, 0.08)'; dhr.style.fontWeight = '600';
+                    dhr.innerHTML = `<td colspan="3" style="padding:10px;color:#0099ff;">📅 ${date}</td><td style="padding:10px;">${ds.jobs}</td><td style="padding:10px;">${ds.dual}</td><td style="padding:10px;">${ds.single}</td><td style="padding:10px;">${ds.comms}</td><td style="padding:10px;">${ds.removal}</td><td style="padding:10px;">${Math.round(ds.meters)}</td>`;
+                    tbody.appendChild(dhr);
+                    dateRecords.sort((a, b) => (a.engineer || '').localeCompare(b.engineer || '')).forEach(record => {
                         const tr = document.createElement('tr');
-                        tr.innerHTML = `<td></td><td style="color: #999; font-size: 0.9em;">${record.team}</td><td>${record.engineer}</td><td>${record.totalJobs || 0}</td><td>${record.dual || 0}</td><td>${record.single || 0}</td><td>${record.comms || 0}</td><td>${record.removal || 0}</td><td>${Math.round(record.totalMeters || 0)}</td>`;
+                        tr.innerHTML = `<td></td><td style="color:#999;font-size:0.9em;">${record.team}</td><td>${record.engineer}</td><td>${record.totalJobs || 0}</td><td>${record.dual || 0}</td><td>${record.single || 0}</td><td>${record.comms || 0}</td><td>${record.removal || 0}</td><td>${Math.round(record.totalMeters || 0)}</td>`;
                         tbody.appendChild(tr);
                     });
                 });
-
-                const spacerRow = document.createElement('tr');
-                spacerRow.innerHTML = '<td colspan="9" style="height: 15px; background: transparent; border: none;"></td>';
-                tbody.appendChild(spacerRow);
+                const spacer = document.createElement('tr');
+                spacer.innerHTML = '<td colspan="9" style="height:15px;background:transparent;border:none;"></td>';
+                tbody.appendChild(spacer);
             });
+        }
+
+        // ─── MATRIX EXPORT ──────────────────────────────────────────────────
+        document.getElementById('matrixForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const startDate = document.getElementById('matrixStartDate').value;
+            const endDate = document.getElementById('matrixEndDate').value;
+            const teamFilter = document.getElementById('matrixTeamFilter').value;
+
+            try {
+                let q = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "asc"));
+                const querySnapshot = await getDocs(q);
+                const records = [];
+                querySnapshot.forEach((d) => {
+                    const data = d.data();
+                    if (!teamFilter || data.team === teamFilter) records.push(data);
+                    if (data.team) allTeams.add(data.team);
+                });
+                updateTeamFilter();
+
+                if (records.length === 0) {
+                    showMessage('No data found for the selected date range and team.', 'error');
+                    document.getElementById('matrixPreviewWrap').classList.remove('show');
+                    document.getElementById('matrixExportBtn').style.display = 'none';
+                    matrixData = null;
+                    return;
+                }
+
+                // Build engineer × date grid (meters)
+                const engineerSet = new Set();
+                const dateSet = new Set();
+                const cellMap = {}; // cellMap[engineer][date] = totalMeters
+
+                records.forEach(r => {
+                    const eng = r.engineer || 'Unknown';
+                    const date = r.date || 'Unknown';
+                    engineerSet.add(eng);
+                    dateSet.add(date);
+                    if (!cellMap[eng]) cellMap[eng] = {};
+                    cellMap[eng][date] = (cellMap[eng][date] || 0) + (r.totalMeters || 0);
+                });
+
+                const engineers = Array.from(engineerSet).sort();
+                const dates = Array.from(dateSet).sort();
+
+                matrixData = { engineers, dates, cellMap };
+
+                // Render preview table
+                renderMatrixTable(engineers, dates, cellMap);
+
+                // Summary badges
+                const totalMeters = records.reduce((s, r) => s + (r.totalMeters || 0), 0);
+                document.getElementById('matrixSummary').innerHTML = `
+                    <div class="matrix-badge">Engineers: <strong>${engineers.length}</strong></div>
+                    <div class="matrix-badge">Days: <strong>${dates.length}</strong></div>
+                    <div class="matrix-badge">Total Meters: <strong>${Math.round(totalMeters)}</strong></div>
+                    <div class="matrix-badge">Date Range: <strong>${startDate} → ${endDate}</strong></div>
+                `;
+
+                document.getElementById('matrixPreviewWrap').classList.add('show');
+                document.getElementById('matrixExportBtn').style.display = '';
+                showMessage(`Matrix generated: ${engineers.length} engineers × ${dates.length} dates`, 'success');
+
+            } catch (err) { showMessage('Error generating matrix: ' + err.message, 'error'); }
+        });
+
+        function renderMatrixTable(engineers, dates, cellMap) {
+            const thead = document.getElementById('matrixHeaderRow');
+            const tbody = document.getElementById('matrixBody');
+            thead.innerHTML = ''; tbody.innerHTML = '';
+
+            // Header row: Engineer | date1 | date2 | ... | Total
+            const thName = document.createElement('th');
+            thName.className = 'name-col'; thName.textContent = 'Engineer';
+            thead.appendChild(thName);
+
+            dates.forEach(date => {
+                const th = document.createElement('th');
+                // Format date nicely: DD/MM
+                const parts = date.split('-');
+                th.textContent = parts.length === 3 ? `${parts[2]}/${parts[1]}` : date;
+                th.title = date;
+                thead.appendChild(th);
+            });
+
+            const thTotal = document.createElement('th');
+            thTotal.textContent = 'Total'; thead.appendChild(thTotal);
+
+            // Body rows
+            engineers.forEach(eng => {
+                const tr = document.createElement('tr');
+                const tdName = document.createElement('td');
+                tdName.className = 'name-col'; tdName.textContent = eng;
+                tr.appendChild(tdName);
+
+                let rowTotal = 0;
+                dates.forEach(date => {
+                    const val = cellMap[eng]?.[date] || 0;
+                    rowTotal += val;
+                    const td = document.createElement('td');
+                    if (val === 0) { td.textContent = '-'; td.className = 'zero-cell'; }
+                    else { td.textContent = Math.round(val); }
+                    tr.appendChild(td);
+                });
+
+                const tdTotal = document.createElement('td');
+                tdTotal.className = 'total-col';
+                tdTotal.textContent = Math.round(rowTotal);
+                tr.appendChild(tdTotal);
+                tbody.appendChild(tr);
+            });
+
+            // Totals row
+            const trTotals = document.createElement('tr');
+            trTotals.style.background = 'linear-gradient(135deg, rgba(0,212,255,0.12) 0%, rgba(138,43,226,0.12) 100%)';
+            trTotals.style.fontWeight = '700';
+            const tdTotalsLabel = document.createElement('td');
+            tdTotalsLabel.className = 'name-col'; tdTotalsLabel.textContent = 'Day Total';
+            tdTotalsLabel.style.color = '#0099ff';
+            trTotals.appendChild(tdTotalsLabel);
+
+            let grandTotal = 0;
+            dates.forEach(date => {
+                const dayTotal = engineers.reduce((s, eng) => s + (cellMap[eng]?.[date] || 0), 0);
+                grandTotal += dayTotal;
+                const td = document.createElement('td');
+                td.textContent = Math.round(dayTotal);
+                td.style.color = '#0099ff'; td.style.fontWeight = '700';
+                trTotals.appendChild(td);
+            });
+
+            const tdGrand = document.createElement('td');
+            tdGrand.className = 'total-col'; tdGrand.textContent = Math.round(grandTotal);
+            tdGrand.style.fontSize = '1.05em';
+            trTotals.appendChild(tdGrand);
+            tbody.appendChild(trTotals);
+        }
+
+        document.getElementById('matrixExportBtn').addEventListener('click', () => {
+            if (!matrixData) { showMessage('Generate the matrix first.', 'error'); return; }
+            const { engineers, dates, cellMap } = matrixData;
+            const startDate = document.getElementById('matrixStartDate').value;
+            const endDate = document.getElementById('matrixEndDate').value;
+            const teamFilter = document.getElementById('matrixTeamFilter').value;
+
+            // Header row
+            const headers = ['Engineer', ...dates, 'Total'];
+            const rows = [headers];
+
+            engineers.forEach(eng => {
+                let rowTotal = 0;
+                const cells = dates.map(date => { const v = Math.round(cellMap[eng]?.[date] || 0); rowTotal += v; return v; });
+                rows.push([eng, ...cells, rowTotal]);
+            });
+
+            // Totals row
+            const dayTotals = dates.map(date => Math.round(engineers.reduce((s, eng) => s + (cellMap[eng]?.[date] || 0), 0)));
+            const grandTotal = dayTotals.reduce((s, v) => s + v, 0);
+            rows.push(['Day Total', ...dayTotals, grandTotal]);
+
+            const csvContent = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const teamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
+            downloadCSV(csvContent, `KrakenAM_MetersMatrix_${startDate}_to_${endDate}${teamLabel}.csv`);
+            showMessage('Matrix exported successfully!', 'success');
+        });
+
+        // ─── Helpers ───────────────────────────────────────────────────────
+        function downloadCSV(csvContent, filename) {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url; link.download = filename;
+            document.body.appendChild(link); link.click();
+            document.body.removeChild(link); URL.revokeObjectURL(url);
         }
 
         function showMessage(text, type) {
