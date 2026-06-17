@@ -1081,6 +1081,7 @@
             submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
             item_count:   consumables.length,
             order_type:   'Consumables',
+            header_color: '#1a56db',
             items_html:   buildItemsHtml(consumables),
             order_id:     orderId,
           })
@@ -1094,6 +1095,7 @@
             submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
             item_count:   meters.length,
             order_type:   'Meters',
+            header_color: '#dc2626',
             items_html:   buildItemsHtml(meters),
             order_id:     orderId,
           })
@@ -1199,6 +1201,44 @@
   document.getElementById('confirmOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeConfirm();
   });
+
+  // ── 2:00 PM Weekday Reminder ──
+  let reminderSentDate = localStorage.getItem('energise_reminder_date') || '';
+  
+  setInterval(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const dateStr = now.toDateString();
+
+    // Check if weekday (1=Mon ... 5=Fri)
+    if (day >= 1 && day <= 5) {
+      // Check if it's 2:00 PM (14:00)
+      if (hours === 14 && minutes === 0) {
+        // Only send once per day
+        if (reminderSentDate !== dateStr) {
+          const pendingOrders = allOrders.filter(o => !o.processedAt);
+          if (pendingOrders.length > 0) {
+            emailjs.send('service_ushej2v', 'template_2mihgrj', {
+              pending_count: pendingOrders.length,
+              review_link: 'https://oes-performance.vercel.app/energise-order-review.html'
+            }).then(() => {
+              console.log('2 PM Reminder sent successfully.');
+              localStorage.setItem('energise_reminder_date', dateStr);
+              reminderSentDate = dateStr;
+            }).catch(err => {
+              console.error('Failed to send 2 PM Reminder:', err);
+            });
+          } else {
+            // No pending orders, just record it as checked so it doesn't try again today
+            localStorage.setItem('energise_reminder_date', dateStr);
+            reminderSentDate = dateStr;
+          }
+        }
+      }
+    }
+  }, 60000); // check every 60 seconds
 
   loadOrders();
 </script>
