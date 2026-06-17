@@ -65,9 +65,40 @@
   }
   .item-name-cell { display: flex; align-items: center; gap: 10px; }
 
+  /* CATEGORY TABS */
+  .cat-tabs {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 32px; display: flex; align-items: center; gap: 4px;
+  }
+  .cat-tab {
+    padding: 14px 22px; border: none; background: none;
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    color: var(--text-muted); cursor: pointer; position: relative;
+    transition: color 0.15s; white-space: nowrap; letter-spacing: 0.02em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cat-tab::after {
+    content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+    height: 2px; background: var(--accent); border-radius: 2px 2px 0 0;
+    transform: scaleX(0); transition: transform 0.2s;
+  }
+  .cat-tab:hover { color: var(--text); }
+  .cat-tab.active { color: var(--accent); }
+  .cat-tab.active::after { transform: scaleX(1); }
+  .cat-tab-count {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1px 7px;
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    color: var(--text-muted); transition: background 0.15s, color 0.15s;
+  }
+  .cat-tab.active .cat-tab-count {
+    background: rgba(212,245,60,0.15); border-color: rgba(212,245,60,0.3);
+    color: var(--accent);
+  }
+
   /* TOOLBAR */
   .toolbar {
-    padding: 20px 32px; display: flex; gap: 12px; align-items: center;
+    padding: 16px 32px; display: flex; gap: 12px; align-items: center;
     flex-wrap: wrap; border-bottom: 1px solid var(--border); background: var(--surface);
   }
   .search-wrap { position: relative; flex: 1; min-width: 200px; }
@@ -305,6 +336,22 @@
   </div>
 </header>
 
+<!-- Category Tabs -->
+<div class="cat-tabs">
+  <button class="cat-tab active" id="tab-all" onclick="setCategory('')">
+    All
+    <span class="cat-tab-count" id="count-all">0</span>
+  </button>
+  <button class="cat-tab" id="tab-consumable" onclick="setCategory('consumable')">
+    Consumable
+    <span class="cat-tab-count" id="count-consumable">0</span>
+  </button>
+  <button class="cat-tab" id="tab-meter" onclick="setCategory('meter')">
+    Meter
+    <span class="cat-tab-count" id="count-meter">0</span>
+  </button>
+</div>
+
 <div class="toolbar">
   <div class="search-wrap">
     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -312,7 +359,7 @@
   </div>
   <select class="filter-select" id="uomFilter" onchange="filterItems()">
     <option value="">All Unit Types</option>
-    <option value="ea">EA (Each)</option>
+    <option value="ea">EA / Each</option>
     <option value="pk">Packs</option>
     <option value="rl">Rolls</option>
   </select>
@@ -597,7 +644,7 @@ window.closeLightbox = function() {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
 // ── Table render ────────────────────────────────────────────────────────────
-function isEA(uom) { return uom.toUpperCase() === 'EA'; }
+function isEA(uom) { const u = (uom || '').toUpperCase(); return u === 'EA' || u === 'EACH'; }
 
 function renderTable() {
   const tbody = document.getElementById('tableBody');
@@ -705,14 +752,36 @@ function updateBasket() {
   `).join('');
 }
 
+let activeCat = '';
+
+window.setCategory = function(cat) {
+  activeCat = cat;
+  // Update tab active states
+  ['all','consumable','meter'].forEach(c => {
+    document.getElementById('tab-' + (c === '' ? 'all' : c))
+      .classList.toggle('active', (c === '' ? '' : c) === cat || (c === 'all' && cat === ''));
+  });
+  // Fix: 'all' tab should be active when cat is ''
+  document.getElementById('tab-all').classList.toggle('active', cat === '');
+  document.getElementById('tab-consumable').classList.toggle('active', cat === 'consumable');
+  document.getElementById('tab-meter').classList.toggle('active', cat === 'meter');
+  filterItems();
+};
+
 window.filterItems = function() {
   const q    = document.getElementById('searchInput').value.toLowerCase().trim();
   const uomF = document.getElementById('uomFilter').value;
   filteredItems = ITEMS.filter(item => {
     const matchQ   = !q    || item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
-    const matchUom = !uomF || (item.uom || '').toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl');
-    return matchQ && matchUom;
+    const matchUom = !uomF || (item.uom || '').toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl')
+                    || (uomF === 'ea' && (item.uom || '').toLowerCase() === 'each');
+    const matchCat = !activeCat || item.category === activeCat;
+    return matchQ && matchUom && matchCat;
   });
+  // Update tab counts
+  document.getElementById('count-all').textContent         = ITEMS.length;
+  document.getElementById('count-consumable').textContent  = ITEMS.filter(i => i.category === 'consumable').length;
+  document.getElementById('count-meter').textContent       = ITEMS.filter(i => i.category === 'meter').length;
   renderTable();
 };
 
