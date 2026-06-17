@@ -711,50 +711,60 @@
 <header>
   <div class="logo">energise<span>.</span></div>
   <div class="header-right" style="display: flex; align-items: center; gap: 16px;">
-    <button class="btn btn-primary" id="pythonRunBtn" onclick="triggerPythonCheck()" style="padding: 8px 16px; margin: 0; white-space: nowrap;"> 
-      ▶ Run Live Price Sync 
+    <button class="btn btn-primary" id="viewLogsBtn" onclick="loadTodaysPriceChanges()" style="padding: 8px 16px; margin: 0; white-space: nowrap;"> 
+      📋 View Today's Price Changes
     </button>
     <span class="header-meta" id="headerMeta"><strong>0</strong> / 82 images uploaded</span>
   </div>
 </header>
 
 <!-- Sync Feed Box (hidden by default until run) -->
-<div id="pythonLogContainer" style="display: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 36px; box-shadow: var(--shadow);">
+<div id="priceLogContainer" style="display: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 36px; box-shadow: var(--shadow);">
   <div style="font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-    Sync Modifications Feed
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Today's Price Shifts
+    <button onclick="document.getElementById('priceLogContainer').style.display='none'" style="margin-left:auto; background:none; border:none; color:var(--text-muted); cursor:pointer;">✖ Close</button>
   </div> 
-  <div id="pythonLogBox" style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: 'DM Mono', monospace; font-size: 13px; max-height: 200px; overflow-y: auto; color: var(--text-mid); white-space: pre-wrap;">System engine idle. Awaiting execution trigger...</div>
+  <div id="priceLogBox" style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: 'DM Mono', monospace; font-size: 13px; max-height: 200px; overflow-y: auto; color: var(--text-mid); white-space: pre-wrap;">Fetching today's logs from Firebase...</div>
 </div>
 
-<script> 
-async function triggerPythonCheck() { 
-  const container = document.getElementById('pythonLogContainer');
-  const btn = document.getElementById('pythonRunBtn'); 
-  const log = document.getElementById('pythonLogBox'); 
+<script type="module"> 
+import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+window.loadTodaysPriceChanges = async function() { 
+  const container = document.getElementById('priceLogContainer');
+  const btn = document.getElementById('viewLogsBtn'); 
+  const log = document.getElementById('priceLogBox'); 
    
   container.style.display = 'block';
   btn.disabled = true; 
-  btn.innerText = "⚡ Checking..."; 
-  log.innerHTML = "Initializing session and connecting to Thinventory...<br>"; 
+  btn.innerText = "⏳ Loading..."; 
+  log.innerHTML = "Querying database for today's price updates...<br>"; 
    
-  try { 
-    const response = await fetch('/api/run-sync'); 
-    const data = await response.json(); 
-     
-    if (data.status === "success") { 
-      log.innerHTML = `<strong>✅ Sync Complete!</strong><br><br>${data.changes.join('<br>') || 'No pricing changes identified across active items.'}`; 
-      if (typeof window.loadExisting === "function") {
-        setTimeout(() => window.loadExisting(), 1000);
-      }
-    } else { 
-      log.innerHTML = `❌ Sync process terminated early:<br><br>${data.message}`; 
-    } 
+  try {
+    const db = getFirestore();
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const logsRef = collection(db, 'Energise Price Logs');
+    const q = query(logsRef, where("dateString", "==", todayStr));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      log.innerHTML = `<strong>✅ Database is up to date!</strong><br><br>The background app has not detected any supplier price changes today.`;
+    } else {
+      let logHtml = `<strong>⚠️ ${snapshot.size} Price Change(s) Today:</strong><br><br>`;
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const timeStr = new Date(data.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        logHtml += `[${timeStr}] <strong>SKU ${data.sku}</strong>: £${data.oldPrice.toFixed(2)} ➔ <span style="color:var(--accent2)">£${data.newPrice.toFixed(2)}</span><br>`;
+      });
+      log.innerHTML = logHtml;
+    }
   } catch (err) { 
-    log.innerHTML = `❌ Communication error tracking local Python engine:<br><br>${err.message}<br><br>(Make sure you have deployed the Vercel backend!)`; 
+    log.innerHTML = `❌ Error connecting to Firebase: ${err.message}`; 
   } finally { 
     btn.disabled = false; 
-    btn.innerText = "▶ Run Live Price Sync"; 
+    btn.innerText = "📋 View Today's Price Changes"; 
   } 
 } 
 </script>
