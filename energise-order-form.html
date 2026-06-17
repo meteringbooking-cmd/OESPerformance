@@ -439,6 +439,26 @@
     }
   }
 
+  // ── Load inventory from energise_inventory collection ──────────────────
+  async function loadInventory() {
+    setLoading(true);
+    try {
+      const snap = await getDocs(collection(db, 'energise_inventory'));
+      ITEMS.length = 0; // clear
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.sku && data.name) ITEMS.push(data);
+      });
+      // Sort alphabetically by name
+      ITEMS.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+      console.warn('Could not load inventory:', e);
+      showToast('Could not load inventory from server.', true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // ── Hover preview ───────────────────────────────────────────────────────
   const previewCard = document.getElementById('imgPreviewCard');
   const previewImg  = document.getElementById('imgPreviewImg');
@@ -522,18 +542,32 @@
     }
   };
 
-  // Load images once DOM is ready, then re-render with thumbnails
-  window.addEventListener('load', () => {
-    loadProductImages().then(() => { renderTable(); attachRowHover(); });
+  // Load everything once DOM is ready
+  window.addEventListener('load', async () => {
+    await Promise.all([ loadInventory(), loadProductImages() ]);
+    filterItems();
+    attachRowHover();
   });
 </script>
 
 <!-- App logic -->
 <script>
-const ITEMS = [];
+let ITEMS = [];  // populated from Firebase energise_inventory
 
 window.basket = {};
-let filteredItems = [...ITEMS];
+let filteredItems = [];
+
+// ── Loading state ────────────────────────────────────────────────────────────
+function setLoading(on) {
+  const tbody = document.getElementById('tableBody');
+  if (on) {
+    tbody.innerHTML = `
+      <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        Loading inventory…
+      </td></tr>`;
+  }
+}
 
 // ── Lightbox toggle ─────────────────────────────────────────────────────────
 let _lbSku = null;
@@ -675,8 +709,8 @@ window.filterItems = function() {
   const q    = document.getElementById('searchInput').value.toLowerCase().trim();
   const uomF = document.getElementById('uomFilter').value;
   filteredItems = ITEMS.filter(item => {
-    const matchQ   = !q    || item.name.toLowerCase().includes(q) || item.sku.includes(q);
-    const matchUom = !uomF || item.uom.toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl');
+    const matchQ   = !q    || item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
+    const matchUom = !uomF || (item.uom || '').toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl');
     return matchQ && matchUom;
   });
   renderTable();
@@ -724,7 +758,7 @@ document.getElementById('submitterName').addEventListener('input', function() {
   if (this.value.trim()) { document.getElementById('nameError').classList.remove('show'); this.style.borderColor = ''; }
 });
 
-// Initial render (images load after Firebase responds and will re-render)
+// Initial skeleton render — Firebase will populate ITEMS and call filterItems()
 renderTable();
 </script>
 
