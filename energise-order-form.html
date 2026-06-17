@@ -731,33 +731,60 @@ function renderTable() {
 }
 
 function buildActionCell(item, inBasket) {
+  const limit = item.limit ? parseInt(item.limit) : 999;
+  const limitText = item.limit ? `<div style="font-size:11px; color:var(--text-muted); text-align:center; margin-top:4px;">Limits: Daily ${item.limit}</div>` : '';
+
   if (inBasket) {
-    return `<span class="added-badge">✓ Added (${inBasket.qty})</span>
+    return `<span class="added-badge">✅ Added (${inBasket.qty})</span>
             <button class="basket-clear" style="margin-left:8px;font-size:11px;" onclick="removeItem('${item.sku}')">Remove</button>`;
   }
   if (isEA(item.uom)) {
-    return `<div style="display:flex;align-items:center;justify-content:center;gap:6px;">
-              <div class="qty-group">
-                <button class="qty-btn" onclick="changeQty('${item.sku}',-1)">−</button>
-                <input class="qty-input" type="number" id="qty-${item.sku}" value="1" min="1" max="999">
-                <button class="qty-btn" onclick="changeQty('${item.sku}',1)">+</button>
+    return `<div style="display:flex; flex-direction:column; align-items:center;">
+              <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+                <div class="qty-group">
+                  <button class="qty-btn" onclick="changeQty('${item.sku}',-1)">−</button>
+                  <input class="qty-input" type="number" id="qty-${item.sku}" value="1" min="1" max="${limit}">
+                  <button class="qty-btn" onclick="changeQty('${item.sku}',1)">+</button>
+                </div>
+                <button class="add-qty-btn" onclick="addItem('${item.sku}')">ADD</button>
               </div>
-              <button class="add-qty-btn" onclick="addItem('${item.sku}')">ADD</button>
+              ${limitText}
             </div>`;
   }
-  return `<button class="add-simple" onclick="addItem('${item.sku}')">+ Add</button>`;
+  return `<div style="display:flex; flex-direction:column; align-items:center;">
+            <button class="add-simple" onclick="addItem('${item.sku}')">+ Add</button>
+            ${limitText}
+          </div>`;
 }
 
 function changeQty(sku, delta) {
   const input = document.getElementById('qty-' + sku);
   if (!input) return;
-  input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
+  const item = ITEMS.find(i => i.sku === sku);
+  const limit = item && item.limit ? parseInt(item.limit) : 999;
+  let newQty = (parseInt(input.value) || 1) + delta;
+  
+  // Enforce boundaries
+  if (newQty < 1) newQty = 1;
+  if (newQty > limit) {
+    newQty = limit;
+    showToast(`Maximum daily limit reached (${limit})`, true);
+  }
+  
+  input.value = newQty;
 }
 
 window.addItem = function(sku) {
   const item = ITEMS.find(i => i.sku === sku);
   if (!item) return;
-  const qty = isEA(item.uom) ? (parseInt(document.getElementById('qty-' + sku)?.value) || 1) : 1;
+  const limit = item.limit ? parseInt(item.limit) : 999;
+  let qty = isEA(item.uom) ? (parseInt(document.getElementById('qty-' + sku)?.value) || 1) : 1;
+  
+  if (qty > limit) {
+    qty = limit;
+    showToast(`Adjusted to maximum daily limit (${limit})`, true);
+  }
+  
   window.basket[sku] = { ...item, qty };
   updateBasket();
   const cell = document.getElementById('action-' + sku);
