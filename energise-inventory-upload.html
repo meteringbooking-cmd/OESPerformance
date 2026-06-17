@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Energise — Inventory Upload</title>
+<meta name="description" content="Manage and upload the Energise stock inventory. Add individual items or bulk upload via CSV or XLSX.">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- SheetJS for XLSX parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #141820;
+    --surface: #1e2530;
+    --surface2: #252d3a;
+    --border: #2e3a4e;
+    --accent: #d4f53c;
+    --accent2: #47c8ff;
+    --text: #f0f4ff;
+    --text-muted: #8899aa;
+    --in-stock: #4ade80;
+    --out: #f87171;
+    --warning: #fbbf24;
+    --radius: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* ── HEADER ──────────────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .header-badge {
+    background: rgba(212,245,60,0.12);
+    border: 1px solid rgba(212,245,60,0.25);
+    color: var(--accent);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+  }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+
+  /* ── SAVE BAR ────────────────────────────────────────────────────── */
+  .save-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .save-bar-left { display: flex; align-items: center; gap: 16px; }
+  .item-counter {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .item-counter strong { color: var(--text); }
+  .unsaved-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--warning);
+    display: none;
+    animation: pulse-dot 1.5s infinite;
+  }
+  .unsaved-dot.show { display: inline-block; }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .btn-save {
+    background: var(--accent); color: #000; border: none;
+    padding: 9px 22px; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-save:hover { background: #d4eb30; transform: translateY(-1px); }
+  .btn-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; transform: none; }
+  .btn-export {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; gap: 7px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── PAGE LAYOUT ─────────────────────────────────────────────────── */
+  .page { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
+
+  /* ── SECTION TITLE ───────────────────────────────────────────────── */
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 14px;
+  }
+
+  /* ── ADD ITEM CARD ───────────────────────────────────────────────── */
+  .add-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .add-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+  .add-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .add-card-title svg { color: var(--accent); }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr 1.4fr 130px 110px 130px 60px;
+    gap: 12px;
+    align-items: end;
+  }
+  @media (max-width: 1100px) {
+    .form-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .form-grid .form-submit { grid-column: span 3; }
+  }
+  @media (max-width: 680px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid .form-submit { grid-column: 1; }
+  }
+
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-label {
+    font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+  }
+  .form-label .req { color: var(--out); }
+  .form-input, .form-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-input::placeholder { color: var(--text-muted); }
+  .form-input:focus, .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(212,245,60,0.12);
+  }
+  .form-input.err, .form-select.err { border-color: var(--out); }
+  .form-select { cursor: pointer; }
+  .form-select option { background: var(--surface); }
+
+  .btn-add-item {
+    background: var(--accent); color: #000; border: none;
+    padding: 10px 0; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; width: 100%;
+    transition: background 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-add-item:hover { background: #d4eb30; transform: translateY(-1px); }
+
+  /* ── BULK UPLOAD CARD ────────────────────────────────────────────── */
+  .bulk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bulk-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent2), #a78bfa);
+  }
+  .bulk-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700;
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .bulk-card-title svg { color: var(--accent2); }
+  .bulk-inner { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+  .drop-zone {
+    flex: 1; min-width: 260px;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(71,200,255,0.05);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { color: var(--accent2); margin-bottom: 10px; }
+  .drop-text { font-size: 13px; color: var(--text-muted); }
+  .drop-text strong { color: var(--text); }
+  .drop-types {
+    margin-top: 6px; font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .bulk-info {
+    flex: 1; min-width: 240px;
+  }
+  .bulk-info-title {
+    font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 10px;
+  }
+  .bulk-headers {
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .bulk-header-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: 'DM Mono', monospace; font-size: 12px;
+  }
+  .bulk-header-row .col-badge {
+    background: rgba(71,200,255,0.12); color: var(--accent2);
+    border-radius: 4px; padding: 2px 7px;
+    font-size: 10px; font-weight: 500;
+  }
+  .col-desc { color: var(--text-muted); font-size: 11px; }
+  .btn-template {
+    margin-top: 14px;
+    background: none; border: 1px solid var(--border);
+    color: var(--text-muted); padding: 7px 14px;
+    border-radius: var(--radius); font-family: 'DM Sans', sans-serif;
+    font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-template:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  /* ── PREVIEW BANNER ──────────────────────────────────────────────── */
+  .preview-banner {
+    display: none;
+    background: rgba(71,200,255,0.07);
+    border: 1px solid rgba(71,200,255,0.25);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .preview-banner.show { display: flex; }
+  .preview-banner-left { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .preview-banner-left svg { color: var(--accent2); flex-shrink: 0; }
+  .preview-banner strong { color: var(--accent2); }
+  .preview-banner-actions { display: flex; gap: 8px; }
+  .btn-sm {
+    padding: 6px 14px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-sm-accept {
+    background: var(--accent2); color: #000; border: none;
+  }
+  .btn-sm-accept:hover { background: #6fd8ff; }
+  .btn-sm-cancel {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .btn-sm-cancel:hover { border-color: var(--out); color: var(--out); }
+
+  /* ── SEARCH / FILTER TOOLBAR ─────────────────────────────────────── */
+  .toolbar {
+    display: flex; gap: 12px; align-items: center;
+    flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .search-wrap { position: relative; flex: 1; min-width: 200px; }
+  .search-wrap svg {
+    position: absolute; left: 11px; top: 50%;
+    transform: translateY(-50%); color: var(--text-muted); pointer-events: none;
+  }
+  .search-input {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius);
+    padding: 9px 12px 9px 34px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    width: 100%; outline: none; transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-muted); }
+  .filter-select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius);
+    padding: 9px 12px; font-family: 'DM Sans', sans-serif;
+    font-size: 13px; min-width: 160px; outline: none;
+    cursor: pointer; transition: border-color 0.2s;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+  .filter-select option { background: var(--surface); }
+  .results-count {
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--text-muted); white-space: nowrap;
+  }
+
+  /* ── INVENTORY TABLE ─────────────────────────────────────────────── */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { border-bottom: 2px solid var(--accent); }
+  th {
+    font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+    padding: 12px 16px; text-align: left; white-space: nowrap;
+    background: var(--surface);
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text); }
+  th.sort-asc::after { content: ' ↑'; color: var(--accent); }
+  th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+  th.no-sort { cursor: default; }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.04); }
+  tbody tr.preview-row { background: rgba(71,200,255,0.06); }
+  td { padding: 11px 16px; vertical-align: middle; }
+
+  .cat-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    font-weight: 500; white-space: nowrap;
+    text-transform: capitalize;
+  }
+  .cat-consumable { background: rgba(251,191,36,0.12); color: var(--warning); }
+  .cat-meter      { background: rgba(71,200,255,0.12); color: var(--accent2); }
+
+  .sku-mono {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted);
+  }
+  .uom-badge {
+    display: inline-block; background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent2);
+  }
+  .price-cell {
+    font-family: 'DM Mono', monospace; font-size: 13px; color: var(--in-stock);
+  }
+  .limit-cell {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted);
+  }
+  .btn-delete {
+    background: none; border: 1px solid transparent; color: var(--text-muted);
+    padding: 5px 10px; border-radius: var(--radius); cursor: pointer;
+    font-size: 12px; transition: background 0.15s, border-color 0.15s, color 0.15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-delete:hover {
+    background: rgba(248,113,113,0.1); border-color: var(--out);
+    color: var(--out);
+  }
+  .preview-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px;
+    background: rgba(71,200,255,0.12); color: var(--accent2);
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    margin-left: 6px;
+  }
+
+  /* ── EMPTY STATE ─────────────────────────────────────────────────── */
+  .empty-state {
+    text-align: center;
+    padding: 56px 20px;
+    color: var(--text-muted);
+  }
+  .empty-icon { margin-bottom: 14px; opacity: 0.25; }
+  .empty-state h3 {
+    font-family: 'Syne', sans-serif; font-size: 16px;
+    color: var(--text); margin-bottom: 8px;
+  }
+  .empty-state p { font-size: 13px; }
+
+  /* ── TOAST ───────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1e3a1e; border: 1px solid var(--in-stock); color: var(--in-stock);
+    padding: 12px 24px; border-radius: 8px; font-family: 'DM Sans', sans-serif;
+    font-size: 14px; font-weight: 500; z-index: 9999; opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease; white-space: nowrap;
+  }
+  .toast.error { background: #3a1e1e; border-color: var(--out); color: var(--out); }
+  .toast.warn  { background: #3a2e10; border-color: var(--warning); color: var(--warning); }
+  .toast.show  { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── CONFIRM MODAL ───────────────────────────────────────────────── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; width: 420px; max-width: 95vw;
+    padding: 28px;
+  }
+  .modal h3 {
+    font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn-modal-cancel {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .btn-modal-cancel:hover { border-color: var(--accent); }
+  .btn-modal-confirm {
+    background: var(--out); border: none; color: #fff;
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn-modal-confirm:hover { background: #f95f5f; }
+
+  /* ── RESPONSIVE ──────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    header, .save-bar, .page { padding-left: 16px; padding-right: 16px; }
+    .add-card, .bulk-card { padding: 18px 16px; }
+  }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">energise<span>.</span></div>
+  <div class="header-right">
+    <span class="header-badge">Inventory Management</span>
+  </div>
+</header>
+
+<!-- ── SAVE BAR ────────────────────────────────────────────────────── -->
+<div class="save-bar">
+  <div class="save-bar-left">
+    <span class="item-counter">
+      <strong id="totalCount">0</strong> items in inventory
+    </span>
+    <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes"></span>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button class="btn-export" id="exportBtn" onclick="exportCSV()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export CSV
+    </button>
+    <button class="btn-save" id="saveBtn" onclick="saveToFirebase()" disabled>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Save to Firebase
+    </button>
+  </div>
+</div>
+
+<!-- ── PAGE ────────────────────────────────────────────────────────── -->
+<div class="page">
+
+  <!-- ADD SINGLE ITEM -->
+  <div class="add-card">
+    <div class="add-card-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Add Single Item
+    </div>
+    <div class="form-grid" id="addForm">
+      <div class="form-group">
+        <label class="form-label" for="f-cat">Category <span class="req">*</span></label>
+        <select class="form-select" id="f-cat">
+          <option value="">Select…</option>
+          <option value="consumable">Consumable</option>
+          <option value="meter">Meter</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-sku">SKU Code <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-sku" placeholder="e.g. 36515">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-name">Product Name <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-name" placeholder="e.g. 1¼″ BS746 Sealing Cap Washer">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-limit">Daily Limit</label>
+        <input class="form-input" type="number" id="f-limit" placeholder="e.g. 10" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-uom">UOM <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-uom" placeholder="e.g. EA">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-price">Price / Unit (£)</label>
+        <input class="form-input" type="number" id="f-price" placeholder="e.g. 1.25" min="0" step="0.01">
+      </div>
+      <div class="form-group form-submit">
+        <label class="form-label" style="visibility:hidden">Add</label>
+        <button class="btn-add-item" id="addItemBtn" onclick="addSingleItem()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BULK UPLOAD -->
+  <div class="bulk-card">
+    <div class="bulk-card-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+      Bulk Upload
+    </div>
+    <div class="bulk-inner">
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="bulkFileInput" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this.files[0])">
+        <div class="drop-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+        <div class="drop-text">
+          <strong>Drop your file here</strong> or click to browse
+        </div>
+        <div class="drop-types">Accepts .csv · .xlsx · .xls</div>
+      </div>
+
+      <div class="bulk-info">
+        <div class="bulk-info-title">Required Column Headers</div>
+        <div class="bulk-headers">
+          <div class="bulk-header-row">
+            <span class="col-badge">A</span>
+            <span style="color:var(--text);font-weight:500">Category</span>
+            <span class="col-desc">consumable or meter</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">B</span>
+            <span style="color:var(--text);font-weight:500">SKU</span>
+            <span class="col-desc">unique product code</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">C</span>
+            <span style="color:var(--text);font-weight:500">Product Name</span>
+            <span class="col-desc">full item description</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">D</span>
+            <span style="color:var(--text);font-weight:500">Daily Limit</span>
+            <span class="col-desc">numeric or blank</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">E</span>
+            <span style="color:var(--text);font-weight:500">UOM</span>
+            <span class="col-desc">unit of measure</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">F</span>
+            <span style="color:var(--text);font-weight:500">Price Per Unit</span>
+            <span class="col-desc">numeric £ or blank</span>
+          </div>
+        </div>
+        <button class="btn-template" onclick="downloadTemplate()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download CSV Template
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PREVIEW BANNER -->
+  <div class="preview-banner" id="previewBanner">
+    <div class="preview-banner-left">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="previewMsg">0 items ready to import — review below then click <strong>Accept Import</strong>.</span>
+    </div>
+    <div class="preview-banner-actions">
+      <button class="btn-sm btn-sm-cancel" onclick="cancelPreview()">Cancel</button>
+      <button class="btn-sm btn-sm-accept" onclick="acceptPreview()">Accept Import</button>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <input class="search-input" type="search" id="searchInput" placeholder="Search by name or SKU…" oninput="renderTable()">
+    </div>
+    <select class="filter-select" id="catFilter" onchange="renderTable()">
+      <option value="">All Categories</option>
+      <option value="consumable">Consumable</option>
+      <option value="meter">Meter</option>
+    </select>
+    <span class="results-count" id="resultsCount"></span>
+  </div>
+
+  <!-- INVENTORY TABLE -->
+  <div class="table-card">
+    <table id="inventoryTable">
+      <thead>
+        <tr>
+          <th onclick="sortBy('category')" id="th-category">Category</th>
+          <th onclick="sortBy('sku')" id="th-sku">SKU</th>
+          <th onclick="sortBy('name')" id="th-name">Product Name</th>
+          <th onclick="sortBy('dailyLimit')" id="th-dailyLimit">Daily Limit</th>
+          <th onclick="sortBy('uom')" id="th-uom">UOM</th>
+          <th onclick="sortBy('price')" id="th-price">Price / Unit</th>
+          <th class="no-sort" style="width:80px;text-align:center;">Action</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+</div><!-- end .page -->
+
+<!-- ── CONFIRM DELETE MODAL ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Delete Item</h3>
+    <p id="deleteModalMsg">Are you sure you want to delete this item? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-modal-confirm" id="confirmDeleteBtn" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ── FIREBASE ──────────────────────────────────────────────────────── -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── Load inventory ────────────────────────────────────────────────
+  async function loadInventory() {
+    try {
+      const snap = await getDocs(collection(db, 'energise_inventory'));
+      snap.forEach(d => {
+        const data = d.data();
+        window.ITEMS[data.sku] = { ...data };
+      });
+      window.markClean();
+      window.renderTable();
+    } catch (e) {
+      console.warn('Could not load inventory from Firebase:', e);
+      window.showToast('Could not load inventory. Working offline.', 'warn');
+    }
+  }
+
+  // ── Save all items ────────────────────────────────────────────────
+  window.saveToFirebase = async function() {
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving…';
+
+    try {
+      // Get current remote SKUs to detect deletions
+      const snap = await getDocs(collection(db, 'energise_inventory'));
+      const remoteSKUs = new Set(snap.docs.map(d => d.id));
+      const localSKUs  = new Set(Object.keys(window.ITEMS));
+
+      // Delete items removed locally
+      for (const sku of remoteSKUs) {
+        if (!localSKUs.has(sku)) {
+          await deleteDoc(doc(db, 'energise_inventory', sku));
+        }
+      }
+
+      // Upsert all local items
+      for (const item of Object.values(window.ITEMS)) {
+        await setDoc(doc(db, 'energise_inventory', item.sku), {
+          ...item,
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      window.markClean();
+      window.showToast(`✓ ${localSKUs.size} items saved to Firebase`, 'ok');
+    } catch (err) {
+      console.error(err);
+      window.showToast('Error saving: ' + err.message, 'error');
+    } finally {
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save to Firebase';
+      window.updateSaveBtn();
+    }
+  };
+
+  window.addEventListener('load', loadInventory);
+</script>
+
+<!-- ── APP LOGIC ─────────────────────────────────────────────────────── -->
+<script>
+// ── State ─────────────────────────────────────────────────────────────
+window.ITEMS = {};        // keyed by sku
+let previewItems = [];    // pending bulk import rows
+let isDirty = false;
+let sortCol = 'name';
+let sortDir = 'asc';
+let deleteTarget = null;
+
+// ── Dirty tracking ────────────────────────────────────────────────────
+window.markDirty = function() {
+  isDirty = true;
+  document.getElementById('unsavedDot').classList.add('show');
+  updateSaveBtn();
+};
+window.markClean = function() {
+  isDirty = false;
+  document.getElementById('unsavedDot').classList.remove('show');
+  updateSaveBtn();
+};
+window.updateSaveBtn = function() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = !isDirty;
+};
+
+// ── Render table ──────────────────────────────────────────────────────
+window.renderTable = function() {
+  const q    = document.getElementById('searchInput').value.toLowerCase().trim();
+  const catF = document.getElementById('catFilter').value;
+
+  let rows = Object.values(window.ITEMS);
+
+  // Filter
+  rows = rows.filter(item => {
+    const matchQ   = !q || item.name.toLowerCase().includes(q) || item.sku.includes(q);
+    const matchCat = !catF || item.category === catF;
+    return matchQ && matchCat;
+  });
+
+  // Preview rows merged
+  let previewRows = previewItems.map(p => ({ ...p, _preview: true }));
+
+  // Sort
+  const allRows = [...rows, ...previewRows];
+  allRows.sort((a, b) => {
+    let av = a[sortCol] ?? '';
+    let bv = b[sortCol] ?? '';
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('tableBody');
+
+  if (allRows.length === 0) {
+    tbody.innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M9 21V9"/>
+            </svg>
+          </div>
+          <h3>${Object.keys(window.ITEMS).length === 0 ? 'No items yet' : 'No results found'}</h3>
+          <p>${Object.keys(window.ITEMS).length === 0 ? 'Add your first item using the form above, or bulk upload a spreadsheet.' : 'Try a different search or filter.'}</p>
+        </div>
+      </td></tr>`;
+  } else {
+    tbody.innerHTML = allRows.map(item => rowHTML(item)).join('');
+  }
+
+  document.getElementById('totalCount').textContent = Object.keys(window.ITEMS).length;
+  document.getElementById('resultsCount').textContent = `${rows.length} item${rows.length !== 1 ? 's' : ''}` + (previewItems.length ? ` + ${previewItems.length} pending` : '');
+};
+
+function rowHTML(item) {
+  const catClass = item.category === 'consumable' ? 'cat-consumable' : 'cat-meter';
+  const catLabel = item.category || '—';
+  const limitStr = (item.dailyLimit !== undefined && item.dailyLimit !== '') ? item.dailyLimit : '—';
+  const priceStr = (item.price !== undefined && item.price !== '') ? `£${parseFloat(item.price).toFixed(2)}` : '—';
+  const previewTag = item._preview ? `<span class="preview-tag">preview</span>` : '';
+
+  return `<tr${item._preview ? ' class="preview-row"' : ''}>
+    <td><span class="cat-badge ${catClass}">${catLabel}</span></td>
+    <td><span class="sku-mono">${escHtml(item.sku)}</span></td>
+    <td>${escHtml(item.name)}${previewTag}</td>
+    <td><span class="limit-cell">${limitStr}</span></td>
+    <td><span class="uom-badge">${escHtml(item.uom || '—')}</span></td>
+    <td><span class="price-cell">${priceStr}</span></td>
+    <td style="text-align:center;">
+      ${item._preview
+        ? ''
+        : `<button class="btn-delete" onclick="promptDelete('${escAttr(item.sku)}')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+            Delete
+          </button>`
+      }
+    </td>
+  </tr>`;
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/'/g, "\\'");
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────
+window.sortBy = function(col) {
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortCol = col;
+    sortDir = 'asc';
+  }
+  const thEl = document.getElementById('th-' + col);
+  if (thEl) thEl.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  renderTable();
+};
+
+// ── Add single item ───────────────────────────────────────────────────
+window.addSingleItem = function() {
+  const cat   = document.getElementById('f-cat');
+  const sku   = document.getElementById('f-sku');
+  const name  = document.getElementById('f-name');
+  const limit = document.getElementById('f-limit');
+  const uom   = document.getElementById('f-uom');
+  const price = document.getElementById('f-price');
+
+  [cat, sku, name, uom].forEach(el => el.classList.remove('err'));
+  let valid = true;
+
+  if (!cat.value) { cat.classList.add('err'); valid = false; }
+  if (!sku.value.trim()) { sku.classList.add('err'); valid = false; }
+  if (!name.value.trim()) { name.classList.add('err'); valid = false; }
+  if (!uom.value.trim()) { uom.classList.add('err'); valid = false; }
+
+  if (!valid) { showToast('Please fill in all required fields.', 'error'); return; }
+
+  const skuVal = sku.value.trim();
+  if (window.ITEMS[skuVal]) {
+    sku.classList.add('err');
+    showToast(`SKU ${skuVal} already exists in inventory.`, 'error');
+    return;
+  }
+
+  window.ITEMS[skuVal] = {
+    category:   cat.value,
+    sku:        skuVal,
+    name:       name.value.trim(),
+    dailyLimit: limit.value !== '' ? Number(limit.value) : '',
+    uom:        uom.value.trim(),
+    price:      price.value !== '' ? Number(price.value) : '',
+  };
+
+  // Reset form
+  [cat, sku, name, limit, uom, price].forEach(el => { el.value = ''; el.classList.remove('err'); });
+
+  markDirty();
+  renderTable();
+  showToast(`✓ "${window.ITEMS[skuVal].name}" added.`, 'ok');
+};
+
+// ── Delete ────────────────────────────────────────────────────────────
+window.promptDelete = function(sku) {
+  deleteTarget = sku;
+  const item = window.ITEMS[sku];
+  document.getElementById('deleteModalMsg').textContent =
+    `Delete "${item?.name || sku}" (SKU: ${sku})? This will be removed from the inventory.`;
+  document.getElementById('deleteModal').classList.add('open');
+};
+window.closeDeleteModal = function() {
+  document.getElementById('deleteModal').classList.remove('open');
+  deleteTarget = null;
+};
+window.confirmDelete = function() {
+  if (!deleteTarget) return;
+  const name = window.ITEMS[deleteTarget]?.name || deleteTarget;
+  delete window.ITEMS[deleteTarget];
+  markDirty();
+  renderTable();
+  closeDeleteModal();
+  showToast(`Deleted "${name}".`, 'ok');
+};
+
+// ── Bulk upload ───────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFileSelect(e.dataTransfer.files[0]);
+});
+
+window.handleFileSelect = function(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xlsx','xls'].includes(ext)) {
+    showToast('Unsupported file type. Please use .csv or .xlsx', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      parseUploadedRows(rows, file.name);
+    } catch (err) {
+      showToast('Could not parse file: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  // reset input so same file can be re-selected
+  document.getElementById('bulkFileInput').value = '';
+};
+
+function normaliseHeader(h) {
+  return String(h).toLowerCase().replace(/\s+/g,'').replace(/[^a-z]/g,'');
+}
+
+function parseUploadedRows(rows, filename) {
+  if (rows.length < 2) { showToast('File appears to be empty.', 'error'); return; }
+
+  const headerRow = rows[0].map(normaliseHeader);
+  const colMap = {
+    category:   findCol(headerRow, ['category']),
+    sku:        findCol(headerRow, ['sku','skucode','code']),
+    name:       findCol(headerRow, ['productname','name','description','product']),
+    dailyLimit: findCol(headerRow, ['dailylimit','limit','daily']),
+    uom:        findCol(headerRow, ['uom','unit','unitofmeasure']),
+    price:      findCol(headerRow, ['priceperunit','price','cost','unitprice']),
+  };
+
+  const missing = Object.entries(colMap).filter(([k,v]) => v === -1 && ['category','sku','name','uom'].includes(k)).map(([k]) => k);
+  if (missing.length) {
+    showToast(`Missing required columns: ${missing.join(', ')}`, 'error');
+    return;
+  }
+
+  const parsed = [];
+  const skipped = [];
+
+  rows.slice(1).forEach((row, i) => {
+    const sku  = String(row[colMap.sku] ?? '').trim();
+    const name = String(row[colMap.name] ?? '').trim();
+    const cat  = String(row[colMap.category] ?? '').trim().toLowerCase();
+    const uom  = String(row[colMap.uom] ?? '').trim();
+
+    if (!sku && !name) return; // blank row
+
+    if (!sku || !name || !cat || !uom) { skipped.push(`Row ${i+2}: missing required field`); return; }
+    if (!['consumable','meter'].includes(cat)) { skipped.push(`Row ${i+2}: category must be 'consumable' or 'meter'`); return; }
+
+    const limitVal = colMap.dailyLimit !== -1 ? row[colMap.dailyLimit] : '';
+    const priceVal = colMap.price      !== -1 ? row[colMap.price]      : '';
+
+    parsed.push({
+      category:   cat,
+      sku,
+      name,
+      dailyLimit: limitVal !== '' ? Number(limitVal) : '',
+      uom,
+      price:      priceVal !== '' ? Number(priceVal) : '',
+    });
+  });
+
+  if (skipped.length) console.warn('Skipped rows:', skipped);
+
+  // Filter out existing SKUs
+  const newItems = parsed.filter(p => !window.ITEMS[p.sku]);
+  const dupes    = parsed.length - newItems.length;
+
+  if (newItems.length === 0) {
+    showToast('No new items to import. All SKUs already exist.', 'warn');
+    return;
+  }
+
+  previewItems = newItems;
+  const msg = `${newItems.length} new item${newItems.length !== 1 ? 's' : ''} ready to import from <strong>${filename}</strong>` +
+    (dupes ? ` — <strong>${dupes} duplicate SKU${dupes !== 1 ? 's' : ''} skipped</strong>` : '') +
+    (skipped.length ? `, ${skipped.length} row${skipped.length !== 1 ? 's' : ''} had errors` : '');
+  document.getElementById('previewMsg').innerHTML = msg + ` — review below then click <strong>Accept Import</strong>.`;
+  document.getElementById('previewBanner').classList.add('show');
+  renderTable();
+}
+
+function findCol(headers, candidates) {
+  for (const c of candidates) {
+    const idx = headers.indexOf(c);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+window.acceptPreview = function() {
+  previewItems.forEach(item => { window.ITEMS[item.sku] = item; });
+  const count = previewItems.length;
+  previewItems = [];
+  document.getElementById('previewBanner').classList.remove('show');
+  markDirty();
+  renderTable();
+  showToast(`✓ ${count} item${count !== 1 ? 's' : ''} imported successfully.`, 'ok');
+};
+
+window.cancelPreview = function() {
+  previewItems = [];
+  document.getElementById('previewBanner').classList.remove('show');
+  renderTable();
+  showToast('Import cancelled.', 'warn');
+};
+
+// ── Template download ─────────────────────────────────────────────────
+window.downloadTemplate = function() {
+  const csv = [
+    'Category,SKU,Product Name,Daily Limit,UOM,Price Per Unit',
+    'consumable,36001,Example Consumable Item,10,EA,1.25',
+    'meter,36002,Example Meter Item,,PK-10,4.50',
+  ].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'energise-inventory-template.csv';
+  a.click();
+};
+
+// ── Export CSV ────────────────────────────────────────────────────────
+window.exportCSV = function() {
+  const items = Object.values(window.ITEMS);
+  if (items.length === 0) { showToast('No items to export.', 'warn'); return; }
+  const rows = [
+    'Category,SKU,Product Name,Daily Limit,UOM,Price Per Unit',
+    ...items.map(i =>
+      `"${i.category}","${i.sku}","${i.name}","${i.dailyLimit ?? ''}","${i.uom}","${i.price ?? ''}"`
+    )
+  ].join('\r\n');
+  const blob = new Blob([rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `energise-inventory-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('✓ CSV exported.', 'ok');
+};
+
+// ── Toast ─────────────────────────────────────────────────────────────
+window.showToast = function(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.innerHTML = msg;
+  t.className = 'toast' + (type === 'error' ? ' error' : type === 'warn' ? ' warn' : '');
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+};
+
+// ── Close modal on backdrop click ─────────────────────────────────────
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+  if (e.target === this) closeDeleteModal();
+});
+
+// ── Initial render ────────────────────────────────────────────────────
+renderTable();
+</script>
+
+</body>
+</html>
