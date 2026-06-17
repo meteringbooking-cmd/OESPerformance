@@ -1036,45 +1036,78 @@
       </svg>
       Sending…`;
 
-    // Build a styled HTML table for the email
     const dateStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
     const timeStr = order.submittedAt ? formatTime(order.submittedAt) : '';
 
-    const itemRows = order.items.map((item, i) => `
-      <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-        <td style="padding:10px 14px;font-size:13px;color:#6b7280;font-family:'Courier New',monospace;border-bottom:1px solid #e5e7eb;">${i + 1}</td>
-        <td style="padding:10px 14px;font-size:14px;font-weight:500;color:#111827;border-bottom:1px solid #e5e7eb;">${item.name || ''}</td>
-        <td style="padding:10px 14px;font-size:13px;font-family:'Courier New',monospace;color:#6b7280;border-bottom:1px solid #e5e7eb;">${item.sku || ''}</td>
-        <td style="padding:10px 14px;font-size:13px;border-bottom:1px solid #e5e7eb;">
-          <span style="background:#eff4ff;border:1px solid rgba(26,86,219,0.2);color:#1a56db;padding:2px 8px;border-radius:4px;font-family:'Courier New',monospace;font-size:12px;">${item.uom || ''}</span>
-        </td>
-        <td style="padding:10px 14px;font-size:15px;font-weight:700;color:#1a56db;text-align:center;border-bottom:1px solid #e5e7eb;">${item.qty ?? 1}</td>
-      </tr>`).join('');
+    // ── Split items by category ───────────────────────────────────────────
+    const consumables = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable');
+    const meters      = order.items.filter(i => (i.category || '').toLowerCase() === 'meter');
 
-    const itemsHtml = `
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #d8dde6;border-radius:8px;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif;">
-        <thead>
-          <tr style="background:#1a56db;">
-            <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:40px;">#</th>
-            <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);">Product Name</th>
-            <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">SKU</th>
-            <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">Unit</th>
-            <th style="padding:10px 14px;text-align:center;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:60px;">Qty</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>`;
+    // Build a styled HTML table for a given item list
+    function buildItemsHtml(items) {
+      const rows = items.map((item, i) => `
+        <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+          <td style="padding:10px 14px;font-size:13px;color:#6b7280;font-family:'Courier New',monospace;border-bottom:1px solid #e5e7eb;">${i + 1}</td>
+          <td style="padding:10px 14px;font-size:14px;font-weight:500;color:#111827;border-bottom:1px solid #e5e7eb;">${item.name || ''}</td>
+          <td style="padding:10px 14px;font-size:13px;font-family:'Courier New',monospace;color:#6b7280;border-bottom:1px solid #e5e7eb;">${item.sku || ''}</td>
+          <td style="padding:10px 14px;font-size:13px;border-bottom:1px solid #e5e7eb;">
+            <span style="background:#eff4ff;border:1px solid rgba(26,86,219,0.2);color:#1a56db;padding:2px 8px;border-radius:4px;font-family:'Courier New',monospace;font-size:12px;">${item.uom || ''}</span>
+          </td>
+          <td style="padding:10px 14px;font-size:15px;font-weight:700;color:#1a56db;text-align:center;border-bottom:1px solid #e5e7eb;">${item.qty ?? 1}</td>
+        </tr>`).join('');
 
-    const templateParams = {
-      submitted_by: order.submittedBy,
-      submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-      item_count:   order.items.length,
-      items_html:   itemsHtml,
-      order_id:     orderId,
-    };
+      return `
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #d8dde6;border-radius:8px;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif;">
+          <thead>
+            <tr style="background:#1a56db;">
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:40px;">#</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);">Product Name</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">SKU</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">Unit</th>
+              <th style="padding:10px 14px;text-align:center;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:60px;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
 
     try {
-      await emailjs.send('service_ushej2v', 'template_uo288rg', templateParams);
+      const sends = [];
+
+      if (consumables.length > 0) {
+        sends.push(
+          emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+            submitted_by: order.submittedBy,
+            submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+            item_count:   consumables.length,
+            order_type:   'Consumables',
+            items_html:   buildItemsHtml(consumables),
+            order_id:     orderId,
+          })
+        );
+      }
+
+      if (meters.length > 0) {
+        sends.push(
+          emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+            submitted_by: order.submittedBy,
+            submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+            item_count:   meters.length,
+            order_type:   'Meters',
+            items_html:   buildItemsHtml(meters),
+            order_id:     orderId,
+          })
+        );
+      }
+
+      if (sends.length === 0) {
+        showToast('No items to send — order has no consumables or meters.', true);
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Process Order`;
+        return;
+      }
+
+      await Promise.all(sends);
 
       // Save processedAt to Firestore
       const now = new Date();
@@ -1083,14 +1116,13 @@
       // Mark in memory
       order.processedAt = now;
 
-      // Animate card out, then re-render
+      // Animate card out then re-render
       const card = document.getElementById('card-' + orderId);
       if (card) {
         card.classList.add('processing-out');
         setTimeout(() => {
           applyFilters();
           renderProcessed();
-          // Auto-open the processed section
           document.getElementById('processedSection').classList.add('open');
         }, 420);
       } else {
@@ -1098,7 +1130,12 @@
         renderProcessed();
       }
 
-      showToast('✓ Order processed and email sent!', false);
+      const sentParts = [
+        consumables.length > 0 ? `consumables (${consumables.length})` : null,
+        meters.length      > 0 ? `meters (${meters.length})`           : null,
+      ].filter(Boolean).join(' + ');
+      showToast(`✓ Order processed — emails sent for ${sentParts}!`, false);
+
     } catch (err) {
       console.error('EmailJS error:', err);
       btn.disabled = false;
