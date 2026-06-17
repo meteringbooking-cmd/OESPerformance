@@ -830,8 +830,7 @@
   let ITEMS = [];
 
   // State
-  const imageState = {};
-  const priceState = {}; // sku → price string // sku => { url, storagePath }
+  const imageState = {}; // sku => { url, storagePath }
   let filteredItems = [];
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -983,7 +982,9 @@
             name: data.name,
             sku: data.sku,
             uom: data.uom || '',
-            category: data.category || 'consumable'
+            category: data.category || 'consumable',
+            price: data.price != null ? data.price : '',
+            docId: d.id
           });
         }
       });
@@ -991,15 +992,12 @@
       ITEMS.sort((a, b) => a.name.localeCompare(b.name));
       filteredItems = [...ITEMS];
 
-      // 2. Load Images & Prices
+      // 2. Load Images
       const snap = await getDocs(collection(db, COLLECTION));
       snap.forEach(docSnap => {
         const data = docSnap.data();
         if (data.sku && data.downloadURL) {
           imageState[data.sku] = { url: data.downloadURL, storagePath: data.storagePath };
-        }
-        if (data.sku && data.price != null) {
-          priceState[data.sku] = data.price;
         }
       });
 
@@ -1014,13 +1012,13 @@
   async function savePriceForSku(sku, price) {
     try {
       const item = ITEMS.find(i => i.sku === sku);
-      await setDoc(doc(db, COLLECTION, sku), {
-        sku,
-        name: item?.name || '',
-        category: item?.category || '',
-        price: price === '' ? null : parseFloat(price),
+      const parsedPrice = price === '' ? null : parseFloat(price);
+      
+      await setDoc(doc(db, 'Energise Inventory', item.docId), {
+        price: parsedPrice
       }, { merge: true });
-      priceState[sku] = price;
+      
+      item.price = parsedPrice;
     } catch (err) {
       console.error('Price save failed:', err);
       showToast('Could not save price: ' + err.message, 'error');
@@ -1087,7 +1085,7 @@
         <span class="price-prefix">£</span>
         <input class="price-input" type="number" step="0.01" min="0" placeholder="0.00"
                id="price-${item.sku}" data-sku="${item.sku}"
-               value="${priceState[item.sku] != null ? priceState[item.sku] : ''}">
+               value="${item.price != null ? item.price : ''}">
       </div>
       <div class="card-footer">
         <div class="status-dot"></div>
