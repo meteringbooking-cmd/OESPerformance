@@ -1680,7 +1680,7 @@ window.togglePw = function() {
 };
 
 window.openReferralPortal = function() {
-    window.location.href = 'https://ngu-recruitment-portal.vercel.app/candidate-referral-bonus.html';
+    window.open('https://ngu-recruitment-portal.vercel.app/candidate-referral-bonus.html', '_blank');
 };
 
 function goToEnergiseOrdering() {
@@ -2204,13 +2204,28 @@ window.loadDailyBreakdown = async function() {
             }
         });
 
-        const [perfSnap, attSnap] = await Promise.all([
+        const [perfSnap, energisePerfSnap, attSnap] = await Promise.all([
             db.collection("performance").where("engineerName","==",currentEngineer).get(),
+            db.collection("performance - Energise").where("engineerName","==",currentEngineer).get(),
             db.collection("attendance").where("engineerName","==",currentEngineer).get()
         ]);
 
         const perfData={}, attData={};
-        perfSnap.forEach(doc=>{ const d=doc.data(), pd=normDate(d.date); if(pd&&pd>=startDate&&pd<=endDate) perfData[pd]={...d,date:pd}; });
+        const processPerfDoc = doc => {
+            const d=doc.data(), pd=normDate(d.date);
+            if(pd&&pd>=startDate&&pd<=endDate) {
+                if(perfData[pd]) {
+                    perfData[pd].jobs = (Number(perfData[pd].jobs)||0) + (Number(d.jobs)||0);
+                    perfData[pd].completed = (Number(perfData[pd].completed)||0) + (Number(d.completed)||0);
+                    perfData[pd].aborted = (Number(perfData[pd].aborted)||0) + (Number(d.aborted)||0);
+                    perfData[pd].meters = (Number(perfData[pd].meters)||0) + (Number(d.meters)||0);
+                } else {
+                    perfData[pd]={...d,date:pd};
+                }
+            }
+        };
+        perfSnap.forEach(processPerfDoc);
+        energisePerfSnap.forEach(processPerfDoc);
         attSnap.forEach(doc=>{ const d=doc.data(), pd=normDate(d.date); if(pd&&pd>=startDate&&pd<=endDate) attData[pd]={...d,date:pd}; });
 
         const allDatesSet = new Set();
