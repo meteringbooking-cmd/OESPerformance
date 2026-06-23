@@ -746,6 +746,7 @@
                 <div class="button-group">
                     <button class="btn" onclick="loadData()">Load Data</button>
                     <button class="btn btn-secondary" onclick="generatePDF()" id="pdfBtn" style="display: none;">📄 Create PDF</button>
+                    <button class="btn btn-secondary" onclick="exportToExcel()" id="excelBtn" style="display: none; background: #28a745;">⬇️ Export Excel</button>
                 </div>
             </div>
             
@@ -755,6 +756,7 @@
                 <button class="tab-btn" onclick="switchView('completed')">✅ View Completed Chart</button>
                 <button class="tab-btn" onclick="switchView('aborted')">❌ View Aborted Chart</button>
                 <button class="tab-btn" onclick="switchView('meters')">📏 View Meters Chart</button>
+                <button class="tab-btn" onclick="switchView('value')">💷 View Value Chart</button>
             </div>
         </div>
 
@@ -802,6 +804,7 @@
                             <th onclick="sortTable('completed')">Completed <span class="sort-indicator" id="sort-completed"></span></th>
                             <th onclick="sortTable('aborted')">Aborted <span class="sort-indicator" id="sort-aborted"></span></th>
                             <th onclick="sortTable('meters')">Meters <span class="sort-indicator" id="sort-meters"></span></th>
+                            <th onclick="sortTable('value')">Value <span class="sort-indicator" id="sort-value"></span></th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody"></tbody>
@@ -830,6 +833,7 @@
         import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/+esm';
         import html2canvas from 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm';
         import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
+        import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs';
 
         Chart.register(...registerables);
 
@@ -921,6 +925,7 @@
                 }
 
                 document.getElementById('pdfBtn').style.display = currentView === 'table' ? 'none' : 'inline-block';
+                document.getElementById('excelBtn').style.display = currentView === 'table' ? 'inline-block' : 'none';
 
             } catch (error) {
                 console.error("Error loading data:", error);
@@ -992,6 +997,10 @@
                         aVal = a.meters;
                         bVal = b.meters;
                         break;
+                    case 'value':
+                        aVal = a.value || 0;
+                        bVal = b.value || 0;
+                        break;
                     default:
                         aVal = a.date;
                         bVal = b.date;
@@ -1012,12 +1021,14 @@
             let totalCompleted = 0;
             let totalAborted = 0;
             let totalMeters = 0;
+            let totalValue = 0;
 
             data.forEach(record => {
                 totalJobs += record.jobs || 0;
                 totalCompleted += record.completed || 0;
                 totalAborted += record.aborted || 0;
                 totalMeters += record.meters || 0;
+                totalValue += record.value || 0;
             });
 
             const summarySection = document.getElementById('summarySection');
@@ -1038,6 +1049,10 @@
                     <div class="label">Total Meters</div>
                     <div class="value">${Math.round(totalMeters)}</div>
                 </div>
+                <div class="summary-card">
+                    <div class="label">Total Value</div>
+                    <div class="value">£${totalValue.toFixed(2)}</div>
+                </div>
             `;
             summarySection.style.display = 'grid';
 
@@ -1054,6 +1069,7 @@
                     <td class="number-cell">${record.completed}</td>
                     <td class="number-cell">${record.aborted}</td>
                     <td class="number-cell">${Math.round(record.meters)}</td>
+                    <td class="number-cell">£${(record.value || 0).toFixed(2)}</td>
                 `;
             });
 
@@ -1083,10 +1099,52 @@
             if (view === 'table') {
                 displayData(allData);
                 document.getElementById('pdfBtn').style.display = 'none';
+                document.getElementById('excelBtn').style.display = 'inline-block';
             } else {
                 displayChart(view);
                 document.getElementById('pdfBtn').style.display = 'inline-block';
+                document.getElementById('excelBtn').style.display = 'none';
             }
+        }
+
+        window.exportToExcel = function() {
+            if (allData.length === 0) {
+                alert('No data to export.');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+            const wsData = [];
+            
+            // Header
+            wsData.push(['Date', 'Engineer', 'Team Leader', 'Jobs', 'Completed', 'Aborted', 'Meters', 'Value']);
+            
+            // Data
+            const exportData = [...allData].sort((a, b) => {
+                if (a.date < b.date) return 1;
+                if (a.date > b.date) return -1;
+                return a.engineerName.localeCompare(b.engineerName);
+            });
+
+            exportData.forEach(record => {
+                wsData.push([
+                    record.date,
+                    record.engineerName,
+                    record.teamLeader,
+                    record.jobs || 0,
+                    record.completed || 0,
+                    record.aborted || 0,
+                    record.meters || 0,
+                    record.value || 0
+                ]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            XLSX.utils.book_append_sheet(wb, ws, 'Performance');
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            XLSX.writeFile(wb, `OES_Performance_${startDate}_to_${endDate}.xlsx`);
         }
 
         window.generatePDF = async function() {
@@ -1359,7 +1417,8 @@
                 jobs: 'Jobs',
                 completed: 'Completed',
                 aborted: 'Aborted',
-                meters: 'Meters'
+                meters: 'Meters',
+                value: 'Value'
             };
 
             const nonZeroPoints = [];
