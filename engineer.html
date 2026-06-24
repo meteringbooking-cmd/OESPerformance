@@ -1442,6 +1442,21 @@
             color: var(--text3);
             letter-spacing: 0.04em;
         }
+        .notif-item-delete {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: var(--text3);
+            font-size: 1.1em;
+            cursor: pointer;
+            padding: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+        }
+        .notif-item:hover .notif-item-delete { opacity: 1; }
+        .notif-item-delete:hover { color: var(--danger); transform: scale(1.1); }
         .notif-empty {
             padding: 40px 20px;
             text-align: center;
@@ -3346,6 +3361,7 @@ document.addEventListener('keydown', e => {
 // Users who can post notifications (partial match, case-insensitive)
 const NOTIF_ADMINS = ['barry dixon', 'barry'];
 const NOTIF_READ_KEY = 'ngu_read_notifs_v1';
+const NOTIF_DEL_KEY = 'ngu_deleted_notifs_v1';
 let notifPanelOpen = false;
 
 function getReadIds() {
@@ -3360,6 +3376,29 @@ function saveReadId(id) {
         localStorage.setItem(NOTIF_READ_KEY, JSON.stringify(ids));
     }
 }
+
+function getDeletedIds() {
+    try { return JSON.parse(localStorage.getItem(NOTIF_DEL_KEY) || '[]'); }
+    catch { return []; }
+}
+
+window.deleteLocalNotif = function(id) {
+    const ids = getDeletedIds();
+    if (!ids.includes(id)) {
+        ids.push(id);
+        localStorage.setItem(NOTIF_DEL_KEY, JSON.stringify(ids));
+    }
+    // Animate removal and reload
+    const el = document.querySelector(`.notif-item[data-id="${id}"]`);
+    if (el) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(20px)';
+        el.style.transition = 'all 0.3s ease';
+        setTimeout(() => loadNotifications(), 300);
+    } else {
+        loadNotifications();
+    }
+};
 
 window.markAllNotifsRead = function() {
     document.querySelectorAll('.notif-item[data-id]').forEach(el => {
@@ -3460,6 +3499,7 @@ function renderNotifItem(doc) {
     return `
         <div class="notif-item ${unread ? 'unread' : ''}" data-id="${doc.id}"
              onclick="saveReadId('${doc.id}');this.classList.remove('unread');updateBellBadge();">
+            <button class="notif-item-delete" title="Delete notification" onclick="event.stopPropagation(); deleteLocalNotif('${doc.id}');">✕</button>
             <div class="notif-item-cat cat-${cat}">${CAT_LABELS[cat] || 'Announcement'}</div>
             <div class="notif-item-title">${d.title || ''}</div>
             <div class="notif-item-body">${d.body || ''}</div>
@@ -3478,8 +3518,10 @@ window.loadNotifications = async function() {
             .limit(30)
             .get();
 
-        // Filter active notifications in the browser instead
-        const activeDocs = snap.docs.filter(doc => doc.data().active === true);
+        const delIds = getDeletedIds();
+        
+        // Filter active notifications in the browser instead, and remove deleted ones
+        const activeDocs = snap.docs.filter(doc => doc.data().active === true && !delIds.includes(doc.id));
 
         if (activeDocs.length === 0) {
             list.innerHTML = '<div class="notif-empty">// No notifications yet. Check back soon.</div>';
