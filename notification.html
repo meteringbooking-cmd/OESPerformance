@@ -205,6 +205,33 @@
         .compose-input::placeholder { color:var(--text3); }
         textarea.compose-input { resize:vertical; min-height:110px; }
 
+        /* Multi-select Target */
+        .target-wrap {
+            background: var(--bg3); border: 1px solid var(--border2);
+            padding: 14px; margin-bottom: 18px;
+        }
+        .target-all-label {
+            display: flex; align-items: center; gap: 10px; cursor: pointer;
+            font-family: 'Barlow', sans-serif; font-size: 0.95em; color: var(--text);
+            font-weight: 600;
+        }
+        .target-list {
+            margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border2);
+            max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+        }
+        .target-list label {
+            display: flex; align-items: center; gap: 10px; cursor: pointer;
+            font-size: 0.85em; color: var(--text2);
+        }
+        .target-list label:hover { color: var(--text); }
+        input[type="checkbox"] {
+            appearance: none; width: 18px; height: 18px; border: 2px solid var(--border2);
+            border-radius: 4px; background: var(--bg); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+        input[type="checkbox"]:checked::before { content: '✓'; color: var(--bg); font-size: 14px; font-weight: 900; }
+
         .char-count {
             text-align:right; font-family:'JetBrains Mono',monospace;
             font-size:0.62em; color:var(--text3); margin-top:-14px; margin-bottom:18px;
@@ -417,11 +444,16 @@
                        oninput="updatePreview()" maxlength="80">
 
                 <!-- Target Audience -->
-                <label class="compose-label" for="notifTarget">Target Audience</label>
-                <select class="compose-input" id="notifTarget" onchange="updateButtonText()">
-                    <option value="all">📢 All Engineers</option>
-                    <!-- Populated dynamically -->
-                </select>
+                <label class="compose-label">Target Audience</label>
+                <div class="target-wrap">
+                    <label class="target-all-label">
+                        <input type="checkbox" id="targetAll" checked onchange="toggleTargetAll()">
+                        📢 Send to All Engineers
+                    </label>
+                    <div id="targetList" class="target-list" style="display:none;">
+                        <!-- Checkboxes populated dynamically -->
+                    </div>
+                </div>
 
                 <!-- Message -->
                 <label class="compose-label" for="notifMsg">Message</label>
@@ -569,11 +601,23 @@ function checkSendReady() {
 window.sendNotification = async function() {
     const title  = document.getElementById('notifTitle').value.trim();
     const body   = document.getElementById('notifMsg').value.trim();
-    const target = document.getElementById('notifTarget').value;
     const msgEl  = document.getElementById('sendMsg');
     const btn    = document.getElementById('sendBtn');
 
     if (!title || !body || !selectedCat) return;
+
+    // Determine target
+    let target = 'all';
+    if (!document.getElementById('targetAll').checked) {
+        const cbs = document.querySelectorAll('#targetList input[type="checkbox"]:checked');
+        if (cbs.length === 0) {
+            msgEl.textContent = '⚠ Please select at least one engineer, or "All Engineers".';
+            msgEl.className = 'send-msg error';
+            msgEl.style.display = 'block';
+            return;
+        }
+        target = Array.from(cbs).map(cb => cb.value);
+    }
 
     btn.disabled = true; btn.textContent = 'Sending…';
     msgEl.style.display = 'none'; msgEl.className = 'send-msg';
@@ -588,15 +632,20 @@ window.sendNotification = async function() {
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        const targetText = target === 'all' ? 'All engineers' : target;
+        let targetText = 'All engineers';
+        if (Array.isArray(target)) {
+            targetText = target.length === 1 ? target[0] : `${target.length} selected engineers`;
+        }
         msgEl.textContent = `✅ Notification sent! ${targetText} will see it next time they open the portal.`;
         msgEl.classList.add('success');
 
         // Reset form
         document.getElementById('notifTitle').value = '';
         document.getElementById('notifMsg').value   = '';
-        document.getElementById('notifTarget').value = 'all';
-        updateButtonText();
+        document.getElementById('targetAll').checked = true;
+        toggleTargetAll();
+        document.querySelectorAll('#targetList input').forEach(cb => cb.checked = false);
+        
         document.getElementById('charCount').textContent = '0 / 500';
         document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
         selectedCat = '';
@@ -646,7 +695,11 @@ async function loadHistory() {
         list.innerHTML = activeDocs.map(doc => {
             const d   = doc.data();
             const cat = d.category || 'general';
-            const targetBadge = d.target && d.target !== 'all' ? `<span style="color:var(--warn); margin-left:6px;">[To: ${d.target}]</span>` : '';
+            let targetBadge = '';
+            if (d.target && d.target !== 'all') {
+                const tText = Array.isArray(d.target) ? d.target.join(', ') : d.target;
+                targetBadge = `<span style="color:var(--warn); margin-left:6px; font-size:0.85em;">[To: ${tText}]</span>`;
+            }
             return `
             <div class="hist-item" id="hist-${doc.id}">
                 <div class="hist-item-body">
@@ -695,23 +748,31 @@ async function loadEngineersForDropdown() {
             if (d.engineerName) engNames.push(d.engineerName);
         });
         engNames.sort();
-        const sel = document.getElementById('notifTarget');
+        const listEl = document.getElementById('targetList');
         engNames.forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = `👤 Only: ${name}`;
-            sel.appendChild(opt);
+            const label = document.createElement('label');
+            label.innerHTML = `<input type="checkbox" value="${name}" onchange="updateButtonText()"> 👤 ${name}`;
+            listEl.appendChild(label);
         });
     } catch(e) { console.error('Error loading engineers:', e); }
 }
 
+window.toggleTargetAll = function() {
+    const isAll = document.getElementById('targetAll').checked;
+    document.getElementById('targetList').style.display = isAll ? 'none' : 'flex';
+    updateButtonText();
+};
+
 window.updateButtonText = function() {
-    const target = document.getElementById('notifTarget').value;
+    const isAll = document.getElementById('targetAll').checked;
     const btn = document.getElementById('sendBtn');
-    if (target === 'all') {
+    if (isAll) {
         btn.innerHTML = '📣 Send to All Engineers';
     } else {
-        btn.innerHTML = `👤 Send to ${target}`;
+        const selected = document.querySelectorAll('#targetList input[type="checkbox"]:checked').length;
+        if (selected === 0) btn.innerHTML = '📣 Select an Engineer...';
+        else if (selected === 1) btn.innerHTML = '👤 Send to 1 Engineer';
+        else btn.innerHTML = `👥 Send to ${selected} Engineers`;
     }
 };
 </script>
