@@ -416,6 +416,13 @@
                        placeholder="e.g. April bonuses now updated"
                        oninput="updatePreview()" maxlength="80">
 
+                <!-- Target Audience -->
+                <label class="compose-label" for="notifTarget">Target Audience</label>
+                <select class="compose-input" id="notifTarget" onchange="updateButtonText()">
+                    <option value="all">📢 All Engineers</option>
+                    <!-- Populated dynamically -->
+                </select>
+
                 <!-- Message -->
                 <label class="compose-label" for="notifMsg">Message</label>
                 <textarea class="compose-input" id="notifMsg"
@@ -509,6 +516,7 @@ window.handleLogin = function() {
         document.getElementById('loginScreen').classList.remove('active');
         document.getElementById('mainScreen').classList.add('active');
         loadHistory();
+        loadEngineersForDropdown();
     } else {
         errEl.textContent = '⚠ Incorrect username or password.';
         errEl.style.display = 'block';
@@ -561,6 +569,7 @@ function checkSendReady() {
 window.sendNotification = async function() {
     const title  = document.getElementById('notifTitle').value.trim();
     const body   = document.getElementById('notifMsg').value.trim();
+    const target = document.getElementById('notifTarget').value;
     const msgEl  = document.getElementById('sendMsg');
     const btn    = document.getElementById('sendBtn');
 
@@ -573,22 +582,25 @@ window.sendNotification = async function() {
         await db.collection('portalNotifications').add({
             title, body,
             category:  selectedCat,
+            target:    target,
             active:    true,
             sentBy:    currentUser,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
-        msgEl.textContent = '✅ Notification sent! Engineers will see it next time they open the portal.';
+        const targetText = target === 'all' ? 'All engineers' : target;
+        msgEl.textContent = `✅ Notification sent! ${targetText} will see it next time they open the portal.`;
         msgEl.classList.add('success');
 
         // Reset form
         document.getElementById('notifTitle').value = '';
         document.getElementById('notifMsg').value   = '';
+        document.getElementById('notifTarget').value = 'all';
+        updateButtonText();
         document.getElementById('charCount').textContent = '0 / 500';
         document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
         selectedCat = '';
         document.getElementById('previewBox').classList.remove('visible');
-        btn.textContent = '📣 Send to All Engineers';
         btn.disabled = true;
 
         // Refresh history
@@ -634,10 +646,12 @@ async function loadHistory() {
         list.innerHTML = activeDocs.map(doc => {
             const d   = doc.data();
             const cat = d.category || 'general';
+            const targetBadge = d.target && d.target !== 'all' ? `<span style="color:var(--warn); margin-left:6px;">[To: ${d.target}]</span>` : '';
             return `
             <div class="hist-item" id="hist-${doc.id}">
                 <div class="hist-item-body">
                     <span class="hist-cat badge-${cat}">${CAT_LABELS[cat] || 'Announcement'}</span>
+                    ${targetBadge}
                     <div class="hist-title" title="${d.title || ''}">${d.title || '—'}</div>
                     <div class="hist-preview">${(d.body || '').substring(0,80)}${(d.body||'').length > 80 ? '…' : ''}</div>
                     <div class="hist-time">${formatTimeAgo(d.createdAt)} · by ${d.sentBy || 'Admin'}</div>
@@ -671,6 +685,34 @@ window.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginUser').value = saved;
     }
 });
+
+async function loadEngineersForDropdown() {
+    try {
+        const snap = await db.collection('engineers').get();
+        const engNames = [];
+        snap.forEach(doc => {
+            if (doc.data().name) engNames.push(doc.data().name);
+        });
+        engNames.sort();
+        const sel = document.getElementById('notifTarget');
+        engNames.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = `👤 Only: ${name}`;
+            sel.appendChild(opt);
+        });
+    } catch(e) { console.error('Error loading engineers:', e); }
+}
+
+window.updateButtonText = function() {
+    const target = document.getElementById('notifTarget').value;
+    const btn = document.getElementById('sendBtn');
+    if (target === 'all') {
+        btn.innerHTML = '📣 Send to All Engineers';
+    } else {
+        btn.innerHTML = `👤 Send to ${target}`;
+    }
+};
 </script>
 
 </body>
