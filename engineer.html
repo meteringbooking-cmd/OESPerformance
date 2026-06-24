@@ -3419,16 +3419,19 @@ window.loadNotifications = async function() {
     if (!list) return;
     list.innerHTML = '<div class="notif-empty">// Loading...</div>';
     try {
+        // Query ordered by date only, bypassing the need for a Firebase index
         const snap = await db.collection('portalNotifications')
-            .where('active', '==', true)
             .orderBy('createdAt', 'desc')
             .limit(30)
             .get();
 
-        if (snap.empty) {
+        // Filter active notifications in the browser instead
+        const activeDocs = snap.docs.filter(doc => doc.data().active === true);
+
+        if (activeDocs.length === 0) {
             list.innerHTML = '<div class="notif-empty">// No notifications yet. Check back soon.</div>';
         } else {
-            list.innerHTML = snap.docs.map(renderNotifItem).join('');
+            list.innerHTML = activeDocs.map(renderNotifItem).join('');
         }
         updateBellBadge();
     } catch (err) {
