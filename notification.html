@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGU Notification Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:      #080c14;
+            --bg2:     #0d1420;
+            --bg3:     #111928;
+            --bg4:     #1a2337;
+            --border:  rgba(255,255,255,0.07);
+            --border2: rgba(255,255,255,0.12);
+            --accent:  #00d4ff;
+            --accent2: #00ff9d;
+            --accent3: #ff6b35;
+            --accent4: #a855f7;
+            --text:    #e8edf8;
+            --text2:   #8b97b0;
+            --text3:   #4a5568;
+            --danger:  #ef4444;
+            --warn:    #f59e0b;
+            --success: #10b981;
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background-image:
+                linear-gradient(color-mix(in srgb, var(--accent) 5%, transparent) 1px, transparent 1px),
+                linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none; z-index: 0;
+        }
+
+        /* ── TOP BAR ── */
+        .top-bar {
+            position: fixed; top:0; left:0; right:0; z-index:100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px; height: 56px;
+            background: color-mix(in srgb, var(--bg) 95%, transparent);
+            border-bottom: 1px solid var(--border2);
+            backdrop-filter: blur(12px);
+        }
+        .portal-wordmark {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-weight: 800; font-size: 1.05em;
+            letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--text);
+        }
+        .portal-wordmark span { color: var(--accent); }
+        .top-bar-right { display:flex; align-items:center; gap:12px; }
+        .back-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: var(--text2); text-decoration: none;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.68em;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            border: 1px solid var(--border2); padding: 6px 14px;
+            transition: all 0.2s;
+        }
+        .back-link:hover { border-color: var(--accent); color: var(--accent); }
+        .admin-tag {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.62em;
+            color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase;
+            background: color-mix(in srgb, var(--accent) 8%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+            padding: 4px 10px;
+        }
+
+        /* ── SCREENS ── */
+        .screen { display:none; min-height:100vh; padding-top:56px; position:relative; z-index:1; }
+        .screen.active { display:block; }
+        #loginScreen.active { display:flex; align-items:center; justify-content:center; }
+
+        /* ── LOGIN ── */
+        .login-wrap { width:100%; max-width:400px; padding:24px; }
+        .login-badge {
+            display: inline-flex; align-items:center; gap:8px;
+            background: color-mix(in srgb, var(--accent) 8%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+            padding: 6px 14px; margin-bottom: 28px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.65em;
+            color: var(--accent); letter-spacing: 0.1em;
+        }
+        .badge-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+        .login-headline {
+            font-family: 'Barlow Condensed', sans-serif; font-weight:800;
+            font-size: 2.6em; line-height:1; text-transform:uppercase;
+            letter-spacing: -0.01em; margin-bottom: 8px;
+        }
+        .login-headline .dim { color: var(--text2); }
+        .login-sub { color:var(--text2); font-size:0.85em; margin-bottom:32px; }
+        .login-panel { background:var(--bg2); border:1px solid var(--border2); padding:24px; }
+        .field-group { margin-bottom:18px; }
+        .field-label {
+            display:block; font-family:'JetBrains Mono',monospace; font-size:0.65em;
+            color:var(--text3); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:8px;
+        }
+        .field-input {
+            width:100%; background:var(--bg3); border:1px solid var(--border2);
+            color:var(--text); padding:12px 14px; font-family:'Barlow',sans-serif;
+            font-size:0.95em; outline:none; transition:border-color 0.2s;
+            -webkit-appearance:none;
+        }
+        .field-input:focus { border-color:var(--accent); }
+        .field-input::placeholder { color:var(--text3); }
+        .pw-wrap { position:relative; }
+        .pw-wrap .field-input { padding-right:44px; }
+        .pw-toggle {
+            position:absolute; right:0; top:0; bottom:0; width:44px;
+            display:flex; align-items:center; justify-content:center;
+            background:none; border:none; cursor:pointer; color:var(--text3); font-size:1em;
+            transition:color 0.2s;
+        }
+        .pw-toggle:hover { color:var(--accent); }
+        .login-error {
+            background:color-mix(in srgb,var(--danger) 10%,transparent);
+            border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+            color:color-mix(in srgb,var(--danger) 80%,white);
+            padding:10px 14px; font-size:0.82em; margin-bottom:14px;
+            display:none; font-family:'JetBrains Mono',monospace;
+        }
+        .btn-primary {
+            width:100%; padding:14px; background:var(--accent); color:var(--bg);
+            border:none; font-family:'Barlow Condensed',sans-serif; font-weight:700;
+            font-size:1em; letter-spacing:0.15em; text-transform:uppercase;
+            cursor:pointer; transition:all 0.2s; min-height:48px;
+        }
+        .btn-primary:hover { filter:brightness(1.15); }
+        .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+
+        /* ── MAIN PANEL ── */
+        .main-wrap {
+            max-width: 1100px; margin: 0 auto; padding: 40px 20px 60px;
+            display: grid; grid-template-columns: 1fr 420px; gap: 28px;
+            align-items: start;
+        }
+        @media(max-width:900px) { .main-wrap { grid-template-columns: 1fr; } }
+
+        .panel-title {
+            font-family: 'Barlow Condensed', sans-serif; font-weight:800;
+            font-size: clamp(1.8em,4vw,2.4em); text-transform:uppercase;
+            letter-spacing: -0.01em; margin-bottom: 6px;
+        }
+        .panel-title .accent { color: var(--accent); }
+        .panel-sub { color:var(--text2); font-size:0.85em; margin-bottom:28px; }
+
+        .compose-card {
+            background: var(--bg2); border: 1px solid var(--border2); padding: 28px;
+        }
+
+        .cat-grid {
+            display: grid; grid-template-columns: repeat(3,1fr); gap:10px;
+            margin-bottom: 24px;
+        }
+        @media(max-width:480px) { .cat-grid { grid-template-columns: repeat(2,1fr); } }
+
+        .cat-btn {
+            padding: 12px 8px; border: 1px solid var(--border2);
+            background: var(--bg3); cursor: pointer; text-align: center;
+            transition: all 0.2s; position: relative; overflow: hidden;
+        }
+        .cat-btn:hover { background: var(--bg4); }
+        .cat-btn.selected { border-color: var(--cat-color); background: color-mix(in srgb, var(--cat-color) 12%, transparent); }
+        .cat-btn.selected::before {
+            content: '✓';
+            position: absolute; top:4px; right:6px;
+            font-size: 0.65em; color: var(--cat-color); font-weight:700;
+        }
+        .cat-emoji { font-size: 1.5em; display:block; margin-bottom:5px; }
+        .cat-name {
+            font-family: 'Barlow Condensed', sans-serif; font-weight:700;
+            font-size: 0.8em; letter-spacing:0.08em; text-transform:uppercase;
+            color: var(--text2);
+        }
+        .cat-btn.selected .cat-name { color: var(--cat-color); }
+
+        .compose-label {
+            font-family: 'JetBrains Mono', monospace; font-size:0.62em;
+            color:var(--text3); letter-spacing:0.12em; text-transform:uppercase;
+            margin-bottom:8px; display:block;
+        }
+        .compose-input {
+            width:100%; background:var(--bg3); border:1px solid var(--border2);
+            color:var(--text); padding:12px 14px; font-family:'Barlow',sans-serif;
+            font-size:0.95em; outline:none; transition:border-color 0.2s;
+            -webkit-appearance:none; margin-bottom:18px;
+        }
+        .compose-input:focus { border-color:var(--accent); }
+        .compose-input::placeholder { color:var(--text3); }
+        textarea.compose-input { resize:vertical; min-height:110px; }
+
+        .char-count {
+            text-align:right; font-family:'JetBrains Mono',monospace;
+            font-size:0.62em; color:var(--text3); margin-top:-14px; margin-bottom:18px;
+        }
+        .char-count.warn { color:var(--warn); }
+
+        /* Live preview */
+        .preview-box {
+            background: var(--bg3); border: 1px solid var(--border);
+            border-left: 3px solid var(--accent); padding: 14px;
+            margin-bottom: 20px; display:none;
+        }
+        .preview-box.visible { display:block; }
+        .preview-label {
+            font-family: 'JetBrains Mono', monospace; font-size:0.6em;
+            color:var(--text3); letter-spacing:0.1em; text-transform:uppercase;
+            margin-bottom:10px;
+        }
+        .preview-cat {
+            display:inline-block; font-family:'JetBrains Mono',monospace;
+            font-size:0.6em; font-weight:700; letter-spacing:0.1em;
+            text-transform:uppercase; padding:2px 8px; margin-bottom:6px;
+        }
+        .preview-title {
+            font-family:'Barlow Condensed',sans-serif; font-weight:700;
+            font-size:1em; text-transform:uppercase; color:var(--text); margin-bottom:4px;
+        }
+        .preview-body { font-size:0.8em; color:var(--text2); line-height:1.5; }
+
+        .btn-send {
+            width:100%; padding:16px; border:none; cursor:pointer;
+            font-family:'Barlow Condensed',sans-serif; font-weight:700;
+            font-size:1.05em; letter-spacing:0.15em; text-transform:uppercase;
+            transition:all 0.2s; min-height:52px;
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb,var(--accent) 70%,var(--accent2)));
+            color: var(--bg);
+        }
+        .btn-send:hover { filter:brightness(1.12); transform:translateY(-1px); box-shadow:0 8px 24px -8px var(--accent); }
+        .btn-send:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
+
+        .send-msg {
+            margin-top:12px; font-family:'JetBrains Mono',monospace;
+            font-size:0.72em; text-align:center; display:none; padding:10px;
+        }
+        .send-msg.success { color:var(--success); display:block; background:color-mix(in srgb,var(--success) 8%,transparent); border:1px solid color-mix(in srgb,var(--success) 20%,transparent); }
+        .send-msg.error   { color:var(--danger);  display:block; background:color-mix(in srgb,var(--danger) 8%,transparent);  border:1px solid color-mix(in srgb,var(--danger) 20%,transparent); }
+
+        /* ── HISTORY PANEL ── */
+        .history-card {
+            background: var(--bg2); border: 1px solid var(--border2);
+            position: sticky; top: 76px;
+        }
+        .history-head {
+            display:flex; align-items:center; justify-content:space-between;
+            padding: 16px 20px; border-bottom:1px solid var(--border2);
+            background: var(--bg3);
+        }
+        .history-head-title {
+            font-family:'Barlow Condensed',sans-serif; font-weight:700;
+            font-size:0.95em; text-transform:uppercase; letter-spacing:0.08em;
+        }
+        .hist-count {
+            background: color-mix(in srgb,var(--accent) 15%,transparent);
+            color: var(--accent); font-family:'JetBrains Mono',monospace;
+            font-size:0.62em; font-weight:700; padding:2px 8px; border-radius:10px;
+        }
+        .history-list { max-height:600px; overflow-y:auto; }
+        @media(max-width:900px) { .history-card { position:static; } .history-list { max-height:400px; } }
+
+        .hist-item {
+            padding: 14px 18px; border-bottom:1px solid var(--border);
+            display:flex; gap:12px; align-items:flex-start;
+            transition:background 0.15s;
+        }
+        .hist-item:hover { background:var(--bg3); }
+        .hist-item:last-child { border-bottom:none; }
+        .hist-item-body { flex:1; min-width:0; }
+        .hist-cat {
+            display:inline-block; font-family:'JetBrains Mono',monospace;
+            font-size:0.56em; font-weight:700; letter-spacing:0.1em;
+            text-transform:uppercase; padding:2px 7px; margin-bottom:5px;
+        }
+        .hist-title {
+            font-family:'Barlow Condensed',sans-serif; font-weight:700;
+            font-size:0.95em; text-transform:uppercase; color:var(--text);
+            margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .hist-preview {
+            font-size:0.78em; color:var(--text3); white-space:nowrap;
+            overflow:hidden; text-overflow:ellipsis;
+        }
+        .hist-time {
+            font-family:'JetBrains Mono',monospace; font-size:0.6em;
+            color:var(--text3); margin-top:5px;
+        }
+        .btn-delete {
+            background:none; border:1px solid var(--border2); color:var(--text3);
+            cursor:pointer; padding:5px 9px; font-size:0.75em; transition:all 0.2s;
+            flex-shrink:0; margin-top:2px;
+        }
+        .btn-delete:hover { border-color:var(--danger); color:var(--danger); }
+
+        .hist-empty {
+            padding:40px 20px; text-align:center;
+            font-family:'JetBrains Mono',monospace; font-size:0.75em;
+            color:var(--text3); letter-spacing:0.05em;
+        }
+        .hist-loading { padding:24px; text-align:center; color:var(--text3); font-family:'JetBrains Mono',monospace; font-size:0.75em; }
+
+        /* Category colour helpers */
+        .cat-fleet      { --cat-color:#60a5fa; }
+        .cat-bonus      { --cat-color:var(--accent2); }
+        .cat-compliance { --cat-color:var(--accent4); }
+        .cat-general    { --cat-color:var(--warn); }
+        .cat-urgent     { --cat-color:var(--danger); }
+
+        .badge-fleet      { background:color-mix(in srgb,#3b82f6 15%,transparent);  color:#60a5fa; }
+        .badge-bonus      { background:color-mix(in srgb,var(--accent2) 15%,transparent); color:var(--accent2); }
+        .badge-compliance { background:color-mix(in srgb,var(--accent4) 15%,transparent); color:var(--accent4); }
+        .badge-general    { background:color-mix(in srgb,var(--warn) 15%,transparent);    color:var(--warn); }
+        .badge-urgent     { background:color-mix(in srgb,var(--danger) 15%,transparent);  color:var(--danger); }
+
+        .footer-strip {
+            border-top:1px solid var(--border); padding:20px 24px;
+            font-family:'JetBrains Mono',monospace; font-size:0.6em;
+            color:var(--text3); letter-spacing:0.08em; text-align:center;
+        }
+
+        @keyframes fadeIn { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:translateY(0);} }
+        .main-screen { animation:fadeIn 0.35s ease; }
+    </style>
+</head>
+<body>
+
+<header class="top-bar">
+    <div class="portal-wordmark">NGU <span>NOTIFICATIONS</span></div>
+    <div class="top-bar-right">
+        <span class="admin-tag" id="adminTag" style="display:none;"></span>
+        <a href="engineer.html" class="back-link">← Engineer Portal</a>
+    </div>
+</header>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="screen active">
+    <div class="login-wrap">
+        <div class="login-badge">
+            <span class="badge-dot"></span>
+            ADMIN ACCESS ONLY
+        </div>
+        <div class="login-headline">SEND<br><span class="dim">A</span><br>NOTIFICATION</div>
+        <div class="login-sub">Sign in with your engineer credentials to access the notification manager.</div>
+        <div class="login-panel">
+            <div class="login-error" id="loginError"></div>
+            <div class="field-group">
+                <label class="field-label" for="loginUser">Username</label>
+                <input class="field-input" type="text" id="loginUser" placeholder="Your username" autocomplete="username">
+            </div>
+            <div class="field-group">
+                <label class="field-label" for="loginPass">Password</label>
+                <div class="pw-wrap">
+                    <input class="field-input" type="password" id="loginPass" placeholder="Your password" autocomplete="current-password">
+                    <button class="pw-toggle" type="button" onclick="togglePw()">👁️</button>
+                </div>
+            </div>
+            <button class="btn-primary" id="loginBtn" onclick="handleLogin()">Access Manager →</button>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN PANEL -->
+<div id="mainScreen" class="screen main-screen">
+    <div class="main-wrap">
+
+        <!-- LEFT: COMPOSE -->
+        <div>
+            <div class="panel-title">NEW <span class="accent">NOTIFICATION</span></div>
+            <div class="panel-sub">Select a subject, write your message, and send to all engineers.</div>
+
+            <div class="compose-card">
+
+                <!-- Category selector -->
+                <span class="compose-label">Subject / Category</span>
+                <div class="cat-grid" id="catGrid">
+                    <button class="cat-btn cat-fleet" data-cat="fleet" onclick="selectCat(this)">
+                        <span class="cat-emoji">🚗</span>
+                        <span class="cat-name">Fleet</span>
+                    </button>
+                    <button class="cat-btn cat-bonus" data-cat="bonus" onclick="selectCat(this)">
+                        <span class="cat-emoji">💰</span>
+                        <span class="cat-name">Bonus</span>
+                    </button>
+                    <button class="cat-btn cat-compliance" data-cat="compliance" onclick="selectCat(this)">
+                        <span class="cat-emoji">✅</span>
+                        <span class="cat-name">Compliance</span>
+                    </button>
+                    <button class="cat-btn cat-general" data-cat="general" onclick="selectCat(this)">
+                        <span class="cat-emoji">📢</span>
+                        <span class="cat-name">General</span>
+                    </button>
+                    <button class="cat-btn cat-urgent" data-cat="urgent" onclick="selectCat(this)">
+                        <span class="cat-emoji">🚨</span>
+                        <span class="cat-name">Urgent</span>
+                    </button>
+                </div>
+
+                <!-- Title -->
+                <label class="compose-label" for="notifTitle">Title</label>
+                <input class="compose-input" type="text" id="notifTitle"
+                       placeholder="e.g. April bonuses now updated"
+                       oninput="updatePreview()" maxlength="80">
+
+                <!-- Message -->
+                <label class="compose-label" for="notifMsg">Message</label>
+                <textarea class="compose-input" id="notifMsg"
+                          placeholder="Write your full message here..."
+                          oninput="updatePreview();updateCharCount()" maxlength="500"></textarea>
+                <div class="char-count" id="charCount">0 / 500</div>
+
+                <!-- Live preview -->
+                <div class="preview-box" id="previewBox">
+                    <div class="preview-label">// Preview — how it appears in the bell</div>
+                    <div class="preview-cat" id="previewCat"></div>
+                    <div class="preview-title" id="previewTitle">—</div>
+                    <div class="preview-body" id="previewBody">—</div>
+                </div>
+
+                <button class="btn-send" id="sendBtn" onclick="sendNotification()" disabled>
+                    📣 Send to All Engineers
+                </button>
+                <div class="send-msg" id="sendMsg"></div>
+            </div>
+        </div>
+
+        <!-- RIGHT: HISTORY -->
+        <div>
+            <div class="history-card">
+                <div class="history-head">
+                    <div class="history-head-title">📋 Sent Notifications</div>
+                    <span class="hist-count" id="histCount">0</span>
+                </div>
+                <div class="history-list" id="historyList">
+                    <div class="hist-loading">// Loading…</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer-strip">NGU — OES — NOTIFICATION MANAGER — BARRY DIXON</div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script>
+// ── CONFIG ──
+const firebaseConfig = {
+    apiKey:            "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain:        "oesperformance-a54c0.firebaseapp.com",
+    projectId:         "oesperformance-a54c0",
+    storageBucket:     "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId:             "1:484894102454:web:17535ee497eac2d90d6717"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Admin usernames (partial match, case-insensitive)
+const ADMIN_USERS = ['barry dixon', 'barry', 'admin'];
+
+let currentUser = '';
+let selectedCat = '';
+
+const CAT_LABELS = {
+    fleet:      '🚗 Fleet',
+    bonus:      '💰 Bonus Update',
+    compliance: '✅ Compliance',
+    general:    '📢 Announcement',
+    urgent:     '🚨 Urgent'
+};
+
+// ── AUTH ──
+window.togglePw = function() {
+    const inp = document.getElementById('loginPass');
+    const btn = document.querySelector('.pw-toggle');
+    if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+    else { inp.type = 'password'; btn.textContent = '👁️'; }
+};
+
+document.getElementById('loginPass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleLogin();
+});
+
+window.handleLogin = async function() {
+    const username = document.getElementById('loginUser').value.trim();
+    const password = document.getElementById('loginPass').value;
+    const errEl    = document.getElementById('loginError');
+    const btn      = document.getElementById('loginBtn');
+
+    if (!username || !password) {
+        errEl.textContent = 'Please enter username and password.';
+        errEl.style.display = 'block'; return;
+    }
+
+    btn.disabled = true; btn.textContent = 'Checking…';
+    errEl.style.display = 'none';
+
+    try {
+        const snap = await db.collection('engineers').get();
+        let found = null;
+        snap.forEach(doc => {
+            const d = doc.data();
+            if ((d.username || '').toLowerCase() === username.toLowerCase()
+                && d.password === password) {
+                found = d.name || username;
+            }
+        });
+
+        if (!found) {
+            errEl.textContent = '⚠ Invalid username or password.';
+            errEl.style.display = 'block';
+            btn.disabled = false; btn.textContent = 'Access Manager →';
+            return;
+        }
+
+        // Check admin access
+        const isAdmin = ADMIN_USERS.some(a => found.toLowerCase().includes(a));
+        if (!isAdmin) {
+            errEl.textContent = '⛔ Admin access only. You do not have permission.';
+            errEl.style.display = 'block';
+            btn.disabled = false; btn.textContent = 'Access Manager →';
+            return;
+        }
+
+        currentUser = found;
+        document.getElementById('adminTag').textContent = found;
+        document.getElementById('adminTag').style.display = '';
+        document.getElementById('loginScreen').classList.remove('active');
+        document.getElementById('mainScreen').classList.add('active');
+        loadHistory();
+
+    } catch (err) {
+        errEl.textContent = '⚠ Error: ' + err.message;
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Access Manager →';
+    }
+};
+
+// ── CATEGORY SELECTOR ──
+window.selectCat = function(btn) {
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedCat = btn.dataset.cat;
+    updatePreview();
+    checkSendReady();
+};
+
+// ── CHAR COUNT ──
+window.updateCharCount = function() {
+    const len   = document.getElementById('notifMsg').value.length;
+    const el    = document.getElementById('charCount');
+    el.textContent = `${len} / 500`;
+    el.classList.toggle('warn', len > 400);
+};
+
+// ── LIVE PREVIEW ──
+window.updatePreview = function() {
+    const title = document.getElementById('notifTitle').value.trim();
+    const body  = document.getElementById('notifMsg').value.trim();
+    const box   = document.getElementById('previewBox');
+
+    if (!title && !body) { box.classList.remove('visible'); return; }
+    box.classList.add('visible');
+
+    const cat = selectedCat || 'general';
+    const catEl = document.getElementById('previewCat');
+    catEl.textContent    = CAT_LABELS[cat] || 'Announcement';
+    catEl.className      = `preview-cat badge-${cat}`;
+
+    document.getElementById('previewTitle').textContent = title || '—';
+    document.getElementById('previewBody').textContent  = body  || '—';
+    checkSendReady();
+};
+
+function checkSendReady() {
+    const title = document.getElementById('notifTitle').value.trim();
+    const body  = document.getElementById('notifMsg').value.trim();
+    document.getElementById('sendBtn').disabled = !(title && body && selectedCat);
+}
+
+// ── SEND ──
+window.sendNotification = async function() {
+    const title  = document.getElementById('notifTitle').value.trim();
+    const body   = document.getElementById('notifMsg').value.trim();
+    const msgEl  = document.getElementById('sendMsg');
+    const btn    = document.getElementById('sendBtn');
+
+    if (!title || !body || !selectedCat) return;
+
+    btn.disabled = true; btn.textContent = 'Sending…';
+    msgEl.style.display = 'none'; msgEl.className = 'send-msg';
+
+    try {
+        await db.collection('portalNotifications').add({
+            title, body,
+            category:  selectedCat,
+            active:    true,
+            sentBy:    currentUser,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        msgEl.textContent = '✅ Notification sent! Engineers will see it next time they open the portal.';
+        msgEl.classList.add('success');
+
+        // Reset form
+        document.getElementById('notifTitle').value = '';
+        document.getElementById('notifMsg').value   = '';
+        document.getElementById('charCount').textContent = '0 / 500';
+        document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
+        selectedCat = '';
+        document.getElementById('previewBox').classList.remove('visible');
+        btn.textContent = '📣 Send to All Engineers';
+        btn.disabled = true;
+
+        // Refresh history
+        loadHistory();
+
+    } catch (err) {
+        msgEl.textContent = '⚠ Error: ' + err.message;
+        msgEl.classList.add('error');
+        btn.disabled = false; btn.textContent = '📣 Send to All Engineers';
+    }
+};
+
+// ── HISTORY ──
+function formatTimeAgo(ts) {
+    if (!ts) return 'Just now';
+    const d    = ts.toDate ? ts.toDate() : new Date(ts);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60)     return 'Just now';
+    if (diff < 3600)   return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400)  return `${Math.floor(diff/3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff/86400)}d ago`;
+    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+
+async function loadHistory() {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '<div class="hist-loading">// Loading…</div>';
+
+    try {
+        const snap = await db.collection('portalNotifications')
+            .where('active', '==', true)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+
+        document.getElementById('histCount').textContent = snap.size;
+
+        if (snap.empty) {
+            list.innerHTML = '<div class="hist-empty">// No notifications sent yet.</div>';
+            return;
+        }
+
+        list.innerHTML = snap.docs.map(doc => {
+            const d   = doc.data();
+            const cat = d.category || 'general';
+            return `
+            <div class="hist-item" id="hist-${doc.id}">
+                <div class="hist-item-body">
+                    <span class="hist-cat badge-${cat}">${CAT_LABELS[cat] || 'Announcement'}</span>
+                    <div class="hist-title" title="${d.title || ''}">${d.title || '—'}</div>
+                    <div class="hist-preview">${(d.body || '').substring(0,80)}${(d.body||'').length > 80 ? '…' : ''}</div>
+                    <div class="hist-time">${formatTimeAgo(d.createdAt)} · by ${d.sentBy || 'Admin'}</div>
+                </div>
+                <button class="btn-delete" onclick="deleteNotif('${doc.id}')" title="Delete">✕</button>
+            </div>`;
+        }).join('');
+
+    } catch (err) {
+        list.innerHTML = `<div class="hist-empty">// Error: ${err.message}<br><br>You may need to create a Firestore index.<br>Check the browser console for a link.</div>`;
+        console.error('History load error:', err);
+    }
+}
+
+window.deleteNotif = async function(id) {
+    if (!confirm('Remove this notification? Engineers will no longer see it.')) return;
+    try {
+        await db.collection('portalNotifications').doc(id).update({ active: false });
+        const el = document.getElementById('hist-' + id);
+        if (el) { el.style.opacity = '0'; el.style.transition = '0.3s'; setTimeout(() => { el.remove(); loadHistory(); }, 300); }
+    } catch (err) {
+        alert('Error deleting: ' + err.message);
+    }
+};
+
+// Auto-login if came from engineer portal today
+window.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('ngu_username');
+    const savedDate = localStorage.getItem('ngu_login_date');
+    if (saved && savedDate === new Date().toDateString()) {
+        document.getElementById('loginUser').value = saved;
+    }
+});
+</script>
+
+</body>
+</html>
