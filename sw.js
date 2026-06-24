@@ -8,8 +8,8 @@ const CACHE_NAME = 'ngu-portal-v1';
 // so we only cache the static shell here.
 const SHELL_FILES = [
   '/',
-  '/index.html',
-  'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap'
+  '/engineer.html',
+  'https://fonts.googleapis.com/css2?...'
 ];
 
 // ── INSTALL: cache the app shell ──
