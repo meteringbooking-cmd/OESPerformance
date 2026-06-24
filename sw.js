@@ -9,7 +9,7 @@ const CACHE_NAME = 'ngu-portal-v1';
 const SHELL_FILES = [
   '/',
   '/engineer.html',
-  'https://fonts.googleapis.com/css2?...'
+  'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap'
 ];
 
 // ── INSTALL: cache the app shell ──
@@ -78,9 +78,9 @@ self.addEventListener('fetch', event => {
         return caches.match(event.request).then(cached => {
           if (cached) return cached;
           // If it's a navigation request and nothing is cached,
-          // return the cached homepage as a fallback
+          // return the cached engineer.html as a fallback
           if (event.request.mode === 'navigate') {
-            return caches.match('/');
+            return caches.match('/engineer.html');
           }
         });
       })
