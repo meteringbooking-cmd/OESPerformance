@@ -3369,15 +3369,68 @@ window.markAllNotifsRead = function() {
     updateBellBadge();
 };
 
+let lastUnreadCount = 0;
+let pendingDing = false;
+
+// Synthesize a very gentle, professional 'ding' sound using Web Audio API
+function playGentleDing() {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        // If the browser blocks audio because the user hasn't clicked anything yet,
+        // we flag it as pending and play it on their first click.
+        if (ctx.state === 'suspended') {
+            pendingDing = true;
+            return;
+        }
+        pendingDing = false;
+        
+        // Helper to create a soft bell chime
+        function chime(freq, startTime) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, startTime);
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.12, startTime + 0.02); // Quick fade in
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.8); // Smooth fade out
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + 0.8);
+        }
+        
+        // Play two pleasant notes (A5 and C#6) slightly offset
+        chime(880, ctx.currentTime); 
+        chime(1108.73, ctx.currentTime + 0.15); 
+    } catch(e) {
+        console.warn('Audio play failed:', e);
+    }
+}
+
+// Global click listener to release pending dings (Autoplay policy workaround)
+document.addEventListener('click', () => {
+    if (pendingDing) playGentleDing();
+});
+
 function updateBellBadge() {
     const unread = document.querySelectorAll('.notif-item.unread').length;
     const badge  = document.getElementById('notifCount');
     const bell   = document.getElementById('notifBell');
+    
     if (badge) {
         badge.style.display = unread > 0 ? 'flex' : 'none';
         badge.textContent   = unread > 9 ? '9+' : String(unread);
     }
     if (bell) bell.classList.toggle('has-unread', unread > 0);
+    
+    // Play sound if we found NEW unread notifications
+    if (unread > lastUnreadCount) {
+        playGentleDing();
+    }
+    lastUnreadCount = unread;
 }
 
 function formatTimeAgo(ts) {
