@@ -174,8 +174,7 @@
 <body>
     <script type="module">
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-  import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
   const _cfg = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
     authDomain: "oesperformance-a54c0.firebaseapp.com",
@@ -184,19 +183,13 @@
     messagingSenderId: "484894102454",
     appId: "1:484894102454:web:17535ee497eac2d90d6717"
   };
-  const _app  = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(_cfg);
-  const _auth = getAuth(_app);
-  const _db   = getFirestore(_app);
-  document.documentElement.style.visibility = 'hidden';
-  onAuthStateChanged(_auth, async (user) => {
-    if (!user) { window.location.href = 'login.html'; return; }
-    const snap = await getDoc(doc(_db, 'users', user.uid));
-    if (!snap.exists()) { await _auth.signOut(); window.location.href = 'login.html'; return; }
-    document.documentElement.style.visibility = 'visible';
-    window.currentUser      = user;
-    window.currentUserRole = snap.data().role || 'viewer';
-    window.currentUserName = snap.data().name || user.email;
-  });
+  const _app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(_cfg);
+  window._db = getFirestore(_app);
+  // Auth bypass — no login required
+  window.currentUser     = { uid: 'guest', email: 'guest@local' };
+  window.currentUserRole = 'admin';
+  window.currentUserName = 'Guest';
+  document.documentElement.style.visibility = 'visible';
 </script>
 
     <div class="container">
@@ -478,7 +471,6 @@
                             </div>
                             <span style="font-size:0.8em;color:#a8dadc;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Chart</span>
                         </div>
-                        <button id="abortReasonsBtn" onclick="toggleReasonsView()" style="background:rgba(0,0,0,0.3);border:1px solid rgba(0,210,255,0.3);color:#00d2ff;border-radius:8px;padding:6px 12px;font-size:0.8em;font-weight:700;outline:none;cursor:pointer;text-transform:uppercase;transition:all 0.3s;">📝 Reasons</button>
                         <button class="popup-close" onclick="closeAbortsPopup()">✕</button>
                     </div>
                 </div>
@@ -880,33 +872,15 @@
             return output;
         }
 
-        let abortAllDaysData = [], abortSelectedDays = new Set([0]), abortChartMode = false, abortChartInstance = null, abortReasonsMode = false;
+        let abortAllDaysData = [], abortSelectedDays = new Set([0]), abortChartMode = false, abortChartInstance = null;
 
         window.toggleAbortView = function() {
             abortChartMode = !abortChartMode;
-            abortReasonsMode = false; // Turn off reasons view if switching to Chart/Table
-            document.getElementById('abortReasonsBtn').style.background = 'rgba(0,0,0,0.3)';
-            document.getElementById('abortReasonsBtn').style.color = '#00d2ff';
-            
             const knob = document.getElementById('abortToggleKnob'), track = document.getElementById('abortViewToggle');
             if (abortChartMode) { knob.style.left='22px'; track.style.background='rgba(0,210,255,0.4)'; }
             else                { knob.style.left='2px';  track.style.background='rgba(0,210,255,0.2)'; }
             renderAbortDays();
         };
-
-        window.toggleReasonsView = function() {
-            abortReasonsMode = !abortReasonsMode;
-            const btn = document.getElementById('abortReasonsBtn');
-            if (abortReasonsMode) {
-                btn.style.background = 'rgba(0,210,255,0.4)';
-                btn.style.color = '#ffffff';
-            } else {
-                btn.style.background = 'rgba(0,0,0,0.3)';
-                btn.style.color = '#00d2ff';
-            }
-            renderAbortDays();
-        };
-
         window.selectAbortDay = function(idx, event) {
             if (event && (event.ctrlKey || event.metaKey)) {
                 if (abortSelectedDays.has(idx)) { if (abortSelectedDays.size > 1) abortSelectedDays.delete(idx); } else { abortSelectedDays.add(idx); }
@@ -944,15 +918,8 @@
                             const rc = {};
                             existing.parsedReasons.forEach(({reason,qty})=>{rc[reason]=(rc[reason]||0)+qty;});
                             existing.reason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
-                            if (eng.notes) {
-                                existing.notes = existing.notes ? existing.notes + ' | ' + eng.notes : eng.notes;
-                            }
                         } else { 
-                            merged.teamData[tl].engineers.push({
-                                ...eng, 
-                                parsedReasons: eng.parsedReasons.map(r => ({...r})),
-                                notes: eng.notes
-                            }); 
+                            merged.teamData[tl].engineers.push({...eng, parsedReasons: eng.parsedReasons.map(r => ({...r}))}); 
                         }
                     }
                 }
@@ -960,75 +927,13 @@
             for (const tdata of Object.values(merged.teamData)) { tdata.engineers.sort((a,b)=>a.name.localeCompare(b.name)); }
             return merged;
         }
-
         function renderAbortDays() {
             const container = document.getElementById('abortsDetailContainer');
             if (!abortAllDaysData.length) return;
             const aggregated = getAggregatedDayData();
-            
-            if (abortReasonsMode) {
-                renderAbortReasonsTable(container, aggregated);
-            } else if (abortChartMode) {
-                renderAbortChart(container, aggregated);
-            } else {
-                renderAbortTable(container, aggregated);
-            }
+            if (abortChartMode) renderAbortChart(container, aggregated);
+            else                renderAbortTable(container, aggregated);
         }
-
-        function renderAbortReasonsTable(container, dayData) {
-            if (abortChartInstance) { abortChartInstance.destroy(); abortChartInstance = null; }
-            const { teamData, label, total: grandTotal } = dayData;
-            
-            if (grandTotal === 0) {
-                container.innerHTML = `<div style="text-align:center;padding:60px;color:#10b981;font-size:1.5em;"><div style="font-size:4em;margin-bottom:20px;">🎉</div><div style="font-weight:700;">No Aborts on ${label}!</div><div style="font-size:0.8em;margin-top:10px;opacity:0.8;">All jobs completed successfully</div></div>`;
-                return;
-            }
-
-            let html = `<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-                <div style="font-size:1em;color:#a8dadc;">Detailed Reasons for <strong style="color:#00d2ff;">${label}</strong></div>
-                <div style="font-size:1.8em;font-weight:800;color:#ef4444;">${grandTotal} Total</div>
-            </div>`;
-
-            html += `<table style="width:100%;border-collapse:collapse;background:rgba(0,0,0,0.3);border-radius:12px;overflow:hidden;border:1px solid rgba(0,210,255,0.2);">
-                <thead><tr style="background:rgba(0,210,255,0.15);">
-                    <th style="text-align:left;padding:12px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
-                    <th style="text-align:left;padding:12px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Team</th>
-                    <th style="text-align:center;padding:12px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
-                    <th style="text-align:left;padding:12px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Type</th>
-                    <th style="text-align:left;padding:12px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Notes</th>
-                </tr></thead>
-                <tbody>`;
-
-            let allEngineers = [];
-            Object.entries(teamData).forEach(([teamLeader, data]) => {
-                const displayName = TEAM_DISPLAY_NAMES[teamLeader] || teamLeader;
-                data.engineers.forEach(eng => {
-                    allEngineers.push({
-                        name: eng.name,
-                        team: displayName,
-                        aborts: eng.aborts,
-                        reason: eng.reason,
-                        notes: eng.notes
-                    });
-                });
-            });
-
-            allEngineers.sort((a, b) => a.name.localeCompare(b.name));
-
-            allEngineers.forEach(eng => {
-                html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.1); transition: background 0.2s;" onmouseover="this.style.background='rgba(0,210,255,0.05)'" onmouseout="this.style.background='transparent'">
-                    <td style="padding:12px;color:#ffffff;font-weight:700;">${eng.name}</td>
-                    <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.team}</td>
-                    <td style="padding:12px;text-align:center;color:#ef4444;font-weight:800;font-size:1.1em;">${eng.aborts}</td>
-                    <td style="padding:12px;color:#f59e0b;font-weight:600;font-size:0.9em;">${eng.reason}</td>
-                    <td style="padding:12px;color:#e1e8ed;font-size:0.85em;font-style:italic;">${eng.notes || ''}</td>
-                </tr>`;
-            });
-
-            html += `</tbody></table>`;
-            container.innerHTML = html;
-        }
-
         function renderAbortTable(container, dayData) {
             if (abortChartInstance) { abortChartInstance.destroy(); abortChartInstance = null; }
             const { teamData, total: grandTotal, label } = dayData;
@@ -1048,14 +953,12 @@
                             <thead><tr style="background:rgba(0,210,255,0.15);">
                                 <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
                                 <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
-                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Type</th>
-                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Notes</th>
+                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
                             </tr></thead>
                             <tbody>${data.engineers.map(eng=>`<tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
                                 <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
                                 <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
-                                <td style="padding:12px;color:#f59e0b;font-weight:600;font-size:0.9em;">${eng.reason}</td>
-                                <td style="padding:12px;color:#a8dadc;font-size:0.85em;font-style:italic;">${eng.notes || ''}</td>
+                                <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
                             </tr>`).join('')}</tbody>
                         </table></div>`;
                 });
@@ -1166,10 +1069,6 @@
                 document.getElementById('abortToggleKnob').style.left = '2px';
                 document.getElementById('abortViewToggle').style.background = 'rgba(0,210,255,0.2)';
                 
-                abortReasonsMode = false;
-                const reasonsBtn = document.getElementById('abortReasonsBtn');
-                if (reasonsBtn) { reasonsBtn.style.background = 'rgba(0,0,0,0.3)'; reasonsBtn.style.color = '#00d2ff'; }
-                
                 const targetDays = getPreviousWorkingDays(daysCount).reverse();
                 const rawDays = await Promise.all(targetDays.map(async (d) => {
                     const ds = formatDateForQuery(d);
@@ -1179,24 +1078,15 @@
                         const data = doc.data();
                         const tl = data.teamLeader || 'Unknown Team', eng = data.engineer || '';
                         if (!eng) return;
-                        
                         const parsed = parseAbortReasons(data.reason || '', data.total || 1);
                         const docTotal = parsed.reduce((s,r)=>s+r.qty,0);
                         total += docTotal;
-                        
                         if (!teamData[tl]) teamData[tl] = { total:0, engineers:[] };
                         teamData[tl].total += docTotal;
-                        
                         const rc = {};
                         parsed.forEach(({reason,qty})=>{ rc[reason]=(rc[reason]||0)+qty; reasons[reason]=(reasons[reason]||0)+qty; });
                         const combinedReason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
-                        
-                        const notesArr = [];
-                        if (data.reason1) notesArr.push(data.reason1);
-                        if (data.reason2) notesArr.push(data.reason2);
-                        const combinedNotes = notesArr.join(' | ');
-
-                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed, notes:combinedNotes });
+                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed });
                     });
                     Object.values(teamData).forEach(t=>t.engineers.sort((a,b)=>a.name.localeCompare(b.name)));
                     return { date:d, label:formatDate(d), total, teamData, reasons };
