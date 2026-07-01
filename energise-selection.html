@@ -87,6 +87,26 @@
   }
   .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* Copy-from row */
+  .copy-row {
+    display: flex; gap: 6px; align-items: center; margin-top: 14px;
+    padding-top: 14px; border-top: 1px dashed var(--border);
+  }
+  .copy-row select {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: var(--radius); padding: 8px 10px; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; outline: none; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .copy-row select:focus { border-color: var(--accent2); color: var(--text); }
+  .copy-btn {
+    background: rgba(71,200,255,0.1); border: 1px solid rgba(71,200,255,0.25);
+    color: var(--accent2); padding: 8px 14px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .copy-btn:hover { background: rgba(71,200,255,0.2); border-color: var(--accent2); }
+
   /* RIGHT PANEL — Engineer list */
   .engineers-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   .engineers-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; }
@@ -192,6 +212,17 @@
         </div>
         <div class="sku-chips" id="skuChips"></div>
         <div class="sku-hint">Leave empty to allow access to ALL meter items.</div>
+
+        <!-- Copy from another engineer -->
+        <div class="copy-row">
+          <select id="copyFromSelect">
+            <option value="">— Copy SKUs from another engineer —</option>
+          </select>
+          <button class="copy-btn" onclick="copyFromEngineer()" title="Copy their SKU list into the form">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </button>
+        </div>
       </div>
 
       <div class="btn-row">
@@ -317,6 +348,37 @@
       </div>`).join('');
   }
 
+  // ── Copy SKUs from another engineer ──────────────────────────────────────
+  window.copyFromEngineer = function() {
+    const sel = document.getElementById('copyFromSelect');
+    const id = sel.value;
+    if (!id) { showToast('Select an engineer to copy from first', true); return; }
+    const eng = window._engineers[id];
+    if (!eng || !eng.skus || eng.skus.length === 0) {
+      showToast(`"${eng?.name || id}" has no specific SKUs (full access) — nothing to copy`, true);
+      sel.value = '';
+      return;
+    }
+    let added = 0;
+    eng.skus.forEach(s => {
+      const upper = String(s).toUpperCase();
+      if (!pendingSkus.includes(upper)) { pendingSkus.push(upper); added++; }
+    });
+    renderChips();
+    sel.value = '';
+    showToast(added > 0 ? `✓ Copied ${added} SKU${added !== 1 ? 's' : ''} from ${eng.name}` : `All SKUs from ${eng.name} already added`, added > 0 ? false : true);
+  };
+
+  function updateCopyDropdown() {
+    const sel = document.getElementById('copyFromSelect');
+    const engs = Object.values(window._engineers || {}).sort((a,b) => a.name.localeCompare(b.name));
+    sel.innerHTML = '<option value="">— Copy SKUs from another engineer —</option>' +
+      engs
+        .filter(e => e.skus && e.skus.length > 0)   // only show those with actual SKUs
+        .map(e => `<option value="${e.id}">${escHtml(e.name)} (${e.skus.length} SKU${e.skus.length !== 1 ? 's' : ''})</option>`)
+        .join('');
+  }
+
   // ── Save / update engineer ────────────────────────────────────────────────
   window.saveEngineer = async function() {
     const nameEl = document.getElementById('f-name');
@@ -436,6 +498,7 @@
   function renderEngineers() {
     const engs = Object.values(window._engineers || {}).sort((a,b) => a.name.localeCompare(b.name));
     document.getElementById('engCount').textContent = `(${engs.length})`;
+    updateCopyDropdown();
 
     const container = document.getElementById('engineerList');
     if (engs.length === 0) {
