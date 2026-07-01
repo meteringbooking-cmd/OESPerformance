@@ -371,6 +371,20 @@
   </button>
 </div>
 
+<!-- Engineer selector banner -->
+<div id="engineerBanner" style="background:var(--surface);border-bottom:2px solid var(--accent);padding:14px 32px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <span style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.04em;">WHO ARE YOU?</span>
+  </div>
+  <select id="engineerSelect" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:8px 14px;font-family:'DM Sans',sans-serif;font-size:13px;outline:none;min-width:220px;cursor:pointer;transition:border-color 0.2s;" onchange="onEngineerChange()">
+    <option value="">— Select your name —</option>
+  </select>
+  <span id="engineerStatus" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-muted);"></span>
+  <span style="flex:1"></span>
+  <a href="order-selection.html" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);text-decoration:none;opacity:0.6;" title="Manage engineer selections">⚙ Manage Access</a>
+</div>
+
 <div class="toolbar">
   <div class="search-wrap">
     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -506,6 +520,30 @@
     }
   }
 
+  // ── Load Energise Selection (engineer → allowed meter SKUs) ─────────────
+  window.engineerSelections = {};  // name → { skus: [] }
+
+  async function loadEngineerSelections() {
+    try {
+      const snap = await getDocs(collection(db, 'Energise Selection'));
+      window.engineerSelections = {};
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.name) window.engineerSelections[data.name] = data;
+      });
+      renderEngineerDropdown();
+    } catch (e) {
+      console.warn('Could not load engineer selections:', e);
+    }
+  }
+
+  function renderEngineerDropdown() {
+    const sel = document.getElementById('engineerSelect');
+    const names = Object.keys(window.engineerSelections).sort();
+    sel.innerHTML = '<option value="">— Select your name —</option>' +
+      names.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+  }
+
   // ── Load inventory from Energise Inventory collection ──────────────────
   async function loadInventory() {
     setLoading(true);
@@ -618,7 +656,7 @@
 
   // Load everything once DOM is ready
   window.addEventListener('load', async () => {
-    await Promise.all([ loadInventory(), loadProductImages() ]);
+    await Promise.all([ loadInventory(), loadProductImages(), loadEngineerSelections() ]);
     filterItems();
     attachRowHover();
   });
@@ -738,7 +776,7 @@ function buildActionCell(item, inBasket) {
     return `<span class="added-badge">✅ Added (${inBasket.qty})</span>
             <button class="basket-clear" style="margin-left:8px;font-size:11px;" onclick="removeItem('${item.sku}')">Remove</button>`;
   }
-  if (isEA(item.uom)) {
+  if (limit > 1) {
     return `<div style="display:flex; flex-direction:column; align-items:center;">
               <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
                 <div class="qty-group">
@@ -778,7 +816,9 @@ window.addItem = function(sku) {
   const item = ITEMS.find(i => i.sku === sku);
   if (!item) return;
   const limit = item.dailyLimit ? parseInt(item.dailyLimit) : 999;
-  let qty = isEA(item.uom) ? (parseInt(document.getElementById('qty-' + sku)?.value) || 1) : 1;
+  
+  const qtyInput = document.getElementById('qty-' + sku);
+  let qty = qtyInput ? (parseInt(qtyInput.value) || 1) : 1;
   
   if (qty > limit) {
     qty = limit;
@@ -828,6 +868,38 @@ function updateBasket() {
   `).join('');
 }
 
+// ── Engineer selection ───────────────────────────────────────────────────────
+let selectedEngineer = null;  // the name currently selected
+let allowedMeterSkus = null;  // null = all, Set = restricted
+
+window.onEngineerChange = function() {
+  const sel = document.getElementById('engineerSelect');
+  const name = sel.value;
+  selectedEngineer = name || null;
+
+  const statusEl = document.getElementById('engineerStatus');
+
+  if (!name) {
+    allowedMeterSkus = null;
+    statusEl.textContent = '';
+    filterItems();
+    return;
+  }
+
+  const eng = window.engineerSelections && window.engineerSelections[name];
+  if (eng && eng.skus && eng.skus.length > 0) {
+    allowedMeterSkus = new Set(eng.skus.map(s => String(s).toUpperCase()));
+    statusEl.innerHTML = `<span style="color:var(--accent)">✓</span> ${eng.skus.length} meter item${eng.skus.length !== 1 ? 's' : ''} available`;
+  } else {
+    allowedMeterSkus = null;  // empty = all meters allowed
+    statusEl.innerHTML = `<span style="color:var(--in-stock)">✓</span> Full meter access`;
+  }
+
+  // Pre-fill name in modal
+  document.getElementById('submitterName').value = name;
+  filterItems();
+};
+
 let activeCat = '';
 
 window.setCategory = function(cat) {
@@ -853,7 +925,12 @@ window.filterItems = function() {
     const matchUom = !uomF || (item.uom || '').toLowerCase().startsWith(uomF === 'ea' ? 'ea' : uomF === 'pk' ? 'pk' : 'rl')
                     || (uomF === 'ea' && (item.uom || '').toLowerCase() === 'each');
     const matchCat = !activeCat || (activeCat === 'favourites' ? userFavs.includes(item.sku) : item.category === activeCat);
-    return matchQ && matchUom && matchCat;
+
+    // Meter restriction: if engineer has a restricted set, only show allowed meter SKUs
+    const isMeter = item.category === 'meter';
+    const matchAccess = !isMeter || !allowedMeterSkus || allowedMeterSkus.has(String(item.sku).toUpperCase());
+
+    return matchQ && matchUom && matchCat && matchAccess;
   });
 
   // Sort favourites to the top
