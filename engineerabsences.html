@@ -54,9 +54,9 @@
         .alert-item {
             background: rgba(0,0,0,0.3); border: 1px solid rgba(251,191,36,0.12);
             padding: 18px 24px; margin: 12px 0; border-radius: 16px;
-            cursor: pointer; transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
         }
-        .alert-item:hover { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.3); transform: translateX(8px); }
+        .alert-item:hover { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.3); }
         .alert-item strong { color: #fbbf24; font-weight: 600; }
         .alert-section-label {
             font-size: 0.85em; font-weight: 700; text-transform: uppercase;
@@ -70,6 +70,30 @@
         }
         .alert-item.red-alert:hover { background: rgba(239,68,68,0.14); border-color: rgba(239,68,68,0.4); }
         .alert-item.red-alert strong { color: #fca5a5; }
+
+        /* Alert actions (push / ignore) */
+        .alert-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+        .alert-btn {
+            padding: 9px 18px; border-radius: 10px; font-size: 0.85em; font-weight: 700;
+            cursor: pointer; border: 1px solid; font-family: 'Inter', sans-serif;
+            transition: all 0.2s ease; letter-spacing: 0.3px;
+        }
+        .alert-btn-push { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.35); }
+        .alert-btn-push:hover { background: rgba(16,185,129,0.22); border-color: rgba(16,185,129,0.55); }
+        .alert-btn-push:disabled { opacity: 0.5; cursor: not-allowed; }
+        .alert-btn-ignore { background: rgba(255,255,255,0.04); color: #a8dadc; border-color: rgba(255,255,255,0.15); }
+        .alert-btn-ignore:hover { background: rgba(239,68,68,0.1); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+        .alert-status {
+            font-size: 0.85em; font-weight: 600; margin-top: 10px; display: inline-flex;
+            align-items: center; gap: 8px; padding: 7px 14px; border-radius: 10px;
+        }
+        .alert-status.sent { color: #10b981; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25); }
+        .alert-status.ignored { color: #a8dadc; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); }
+        .alert-status .mini-btn {
+            background: none; border: none; color: #00d2ff; cursor: pointer;
+            font-size: 0.95em; font-family: 'Inter', sans-serif; font-weight: 700;
+            text-decoration: underline; padding: 0;
+        }
 
         /* Email Log Box */
         .email-log-box {
@@ -446,8 +470,10 @@
         const EMAILJS_TEMPLATE_ID = 'template_k33ue91';
 
         // ── Email alert state — persisted in localStorage ───────────────────────
-        // Key: "alert_<employeeName>", Value: last instance count an email was sent for
+        // Key: "<employee>__<yyyy-m>", Value: instance count an email was sent for that month
         const ALERT_STORAGE_KEY = 'absence_alert_sent_counts';
+        // Key: "<employee>__<yyyy-m>", Value: instance count that was explicitly ignored that month
+        const IGNORE_STORAGE_KEY = 'absence_alert_ignored_counts';
         const EMAIL_LOG_KEY     = 'absence_email_log';
 
 
@@ -457,6 +483,13 @@
         }
         function setSentCounts(obj) {
             localStorage.setItem(ALERT_STORAGE_KEY, JSON.stringify(obj));
+        }
+        function getIgnoredCounts() {
+            try { return JSON.parse(localStorage.getItem(IGNORE_STORAGE_KEY) || '{}'); }
+            catch { return {}; }
+        }
+        function setIgnoredCounts(obj) {
+            localStorage.setItem(IGNORE_STORAGE_KEY, JSON.stringify(obj));
         }
         function getEmailLog() {
             try { return JSON.parse(localStorage.getItem(EMAIL_LOG_KEY) || '[]'); }
@@ -488,6 +521,9 @@
         let allAbsences = [];
         let currentPeriod = 6, currentType = 'all', currentEmployee = 'all';
         let expandedCard = null;
+        // Lookup of the alerts currently on screen, keyed by "employee||window", so
+        // the push/ignore buttons can find the right record set to act on.
+        let currentAlertsData = {};
 
         // ── Date Formatter (yyyy-mm-dd to dd-mm-yyyy) ────────────────────────────
         function formatDateUK(dateStr) {
@@ -527,7 +563,7 @@
             list.innerHTML = log.map(e => `
                 <div class="email-log-entry">
                     <span class="el-dot"></span>
-                    <span>Alert sent for <strong>${e.employee}</strong> — <strong>${e.instances} instances</strong> in 6 months</span>
+                    <span>Alert sent for <strong>${e.employee}</strong> — <strong>${e.instances} instances</strong> in ${e.window === '3m' ? '3' : '6'} months</span>
                     <span class="el-time">${e.time}</span>
                 </div>
             `).join('');
@@ -541,7 +577,7 @@
         renderEmailLog();
 
         // ── Send sickness alert email ────────────────────────────────────────────
-        async function sendSicknessAlertEmail(employee, instances, absenceDetails) {
+        async function sendSicknessAlertEmail(employee, instances, absenceDetails, windowLabel) {
             const today = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
             const detailLines = absenceDetails
                 .map(r => `• ${formatDateUK(r.fromDate)} — ${r.workingDays} day(s) — ${r.absenceType}${r.notes ? ' — ' + r.notes : ''}`)
@@ -561,21 +597,24 @@
                     trigger_type:    isEscalation ? 'Escalation Update' : 'Initial Trigger',
                     date_generated:  today,
                     absence_details: detailLines,
-                    window_period:   'Last 6 Months',
+                    window_period:   windowLabel === '3m' ? 'Last 3 Months' : 'Last 6 Months',
                     message:         isEscalation
-                        ? `${employee} has now reached ${instances} sickness instances in the past 6 months. This is an escalation from a previously reported trigger.`
-                        : `${employee} has reached the sickness trigger threshold of 3 instances within the past 6 months. Management review is recommended.`
+                        ? `${employee} has now reached ${instances} sickness instances. This is an escalation from a previously reported trigger.`
+                        : `${employee} has reached the sickness trigger threshold of 3 instances. Management review is recommended.`
                 });
                 console.log(`[AbsenceTracker] ✅ Email sent successfully for ${employee}. Status:`, result.status, result.text);
+                showMessage(`Alert email sent for ${employee}.`, 'success');
             } catch (err) {
                 console.error(`[AbsenceTracker] ❌ Email FAILED for ${employee}:`, err);
                 showMessage(`Email alert failed for ${employee}: ${err.text || err.message || 'Unknown error'}`, 'error');
+                return; // don't log a send if it actually failed
             }
 
             // Log it
             appendEmailLog({
                 employee,
                 instances,
+                window: windowLabel,
                 time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
             });
             renderEmailLog();
@@ -687,9 +726,7 @@
                 showDedupResult(newRecords.length, dupeRecords.length, dupeRecords);
                 if (newRecords.length > 0) {
                     showMessage(`Successfully uploaded ${newRecords.length} new record${newRecords.length > 1 ? 's' : ''}${dupeRecords.length > 0 ? ` (${dupeRecords.length} duplicate${dupeRecords.length > 1 ? 's' : ''} skipped)` : ''}.`, 'success');
-                    
-                    // TRUE: Pass 'true' so emails send after this specific upload
-                    await loadAbsences(true);
+                    await loadAbsences();
                 } else {
                     showMessage(`All ${dupeRecords.length} record${dupeRecords.length > 1 ? 's' : ''} already exist — nothing uploaded.`, 'error');
                 }
@@ -723,8 +760,7 @@
         }
 
         // ── Load absences ───────────────────────────────────────────────────────
-        // Add the 'shouldSendEmails' parameter (defaulting to false)
-        async function loadAbsences(shouldSendEmails = false) {
+        async function loadAbsences() {
             try {
                 const q = query(collection(db, "All Absences"), orderBy("fromDate", "desc"));
                 const snapshot = await getDocs(q);
@@ -749,8 +785,7 @@
                     Array.from(typeSet).sort().map(t => `<option value="${t}">${t}</option>`).join('');
                 document.getElementById('filtersSection').style.display = 'grid';
                 
-                // Pass the flag along
-                updateDisplay(shouldSendEmails);
+                updateDisplay();
             } catch (err) {
                 console.error('Error loading absences:', err);
                 showMessage('Error loading data: ' + err.message, 'error');
@@ -799,18 +834,15 @@
             return getGroupedInstances(records).length;
         }
 
-        // Add the flag here as well
-        function updateDisplay(shouldSendEmails = false) {
+        function updateDisplay() {
             const filtered = getFilteredData();
-            // Pass the flag down
-            checkSicknessAlerts(shouldSendEmails);
+            checkSicknessAlerts();
             updateTopOffenders(filtered);
             updateDataTable(filtered);
         }
 
-        // ── Sickness alerts + email triggers ────────────────────────────────────
-        // Catch the flag here
-        function checkSicknessAlerts(shouldSendEmails = false) {
+        // ── Sickness alerts — renders Push / Ignore controls, no auto-send ──────
+        function checkSicknessAlerts() {
             const threeMonthsAgo = new Date();
             threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
             const sixMonthsAgo = new Date();
@@ -822,7 +854,7 @@
             const map3m = {};
             sickness3m.forEach(r => { (map3m[r.employee] = map3m[r.employee] || []).push(r); });
             const alerts3m = Object.entries(map3m)
-                .map(([employee, records]) => ({ employee, instances: calculateInstances(records), records }))
+                .map(([employee, records]) => ({ employee, instances: calculateInstances(records), records, window: '3m' }))
                 .filter(a => a.instances >= 3)
                 .sort((a, b) => b.instances - a.instances);
 
@@ -833,45 +865,16 @@
             const map6m = {};
             sickness6m.forEach(r => { (map6m[r.employee] = map6m[r.employee] || []).push(r); });
             const alerts6m = Object.entries(map6m)
-                .map(([employee, records]) => ({ employee, instances: calculateInstances(records), records }))
+                .map(([employee, records]) => ({ employee, instances: calculateInstances(records), records, window: '6m' }))
                 .filter(a => a.instances >= 3 && !alerted3mNames.has(a.employee))
                 .sort((a, b) => b.instances - a.instances);
 
-            // ── Email logic: ONLY fires if 'shouldSendEmails' is true ─────────────────
-            if (shouldSendEmails) {
-                // Combine both sets for email check (3-month takes priority)
-                const allAlerts = [
-                    ...alerts3m.map(a => ({ ...a, window: '3m' })),
-                    ...alerts6m.map(a => ({ ...a, window: '6m' }))
-                ];
+            // Store for the button handlers to look up
+            currentAlertsData = {};
+            [...alerts3m, ...alerts6m].forEach(a => {
+                currentAlertsData[`${a.employee}||${a.window}`] = a;
+            });
 
-                const sentCounts = getSentCounts();
-                const now = new Date();
-                // Rolling monthly key — suppression resets each month automatically
-                const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-
-                console.log('[AbsenceTracker] Alerts found:', allAlerts.map(a => `${a.employee} (${a.instances})`));
-                console.log('[AbsenceTracker] Stored sent counts:', JSON.stringify(sentCounts));
-
-                allAlerts.forEach(alert => {
-                    const key = `${alert.employee.trim().toLowerCase()}__${monthKey}`;
-                    const lastSentCount = sentCounts[key] || 0;
-
-                    console.log(`[AbsenceTracker] ${alert.employee}: instances=${alert.instances}, lastSentCount=${lastSentCount}`);
-
-                    // Send email if: instances >= 3 AND higher than last sent count this month
-                    if (alert.instances >= 3 && alert.instances > lastSentCount) {
-                        console.log(`[AbsenceTracker] FIRING email for ${alert.employee} at ${alert.instances} instances`);
-                        sentCounts[key] = alert.instances;
-                        setSentCounts(sentCounts);
-                        sendSicknessAlertEmail(alert.employee, alert.instances, alert.records);
-                    } else {
-                        console.log(`[AbsenceTracker] SKIPPING ${alert.employee} — already sent at count ${lastSentCount}`);
-                    }
-                });
-            }
-
-            // ── UI rendering (Always runs so visual alerts appear on screen) ───────────────────────────────────────────────────
             const alertBox     = document.getElementById('sicknessAlert');
             const alertTitle   = document.getElementById('sicknessAlertTitle');
             const alertContent = document.getElementById('sicknessAlertContent');
@@ -881,22 +884,49 @@
                 return;
             }
 
+            const sentCounts    = getSentCounts();
+            const ignoredCounts = getIgnoredCounts();
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+
+            function renderAlertItem(a, isRed) {
+                const key = `${a.employee.trim().toLowerCase()}__${monthKey}`;
+                const dataKey = `${a.employee}||${a.window}`;
+                const sentCount    = sentCounts[key] || 0;
+                const ignoredCount = ignoredCounts[key] || 0;
+
+                let actionsHtml;
+                if (a.instances <= sentCount) {
+                    actionsHtml = `<div class="alert-status sent">✅ Email sent (${sentCount} instance${sentCount !== 1 ? 's' : ''})</div>`;
+                } else if (a.instances <= ignoredCount) {
+                    actionsHtml = `<div class="alert-status ignored">🙈 Ignored
+                        <button class="mini-btn" data-push="${dataKey}">Push anyway</button>
+                    </div>`;
+                } else {
+                    actionsHtml = `<div class="alert-actions">
+                        <button class="alert-btn alert-btn-push" data-push="${dataKey}">📧 Push Alert Email</button>
+                        <button class="alert-btn alert-btn-ignore" data-ignore="${dataKey}">✕ Ignore</button>
+                    </div>`;
+                }
+
+                return `
+                    <div class="alert-item ${isRed ? 'red-alert' : ''}">
+                        <strong>${a.employee}</strong> — ${a.instances} instance${a.instances !== 1 ? 's' : ''} in past ${a.window === '3m' ? '3' : '6'} months
+                        ${actionsHtml}
+                    </div>`;
+            }
+
             let html = '';
             if (alerts3m.length > 0) {
                 html += `<p class="alert-section-label red">🔴 Past 3 months</p>`;
-                html += alerts3m.map(a => `
-                    <div class="alert-item red-alert">
-                        <strong>${a.employee}</strong> — ${a.instances} instance${a.instances !== 1 ? 's' : ''} in past 3 months
-                    </div>`).join('');
+                html += alerts3m.map(a => renderAlertItem(a, true)).join('');
             }
             if (alerts6m.length > 0) {
                 html += `<p class="alert-section-label amber" style="margin-top:${alerts3m.length > 0 ? '20px' : '0'};">🟡 Past 6 months (not in 3-month window)</p>`;
-                html += alerts6m.map(a => `
-                    <div class="alert-item">
-                        <strong>${a.employee}</strong> — ${a.instances} instance${a.instances !== 1 ? 's' : ''} in past 6 months
-                    </div>`).join('');
+                html += alerts6m.map(a => renderAlertItem(a, false)).join('');
             }
             alertContent.innerHTML = html;
+
             if (alerts3m.length > 0 && alerts6m.length > 0) {
                 alertTitle.textContent = '⚠️ Sickness Alert: 3+ Instances in Past 3 or 6 Months';
             } else if (alerts3m.length > 0) {
@@ -905,6 +935,42 @@
                 alertTitle.textContent = '⚠️ Sickness Alert: 3+ Instances in Past 6 Months';
             }
             alertBox.classList.add('show');
+
+            // Wire up the Push / Ignore buttons for this render pass
+            alertContent.querySelectorAll('[data-push]').forEach(btn => {
+                btn.addEventListener('click', () => handlePushAlert(btn.dataset.push, btn));
+            });
+            alertContent.querySelectorAll('[data-ignore]').forEach(btn => {
+                btn.addEventListener('click', () => handleIgnoreAlert(btn.dataset.ignore));
+            });
+        }
+
+        async function handlePushAlert(dataKey, btn) {
+            const a = currentAlertsData[dataKey];
+            if (!a) return;
+            if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+            const key = `${a.employee.trim().toLowerCase()}__${monthKey}`;
+            const sentCounts = getSentCounts();
+            sentCounts[key] = a.instances;
+            setSentCounts(sentCounts);
+
+            await sendSicknessAlertEmail(a.employee, a.instances, a.records, a.window);
+            checkSicknessAlerts(); // re-render with updated status
+        }
+
+        function handleIgnoreAlert(dataKey) {
+            const a = currentAlertsData[dataKey];
+            if (!a) return;
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+            const key = `${a.employee.trim().toLowerCase()}__${monthKey}`;
+            const ignoredCounts = getIgnoredCounts();
+            ignoredCounts[key] = a.instances;
+            setIgnoredCounts(ignoredCounts);
+            checkSicknessAlerts(); // re-render with updated status
         }
 
         function updateTopOffenders(filtered) {
@@ -1001,7 +1067,6 @@
             return map[type] || `<span class="badge">${type}</span>`;
         }
 
-        // Filters now call updateDisplay(false) implicitly, meaning emails will NOT trigger
         document.getElementById('periodFilter').addEventListener('change',   e => { currentPeriod   = parseInt(e.target.value); updateDisplay(); });
         document.getElementById('typeFilter').addEventListener('change',     e => { currentType     = e.target.value;           updateDisplay(); });
         document.getElementById('employeeFilter').addEventListener('change', e => { currentEmployee = e.target.value;           updateDisplay(); });
@@ -1037,9 +1102,7 @@
                 });
                 showMessage('Absence record added successfully!', 'success');
                 e.target.reset();
-                
-                // TRUE: Pass 'true' so emails send after this specific manual upload
-                await loadAbsences(true);
+                await loadAbsences();
             } catch (err) {
                 showMessage('Error adding record: ' + err.message, 'error');
             } finally {
@@ -1052,7 +1115,6 @@
         (function purgeLegacyKeys() {
             try {
                 const stored = JSON.parse(localStorage.getItem('absence_alert_sent_counts') || '{}');
-                const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
                 const cleaned = {};
                 Object.entries(stored).forEach(([k, v]) => {
                     if (k.includes('__')) cleaned[k] = v; // keep new-format keys only
@@ -1062,7 +1124,7 @@
             } catch(e) {}
         })();
 
-        // Initial Page Load: No emails should be sent (implicitly false)
+        // Initial page load — alerts render with Push/Ignore controls, nothing auto-sends
         loadAbsences();
     </script>
 </body>
