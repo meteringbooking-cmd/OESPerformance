@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Energise — Order Selection Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #141820; --surface: #1e2530; --surface2: #252d3a;
+    --border: #2e3a4e; --accent: #d4f53c; --accent2: #47c8ff;
+    --text: #f0f4ff; --text-muted: #8899aa;
+    --out: #f87171; --in-stock: #4ade80; --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 20px 32px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; }
+  .logo span { color: var(--accent); }
+  .header-sub { font-size: 12px; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; display: grid; grid-template-columns: 340px 1fr; gap: 24px; align-items: start; }
+
+  /* LEFT PANEL — Add/Edit */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; }
+  .card-title {
+    font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .form-row { margin-bottom: 16px; }
+  .form-row label {
+    display: block; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .form-row input, .form-row select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: var(--radius); padding: 10px 12px; font-family: 'DM Sans', sans-serif;
+    font-size: 13px; outline: none; transition: border-color 0.2s;
+  }
+  .form-row input:focus, .form-row select:focus { border-color: var(--accent); }
+  .form-row input::placeholder { color: var(--text-muted); }
+  .form-row input.err { border-color: var(--out); }
+
+  /* SKU chip area */
+  .sku-input-row { display: flex; gap: 6px; }
+  .sku-input-row input { flex: 1; }
+  .sku-add-btn {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 14px; border-radius: var(--radius); cursor: pointer; font-size: 18px; line-height: 1;
+    transition: border-color 0.15s, color 0.15s; flex-shrink: 0;
+  }
+  .sku-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .sku-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 36px; margin-top: 8px; }
+  .sku-chip {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 10px 4px 10px;
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent2);
+    display: flex; align-items: center; gap: 6px; animation: chipIn 0.15s ease;
+  }
+  @keyframes chipIn { from { opacity:0; transform:scale(0.85); } to { opacity:1; transform:scale(1); } }
+  .chip-remove {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0; transition: color 0.15s;
+  }
+  .chip-remove:hover { color: var(--out); }
+
+  .sku-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 20px; }
+  .btn-primary {
+    flex: 1; background: var(--accent); color: #000; border: none; padding: 11px;
+    border-radius: var(--radius); font-family: 'Syne', sans-serif; font-size: 13px;
+    font-weight: 700; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary:hover { background: #d4eb30; }
+  .btn-secondary {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 11px 16px; border-radius: var(--radius); font-family: 'DM Sans', sans-serif;
+    font-size: 13px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* RIGHT PANEL — Engineer list */
+  .engineers-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .engineers-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; }
+  .eng-count { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
+
+  .engineer-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 10px; transition: border-color 0.15s;
+    animation: cardIn 0.2s ease;
+  }
+  @keyframes cardIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  .engineer-card:hover { border-color: var(--accent2); }
+  .engineer-card.editing { border-color: var(--accent); background: rgba(212,245,60,0.04); }
+
+  .ec-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .ec-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .ec-meta { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); }
+  .ec-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .ec-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    padding: 5px 12px; border-radius: var(--radius); font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s; font-family: 'DM Sans', sans-serif;
+  }
+  .ec-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ec-btn.danger:hover { border-color: var(--out); color: var(--out); }
+
+  .ec-skus { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .ec-sku-chip {
+    background: rgba(71,200,255,0.08); border: 1px solid rgba(71,200,255,0.2);
+    border-radius: 4px; padding: 2px 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent2);
+  }
+  .ec-all-badge {
+    background: rgba(212,245,60,0.1); border: 1px solid rgba(212,245,60,0.25);
+    border-radius: 4px; padding: 2px 10px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent);
+  }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .empty-state svg { opacity: 0.2; margin-bottom: 12px; }
+  .empty-state h3 { font-family: 'Syne', sans-serif; font-size: 16px; margin-bottom: 4px; color: var(--text); }
+
+  /* Loading spinner */
+  .spinner {
+    display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1e3a1e; border: 1px solid var(--in-stock); color: var(--in-stock);
+    padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999;
+    opacity: 0; transition: opacity 0.3s, transform 0.3s; white-space: nowrap;
+  }
+  .toast.error { background: #3a1e1e; border-color: var(--out); color: var(--out); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Delete confirm modal */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:300; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:28px; max-width:440px; width:90%; }
+  .modal h3 { font-family:'Syne',sans-serif; font-size:17px; font-weight:700; margin-bottom:10px; }
+  .modal p { color:var(--text-muted); font-size:13px; margin-bottom:22px; line-height:1.6; }
+  .modal-btns { display:flex; gap:10px; justify-content:flex-end; }
+
+  @media(max-width:900px) {
+    .page { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">energise<span>.</span></div>
+    <div class="header-sub">Order Selection Manager</div>
+  </div>
+  <a href="energise-order-form.html" style="color:var(--accent2);font-size:13px;text-decoration:none;font-family:'DM Mono',monospace;">← Back to Order Form</a>
+</header>
+
+<div class="page">
+
+  <!-- LEFT: Add / Edit form -->
+  <div>
+    <div class="card">
+      <div class="card-title" id="formTitle">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Add Engineer
+      </div>
+
+      <div class="form-row">
+        <label>Engineer Name <span style="color:var(--out)">*</span></label>
+        <input type="text" id="f-name" placeholder="e.g. John Smith">
+      </div>
+
+      <div class="form-row">
+        <label>Allowed Meter SKUs</label>
+        <div class="sku-input-row">
+          <input type="text" id="f-sku-input" placeholder="Type a SKU and press +" onkeydown="handleSkuKey(event)">
+          <button class="sku-add-btn" onclick="addSkuChip()" title="Add SKU">+</button>
+        </div>
+        <div class="sku-chips" id="skuChips"></div>
+        <div class="sku-hint">Leave empty to allow access to ALL meter items.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" id="saveBtn" onclick="saveEngineer()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="saveBtnText">Save Engineer</span>
+        </button>
+        <button class="btn-secondary" id="cancelBtn" style="display:none" onclick="cancelEdit()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Engineer list -->
+  <div>
+    <div class="engineers-header">
+      <div class="engineers-title">Engineers <span class="eng-count" id="engCount"></span></div>
+    </div>
+    <div id="engineerList">
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <p style="margin-top:12px">Loading…</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Remove Engineer?</h3>
+    <p id="deleteMsg">Are you sure you want to remove this engineer? Their selection rules will be permanently deleted.</p>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-primary" style="flex:0;background:var(--out);" onclick="confirmDelete()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── Load all engineers ─────────────────────────────────────────────────────
+  window._engineers = {};  // docId → { name, skus, ... }
+
+  window._loadEngineers = async function() {
+    try {
+      const snap = await getDocs(collection(db, 'Energise Selection'));
+      window._engineers = {};
+      snap.forEach(d => { window._engineers[d.id] = { id: d.id, ...d.data() }; });
+      renderEngineers();
+    } catch (e) {
+      showToast('Could not load data: ' + e.message, true);
+    }
+  };
+
+  // ── Save engineer ──────────────────────────────────────────────────────────
+  window._saveToFirebase = async function(id, data) {
+    await setDoc(doc(db, 'Energise Selection', id), data);
+  };
+
+  // ── Delete engineer ────────────────────────────────────────────────────────
+  window._deleteFromFirebase = async function(id) {
+    await deleteDoc(doc(db, 'Energise Selection', id));
+  };
+
+  window.addEventListener('load', window._loadEngineers);
+</script>
+
+<!-- App logic -->
+<script>
+  let pendingSkus = [];      // chips currently in the form
+  let editingId   = null;    // docId being edited (null = new)
+  let deleteTarget = null;
+
+  // ── SKU chip management ───────────────────────────────────────────────────
+  window.handleSkuKey = function(e) {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSkuChip(); }
+  };
+
+  window.addSkuChip = function() {
+    const input = document.getElementById('f-sku-input');
+    const val = input.value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g, '');
+    if (!val) return;
+    if (pendingSkus.includes(val)) { input.value = ''; showToast('SKU already added', true); return; }
+    pendingSkus.push(val);
+    input.value = '';
+    renderChips();
+  };
+
+  window.removeChip = function(sku) {
+    pendingSkus = pendingSkus.filter(s => s !== sku);
+    renderChips();
+  };
+
+  function renderChips() {
+    const container = document.getElementById('skuChips');
+    container.innerHTML = pendingSkus.map(s => `
+      <div class="sku-chip">
+        ${s}
+        <button class="chip-remove" onclick="removeChip('${s}')" title="Remove">×</button>
+      </div>`).join('');
+  }
+
+  // ── Save / update engineer ────────────────────────────────────────────────
+  window.saveEngineer = async function() {
+    const nameEl = document.getElementById('f-name');
+    const name = nameEl.value.trim();
+    if (!name) { nameEl.classList.add('err'); showToast('Please enter an engineer name', true); return; }
+    nameEl.classList.remove('err');
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving…';
+
+    // Use engineer name (lowercase, spaces → underscores) as docId so it's consistent
+    const docId = editingId || name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+    const data = {
+      name,
+      skus: [...pendingSkus],   // empty array = all meters allowed
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await window._saveToFirebase(docId, data);
+      window._engineers[docId] = { id: docId, ...data };
+      renderEngineers();
+      cancelEdit();
+      showToast(`✓ ${name} saved successfully`, false);
+    } catch(e) {
+      showToast('Error saving: ' + e.message, true);
+    } finally {
+      btn.disabled = false;
+      updateSaveBtn();
+    }
+  };
+
+  function updateSaveBtn() {
+    const wasEditing = editingId !== null;
+    document.getElementById('saveBtn').innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        ${wasEditing ? '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>' : '<polyline points="20 6 9 17 4 12"/>'}
+      </svg>
+      <span>${wasEditing ? 'Update Engineer' : 'Save Engineer'}</span>`;
+  }
+
+  // ── Edit an existing engineer ─────────────────────────────────────────────
+  window.editEngineer = function(id) {
+    const eng = window._engineers[id];
+    if (!eng) return;
+
+    document.getElementById('f-name').value = eng.name;
+    pendingSkus = [...(eng.skus || [])];
+    renderChips();
+    editingId = id;
+
+    document.getElementById('formTitle').innerHTML = `
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+      Edit Engineer: ${escHtml(eng.name)}`;
+    document.getElementById('cancelBtn').style.display = '';
+    updateSaveBtn();
+
+    // Highlight the card being edited
+    document.querySelectorAll('.engineer-card').forEach(c => c.classList.remove('editing'));
+    const card = document.getElementById('ec-' + id);
+    if (card) card.classList.add('editing');
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  window.cancelEdit = function() {
+    editingId = null;
+    pendingSkus = [];
+    renderChips();
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-sku-input').value = '';
+    document.getElementById('formTitle').innerHTML = `
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      Add Engineer`;
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.querySelectorAll('.engineer-card').forEach(c => c.classList.remove('editing'));
+    updateSaveBtn();
+  };
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  window.promptDelete = function(id) {
+    deleteTarget = id;
+    const eng = window._engineers[id];
+    document.getElementById('deleteMsg').textContent =
+      `Are you sure you want to remove "${eng?.name || id}"? Their meter access rules will be permanently deleted.`;
+    document.getElementById('deleteModal').classList.add('open');
+  };
+
+  window.closeDeleteModal = function() {
+    document.getElementById('deleteModal').classList.remove('open');
+    deleteTarget = null;
+  };
+
+  window.confirmDelete = async function() {
+    if (!deleteTarget) return;
+    const name = window._engineers[deleteTarget]?.name || deleteTarget;
+    try {
+      await window._deleteFromFirebase(deleteTarget);
+      delete window._engineers[deleteTarget];
+      if (editingId === deleteTarget) cancelEdit();
+      renderEngineers();
+      closeDeleteModal();
+      showToast(`Deleted "${name}"`, false);
+    } catch(e) {
+      showToast('Error deleting: ' + e.message, true);
+      closeDeleteModal();
+    }
+  };
+
+  // ── Render engineer list ──────────────────────────────────────────────────
+  function renderEngineers() {
+    const engs = Object.values(window._engineers || {}).sort((a,b) => a.name.localeCompare(b.name));
+    document.getElementById('engCount').textContent = `(${engs.length})`;
+
+    const container = document.getElementById('engineerList');
+    if (engs.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          <h3>No engineers yet</h3>
+          <p>Add an engineer using the form on the left to get started.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = engs.map(eng => {
+      const skuCount = eng.skus && eng.skus.length > 0 ? eng.skus.length : null;
+      const skuBadges = skuCount
+        ? eng.skus.map(s => `<span class="ec-sku-chip">${escHtml(s)}</span>`).join('')
+        : `<span class="ec-all-badge">✓ All meter items</span>`;
+
+      return `
+        <div class="engineer-card" id="ec-${eng.id}">
+          <div class="ec-top">
+            <div>
+              <div class="ec-name">${escHtml(eng.name)}</div>
+              <div class="ec-meta">${skuCount ? `${skuCount} meter SKU${skuCount !== 1 ? 's' : ''} assigned` : 'Full meter access'}</div>
+            </div>
+            <div class="ec-actions">
+              <button class="ec-btn" onclick="editEngineer('${eng.id}')">Edit</button>
+              <button class="ec-btn danger" onclick="promptDelete('${eng.id}')">Remove</button>
+            </div>
+          </div>
+          <div class="ec-skus">${skuBadges}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (isError ? ' error' : '');
+    void t.offsetWidth;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  document.getElementById('deleteModal').addEventListener('click', e => { if (e.target === document.getElementById('deleteModal')) closeDeleteModal(); });
+</script>
+
+</body>
+</html>
