@@ -335,9 +335,76 @@
     .table-wrap { padding: 0; }
     body { background: white; color: black; }
   }
+
+  /* NAME GATE */
+  .name-gate {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(10,13,20,0.97);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 0;
+    animation: gateIn 0.3s ease;
+  }
+  @keyframes gateIn { from { opacity:0; } to { opacity:1; } }
+  .name-gate.hidden { display: none; }
+  .gate-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 40px 44px; width: 460px; max-width: 92vw;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,245,60,0.08);
+    animation: gateCardIn 0.35s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes gateCardIn { from { opacity:0; transform:translateY(24px) scale(0.96); } to { opacity:1; transform:none; } }
+  .gate-logo { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; margin-bottom:6px; }
+  .gate-logo span { color: var(--accent); }
+  .gate-subtitle { font-size:13px; color:var(--text-muted); margin-bottom:28px; }
+  .gate-label {
+    font-family:'Syne',sans-serif; font-size:11px; font-weight:700;
+    letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted);
+    margin-bottom:8px;
+  }
+  .gate-select {
+    width:100%; background:var(--bg); border:2px solid var(--border);
+    color:var(--text); border-radius:var(--radius); padding:13px 16px;
+    font-family:'DM Sans',sans-serif; font-size:15px; outline:none;
+    cursor:pointer; transition:border-color 0.2s;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238899aa' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center;
+  }
+  .gate-select:focus { border-color: var(--accent); }
+  .gate-select.err { border-color: var(--out); animation: shake 0.35s ease; }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 80%{transform:translateX(-3px)}
+  }
+  .gate-btn {
+    width:100%; margin-top:16px; background:var(--accent); color:#000;
+    border:none; padding:14px; border-radius:var(--radius);
+    font-family:'Syne',sans-serif; font-size:15px; font-weight:800;
+    cursor:pointer; letter-spacing:0.02em; transition:background 0.15s, transform 0.1s;
+  }
+  .gate-btn:hover { background:#d4eb30; transform:translateY(-1px); }
+  .gate-hint { font-size:12px; color:var(--text-muted); margin-top:12px; text-align:center; }
 </style>
 </head>
 <body>
+
+<!-- ══ NAME GATE ══════════════════════════════════════════════════════════ -->
+<div class="name-gate" id="nameGate">
+  <div class="gate-card">
+    <div class="gate-logo">energise<span>.</span></div>
+    <div class="gate-subtitle">Stock Order Form — Please identify yourself to continue</div>
+    <div class="gate-label">Your Name <span style="color:var(--out)">*</span></div>
+    <select class="gate-select" id="gateSelect">
+      <option value="">— Select your name —</option>
+    </select>
+    <button class="gate-btn" onclick="confirmGate()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:middle;margin-right:6px"><polyline points="20 6 9 17 4 12"/></svg>
+      Continue to Order Form
+    </button>
+    <div class="gate-hint">Your name will be attached to your order automatically.</div>
+  </div>
+</div>
 
 <header>
   <div class="logo">energise<span>.</span></div>
@@ -532,6 +599,7 @@
         if (data.name) window.engineerSelections[data.name] = data;
       });
       renderEngineerDropdown();
+      syncGateDropdown();
     } catch (e) {
       console.warn('Could not load engineer selections:', e);
     }
@@ -869,8 +937,32 @@ function updateBasket() {
 }
 
 // ── Engineer selection ───────────────────────────────────────────────────────
-let selectedEngineer = null;  // the name currently selected
-let allowedMeterSkus = null;  // null = all, Set = restricted
+let selectedEngineer = null;
+let allowedMeterSkus = null;
+
+// Called when gate dropdown selection is confirmed
+window.confirmGate = function() {
+  const gSel = document.getElementById('gateSelect');
+  const name = gSel.value;
+  if (!name) {
+    gSel.classList.add('err');
+    setTimeout(() => gSel.classList.remove('err'), 400);
+    return;
+  }
+  // Mirror into the banner dropdown
+  document.getElementById('engineerSelect').value = name;
+  onEngineerChange();
+  // Hide gate
+  document.getElementById('nameGate').classList.add('hidden');
+};
+
+// Keep gate dropdown in sync whenever engineers load
+function syncGateDropdown() {
+  const gSel = document.getElementById('gateSelect');
+  const bannerSel = document.getElementById('engineerSelect');
+  // Copy all options
+  gSel.innerHTML = bannerSel.innerHTML;
+}
 
 window.onEngineerChange = function() {
   const sel = document.getElementById('engineerSelect');
@@ -891,7 +983,7 @@ window.onEngineerChange = function() {
     allowedMeterSkus = new Set(eng.skus.map(s => String(s).toUpperCase()));
     statusEl.innerHTML = `<span style="color:var(--accent)">✓</span> ${eng.skus.length} meter item${eng.skus.length !== 1 ? 's' : ''} available`;
   } else {
-    allowedMeterSkus = null;  // empty = all meters allowed
+    allowedMeterSkus = null;
     statusEl.innerHTML = `<span style="color:var(--in-stock)">✓</span> Full meter access`;
   }
 
