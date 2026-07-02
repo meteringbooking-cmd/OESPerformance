@@ -981,11 +981,13 @@ async function doUpload() {
             const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
 
             // Find header row
-            let dataStart = 0;
+            let headerIdx = -1;
             for (let i = 0; i < Math.min(6, rows.length); i++) {
                 const cell = (rows[i][0]||'').toString().toLowerCase();
-                if (cell.includes('registration') || cell.includes('reg')) { dataStart = i+1; break; }
+                if (cell.includes('registration') || cell.includes('reg')) { headerIdx = i; break; }
             }
+            const dataStart = headerIdx > -1 ? headerIdx + 1 : 0;
+            const headers = headerIdx > -1 ? rows[headerIdx] : [];
 
             // Group by DATE + PLATE  (date extracted from col B start time)
             // byDatePlate[journeyDate][plate] = { engineerName, firstStart, lastEnd, totalMiles, rowCount }
@@ -1076,12 +1078,22 @@ async function doUpload() {
             const dates = Object.keys(byDatePlate).sort();
             
             // Build debug output text
-            let debugHtml = `<div style="text-align:left;font-family:monospace;font-size:0.75rem;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;max-height:200px;overflow-y:auto;">`;
+            let debugHtml = `<div style="text-align:left;font-family:monospace;font-size:0.75rem;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;max-height:220px;overflow-y:auto;">`;
             debugHtml += `<strong>Debug Log:</strong><br>`;
             debugHtml += `Total rows parsed: ${totalRowsRead}<br>`;
             debugHtml += `Skipped (Ignored Names): ${skippedIgnored}<br>`;
             debugHtml += `Skipped (Miles &lt; 0.01): ${skippedMiles}<br>`;
             debugHtml += `Skipped (Invalid Date): ${skippedDates}<br><br>`;
+            
+            if (headers.length > 0) {
+                debugHtml += `<strong>Headers Detected:</strong><br>`;
+                headers.forEach((h, idx) => {
+                    const letter = String.fromCharCode(65 + idx);
+                    debugHtml += `Col ${letter} (index ${idx}): "${h || ''}"<br>`;
+                });
+                debugHtml += `<br>`;
+            }
+
             debugHtml += `<strong>First 5 rows details:</strong><br>`;
             debugLog.forEach(d => {
                 debugHtml += `Row ${d.rowIdx}: Reg="${d.rawReg}" | Miles=${d.rawMiles} | Col O="${d.rawColO||''}" (Cols: ${d.rowLength}) | Start="${d.rawStart}" -&gt; Parsed: "${d.parsedStart}" (DateOnly: ${d.parsedDateOnly})<br>`;
