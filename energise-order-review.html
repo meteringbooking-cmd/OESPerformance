@@ -1104,18 +1104,28 @@
       const sends = [];
 
       if (consumables.length > 0) {
-        sends.push(
-          emailjs.send('service_ushej2v', 'template_e9n1jcm', {
-            submitted_by: order.submittedBy,
-            submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-            item_count:   consumables.length,
-            order_type:   'Consumables',
-            header_color: '#1a56db',
-            items_html:   buildItemsHtml(consumables),
-            order_id:     orderId,
-          })
-        );
-      }
+  // Chunk consumables to stay under EmailJS's 50KB variable limit.
+  // ~15 items per chunk is conservative; adjust down if still hitting the limit.
+  const CHUNK_SIZE = 15;
+  const chunks = [];
+  for (let i = 0; i < consumables.length; i += CHUNK_SIZE) {
+    chunks.push(consumables.slice(i, i + CHUNK_SIZE));
+  }
+  chunks.forEach((chunk, chunkIdx) => {
+    const partLabel = chunks.length > 1 ? ` (Part ${chunkIdx + 1} of ${chunks.length})` : '';
+    sends.push(
+      emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+        submitted_by: order.submittedBy,
+        submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+        item_count:   chunk.length,
+        order_type:   `Consumables${partLabel}`,
+        header_color: '#1a56db',
+        items_html:   buildItemsHtml(chunk),
+        order_id:     orderId,
+      })
+    );
+  });
+}
 
       if (meters.length > 0) {
         sends.push(
@@ -1161,11 +1171,12 @@
         renderProcessed();
       }
 
-      const sentParts = [
-        consumables.length > 0 ? `consumables (${consumables.length})` : null,
-        meters.length      > 0 ? `meters (${meters.length})`           : null,
-      ].filter(Boolean).join(' + ');
-      showToast(`✓ Order processed — emails sent for ${sentParts}!`, false);
+const consumableChunkCount = Math.ceil(consumables.length / 15) || 0;
+const sentParts = [
+  consumables.length > 0 ? `consumables (${consumables.length} items, ${consumableChunkCount} email${consumableChunkCount > 1 ? 's' : ''})` : null,
+  meters.length      > 0 ? `meters (${meters.length})`           : null,
+].filter(Boolean).join(' + ');
+showToast(`✓ Order processed — emails sent for ${sentParts}!`, false);
 
     } catch (err) {
       console.error('EmailJS error:', err);
