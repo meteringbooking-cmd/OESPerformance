@@ -565,12 +565,8 @@
         </div>
         <div class="panel-body hidden" id="uploadBody">
             <div class="form-row">
-                <div class="fg">
-                    <label for="uploadDate">Date</label>
-                    <input type="date" id="uploadDate" onchange="checkExisting()">
-                </div>
                 <div class="fg" style="flex:1;min-width:280px;">
-                    <label for="journeyFile">Journey File (.xlsx / .xls / .csv)</label>
+                    <label for="journeyFile">Journey File (.xlsx / .xls / .csv) — single day or multi-day batch</label>
                     <input type="file" id="journeyFile" accept=".xlsx,.xls,.csv,.CSV">
                 </div>
                 <button class="btn btn-green" id="uploadBtn" onclick="doUpload()">
@@ -585,12 +581,12 @@
             </div>
             <div class="status-msg" id="uploadMsg"></div>
             <div class="hint">
-                <strong>Expected columns:</strong><br>
-                Accepts <strong>.xlsx</strong>, <strong>.xls</strong> and <strong>.csv</strong> files.<br>
-                <strong>A</strong> — Registration (text after first space = engineer name, e.g. <em>YE74BUU John Smith</em>)<br>
+                <strong>Accepts .xlsx, .xls and .csv — single day or multi-day batches.</strong><br>
+                The date is read automatically from the Start Time column — no need to select a date.<br>
+                <strong>A</strong> — Registration + Engineer Name (e.g. <em>YE74BUU John Smith</em> — name is everything after the first space)<br>
                 <strong>B</strong> — Start Time (e.g. <em>01/07/2026 07:54:14</em>)<br>
                 <strong>C</strong> — End Time (e.g. <em>01/07/2026 08:46:37</em>)<br>
-                <strong>K</strong> — Miles — only rows with miles &gt; 0.01 are used to determine earliest start / latest end
+                <strong>K</strong> — Miles — only rows with miles &gt; 0.01 count towards earliest start / latest end
             </div>
         </div>
     </div>
@@ -637,9 +633,8 @@
         <div class="legend-item"><div class="swatch s-green"></div><span>≥ 7h 30m</span></div>
         <div class="legend-item"><div class="swatch s-amber"></div><span>7h – 7h 30m</span></div>
         <div class="legend-item"><div class="swatch s-red"></div><span>&lt; 7h</span></div>
-        <div class="legend-item"><div class="swatch s-absent"></div><span>Absent / Sick / AAUP</span></div>
-        <div class="legend-item"><div class="swatch s-holiday"></div><span>Holiday / Bank Holiday</span></div>
-        <div class="legend-item"><div class="swatch s-empty"></div><span>No data</span></div>
+        <div class="legend-item"><div class="swatch s-holiday"></div><span>Bank Holiday</span></div>
+        <div class="legend-item"><div class="swatch s-empty"></div><span>No data / ≤ 1h</span></div>
         <div class="legend-sep"></div>
         <span style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-3)">Weekly</span>
         <div class="legend-item" style="color:var(--red);font-weight:700;font-size:0.8rem;">🔴 &lt; 37.5h</div>
@@ -710,7 +705,12 @@ const UK_BH = new Set([
     '2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-28',
     '2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28'
 ]);
-const ABSENT_CODES = new Set(['h','h/h','sick','aaup','tofd','aap','training','annual leave']);
+// Engineers to exclude entirely from the matrix
+const IGNORED_NAMES = new Set([
+    'dean bramwell','darren cook','richard wiecko','scott carson',
+    'stuart whyte','thomas green','dpn','molly davidson','spare','spare damaged'
+]);
+function isIgnored(name) { return IGNORED_NAMES.has((name||'').toLowerCase().trim()); }
 
 /* ══════════════════════════════════════════════
    HELPERS
@@ -885,26 +885,9 @@ function parseMiles(v) {
 }
 
 /* ══════════════════════════════════════════════
-   UPLOAD CHECK (existing data warning)
+   UPLOAD CHECK — now unused (date auto-detected)
 ══════════════════════════════════════════════ */
-async function checkExisting() {
-    const dv = document.getElementById('uploadDate').value;
-    const banner = document.getElementById('replaceBanner');
-    if (!dv || !window._db) { banner.classList.remove('show'); return; }
-    try {
-        const snap = await window._getDocs(window._query(
-            window._collection(window._db, 'working hours'),
-            window._where('journeyDate','==',dv)
-        ));
-        if (snap.size > 0) {
-            banner.textContent = `⚠️ ${snap.size} existing record(s) for ${dv} — uploading will replace them.`;
-            banner.classList.add('show');
-        } else {
-            banner.classList.remove('show');
-        }
-    } catch(e) { banner.classList.remove('show'); }
-}
-window.checkExisting = checkExisting;
+window.checkExisting = function() {};
 
 /* ══════════════════════════════════════════════
    BATCH DELETE
@@ -925,10 +908,9 @@ async function batchDelete(dateVal) {
 }
 
 /* ══════════════════════════════════════════════
-   DO UPLOAD
+   DO UPLOAD  (multi-date batch — date from col B)
 ══════════════════════════════════════════════ */
 async function doUpload() {
-    const dv   = document.getElementById('uploadDate').value;
     const fi   = document.getElementById('journeyFile');
     const msg  = document.getElementById('uploadMsg');
     const prog = document.getElementById('uploadProgress');
@@ -938,9 +920,9 @@ async function doUpload() {
     const spin = document.getElementById('uploadSpinner');
 
     msg.className = 'status-msg'; msg.textContent = '';
+    document.getElementById('replaceBanner').classList.remove('show');
 
-    if (!dv)            { msg.textContent='Please select a date.';   msg.className='status-msg err'; return; }
-    if (!fi.files.length){ msg.textContent='Please select a file.'; msg.className='status-msg err'; return; }
+    if (!fi.files.length) { msg.textContent='Please select a file.'; msg.className='status-msg err'; return; }
 
     btn.disabled=true; spin.style.display='inline-block';
     prog.classList.add('show'); bar.style.width='2%'; lbl.textContent='Reading file…';
@@ -953,16 +935,16 @@ async function doUpload() {
             const ws   = wb.Sheets[wb.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
 
-            // Find header row (look for a row containing 'registration' in col A)
+            // Find header row
             let dataStart = 0;
             for (let i = 0; i < Math.min(6, rows.length); i++) {
                 const cell = (rows[i][0]||'').toString().toLowerCase();
                 if (cell.includes('registration') || cell.includes('reg')) { dataStart = i+1; break; }
             }
 
-            // Group by registration — find min startTime and max endTime (only where miles > 0.01)
-            // Col A=0, B=1, C=2, K=10
-            const byReg = {};
+            // Group by DATE + PLATE  (date extracted from col B start time)
+            // byDatePlate[journeyDate][plate] = { engineerName, firstStart, lastEnd, totalMiles, rowCount }
+            const byDatePlate = {};
 
             for (let i = dataStart; i < rows.length; i++) {
                 const row = rows[i];
@@ -971,35 +953,35 @@ async function doUpload() {
                 const rawReg = (row[0]||'').toString().trim();
                 if (!rawReg) continue;
 
-                // Registration = first token; engineer name = everything after first space
+                // plate = first word, engineer name = rest
                 const spaceIdx = rawReg.indexOf(' ');
-                const plate = spaceIdx > -1
-                    ? rawReg.substring(0, spaceIdx).toUpperCase().replace(/\s/g,'')
-                    : rawReg.toUpperCase().replace(/\s/g,'');
-                const engName = spaceIdx > -1
-                    ? rawReg.substring(spaceIdx+1).trim()
-                    : '';
+                const plate = (spaceIdx > -1
+                    ? rawReg.substring(0, spaceIdx)
+                    : rawReg).toUpperCase().replace(/\s/g,'');
+                const engName = spaceIdx > -1 ? rawReg.substring(spaceIdx+1).trim() : '';
 
                 if (!plate) continue;
+                if (isIgnored(engName)) continue; // skip excluded names
 
-                const miles = parseMiles(row[10]); // col K = index 10
-                if (miles < 0.01) continue; // skip rows with insufficient miles
+                const miles = parseMiles(row[10]); // col K
+                if (miles < 0.01) continue;
 
                 const startDt = parseDateTime(row[1]); // col B
                 const endDt   = parseDateTime(row[2]); // col C
                 if (!startDt || !endDt) continue;
 
-                if (!byReg[plate]) {
-                    byReg[plate] = {
-                        plate,
-                        engineerName: engName,
-                        firstStart: startDt,
-                        lastEnd:    endDt,
-                        totalMiles: miles,
-                        rowCount: 1
+                // Derive journeyDate from the start time
+                const journeyDate = fmt(startDt);
+
+                if (!byDatePlate[journeyDate]) byDatePlate[journeyDate] = {};
+                if (!byDatePlate[journeyDate][plate]) {
+                    byDatePlate[journeyDate][plate] = {
+                        plate, engineerName: engName,
+                        firstStart: startDt, lastEnd: endDt,
+                        totalMiles: miles, rowCount: 1
                     };
                 } else {
-                    const r = byReg[plate];
+                    const r = byDatePlate[journeyDate][plate];
                     if (!r.engineerName && engName) r.engineerName = engName;
                     if (startDt < r.firstStart) r.firstStart = startDt;
                     if (endDt   > r.lastEnd)    r.lastEnd    = endDt;
@@ -1008,50 +990,62 @@ async function doUpload() {
                 }
             }
 
-            const records = Object.values(byReg).filter(r => r.firstStart && r.lastEnd && r.lastEnd > r.firstStart);
-            if (!records.length) {
-                msg.textContent = 'No valid rows found. Check columns A (registration + name), B (start), C (end), K (miles > 0.01).';
+            const dates = Object.keys(byDatePlate).sort();
+            if (!dates.length) {
+                msg.textContent = 'No valid rows found. Check columns A (reg + name), B (start), C (end), K (miles > 0.01).';
                 msg.className = 'status-msg err';
                 prog.classList.remove('show'); btn.disabled=false; spin.style.display='none';
                 return;
             }
 
-            bar.style.width='18%'; lbl.textContent=`Removing old records…`;
-            const deleted = await batchDelete(dv);
-            bar.style.width='28%'; lbl.textContent=`Uploading ${records.length} engineer record(s)…`;
+            // Warn about replacement
+            const banner = document.getElementById('replaceBanner');
+            banner.textContent = `⚠️ Processing ${dates.length} date(s): ${dates.join(', ')} — existing records for these dates will be replaced.`;
+            banner.classList.add('show');
 
-            let saved = 0;
-            for (const r of records) {
-                const durationMins = (r.lastEnd - r.firstStart) / 60000;
-                await window._addDoc(window._collection(window._db, 'working hours'), {
-                    journeyDate:    dv,
-                    plate:          r.plate,
-                    engineerName:   r.engineerName,
-                    startTime:      r.firstStart.toISOString(),
-                    endTime:        r.lastEnd.toISOString(),
-                    durationMins:   Math.round(durationMins),
-                    totalMiles:     parseFloat(r.totalMiles.toFixed(2)),
-                    rowCount:       r.rowCount,
-                    uploadedAt:     window._serverTimestamp()
-                });
-                saved++;
-                bar.style.width = (28 + Math.round((saved/records.length)*70)) + '%';
-                lbl.textContent = `Saved ${saved} of ${records.length}…`;
+            bar.style.width='15%';
+            let totalSaved = 0, totalDeleted = 0;
+            let dateIdx = 0;
+
+            for (const dv of dates) {
+                dateIdx++;
+                lbl.textContent = `Date ${dateIdx}/${dates.length}: clearing ${dv}…`;
+                const del = await batchDelete(dv);
+                totalDeleted += del;
+
+                const records = Object.values(byDatePlate[dv])
+                    .filter(r => r.firstStart && r.lastEnd && r.lastEnd > r.firstStart);
+
+                lbl.textContent = `Date ${dateIdx}/${dates.length}: uploading ${records.length} engineers for ${dv}…`;
+                for (const r of records) {
+                    const durationMins = (r.lastEnd - r.firstStart) / 60000;
+                    await window._addDoc(window._collection(window._db, 'working hours'), {
+                        journeyDate:  dv,
+                        plate:        r.plate,
+                        engineerName: r.engineerName,
+                        startTime:    r.firstStart.toISOString(),
+                        endTime:      r.lastEnd.toISOString(),
+                        durationMins: Math.round(durationMins),
+                        totalMiles:   parseFloat(r.totalMiles.toFixed(2)),
+                        rowCount:     r.rowCount,
+                        uploadedAt:   window._serverTimestamp()
+                    });
+                    totalSaved++;
+                }
+                bar.style.width = (15 + Math.round((dateIdx/dates.length)*83)) + '%';
             }
 
-            bar.style.width='100%'; lbl.textContent=`✓ Done`;
-            msg.textContent = `✓ ${saved} engineer(s) saved for ${dv}${deleted > 0 ? ` (replaced ${deleted} old records)` : ''}.`;
+            bar.style.width='100%'; lbl.textContent='✓ Done';
+            msg.textContent = `✓ ${totalSaved} engineer-day record(s) saved across ${dates.length} date(s)${totalDeleted > 0 ? ` (replaced ${totalDeleted} old)` : ''}.`;
             msg.className = 'status-msg ok';
             fi.value = '';
-            document.getElementById('replaceBanner').classList.remove('show');
-            showToast(`✓ Uploaded ${saved} engineers for ${dv}`);
-
+            showToast(`✓ Uploaded ${totalSaved} records across ${dates.length} day(s)`);
             setTimeout(() => prog.classList.remove('show'), 2500);
 
-            // Auto-refresh matrix if this date is in range
+            // Auto-refresh if any uploaded date is in the view range
             const dvFrom = document.getElementById('dateFrom').value;
             const dvTo   = document.getElementById('dateTo').value;
-            if (dvFrom && dvTo && dv >= dvFrom && dv <= dvTo) loadMatrix();
+            if (dvFrom && dvTo && dates.some(d => d >= dvFrom && d <= dvTo)) loadMatrix();
 
         } catch(err) {
             console.error(err);
@@ -1097,6 +1091,7 @@ async function loadMatrix() {
 
         hSnap.forEach(d => {
             const r = d.data();
+            if (isIgnored(r.engineerName)) return; // skip excluded names
             const ds = r.journeyDate;
             if (!hoursByDate[ds]) hoursByDate[ds] = {};
             hoursByDate[ds][r.plate] = {
@@ -1108,43 +1103,14 @@ async function loadMatrix() {
             if (r.engineerName && r.plate) plateToName[r.plate] = r.engineerName;
         });
 
-        // ── Fetch attendance (Van Attendance collection, unchanged)
-        const aSnap = await window._getDocs(window._query(
-            window._collection(window._db, 'Van Attendance'),
-            window._where('date','>=', dvFrom),
-            window._where('date','<=', dvTo)
-        ));
-
-        // attByDate[date][plate] = { engineerName, attendance }
-        // attByName[engineerName][date] = attendanceCode
-        const attByDate = {};
-        const attByName = {};
-
-        aSnap.forEach(d => {
-            const r = d.data();
-            const ds = r.date;
-            const plate = (r.registration||'').toUpperCase().replace(/\s/g,'');
-            const name  = (r.engineerName||'').trim();
-            const att   = (r.attendance||'').trim();
-            if (!attByDate[ds]) attByDate[ds] = {};
-            if (plate) attByDate[ds][plate] = { engineerName: name, attendance: att };
-            if (name) {
-                if (!attByName[name]) attByName[name] = {};
-                attByName[name][ds] = att;
-            }
-            // Also build plateToName from attendance
-            if (name && plate && !plateToName[plate]) plateToName[plate] = name;
-        });
-
-        // ── Collect all engineer names
+        // ── Collect all engineer names (from working hours only — no attendance)
         const allNames = new Set();
         Object.values(hoursByDate).forEach(dayMap => {
             Object.entries(dayMap).forEach(([plate, info]) => {
                 const name = info.engineerName || plateToName[plate] || '';
-                if (name) allNames.add(name);
+                if (name && !isIgnored(name)) allNames.add(name);
             });
         });
-        Object.keys(attByName).forEach(n => { if(n) allNames.add(n); });
 
         // Update dropdown
         _allEng = [...allNames].sort((a,b) => a.localeCompare(b));
@@ -1161,22 +1127,11 @@ async function loadMatrix() {
             return;
         }
 
-        // ── Build plate lookup per engineer
-        // For each engineer, collect all plates from both collections
+        // ── Build plate lookup per engineer (from working hours only)
         const nameToPlates = {};
         Object.entries(plateToName).forEach(([plate, name]) => {
             if (!nameToPlates[name]) nameToPlates[name] = new Set();
             nameToPlates[name].add(plate);
-        });
-        // Also from attendance
-        Object.values(attByDate).forEach(dayMap => {
-            Object.entries(dayMap).forEach(([plate, info]) => {
-                const name = info.engineerName;
-                if (name) {
-                    if (!nameToPlates[name]) nameToPlates[name] = new Set();
-                    nameToPlates[name].add(plate);
-                }
-            });
         });
 
         // ── Build all dates in range
@@ -1210,20 +1165,6 @@ async function loadMatrix() {
                     return;
                 }
 
-                // Check attendance
-                let att = null;
-                if (attByName[name] && attByName[name][ds]) att = attByName[name][ds];
-                if (!att) {
-                    for (const p of plates) {
-                        if (attByDate[ds] && attByDate[ds][p]) { att = attByDate[ds][p].attendance; break; }
-                    }
-                }
-                const isAbsent = att && ABSENT_CODES.has(att.toLowerCase());
-                if (isAbsent) {
-                    cellData[name][ds] = { status:'absent', att: att };
-                    return;
-                }
-
                 // Find hours from working hours collection
                 let firstStart = null, lastEnd = null;
                 for (const plate of plates) {
@@ -1235,27 +1176,33 @@ async function loadMatrix() {
                 }
 
                 if (!firstStart || !lastEnd || lastEnd <= firstStart) {
-                    cellData[name][ds] = { status:'empty', att };
+                    cellData[name][ds] = { status:'empty' };
                     return;
                 }
 
-                const mins   = (lastEnd - firstStart) / 60000;
+                const mins = (lastEnd - firstStart) / 60000;
+
+                // ≤ 60 minutes — treat as no meaningful data
+                if (mins <= 60) {
+                    cellData[name][ds] = { status:'empty' };
+                    return;
+                }
+
                 const status = mins < 7*60 ? 'red' : mins < 7.5*60 ? 'amber' : 'ok';
-                const s = firstStart.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+                const s  = firstStart.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
                 const e2 = lastEnd.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-                cellData[name][ds] = { status, minutes:mins, tip:`${s} → ${e2}\n${minsToH(Math.round(mins))}${att?' ['+att+']':''}`, att };
+                cellData[name][ds] = { status, minutes: mins, tip:`${s} → ${e2}\n${minsToH(Math.round(mins))}` };
             });
         });
 
         // ── SUMMARY
-        let cntRed=0, cntAmber=0, cntAbsent=0, cntOk=0;
+        let cntRed=0, cntAmber=0, cntOk=0;
         engList.forEach(name => allDates.forEach(ds => {
             const c = cellData[name][ds];
             if (!c) return;
-            if (c.status==='red')    cntRed++;
+            if (c.status==='red')         cntRed++;
             else if (c.status==='amber')  cntAmber++;
             else if (c.status==='ok')     cntOk++;
-            else if (c.status==='absent') cntAbsent++;
         }));
         const workDays = allDates.filter(d=>!isNWD(d)).length;
         document.getElementById('chips').innerHTML = `
@@ -1264,7 +1211,6 @@ async function loadMatrix() {
             ${cntOk    ? `<span class="chip chip-green">✅ ${cntOk} Good</span>` : ''}
             ${cntAmber ? `<span class="chip chip-amber">🟡 ${cntAmber} Short days</span>` : ''}
             ${cntRed   ? `<span class="chip chip-red">🔴 ${cntRed} Low days</span>` : ''}
-            ${cntAbsent? `<span class="chip chip-violet">📋 ${cntAbsent} Absence${cntAbsent!==1?'s':''}</span>` : ''}
         `;
 
         // ── RENDER TABLE
@@ -1304,9 +1250,6 @@ async function loadMatrix() {
                         case 'red':
                             html += `<td class="td-cell c-red has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
                             weekMins += cell.minutes; hasData = true; break;
-                        case 'absent':
-                            html += `<td class="td-cell c-absent has-tip" data-tip="${esc(cell.att||'Absent')}">${esc(cell.att||'Absent')}</td>`;
-                            absDays++; break;
                         case 'holiday':
                             html += `<td class="td-cell c-holiday has-tip" data-tip="${esc(cell.tip||'Bank Holiday')}">🏖️</td>`;
                             break;
@@ -1314,19 +1257,17 @@ async function loadMatrix() {
                             html += `<td class="td-cell c-wknd">–</td>`;
                             break;
                         default:
-                            html += `<td class="td-cell c-empty">—</td>`;
+                            html += `<td class="td-cell c-empty">–</td>`;
                     }
                 });
 
                 // Weekly total
-                let totClass = 't-neutral', totLabel = '—', totIcon = '';
+                let totClass = 't-neutral', totLabel = '–', totIcon = '';
                 if (hasData) {
                     totLabel = minsToH(Math.round(weekMins));
                     if (weekMins < 37.5*60)      { totClass='t-red';   totIcon='🔴'; }
                     else if (weekMins < 40*60)   { totClass='t-amber'; totIcon='🟡'; }
                     else                         { totClass='t-ok';    totIcon='✅'; }
-                } else if (absDays > 0) {
-                    totLabel = 'On Leave';
                 }
                 const pct = hasData ? Math.min(100, Math.round((weekMins/(40*60))*100)) : null;
                 html += `<td class="td-total ${totClass}">
