@@ -193,6 +193,20 @@
         }
         .btn-green:hover { transform: translateY(-1px); }
         .btn-green:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .btn-danger {
+            background: linear-gradient(135deg, #b91c1c, #ef4444);
+            color: #fff;
+            box-shadow: 0 6px 18px -4px rgba(239,68,68,0.5);
+        }
+        .btn-danger:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -6px rgba(239,68,68,0.65); }
+        .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .btn-sort {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-2);
+            border: 1px solid var(--border);
+        }
+        .btn-sort:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+        .btn-sort.active { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.3); color: var(--cyan); }
 
         /* ─── UPLOAD PROGRESS ─── */
         .progress-wrap { display: none; margin-top: 14px; }
@@ -606,13 +620,13 @@
                     <label for="dateTo">Date To</label>
                     <input type="date" id="dateTo">
                 </div>
-                <button class="btn btn-ghost" onclick="setLastWorkingWeek()">↩ Last Working Week</button>
+                <button class="btn btn-ghost" onclick="setLastWorkingWeek()">&#8617; Last Working Week</button>
                 <div class="vdivider"></div>
                 <div class="fg" style="min-width:260px;">
                     <label>Engineer Filter <span style="color:var(--text-3);font-weight:400">(leave blank = all)</span></label>
                     <div class="eng-filter-wrap" id="engWrap">
-                        <span class="eng-filter-icon">🔍</span>
-                        <input type="text" class="eng-filter-input" id="engSearch" placeholder="Search engineers…"
+                        <span class="eng-filter-icon">&#128269;</span>
+                        <input type="text" class="eng-filter-input" id="engSearch" placeholder="Search engineers&hellip;"
                             autocomplete="off" onfocus="openDrop()" oninput="filterDrop()" onblur="scheduleDrop()">
                         <div class="eng-dropdown" id="engDrop"></div>
                     </div>
@@ -621,8 +635,10 @@
                 <div class="vdivider"></div>
                 <button class="btn btn-primary" id="loadBtn" onclick="loadMatrix()">
                     <span id="loadSpin" style="display:none" class="spin"></span>
-                    <span id="loadTxt">🔄 Load</span>
+                    <span id="loadTxt">&#128260; Load</span>
                 </button>
+                <button class="btn btn-danger" id="worstBtn" onclick="viewWorst()" style="display:none">&#128308; View Worst</button>
+                <button class="btn btn-sort" id="azBtn" onclick="resetSort()" style="display:none">&#8597; A&ndash;Z</button>
             </div>
         </div>
     </div>
@@ -1195,16 +1211,18 @@ async function loadMatrix() {
             });
         });
 
-        // ── SUMMARY
+        // ── Store state for re-rendering (sort without re-fetch)
+        window._mxState = { engList, cellData, weekGroups, sortedWeeks, allDates, workDays };
+
+        // ── Summary chips
         let cntRed=0, cntAmber=0, cntOk=0;
         engList.forEach(name => allDates.forEach(ds => {
             const c = cellData[name][ds];
             if (!c) return;
-            if (c.status==='red')         cntRed++;
-            else if (c.status==='amber')  cntAmber++;
-            else if (c.status==='ok')     cntOk++;
+            if (c.status==='red')        cntRed++;
+            else if (c.status==='amber') cntAmber++;
+            else if (c.status==='ok')    cntOk++;
         }));
-        const workDays = allDates.filter(d=>!isNWD(d)).length;
         document.getElementById('chips').innerHTML = `
             <span class="chip chip-cyan">👷 ${engList.length} Engineer${engList.length!==1?'s':''}</span>
             <span class="chip chip-cyan">📅 ${workDays} Working Day${workDays!==1?'s':''}</span>
@@ -1213,73 +1231,11 @@ async function loadMatrix() {
             ${cntRed   ? `<span class="chip chip-red">🔴 ${cntRed} Low days</span>` : ''}
         `;
 
-        // ── RENDER TABLE
-        let html = `<div class="matrix-scroll"><table class="mxt">`;
+        // Show sort buttons
+        document.getElementById('worstBtn').style.display = 'inline-flex';
+        document.getElementById('azBtn').style.display    = 'inline-flex';
 
-        sortedWeeks.forEach(wk => {
-            const dates = weekGroups[wk];
-
-            // Week label row
-            const wkWorkDates = dates.filter(d => !isNWD(d));
-            html += `<tr class="wk-row">
-                <td class="wk-name-cell">Week&nbsp;&nbsp;${weekLabel(dates)}</td>`;
-            dates.forEach(ds => {
-                const nwd = isNWD(ds);
-                html += `<td class="wk-date-cell" style="${nwd?'opacity:0.35':''}">
-                    <span style="font-weight:700">${shortDt(ds)}</span> <span style="opacity:0.6;font-size:0.78rem">${dayName(ds)}</span>
-                </td>`;
-            });
-            html += `<td class="wk-total-cell">Week Total</td></tr>`;
-
-            // Engineer rows for this week
-            engList.forEach(name => {
-                let weekMins = 0, hasData = false, absDays = 0;
-
-                html += `<tr class="eng-row">`;
-                html += `<td class="td-name">${esc(name)}</td>`;
-
-                dates.forEach(ds => {
-                    const cell = cellData[name][ds] || { status:'empty' };
-                    switch (cell.status) {
-                        case 'ok':
-                            html += `<td class="td-cell c-ok has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
-                            weekMins += cell.minutes; hasData = true; break;
-                        case 'amber':
-                            html += `<td class="td-cell c-amber has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
-                            weekMins += cell.minutes; hasData = true; break;
-                        case 'red':
-                            html += `<td class="td-cell c-red has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
-                            weekMins += cell.minutes; hasData = true; break;
-                        case 'holiday':
-                            html += `<td class="td-cell c-holiday has-tip" data-tip="${esc(cell.tip||'Bank Holiday')}">🏖️</td>`;
-                            break;
-                        case 'wknd':
-                            html += `<td class="td-cell c-wknd">–</td>`;
-                            break;
-                        default:
-                            html += `<td class="td-cell c-empty">–</td>`;
-                    }
-                });
-
-                // Weekly total
-                let totClass = 't-neutral', totLabel = '–', totIcon = '';
-                if (hasData) {
-                    totLabel = minsToH(Math.round(weekMins));
-                    if (weekMins < 37.5*60)      { totClass='t-red';   totIcon='🔴'; }
-                    else if (weekMins < 40*60)   { totClass='t-amber'; totIcon='🟡'; }
-                    else                         { totClass='t-ok';    totIcon='✅'; }
-                }
-                const pct = hasData ? Math.min(100, Math.round((weekMins/(40*60))*100)) : null;
-                html += `<td class="td-total ${totClass}">
-                    ${totLabel}${totIcon ? ' '+totIcon : ''}
-                    ${pct !== null ? `<span class="total-sub">${pct}% of 40h</span>` : ''}
-                </td>`;
-                html += `</tr>`;
-            });
-        });
-
-        html += `</table></div>`;
-        document.getElementById('matrixOuter').innerHTML = html;
+        renderMatrix('alpha');
         showToast(`✓ Loaded ${engList.length} engineers · ${workDays} working days`);
 
     } catch(err) {
@@ -1292,6 +1248,140 @@ async function loadMatrix() {
     }
 }
 window.loadMatrix = loadMatrix;
+
+/* ══════════════════════════════════════════════
+   RENDER MATRIX  — single flat table, one row per engineer
+   sortMode: 'alpha' | 'worst'
+══════════════════════════════════════════════ */
+function renderMatrix(sortMode) {
+    const st = window._mxState;
+    if (!st) return;
+    const { cellData, weekGroups, sortedWeeks, allDates } = st;
+
+    // ── Compute per-engineer totals for sorting
+    // avgMinsPerDay = totalMins / daysWithRealData  (target 9h = 540 mins/day)
+    const engStats = st.engList.map(name => {
+        let totalMins = 0, daysWorked = 0;
+        allDates.forEach(ds => {
+            const c = cellData[name][ds];
+            if (c && (c.status==='ok'||c.status==='amber'||c.status==='red')) {
+                totalMins += c.minutes;
+                daysWorked++;
+            }
+        });
+        const avgMins = daysWorked > 0 ? totalMins / daysWorked : 0;
+        return { name, totalMins, daysWorked, avgMins };
+    });
+
+    // Sort
+    const sorted = sortMode === 'worst'
+        ? [...engStats].sort((a,b) => {
+            // no data goes to bottom; otherwise ascending avg (worst first)
+            if (a.daysWorked === 0 && b.daysWorked === 0) return a.name.localeCompare(b.name);
+            if (a.daysWorked === 0) return 1;
+            if (b.daysWorked === 0) return -1;
+            return a.avgMins - b.avgMins;
+          })
+        : [...engStats].sort((a,b) => a.name.localeCompare(b.name));
+
+    // Button states
+    document.getElementById('worstBtn').classList.toggle('active', sortMode === 'worst');
+    document.getElementById('azBtn').classList.toggle('active', sortMode === 'alpha');
+
+    // ── Build ONE header row spanning all weeks
+    let html = `<div class="matrix-scroll"><table class="mxt"><thead>`;
+
+    // Date header
+    html += `<tr class="date-hdr"><th class="hdr-name">Engineer</th>`;
+    sortedWeeks.forEach(wk => {
+        const dates = weekGroups[wk];
+        dates.forEach(ds => {
+            const nwd = isNWD(ds);
+            html += `<th class="hdr-date-col" style="${nwd ? 'opacity:0.4' : ''}">
+                <span class="dh-dd">${shortDt(ds)}</span>
+                <span class="dh-day">${dayName(ds)}</span>
+            </th>`;
+        });
+        html += `<th class="hdr-total" style="border-left:2px solid rgba(56,189,248,0.2)">${weekLabel(dates)}</th>`;
+    });
+    // Avg/day column header
+    html += `<th class="hdr-total" style="border-left:2px solid rgba(167,139,250,0.3);color:var(--violet)">Avg/Day<span class="dh-day" style="display:block;font-size:0.65rem;opacity:0.7">target 9h</span></th>`;
+    html += `</tr></thead><tbody>`;
+
+    // ── One row per engineer
+    sorted.forEach(({ name, totalMins, daysWorked, avgMins }) => {
+        html += `<tr class="eng-row"><td class="td-name">${esc(name)}</td>`;
+
+        sortedWeeks.forEach(wk => {
+            const dates = weekGroups[wk];
+            let weekMins = 0, hasData = false;
+
+            dates.forEach(ds => {
+                const cell = cellData[name][ds] || { status:'empty' };
+                switch (cell.status) {
+                    case 'ok':
+                        html += `<td class="td-cell c-ok has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
+                        weekMins += cell.minutes; hasData = true; break;
+                    case 'amber':
+                        html += `<td class="td-cell c-amber has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
+                        weekMins += cell.minutes; hasData = true; break;
+                    case 'red':
+                        html += `<td class="td-cell c-red has-tip" data-tip="${esc(cell.tip)}">${minsToH(Math.round(cell.minutes))}</td>`;
+                        weekMins += cell.minutes; hasData = true; break;
+                    case 'holiday':
+                        html += `<td class="td-cell c-holiday has-tip" data-tip="Bank Holiday">🏖️</td>`;
+                        break;
+                    case 'wknd':
+                        html += `<td class="td-cell c-wknd">–</td>`;
+                        break;
+                    default:
+                        html += `<td class="td-cell c-empty">–</td>`;
+                }
+            });
+
+            // Weekly total for this week
+            let totClass = 't-neutral', totLabel = '–', totIcon = '';
+            if (hasData) {
+                totLabel = minsToH(Math.round(weekMins));
+                if (weekMins < 37.5*60)     { totClass='t-red';   totIcon=' 🔴'; }
+                else if (weekMins < 40*60)  { totClass='t-amber'; totIcon=' 🟡'; }
+                else                        { totClass='t-ok';    totIcon=' ✅'; }
+            }
+            const pct = hasData ? Math.min(100, Math.round((weekMins/(40*60))*100)) : null;
+            html += `<td class="td-total ${totClass}" style="border-left:2px solid rgba(56,189,248,0.1)">
+                ${totLabel}${totIcon}
+                ${pct !== null ? `<span class="total-sub">${pct}% of 40h</span>` : ''}
+            </td>`;
+        });
+
+        // Avg/day column
+        const TARGET = 9 * 60; // 9h in mins
+        let avgClass = 't-neutral', avgLabel = '–', avgIcon = '';
+        if (daysWorked > 0) {
+            avgLabel = minsToH(Math.round(avgMins));
+            if (avgMins < 7*60)       { avgClass='t-red';   avgIcon=' 🔴'; }
+            else if (avgMins < TARGET){ avgClass='t-amber'; avgIcon=' 🟡'; }
+            else                      { avgClass='t-ok';    avgIcon=' ✅'; }
+        }
+        const avgPct = daysWorked > 0 ? Math.min(100, Math.round((avgMins/TARGET)*100)) : null;
+        html += `<td class="td-total ${avgClass}" style="border-left:2px solid rgba(167,139,250,0.15)">
+            ${avgLabel}${avgIcon}
+            ${avgPct !== null ? `<span class="total-sub">${daysWorked}d · ${avgPct}% of 9h</span>` : ''}
+        </td>`;
+
+        html += `</tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    document.getElementById('matrixOuter').innerHTML = html;
+}
+window.renderMatrix = renderMatrix;
+
+function viewWorst() { renderMatrix('worst'); }
+window.viewWorst = viewWorst;
+
+function resetSort() { renderMatrix('alpha'); }
+window.resetSort = resetSort;
 </script>
 </body>
 </html>
