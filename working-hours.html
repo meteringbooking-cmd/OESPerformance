@@ -731,7 +731,8 @@ function isIgnored(name) { return IGNORED_NAMES.has((name||'').toLowerCase().tri
 /* ══════════════════════════════════════════════
    HELPERS
 ══════════════════════════════════════════════ */
-const fmt      = d => d.toISOString().split('T')[0];
+// fmt uses LOCAL date parts — never toISOString() which is UTC and can shift the date
+const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const isSat    = ds => new Date(ds+'T12:00:00').getDay() === 6;
 const isSun    = ds => new Date(ds+'T12:00:00').getDay() === 0;
 const isWknd   = ds => isSat(ds) || isSun(ds);
@@ -887,12 +888,38 @@ function parseDateTime(raw) {
         } catch(e) { return null; }
     }
     const s = raw.toString().trim();
-    // dd/mm/yyyy HH:MM:SS or dd/mm/yyyy  HH:MM:SS (multiple spaces)
+    // DD/MM/YYYY HH:MM:SS  (single or multiple spaces — UK format)
     const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
     if (m1) return new Date(+m1[3], +m1[2]-1, +m1[1], +m1[4], +m1[5], m1[6]?+m1[6]:0);
-    // ISO
+    // ISO-like YYYY-MM-DD
+    const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m2) return new Date(+m2[1], +m2[2]-1, +m2[3]);
+    // Last resort — note: browser new Date() treats MM/DD so avoid for slash formats
     const d = new Date(s);
     return isNaN(d) ? null : d;
+}
+
+// parseDateOnly — extract YYYY-MM-DD directly from the raw cell, NEVER via Date object UTC conversion
+// This is the only safe way to get journeyDate from a DD/MM/YYYY string
+function parseDateOnly(raw) {
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (typeof raw === 'number') {
+        try {
+            const p = XLSX.SSF.parse_date_code(raw);
+            if (!p) return null;
+            return `${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;
+        } catch(e) { return null; }
+    }
+    const s = raw.toString().trim();
+    // DD/MM/YYYY ...  ← UK format, read day=group1 month=group2
+    const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
+    // YYYY-MM-DD ...
+    const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
+    // Fallback via Date (use local parts)
+    const d = parseDateTime(raw);
+    return d ? fmt(d) : null;
 }
 
 function parseMiles(v) {
@@ -986,8 +1013,9 @@ async function doUpload() {
                 const endDt   = parseDateTime(row[2]); // col C
                 if (!startDt || !endDt) continue;
 
-                // Derive journeyDate from the start time
-                const journeyDate = fmt(startDt);
+                // Derive journeyDate directly from the raw start-time string (avoids any timezone shift)
+                const journeyDate = parseDateOnly(row[1]);
+                if (!journeyDate) continue;
 
                 if (!byDatePlate[journeyDate]) byDatePlate[journeyDate] = {};
                 if (!byDatePlate[journeyDate][plate]) {
