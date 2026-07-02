@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Working Hours Dashboard</title>
+    <title>Working Hours</title>
     <meta name="description" content="Engineer working hours matrix — track daily and weekly hours at a glance.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -734,6 +734,16 @@ function isIgnored(name) { return IGNORED_NAMES.has((name||'').toLowerCase().tri
 ══════════════════════════════════════════════ */
 // fmt uses LOCAL date parts — never toISOString() which is UTC and can shift the date
 const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const toUKDate = isoDate => {
+    if (!isoDate) return '';
+    const p = isoDate.split('-');
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : isoDate;
+};
+const toISODate = ukDate => {
+    if (!ukDate) return '';
+    const p = ukDate.split('/');
+    return p.length === 3 ? `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}` : ukDate;
+};
 const isSat    = ds => new Date(ds+'T12:00:00').getDay() === 6;
 const isSun    = ds => new Date(ds+'T12:00:00').getDay() === 0;
 const isWknd   = ds => isSat(ds) || isSun(ds);
@@ -939,9 +949,10 @@ window.checkExisting = function() {};
    BATCH DELETE
 ══════════════════════════════════════════════ */
 async function batchDelete(dateVal) {
+    const ukDate = toUKDate(dateVal);
     const snap = await window._getDocs(window._query(
         window._collection(window._db, 'working hours'),
-        window._where('journeyDate','==',dateVal)
+        window._where('journeyDate','==', ukDate)
     ));
     if (snap.empty) return 0;
     const docs = []; snap.forEach(d => docs.push(d));
@@ -1130,7 +1141,8 @@ async function doUpload() {
                 for (const r of records) {
                     const durationMins = (r.lastEnd - r.firstStart) / 60000;
                     await window._addDoc(window._collection(window._db, 'working hours'), {
-                        journeyDate:  dv,
+                        journeyDate:  toUKDate(dv),
+                        queryDate:    dv,
                         plate:        r.plate,
                         engineerName: r.engineerName,
                         startTime:    r.firstStart.toISOString(),
@@ -1188,11 +1200,11 @@ async function loadMatrix() {
     document.getElementById('chips').innerHTML = '';
 
     try {
-        // ── Fetch working hours
+        // ── Fetch working hours (query on queryDate which is chronologically indexable YYYY-MM-DD)
         const hSnap = await window._getDocs(window._query(
             window._collection(window._db, 'working hours'),
-            window._where('journeyDate','>=', dvFrom),
-            window._where('journeyDate','<=', dvTo)
+            window._where('queryDate','>=', dvFrom),
+            window._where('queryDate','<=', dvTo)
         ));
 
         // hoursByDate[date][plate] = { engineerName, startTime(Date), endTime(Date), durationMins }
@@ -1202,7 +1214,9 @@ async function loadMatrix() {
         hSnap.forEach(d => {
             const r = d.data();
             if (isIgnored(r.engineerName)) return; // skip excluded names
-            const ds = r.journeyDate;
+            // If queryDate is not present, derive it from journeyDate (converting UK to ISO if needed)
+            const ds = r.queryDate || (r.journeyDate && r.journeyDate.includes('/') ? toISODate(r.journeyDate) : r.journeyDate);
+            if (!ds) return;
             if (!hoursByDate[ds]) hoursByDate[ds] = {};
             hoursByDate[ds][r.plate] = {
                 engineerName: r.engineerName || '',
