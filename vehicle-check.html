@@ -1,1 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Check</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh; padding: 20px; position: relative;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px);
+            pointer-events: none; z-index: 0;
+        }
+        .container { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
+        .header { text-align: center; color: white; margin-bottom: 30px; animation: fadeInDown 0.8s ease; }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+        .logo {
+            font-size: 2.6em; font-weight: 900; margin-bottom: 10px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 50%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            text-transform: uppercase; letter-spacing: 4px;
+        }
+        .date-display { font-size: 1.1em; opacity: 0.9; margin-bottom: 8px; font-weight: 400; color: #00d2ff; }
+        .last-updated { font-size: 0.85em; opacity: 0.6; font-weight: 300; color: #a8dadc; }
 
+        .date-select-bar {
+            display: flex; align-items: center; justify-content: center; gap: 14px;
+            flex-wrap: wrap; margin-bottom: 30px; animation: fadeInDown 0.9s ease;
+        }
+        .date-select-bar label { color: #a8dadc; font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .date-select-bar input[type="date"] {
+            padding: 10px 16px; border-radius: 10px; border: 1px solid rgba(0,210,255,0.4);
+            background: rgba(0,0,0,0.35); color: #ffffff; font-family: 'Inter', sans-serif; font-size: 0.95em;
+        }
+        .date-select-bar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+        .nav-btn {
+            padding: 9px 16px; background: rgba(0,210,255,0.15); border: 1px solid rgba(0,210,255,0.4);
+            border-radius: 10px; color: #00d2ff; font-size: 0.85em; font-weight: 700; cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .nav-btn:hover { background: rgba(0,210,255,0.3); transform: translateY(-2px); }
+        .nav-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+        .today-btn {
+            padding: 9px 16px; background: linear-gradient(135deg, rgba(0,210,255,0.25), rgba(58,123,213,0.25));
+            border: 1px solid rgba(0,210,255,0.5); border-radius: 10px; color: #ffffff; font-size: 0.85em;
+            font-weight: 700; cursor: pointer; transition: all 0.2s ease;
+        }
+        .today-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,210,255,0.3); }
+
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(26,32,44,0.9), rgba(45,55,72,0.9));
+            border-radius: 16px; padding: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            animation: slideUp 0.8s ease; position: relative; overflow: hidden;
+            border: 1px solid rgba(0,210,255,0.2);
+        }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        .kpi-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid rgba(0,210,255,0.2); }
+        .kpi-title { font-size: 0.78em; color: #00d2ff; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; }
+        .kpi-icon { font-size: 1.8em; filter: drop-shadow(0 2px 8px rgba(0,210,255,0.5)); }
+        .kpi-value {
+            font-size: 2.6em; font-weight: 900;
+            background: linear-gradient(135deg, #ffffff 0%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            line-height: 1; letter-spacing: -1px;
+        }
+        .kpi-value.green { background: linear-gradient(135deg, #ffffff 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .kpi-value.red { background: linear-gradient(135deg, #ffffff 0%, #ef4444 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .kpi-sub { font-size: 0.85em; color: #a8dadc; margin-top: 8px; font-weight: 500; }
+
+        .alert-card {
+            background: linear-gradient(135deg, rgba(26,32,44,0.95), rgba(45,20,20,0.9));
+            border: 2px solid rgba(239,68,68,0.5); border-radius: 16px; padding: 28px;
+            margin-bottom: 30px; box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 30px rgba(239,68,68,0.1);
+            animation: slideUp 0.9s ease;
+        }
+        .alert-card.all-clear {
+            border-color: rgba(16,185,129,0.5); box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 30px rgba(16,185,129,0.12);
+        }
+        .alert-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+        .alert-header .icon { font-size: 1.8em; }
+        .alert-header .title { font-size: 1.1em; font-weight: 800; color: #ef4444; text-transform: uppercase; letter-spacing: 1.5px; }
+        .alert-card.all-clear .alert-header .title { color: #10b981; }
+        .alert-header .count-badge {
+            margin-left: auto; background: rgba(239,68,68,0.25); color: #fca5a5; border: 1px solid rgba(239,68,68,0.5);
+            border-radius: 20px; padding: 4px 14px; font-size: 0.9em; font-weight: 800;
+        }
+        .alert-card.all-clear .alert-header .count-badge { background: rgba(16,185,129,0.25); color: #6ee7b7; border-color: rgba(16,185,129,0.5); }
+        .missing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .missing-chip {
+            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px;
+            color: #ffffff; font-weight: 700; font-size: 0.95em; transition: all 0.2s ease;
+        }
+        .missing-chip:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); transform: translateY(-2px); }
+        .missing-chip .dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.8); flex-shrink: 0; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .all-clear-msg { text-align: center; padding: 20px; color: #6ee7b7; font-size: 1.1em; font-weight: 700; }
+        .all-clear-msg .big { font-size: 2.2em; display: block; margin-bottom: 8px; }
+
+        .table-card {
+            background: linear-gradient(135deg, rgba(26,32,44,0.9), rgba(45,55,72,0.9));
+            border-radius: 16px; padding: 26px; box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            border: 1px solid rgba(0,210,255,0.2); animation: slideUp 1s ease;
+        }
+        .table-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+        .table-title { font-size: 0.95em; font-weight: 800; color: #00d2ff; text-transform: uppercase; letter-spacing: 1.5px; }
+        .filter-pills { display: flex; gap: 8px; }
+        .filter-pill {
+            padding: 6px 14px; border-radius: 20px; font-size: 0.78em; font-weight: 700; cursor: pointer;
+            border: 1px solid rgba(0,210,255,0.3); background: rgba(0,0,0,0.3); color: #a8dadc; transition: all 0.2s ease;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .filter-pill.active { background: rgba(0,210,255,0.25); border-color: rgba(0,210,255,0.6); color: #ffffff; }
+        .filter-pill:hover { border-color: rgba(0,210,255,0.6); }
+
+        .vc-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .vc-table th { text-align: left; padding: 12px 14px; background: rgba(0,210,255,0.12); color: #00d2ff; font-weight: 700; border-bottom: 2px solid rgba(0,210,255,0.3); text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.8px; }
+        .vc-table td { padding: 12px 14px; border-bottom: 1px solid rgba(0,210,255,0.1); color: #e1e8ed; }
+        .vc-table tr:hover td { background: rgba(0,210,255,0.06); }
+        .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 0.85em; }
+        .badge.complete { background: rgba(16,185,129,0.18); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
+        .badge.incomplete { background: rgba(239,68,68,0.18); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+
+        .empty-state, .loading { text-align: center; padding: 70px 20px; color: #a8dadc; }
+        .empty-state .big, .loading .big { font-size: 3em; margin-bottom: 16px; display: block; }
+        .loading { font-size: 1.2em; font-weight: 600; color: #00d2ff; }
+
+        @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 600px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+            .kpi-value { font-size: 2.1em; }
+            .logo { font-size: 1.8em; }
+            .vc-table { font-size: 0.8em; }
+            .vc-table th, .vc-table td { padding: 9px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🚐 Vehicle Check</div>
+            <div class="date-display" id="statsDate">Loading...</div>
+            <div class="last-updated" id="lastUpdated">Last updated: --</div>
+        </div>
+
+        <div class="date-select-bar">
+            <button class="nav-btn" id="prevDayBtn" title="Previous working day">◀</button>
+            <label for="vcDatePicker">Date</label>
+            <input type="date" id="vcDatePicker">
+            <button class="nav-btn" id="nextDayBtn" title="Next working day">▶</button>
+            <button class="today-btn" id="latestBtn">📅 Latest Working Day</button>
+        </div>
+
+        <div id="loadingDiv" class="loading"><span class="big">⏳</span>Loading vehicle check data...</div>
+
+        <div id="dashboardContent" style="display:none;">
+
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-title">In (Attendance X)</span><span class="kpi-icon">👷</span></div>
+                    <div class="kpi-value" id="totalXCount">0</div>
+                    <div class="kpi-sub">Engineers in today</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-title">Checks Complete</span><span class="kpi-icon">✅</span></div>
+                    <div class="kpi-value green" id="completeCount">0</div>
+                    <div class="kpi-sub">Vehicle checks submitted</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-title">Checks Missing</span><span class="kpi-icon">🚫</span></div>
+                    <div class="kpi-value red" id="incompleteCount">0</div>
+                    <div class="kpi-sub">Not yet completed</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-title">Completion Rate</span><span class="kpi-icon">📊</span></div>
+                    <div class="kpi-value" id="completionRate">0%</div>
+                    <div class="kpi-sub">Of engineers in today</div>
+                </div>
+            </div>
+
+            <div class="alert-card" id="alertCard">
+                <div class="alert-header">
+                    <span class="icon">🚨</span>
+                    <span class="title">Vehicle Checks Not Completed</span>
+                    <span class="count-badge" id="missingCountBadge">0</span>
+                </div>
+                <div id="missingContainer"></div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card-header">
+                    <div class="table-title">Full List — Engineers In (Attendance X)</div>
+                    <div class="filter-pills">
+                        <div class="filter-pill active" data-filter="all">All</div>
+                        <div class="filter-pill" data-filter="incomplete">Missing Only</div>
+                        <div class="filter-pill" data-filter="complete">Completed Only</div>
+                    </div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="vc-table">
+                        <thead><tr><th>Name</th><th>Attendance</th><th>Check Status</th></tr></thead>
+                        <tbody id="vcTableBody"></tbody>
+                    </table>
+                </div>
+                <div id="vcEmptyState" style="display:none;" class="empty-state"><span class="big">📭</span>No vehicle check data found for this date</div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const app = initializeApp({
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        });
+        const db = getFirestore(app);
+
+        const BANK_HOLIDAYS = [
+            "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
+            "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+            "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28"
+        ];
+
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false;
+            const dateStr = formatDateForQuery(d);
+            return !BANK_HOLIDAYS.includes(dateStr);
+        }
+        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function formatDisplay(d) { return d.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }); }
+        function getPreviousWorkingDay() {
+            let d = new Date(); d.setDate(d.getDate() - 1);
+            while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+            return d;
+        }
+        function shiftToWorkingDay(dateStr, direction) {
+            // direction: -1 = earlier, +1 = later
+            let d = new Date(dateStr + 'T12:00:00');
+            do { d.setDate(d.getDate() + direction); } while (!isWorkingDay(d));
+            return d;
+        }
+
+        let currentFilter = 'all';
+        let currentRecords = [];
+
+        const datePicker = document.getElementById('vcDatePicker');
+        const prevDayBtn = document.getElementById('prevDayBtn');
+        const nextDayBtn = document.getElementById('nextDayBtn');
+        const latestBtn = document.getElementById('latestBtn');
+
+        function setDate(dateObj) {
+            datePicker.value = formatDateForQuery(dateObj);
+            loadVehicleCheckData(datePicker.value);
+        }
+
+        prevDayBtn.addEventListener('click', () => setDate(shiftToWorkingDay(datePicker.value, -1)));
+        nextDayBtn.addEventListener('click', () => setDate(shiftToWorkingDay(datePicker.value, 1)));
+        latestBtn.addEventListener('click', () => setDate(getPreviousWorkingDay()));
+        datePicker.addEventListener('change', () => loadVehicleCheckData(datePicker.value));
+
+        document.querySelectorAll('.filter-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                currentFilter = pill.dataset.filter;
+                renderTable();
+            });
+        });
+
+        function normaliseAttendance(a) {
+            return (a || '').toString().trim().toUpperCase();
+        }
+
+        function renderMissing(missingNames) {
+            const alertCard = document.getElementById('alertCard');
+            const container = document.getElementById('missingContainer');
+            const badge = document.getElementById('missingCountBadge');
+            badge.textContent = missingNames.length;
+
+            if (missingNames.length === 0) {
+                alertCard.classList.add('all-clear');
+                container.innerHTML = `<div class="all-clear-msg"><span class="big">🎉</span>All vehicle checks completed!</div>`;
+                alertCard.querySelector('.icon').textContent = '✅';
+                alertCard.querySelector('.title').textContent = 'All Vehicle Checks Completed';
+            } else {
+                alertCard.classList.remove('all-clear');
+                alertCard.querySelector('.icon').textContent = '🚨';
+                alertCard.querySelector('.title').textContent = 'Vehicle Checks Not Completed';
+                container.innerHTML = `<div class="missing-grid">${missingNames.map(n => `<div class="missing-chip"><span class="dot"></span>${n}</div>`).join('')}</div>`;
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('vcTableBody');
+            const emptyState = document.getElementById('vcEmptyState');
+            let rows = currentRecords;
+            if (currentFilter === 'incomplete') rows = rows.filter(r => r.checkComplete !== 1);
+            if (currentFilter === 'complete') rows = rows.filter(r => r.checkComplete === 1);
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name));
+            tbody.innerHTML = sorted.map(r => `
+                <tr>
+                    <td style="font-weight:600;color:#ffffff;">${r.name}</td>
+                    <td>${r.attendance || '—'}</td>
+                    <td>${r.checkComplete === 1
+                        ? `<span class="badge complete">✅ Complete</span>`
+                        : `<span class="badge incomplete">❌ Not Complete</span>`}
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function loadVehicleCheckData(dateStr) {
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('dashboardContent').style.display = 'none';
+            try {
+                const dObj = new Date(dateStr + 'T12:00:00');
+                document.getElementById('statsDate').textContent = `Vehicle checks for ${formatDisplay(dObj)}`;
+
+                const snap = await getDocs(query(collection(db, "vehicle check"), where("date", "==", dateStr)));
+                const allRecords = [];
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    allRecords.push({
+                        name: (d.name || '').trim(),
+                        attendance: (d.attendance || '').trim(),
+                        checkComplete: d.checkComplete === 1 ? 1 : 0
+                    });
+                });
+
+                // Only engineers with attendance "X" (in)
+                const xRecords = allRecords.filter(r => normaliseAttendance(r.attendance) === 'X' && r.name);
+                currentRecords = xRecords;
+
+                const total = xRecords.length;
+                const complete = xRecords.filter(r => r.checkComplete === 1).length;
+                const incomplete = total - complete;
+                const rate = total > 0 ? ((complete / total) * 100).toFixed(1) : '0';
+
+                document.getElementById('totalXCount').textContent = total;
+                document.getElementById('completeCount').textContent = complete;
+                document.getElementById('incompleteCount').textContent = incomplete;
+                document.getElementById('completionRate').textContent = rate + '%';
+
+                const missingNames = xRecords.filter(r => r.checkComplete !== 1).map(r => r.name).sort((a, b) => a.localeCompare(b));
+                renderMissing(missingNames);
+                renderTable();
+
+                document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+            } catch (err) {
+                console.error('Vehicle check load error:', err);
+                document.getElementById('statsDate').textContent = 'Error loading data';
+            } finally {
+                document.getElementById('loadingDiv').style.display = 'none';
+                document.getElementById('dashboardContent').style.display = 'block';
+            }
+        }
+
+        // Init — default to most recent working day
+        const initialDate = getPreviousWorkingDay();
+        datePicker.value = formatDateForQuery(initialDate);
+        loadVehicleCheckData(datePicker.value);
+    </script>
+</body>
+</html>
