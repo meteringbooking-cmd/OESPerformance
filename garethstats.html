@@ -88,6 +88,14 @@
         #profitTable input:focus { outline: none; border-color: #667eea; }
         #profitTable tbody tr:hover { background-color: #f8f9ff; }
 
+        /* ── Van Check table ── */
+        #vanCheckTable { font-size: 0.9em; }
+        #vanCheckTable th { padding: 12px 8px; text-align: left; font-weight: 600; white-space: nowrap; }
+        #vanCheckTable td { padding: 10px 8px; border-bottom: 1px solid #e0e0e0; }
+        #vanCheckTable input, #vanCheckTable select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; }
+        #vanCheckTable input:focus, #vanCheckTable select:focus { outline: none; border-color: #667eea; }
+        #vanCheckTable tbody tr:hover { background-color: #f8f9ff; }
+
         .btn-group { display: flex; gap: 10px; }
         .btn-group .btn { flex: 1; }
 
@@ -100,6 +108,8 @@
             #milesTable th, #milesTable td { padding: 8px 4px; }
             #profitTable { font-size: 0.8em; }
             #profitTable th, #profitTable td { padding: 8px 4px; }
+            #vanCheckTable { font-size: 0.8em; }
+            #vanCheckTable th, #vanCheckTable td { padding: 8px 4px; }
         }
     </style>
 </head>
@@ -337,6 +347,56 @@
         <div class="section-divider"></div>
 
         <div class="form-section">
+            <h2 class="section-title">🚐 Van Check Upload</h2>
+            <div class="info-box">
+                <h3>Upload Van Check Data</h3>
+                <p><strong>Excel Format (.xlsx):</strong> Column B (Name), Column C (Attendance — X = In, H = Holiday, H/H = Half Day Holiday, Sick, AAUP = Authorised Absence Unpaid), Column D (Check — 1 = Complete, 0 = Not Complete)</p>
+                <p>Upload your Excel file, preview the data, make any edits needed, then save to the database.</p>
+            </div>
+            <form id="vanCheckForm">
+                <div class="form-group">
+                    <label for="vanCheckDate">Select Date for Van Check Data</label>
+                    <input type="date" id="vanCheckDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Upload Excel File (.xlsx)</label>
+                    <div class="file-upload-area" id="vanCheckUploadArea">
+                        <div class="upload-icon">🚐</div>
+                        <p><strong>Click to browse</strong> or drag and drop your Excel file here</p>
+                        <input type="file" id="vanCheckFile" accept=".xlsx,.xls" style="display: none;" required>
+                    </div>
+                    <div class="file-info" id="vanCheckFileInfo"></div>
+                </div>
+                <div id="vanCheckPreview" style="display: none; margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #333;">Preview &amp; Edit Data</h3>
+                    <div style="overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <table id="vanCheckTable" style="width: 100%; border-collapse: collapse; background: white;">
+                            <thead style="background: #667eea; color: white;">
+                                <tr>
+                                    <th style="padding: 12px 8px; text-align: left; font-weight: 600;">Name</th>
+                                    <th style="padding: 12px 8px; text-align: left; font-weight: 600;">Attendance</th>
+                                    <th style="padding: 12px 8px; text-align: left; font-weight: 600;">Check Complete</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vanCheckTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 12px; padding: 10px 14px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 0.9em; color: #555;">
+                        Checks completed: <strong id="vanCheckCompletedCount" style="color: #667eea;">0</strong>
+                        &nbsp;|&nbsp;
+                        Total records: <strong id="vanCheckTotalCount" style="color: #667eea;">0</strong>
+                    </div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn" id="saveVanCheckBtn">Save Van Check Data</button>
+                        <button type="button" class="btn" id="cancelVanCheckBtn" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">Cancel</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="form-section">
             <h2 class="section-title">📥 Export Engineer Profit</h2>
             <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
                 <h3 style="color: #2e7d32;">Export to Excel</h3>
@@ -386,6 +446,7 @@
         document.getElementById('abortsDate').valueAsDate = yesterday;
         document.getElementById('milesDate').valueAsDate = yesterday;
         document.getElementById('profitDate').valueAsDate = yesterday;
+        document.getElementById('vanCheckDate').valueAsDate = yesterday;
 
         // Set default dates for the export section
         const aWeekAgo = new Date();
@@ -733,6 +794,146 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Save Profit Data';
+            }
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ── Van Check Upload ─────────────────────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        let vanCheckData = [];
+
+        const vanCheckArea = document.getElementById('vanCheckUploadArea');
+        const vanCheckInput = document.getElementById('vanCheckFile');
+
+        vanCheckArea.addEventListener('click', () => vanCheckInput.click());
+        vanCheckArea.addEventListener('dragover', (e) => { e.preventDefault(); vanCheckArea.classList.add('dragover'); });
+        vanCheckArea.addEventListener('dragleave', () => vanCheckArea.classList.remove('dragover'));
+        vanCheckArea.addEventListener('drop', (e) => {
+            e.preventDefault(); vanCheckArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                vanCheckInput.files = e.dataTransfer.files;
+                showVanCheckFileInfo(file);
+                parseVanCheckExcel(file);
+            } else {
+                showMessage('Please drop a valid Excel file (.xlsx or .xls)', 'error');
+            }
+        });
+
+        vanCheckInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                showVanCheckFileInfo(e.target.files[0]);
+                parseVanCheckExcel(e.target.files[0]);
+            }
+        });
+
+        function showVanCheckFileInfo(file) {
+            const info = document.getElementById('vanCheckFileInfo');
+            info.innerHTML = `<strong>Selected:</strong> ${file.name}`;
+            info.classList.add('show');
+        }
+
+        function refreshVanCheckSummary() {
+            const completed = vanCheckData.filter(r => r.checkComplete === 1).length;
+            document.getElementById('vanCheckCompletedCount').textContent = completed;
+            document.getElementById('vanCheckTotalCount').textContent = vanCheckData.length;
+        }
+
+        function parseVanCheckExcel(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+                    if (rows.length < 2) { showMessage('Excel file appears empty', 'error'); return; }
+
+                    vanCheckData = [];
+                    for (let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        const name = row[1] !== undefined && row[1] !== '' ? String(row[1]).trim() : '';
+                        const attendance = row[2] !== undefined && row[2] !== '' ? String(row[2]).trim() : '';
+                        const checkRaw = row[3] !== undefined && row[3] !== '' ? String(row[3]).trim() : '';
+                        const checkComplete = parseInt(checkRaw) === 1 ? 1 : 0;
+                        if (name) vanCheckData.push({ name, attendance, checkComplete });
+                    }
+
+                    if (vanCheckData.length === 0) { showMessage('No valid van check data found.', 'error'); return; }
+
+                    const tbody = document.getElementById('vanCheckTableBody');
+                    tbody.innerHTML = '';
+                    vanCheckData.forEach((r, idx) => {
+                        const tr = document.createElement('tr');
+
+                        const tdName = document.createElement('td');
+                        tdName.innerHTML = `<input type="text" value="${r.name}" data-row="${idx}" data-field="name">`;
+                        tr.appendChild(tdName);
+
+                        const tdAttendance = document.createElement('td');
+                        tdAttendance.innerHTML = `<input type="text" value="${r.attendance}" data-row="${idx}" data-field="attendance">`;
+                        tr.appendChild(tdAttendance);
+
+                        const tdCheck = document.createElement('td');
+                        tdCheck.innerHTML = `
+                            <select data-row="${idx}" data-field="checkComplete">
+                                <option value="1" ${r.checkComplete === 1 ? 'selected' : ''}>✅ Complete</option>
+                                <option value="0" ${r.checkComplete === 0 ? 'selected' : ''}>❌ Not Complete</option>
+                            </select>`;
+                        tr.appendChild(tdCheck);
+
+                        tbody.appendChild(tr);
+                    });
+
+                    tbody.querySelectorAll('input, select').forEach(inp => inp.addEventListener('change', (e) => {
+                        const row = parseInt(e.target.dataset.row), field = e.target.dataset.field;
+                        if (field === 'checkComplete') vanCheckData[row].checkComplete = parseInt(e.target.value);
+                        else vanCheckData[row][field] = e.target.value;
+                        refreshVanCheckSummary();
+                    }));
+
+                    refreshVanCheckSummary();
+                    document.getElementById('vanCheckPreview').style.display = 'block';
+                } catch (err) { showMessage('Error reading Excel file: ' + err.message, 'error'); }
+            };
+            reader.onerror = () => showMessage('Failed to read file', 'error');
+            reader.readAsArrayBuffer(file);
+        }
+
+        document.getElementById('cancelVanCheckBtn').addEventListener('click', () => {
+            document.getElementById('vanCheckPreview').style.display = 'none';
+            document.getElementById('vanCheckForm').reset();
+            document.getElementById('vanCheckFileInfo').classList.remove('show');
+            document.getElementById('vanCheckDate').valueAsDate = yesterday;
+            vanCheckData = [];
+        });
+
+        document.getElementById('vanCheckForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (vanCheckData.length === 0) { showMessage('No van check data to save', 'error'); return; }
+            const date = document.getElementById('vanCheckDate').value;
+            const btn = document.getElementById('saveVanCheckBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            try {
+                for (const r of vanCheckData) {
+                    await addDoc(collection(db, "vehicle check"), {
+                        date,
+                        name: r.name,
+                        attendance: r.attendance,
+                        checkComplete: r.checkComplete,
+                        submittedAt: serverTimestamp()
+                    });
+                }
+                showMessage(`Successfully saved ${vanCheckData.length} van check records for ${date}!`, 'success');
+                document.getElementById('vanCheckPreview').style.display = 'none';
+                document.getElementById('vanCheckForm').reset();
+                document.getElementById('vanCheckFileInfo').classList.remove('show');
+                document.getElementById('vanCheckDate').valueAsDate = yesterday;
+                vanCheckData = [];
+            } catch (err) {
+                showMessage('Error saving van check data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Van Check Data';
             }
         });
 
