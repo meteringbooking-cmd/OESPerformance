@@ -879,6 +879,7 @@ window.filterDrop = filterDrop;
 ══════════════════════════════════════════════ */
 function parseDateTime(raw) {
     if (raw === null || raw === undefined || raw === '') return null;
+    if (raw instanceof Date) return raw;
     if (typeof raw === 'number') {
         // Excel serial date
         try {
@@ -903,6 +904,7 @@ function parseDateTime(raw) {
 // This is the only safe way to get journeyDate from a DD/MM/YYYY or DD-MM-YYYY string
 function parseDateOnly(raw) {
     if (raw === null || raw === undefined || raw === '') return null;
+    if (raw instanceof Date) return fmt(raw);
     if (typeof raw === 'number') {
         try {
             const p = XLSX.SSF.parse_date_code(raw);
@@ -988,10 +990,16 @@ async function doUpload() {
             // Group by DATE + PLATE  (date extracted from col B start time)
             // byDatePlate[journeyDate][plate] = { engineerName, firstStart, lastEnd, totalMiles, rowCount }
             const byDatePlate = {};
+            const debugLog = [];
+            let totalRowsRead = 0;
+            let skippedIgnored = 0;
+            let skippedMiles = 0;
+            let skippedDates = 0;
 
             for (let i = dataStart; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row || row.length < 3) continue;
+                totalRowsRead++;
 
                 const rawReg = (row[0]||'').toString().trim();
                 if (!rawReg) continue;
@@ -1004,18 +1012,45 @@ async function doUpload() {
                 const engName = spaceIdx > -1 ? rawReg.substring(spaceIdx+1).trim() : '';
 
                 if (!plate) continue;
-                if (isIgnored(engName)) continue; // skip excluded names
+                if (isIgnored(engName)) {
+                    skippedIgnored++;
+                    continue;
+                }
 
                 const miles = parseMiles(row[10]); // col K
-                if (miles < 0.01) continue;
+                if (miles < 0.01) {
+                    skippedMiles++;
+                    continue;
+                }
 
                 const startDt = parseDateTime(row[1]); // col B
                 const endDt   = parseDateTime(row[2]); // col C
-                if (!startDt || !endDt) continue;
+                
+                // Keep first 5 rows for debug feedback in UI
+                if (debugLog.length < 5) {
+                    debugLog.push({
+                        rowIdx: i + 1,
+                        rawReg: rawReg,
+                        rawStart: row[1],
+                        rawEnd: row[2],
+                        rawMiles: row[10],
+                        parsedStart: startDt ? startDt.toLocaleString('en-GB') : 'failed',
+                        parsedEnd: endDt ? endDt.toLocaleString('en-GB') : 'failed',
+                        parsedDateOnly: parseDateOnly(row[1])
+                    });
+                }
+
+                if (!startDt || !endDt) {
+                    skippedDates++;
+                    continue;
+                }
 
                 // Derive journeyDate directly from the raw start-time string (avoids any timezone shift)
                 const journeyDate = parseDateOnly(row[1]);
-                if (!journeyDate) continue;
+                if (!journeyDate) {
+                    skippedDates++;
+                    continue;
+                }
 
                 if (!byDatePlate[journeyDate]) byDatePlate[journeyDate] = {};
                 if (!byDatePlate[journeyDate][plate]) {
@@ -1035,8 +1070,22 @@ async function doUpload() {
             }
 
             const dates = Object.keys(byDatePlate).sort();
+            
+            // Build debug output text
+            let debugHtml = `<div style="text-align:left;font-family:monospace;font-size:0.75rem;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;max-height:200px;overflow-y:auto;">`;
+            debugHtml += `<strong>Debug Log:</strong><br>`;
+            debugHtml += `Total rows parsed: ${totalRowsRead}<br>`;
+            debugHtml += `Skipped (Ignored Names): ${skippedIgnored}<br>`;
+            debugHtml += `Skipped (Miles &lt; 0.01): ${skippedMiles}<br>`;
+            debugHtml += `Skipped (Invalid Date): ${skippedDates}<br><br>`;
+            debugHtml += `<strong>First 5 rows details:</strong><br>`;
+            debugLog.forEach(d => {
+                debugHtml += `Row ${d.rowIdx}: Reg="${d.rawReg}" | Miles=${d.rawMiles} | Start="${d.rawStart}" -&gt; Parsed: "${d.parsedStart}" (DateOnly: ${d.parsedDateOnly})<br>`;
+            });
+            debugHtml += `</div>`;
+
             if (!dates.length) {
-                msg.textContent = 'No valid rows found. Check columns A (reg + name), B (start), C (end), K (miles > 0.01).';
+                msg.innerHTML = `No valid rows found. Check column layouts. <br>${debugHtml}`;
                 msg.className = 'status-msg err';
                 prog.classList.remove('show'); btn.disabled=false; spin.style.display='none';
                 return;
