@@ -575,6 +575,7 @@
     <div class="panel" id="uploadPanel">
         <div class="panel-title" id="uploadToggle" onclick="togglePanel('uploadToggle','uploadBody')">
             <span class="icon">📤</span> Upload Journey Data
+            <span class="chevron collapsed">▼</span>
         </div>
         <div class="panel-body hidden" id="uploadBody">
             <div class="form-row">
@@ -802,7 +803,7 @@ function togglePanel(titleId, bodyId) {
     const body  = document.getElementById(bodyId);
     const chev  = title.querySelector('.chevron');
     body.classList.toggle('hidden');
-    chev.classList.toggle('collapsed');
+    if (chev) chev.classList.toggle('collapsed');
 }
 window.togglePanel = togglePanel;
 
@@ -965,6 +966,25 @@ async function checkExisting() {
     } catch(e) { banner.classList.remove('show'); }
 }
 window.checkExisting = checkExisting;
+
+/* ══════════════════════════════════════════════
+   BATCH DELETE
+══════════════════════════════════════════════ */
+async function batchDelete(dateVal) {
+    const ukDate = toUKDate(dateVal);
+    const snap = await window._getDocs(window._query(
+        window._collection(window._db, 'working hours'),
+        window._where('journeyDate','==', ukDate)
+    ));
+    if (snap.empty) return 0;
+    const docs = []; snap.forEach(d => docs.push(d));
+    for (let i = 0; i < docs.length; i += 400) {
+        const b = window._writeBatch(window._db);
+        docs.slice(i, i+400).forEach(d => b.delete(d.ref));
+        await b.commit();
+    }
+    return docs.length;
+}
 
 /* ══════════════════════════════════════════════
    PARSE TIME ONLY
