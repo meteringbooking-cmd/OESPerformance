@@ -385,6 +385,34 @@
   }
   .gate-btn:hover { background:#d4eb30; transform:translateY(-1px); }
   .gate-hint { font-size:12px; color:var(--text-muted); margin-top:12px; text-align:center; }
+  /* PREVIOUS ORDERS PANEL */
+  .prev-panel { flex:1; padding:24px 32px; display:none; }
+  .prev-panel.active { display:block; }
+  .prev-order-group { margin-bottom:28px; animation: rowFade 0.2s ease; }
+  @keyframes rowFade { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+  .prev-order-group-header {
+    display:flex; align-items:center; gap:10px; margin-bottom:10px;
+    padding-bottom:8px; border-bottom:1px solid var(--border);
+  }
+  .prev-order-date {
+    font-family:'Syne',sans-serif; font-size:13px; font-weight:700; color:var(--accent2);
+  }
+  .prev-order-badge {
+    font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted);
+    background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:2px 8px;
+  }
+  .prev-items-table { width:100%; border-collapse:collapse; }
+  .prev-items-table th {
+    font-family:'Syne',sans-serif; font-size:10px; font-weight:700; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-muted); padding:6px 12px; text-align:left;
+    border-bottom:1px solid var(--border);
+  }
+  .prev-items-table td { padding:8px 12px; border-bottom:1px solid rgba(46,58,78,0.5); font-size:13px; vertical-align:middle; }
+  .prev-items-table tr:last-child td { border-bottom:none; }
+  .prev-items-table tr:hover td { background:rgba(255,255,255,0.03); }
+  .prev-no-orders { text-align:center; padding:60px 20px; color:var(--text-muted); }
+  .prev-no-orders svg { opacity:0.2; margin-bottom:12px; display:block; margin-left:auto; margin-right:auto; }
+  .prev-loading { text-align:center; padding:40px; color:var(--text-muted); }
 </style>
 </head>
 <body>
@@ -436,6 +464,10 @@
     Favourites
     <span class="cat-tab-count" id="count-favourites">0</span>
   </button>
+  <button class="cat-tab" id="tab-previous" onclick="setCategory('previous')">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:-2px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    Previous Orders
+  </button>
 </div>
 
 <!-- Engineer selector banner -->
@@ -467,7 +499,7 @@
 </div>
 
 <div class="main">
-  <div class="table-wrap">
+  <div class="table-wrap" id="tableWrap">
     <table id="itemsTable">
       <thead>
         <tr>
@@ -480,6 +512,16 @@
       </thead>
       <tbody id="tableBody"></tbody>
     </table>
+  </div>
+
+  <!-- Previous Orders Panel -->
+  <div class="prev-panel" id="prevPanel">
+    <div id="prevPanelContent">
+      <div class="prev-loading">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        Loading previous orders…
+      </div>
+    </div>
   </div>
 
   <aside class="basket-panel" id="basketPanel">
@@ -556,7 +598,7 @@
 <!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -720,6 +762,67 @@
       btn.disabled = false;
       btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Submit Order';
     }
+  };
+
+  // ── Load previous orders for selected engineer ────────────────────────
+  window.loadPreviousOrders = async function(engineerName) {
+    const panel = document.getElementById('prevPanelContent');
+    panel.innerHTML = `<div class="prev-loading"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Loading previous orders…</div>`;
+    try {
+      const snap = await getDocs(collection(db, 'Energise Orders'));
+      const orders = [];
+      snap.forEach(d => {
+        const data = d.data();
+        // Only show orders that: belong to this engineer AND have been processed
+        if (data.processedAt && data.submittedBy === engineerName) {
+          orders.push({ id: d.id, ...data });
+        }
+      });
+      // Sort newest processed first
+      orders.sort((a, b) => new Date(b.processedAt) - new Date(a.processedAt));
+      window.renderPreviousOrders(orders);
+    } catch(e) {
+      panel.innerHTML = `<div class="prev-no-orders">Could not load previous orders.</div>`;
+    }
+  };
+
+  window.renderPreviousOrders = function(orders) {
+    const panel = document.getElementById('prevPanelContent');
+    if (orders.length === 0) {
+      panel.innerHTML = `
+        <div class="prev-no-orders">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <p style="font-size:14px;margin-bottom:4px;color:var(--text)">No previous orders found</p>
+          <p style="font-size:12px;">Processed orders for your account will appear here.</p>
+        </div>`;
+      return;
+    }
+
+    panel.innerHTML = orders.map(order => {
+      const processedDate = new Date(order.processedAt);
+      const dateStr = processedDate.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      const items = Array.isArray(order.items) ? order.items : [];
+      const rows = items.map(item => `
+        <tr>
+          <td>${item.name || '—'}</td>
+          <td><span class="sku">${item.sku || '—'}</span></td>
+          <td><span class="uom-badge">${item.uom || '—'}</span></td>
+          <td style="font-family:'DM Mono',monospace;font-weight:600;">${item.qty || 1}</td>
+        </tr>`).join('');
+      return `
+        <div class="prev-order-group">
+          <div class="prev-order-group-header">
+            <span class="prev-order-date">${dateStr}</span>
+            <span class="prev-order-badge">${items.length} item${items.length !== 1 ? 's' : ''}</span>
+          </div>
+          <table class="prev-items-table">
+            <thead><tr><th>Item</th><th>SKU</th><th>Unit</th><th>Qty</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }).join('');
   };
 
   // Load everything once DOM is ready
@@ -996,16 +1099,27 @@ let activeCat = '';
 
 window.setCategory = function(cat) {
   activeCat = cat;
+  const isPrev = cat === 'previous';
+
+  // Show/hide table vs previous orders panel
+  document.getElementById('tableWrap').style.display   = isPrev ? 'none' : '';
+  document.getElementById('prevPanel').classList.toggle('active', isPrev);
+  // Hide toolbar when viewing previous orders
+  document.querySelector('.toolbar').style.display = isPrev ? 'none' : '';
+
   // Update tab active states
-  ['favourites','all','consumable','meter'].forEach(c => {
-    document.getElementById('tab-' + (c === '' ? 'all' : c))
-      .classList.toggle('active', (c === '' ? '' : c) === cat || (c === 'all' && cat === ''));
+  ['all','consumable','meter','favourites','previous'].forEach(c => {
+    const el = document.getElementById('tab-' + c);
+    if (el) el.classList.toggle('active', c === (cat === '' ? 'all' : cat) || (c === 'all' && cat === ''));
   });
-  // Fix: 'all' tab should be active when cat is ''
   document.getElementById('tab-all').classList.toggle('active', cat === '');
-  document.getElementById('tab-favourites').classList.toggle('active', cat === 'favourites');
-  document.getElementById('tab-consumable').classList.toggle('active', cat === 'consumable');
-  document.getElementById('tab-meter').classList.toggle('active', cat === 'meter');
+
+  if (isPrev) {
+    if (selectedEngineer) window.loadPreviousOrders(selectedEngineer);
+    else document.getElementById('prevPanelContent').innerHTML = `<div class="prev-no-orders"><p>Please select your name first to see previous orders.</p></div>`;
+    return;
+  }
+
   filterItems();
 };
 
