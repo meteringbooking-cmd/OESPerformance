@@ -431,7 +431,7 @@
 
     const data = {
       name,
-      skus: [...pendingSkus],   // empty array = all meters allowed
+      skus: pendingSkus.length > 0 ? [...pendingSkus] : null,
       updatedAt: new Date().toISOString()
     };
 
@@ -550,17 +550,29 @@
     }
 
     container.innerHTML = engs.map(eng => {
-      const skuCount = eng.skus && eng.skus.length > 0 ? eng.skus.length : null;
-      const skuBadges = skuCount
-        ? eng.skus.map(s => `<span class="ec-sku-chip">${escHtml(s)}</span>`).join('')
-        : `<span class="ec-all-badge">✓ All meter items</span>`;
+      const isRestricted = Array.isArray(eng.skus);
+      const skuCount = isRestricted ? eng.skus.length : 0;
+      
+      let skuBadges = '';
+      let metaText = '';
+      
+      if (!isRestricted) {
+        skuBadges = `<span class="ec-all-badge">✓ All meter items</span>`;
+        metaText = 'Full meter access';
+      } else if (skuCount > 0) {
+        skuBadges = eng.skus.map(s => `<span class="ec-sku-chip">${escHtml(s)}</span>`).join('');
+        metaText = `${skuCount} meter SKU${skuCount !== 1 ? 's' : ''} assigned`;
+      } else {
+        skuBadges = `<span class="ec-all-badge" style="background:rgba(248,113,113,0.1); border-color:rgba(248,113,113,0.25); color:var(--out)">✗ No meter items assigned</span>`;
+        metaText = 'Restricted (No meter items available)';
+      }
 
       return `
         <div class="engineer-card" id="ec-${eng.id}">
           <div class="ec-top">
             <div>
               <div class="ec-name">${escHtml(eng.name)}</div>
-              <div class="ec-meta">${skuCount ? `${skuCount} meter SKU${skuCount !== 1 ? 's' : ''} assigned` : 'Full meter access'}</div>
+              <div class="ec-meta">${metaText}</div>
             </div>
             <div class="ec-actions">
               <button class="ec-btn" onclick="editEngineer('${eng.id}')">Edit</button>
