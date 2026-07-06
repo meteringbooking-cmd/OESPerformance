@@ -704,17 +704,69 @@
   .price-input::-webkit-outer-spin-button { -webkit-appearance: none; }
   .price-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,255,71,0.12); }
   .price-input.saved  { border-color: var(--in-stock); box-shadow: 0 0 0 2px rgba(74,222,128,0.12); }
+
+  /* NAVIGATION */
+  .nav-container {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .nav-links {
+    display: flex;
+    gap: 16px;
+    margin-left: 12px;
+  }
+  .nav-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: color 0.15s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .nav-link:hover, .nav-link.active {
+    color: var(--accent);
+  }
+  .btn {
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s, transform 0.1s;
+    outline: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover {
+    background: #d4eb30;
+    transform: translateY(-1px);
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">energise<span>.</span></div>
+  <div class="nav-container">
+    <div class="logo">energise<span>.</span></div>
+    <nav class="nav-links">
+      <a href="energise-order-form.html" class="nav-link">Order Form</a>
+      <a href="energise-inventory-upload.html" class="nav-link">Inventory Upload</a>
+      <a href="energise-order-form-images.html" class="nav-link active">Image Upload</a>
+      <a href="order-selection.html" class="nav-link">Engineer Selections</a>
+    </nav>
+  </div>
   <div class="header-right" style="display: flex; align-items: center; gap: 16px;">
     <button class="btn btn-primary" id="viewLogsBtn" onclick="loadTodaysPriceChanges()" style="padding: 8px 16px; margin: 0; white-space: nowrap;"> 
       📋 View Today's Price Changes
     </button>
-    <span class="header-meta" id="headerMeta"><strong>0</strong> / 82 images uploaded</span>
+    <span class="header-meta" id="headerMeta"><strong>0</strong> / Loading... images uploaded</span>
   </div>
 </header>
 
@@ -727,47 +779,6 @@
   </div> 
   <div id="priceLogBox" style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: 'DM Mono', monospace; font-size: 13px; max-height: 200px; overflow-y: auto; color: var(--text-mid); white-space: pre-wrap;">Fetching today's logs from Firebase...</div>
 </div>
-
-<script type="module"> 
-import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-window.loadTodaysPriceChanges = async function() { 
-  const container = document.getElementById('priceLogContainer');
-  const btn = document.getElementById('viewLogsBtn'); 
-  const log = document.getElementById('priceLogBox'); 
-   
-  container.style.display = 'block';
-  btn.disabled = true; 
-  btn.innerText = "⏳ Loading..."; 
-  log.innerHTML = "Querying database for today's price updates...<br>"; 
-   
-  try {
-    const db = getFirestore();
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    const logsRef = collection(db, 'Energise Price Logs');
-    const q = query(logsRef, where("dateString", "==", todayStr));
-    const snapshot = await getDocs(q);
-    
-    if (snapshot.empty) {
-      log.innerHTML = `<strong>✅ Database is up to date!</strong><br><br>The background app has not detected any supplier price changes today.`;
-    } else {
-      let logHtml = `<strong>⚠️ ${snapshot.size} Price Change(s) Today:</strong><br><br>`;
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const timeStr = new Date(data.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        logHtml += `[${timeStr}] <strong>SKU ${data.sku}</strong>: £${data.oldPrice.toFixed(2)} ➔ <span style="color:var(--accent2)">£${data.newPrice.toFixed(2)}</span><br>`;
-      });
-      log.innerHTML = logHtml;
-    }
-  } catch (err) { 
-    log.innerHTML = `❌ Error connecting to Firebase: ${err.message}`; 
-  } finally { 
-    btn.disabled = false; 
-    btn.innerText = "📋 View Today's Price Changes"; 
-  } 
-} 
-</script>
 
 <div class="hero">
   <h1 class="page-title">Image Upload</h1>
@@ -833,8 +844,6 @@ window.loadTodaysPriceChanges = async function() {
   <select class="filter-select" id="catFilter" onchange="filterItems()">
     <option value="">All Categories</option>
     <option value="meter">Meter</option>
-    <option value="pipe">Pipe</option>
-    <option value="electrical">Electrical</option>
     <option value="consumable">Consumable</option>
   </select>
   <select class="filter-select" id="statusFilter" onchange="filterItems()">
@@ -862,7 +871,7 @@ window.loadTodaysPriceChanges = async function() {
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-  import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -879,6 +888,41 @@ window.loadTodaysPriceChanges = async function() {
   const db = getFirestore(app);
 
   const COLLECTION = "energise order images";
+
+  window.loadTodaysPriceChanges = async function() { 
+    const container = document.getElementById('priceLogContainer');
+    const btn = document.getElementById('viewLogsBtn'); 
+    const log = document.getElementById('priceLogBox'); 
+     
+    container.style.display = 'block';
+    btn.disabled = true; 
+    btn.innerText = "⏳ Loading..."; 
+    log.innerHTML = "Querying database for today's price updates...<br>"; 
+     
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const logsRef = collection(db, 'Energise Price Logs');
+      const q = query(logsRef, where("dateString", "==", todayStr));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        log.innerHTML = `<strong>✅ Database is up to date!</strong><br><br>The background app has not detected any supplier price changes today.`;
+      } else {
+        let logHtml = `<strong>⚠️ ${snapshot.size} Price Change(s) Today:</strong><br><br>`;
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const timeStr = new Date(data.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          logHtml += `[${timeStr}] <strong>SKU ${data.sku}</strong>: £${data.oldPrice.toFixed(2)} ➔ <span style="color:var(--accent2)">£${data.newPrice.toFixed(2)}</span><br>`;
+        });
+        log.innerHTML = logHtml;
+      }
+    } catch (err) { 
+      log.innerHTML = `❌ Error connecting to Firebase: ${err.message}`; 
+    } finally { 
+      btn.disabled = false; 
+      btn.innerText = "📋 View Today's Price Changes"; 
+    } 
+  };
 
   // ── Item list (dynamic from Energise Inventory) ───────────────────────────
   let ITEMS = [];
