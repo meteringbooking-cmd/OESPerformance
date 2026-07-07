@@ -409,7 +409,7 @@
     <!-- Main Content Panel -->
     <main class="main-content">
       <!-- Metrics row -->
-      <div class="metrics-row" style="grid-template-columns: repeat(6, 1fr);">
+      <div class="metrics-row" style="grid-template-columns: repeat(5, 1fr);">
         <div class="metric-card">
           <label>Total Spend</label>
           <div class="value spend" id="statTotalSpend">£0.00</div>
@@ -430,10 +430,6 @@
           <label>Top Project Cost</label>
           <div class="value" style="font-size:16px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:8px;" id="statTopProject">N/A</div>
         </div>
-        <div class="metric-card">
-          <label>Chargeable Spend %</label>
-          <div class="value" id="statChargeableRatio">0%</div>
-        </div>
       </div>
 
       <!-- Spend Charts Panel -->
@@ -446,9 +442,9 @@
             </div>
           </div>
           <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Project Allocation Share</h4>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Weekly Spend Breakdown</h4>
             <div class="chart-container" style="height:250px;">
-              <canvas id="projectShareChart"></canvas>
+              <canvas id="weeklyChart"></canvas>
             </div>
           </div>
           <div>
@@ -495,12 +491,10 @@
           </select>
         </div>
         <div class="input-group">
-          <label>Line Status</label>
-          <select id="filterStatus" onchange="applyFilters()">
-            <option value="">All Statuses</option>
-            <option value="Shipped">Shipped</option>
-            <option value="Invoiced">Invoiced</option>
-            <option value="Closed">Closed</option>
+          <label>Engineer Name</label>
+          <select id="filterEngineer" onchange="applyFilters()">
+            <option value="">All Engineers</option>
+            <!-- Populated dynamically -->
           </select>
         </div>
         <button class="btn" onclick="resetFilters()">Reset Filters</button>
@@ -628,7 +622,7 @@
 
     // Charts objects
     let trendChartInstance = null;
-    let projectShareChartInstance = null;
+    let weeklyChartInstance = null;
     let topSpendersChartInstance = null;
 
     window.showToast = function(msg, isError = false) {
@@ -828,6 +822,18 @@
         // Sort descending by Create Date or Date Shipped
         allInvoiceLines.sort((a, b) => new Date(b.createDate || b.dateShipped) - new Date(a.createDate || a.dateShipped));
 
+        // Populate Engineer Name Filter Select Dropdown dynamically
+        const engNamesSet = new Set();
+        allInvoiceLines.forEach(line => {
+          if (line.name) engNamesSet.add(line.name);
+        });
+        const sortedEngNames = Array.from(engNamesSet).sort((a, b) => a.localeCompare(b));
+        const engSelect = document.getElementById('filterEngineer');
+        if (engSelect) {
+          engSelect.innerHTML = '<option value="">All Engineers</option>' + 
+            sortedEngNames.map(name => `<option value="${name}">${name}</option>`).join('');
+        }
+
         applyFilters();
       } catch (err) {
         console.error(err);
@@ -842,10 +848,17 @@
     window.applyFilters = function() {
       const search = document.getElementById('filterSearch').value.toLowerCase().trim();
       const chargeable = document.getElementById('filterChargeable').value;
-      const status = document.getElementById('filterStatus').value;
+      const engDropdownVal = document.getElementById('filterEngineer').value;
+
+      // Keep sidebar selection and dropdown in sync
+      if (selectedEngineerName && selectedEngineerName !== engDropdownVal && !engDropdownVal) {
+        document.getElementById('filterEngineer').value = selectedEngineerName;
+      } else if (engDropdownVal !== selectedEngineerName) {
+        selectedEngineerName = engDropdownVal;
+      }
 
       filteredLines = allInvoiceLines.filter(line => {
-        // Selected Engineer Sidebar Filter
+        // Selected Engineer Filter (synced between sidebar & dropdown)
         if (selectedEngineerName && line.name !== selectedEngineerName) return false;
 
         // Search inputs
@@ -860,13 +873,11 @@
 
         // Chargeable
         if (chargeable) {
-          const isChg = (line.chargeable || '').toLowerCase() === 'yes';
+          const cVal = (line.chargeable || '').toLowerCase().trim();
+          const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
           if (chargeable === 'Yes' && !isChg) return false;
           if (chargeable === 'No' && isChg) return false;
         }
-
-        // Status
-        if (status && line.status !== status) return false;
 
         return true;
       });
@@ -882,18 +893,20 @@
     window.resetFilters = function() {
       document.getElementById('filterSearch').value = '';
       document.getElementById('filterChargeable').value = '';
-      document.getElementById('filterStatus').value = '';
+      document.getElementById('filterEngineer').value = '';
       selectedEngineerName = '';
       applyFilters();
     };
 
     window.clearSelectedEngineer = function() {
       selectedEngineerName = '';
+      document.getElementById('filterEngineer').value = '';
       applyFilters();
     };
 
     window.selectEngineer = function(name) {
       selectedEngineerName = name;
+      document.getElementById('filterEngineer').value = name;
       applyFilters();
     };
 
@@ -974,7 +987,6 @@
       topProjEl.textContent = topProjName !== 'N/A' ? `${topProjName} (£${topProjVal.toFixed(0)})` : 'N/A';
       topProjEl.title = topProjName !== 'N/A' ? `${topProjName}: £${topProjVal.toFixed(2)}` : '';
 
-      document.getElementById('statChargeableRatio').textContent = `${chgRatio}%`;
     }
 
     // Date parser helper to group items by Month (YYYY-MM)
@@ -1001,6 +1013,35 @@
         return `${y}-${m}`;
       }
       return 'Unknown';
+    }
+
+    // Date parser helper to group items by Week Starting (YYYY-MM-DD)
+    function getYearWeek(dStr) {
+      if (!dStr) return 'Unknown';
+      let date;
+      
+      const isoMatch = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoMatch) {
+        date = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+      } else {
+        const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (ukMatch) {
+          date = new Date(parseInt(ukMatch[3]), parseInt(ukMatch[2]) - 1, parseInt(ukMatch[1]));
+        } else {
+          date = new Date(dStr);
+        }
+      }
+
+      if (isNaN(date.getTime())) return 'Unknown';
+
+      // Get Monday start of week
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+      const startOfWeek = new Date(date.setDate(diff));
+      const y = startOfWeek.getFullYear();
+      const m = String(startOfWeek.getMonth() + 1).padStart(2, '0');
+      const d = String(startOfWeek.getDate()).padStart(2, '0');
+      return `W/C ${y}-${m}-${d}`;
     }
 
     // ── Render Charts ──────────────────────────────────────────────────────────
@@ -1043,48 +1084,42 @@
         }
       });
 
-      // 2. Project Cost Distribution Share Chart
-      const projectSpendsMap = {};
+      // 2. Weekly Spend Breakdown (MoW columns)
+      const weeklySpends = {};
       filteredLines.forEach(line => {
-        const p = line.projectName || 'General / Unspecified';
-        projectSpendsMap[p] = (projectSpendsMap[p] || 0) + (line.lineValue || 0);
+        const dStr = line.createDate || line.dateShipped || '';
+        const yw = getYearWeek(dStr);
+        weeklySpends[yw] = (weeklySpends[yw] || 0) + (line.lineValue || 0);
       });
 
-      // Take top 5 projects and sum remaining as "Other"
-      const sortedProj = Object.entries(projectSpendsMap).sort((a, b) => b[1] - a[1]);
-      const topProj = sortedProj.slice(0, 5);
-      const otherProjSum = sortedProj.slice(5).reduce((sum, r) => sum + r[1], 0);
+      // Sort keys chronologically and get last 10 weeks
+      const sortedWeeks = Object.entries(weeklySpends)
+        .filter(([w]) => w !== 'Unknown')
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-10);
 
-      const labels = topProj.map(d => d[0]);
-      const data = topProj.map(d => d[1]);
-      if (otherProjSum > 0) {
-        labels.push('Other Projects');
-        data.push(otherProjSum);
-      }
-
-      if (projectShareChartInstance) projectShareChartInstance.destroy();
+      if (weeklyChartInstance) weeklyChartInstance.destroy();
       
-      const ctx3 = document.getElementById('projectShareChart').getContext('2d');
-      projectShareChartInstance = new Chart(ctx3, {
-        type: 'doughnut',
+      const ctx3 = document.getElementById('weeklyChart').getContext('2d');
+      weeklyChartInstance = new Chart(ctx3, {
+        type: 'bar',
         data: {
-          labels: labels,
+          labels: sortedWeeks.map(d => d[0]),
           datasets: [{
-            data: data,
-            backgroundColor: ['#1e40af', '#059669', '#d97706', '#dc2626', '#7c3aed', '#64748b'],
-            borderWidth: 1
+            label: 'Weekly Spend (£)',
+            data: sortedWeeks.map(d => d[1]),
+            backgroundColor: 'rgba(5, 150, 105, 0.85)',
+            borderRadius: 6,
+            borderWidth: 0
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: { boxWidth: 10, font: { size: 9 }, padding: 8 }
-            }
-          },
-          cutout: '60%'
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { callback: (v) => '£' + v } }
+          }
         }
       });
 
