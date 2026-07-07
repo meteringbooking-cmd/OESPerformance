@@ -409,22 +409,26 @@
     <!-- Main Content Panel -->
     <main class="main-content">
       <!-- Metrics row -->
-      <div class="metrics-row" style="grid-template-columns: repeat(5, 1fr);">
+      <div class="metrics-row" style="grid-template-columns: repeat(6, 1fr);">
         <div class="metric-card">
-          <label>Total Invoice Spend</label>
+          <label>Total Spend</label>
           <div class="value spend" id="statTotalSpend">£0.00</div>
         </div>
         <div class="metric-card">
-          <label>Total Lines Imported</label>
-          <div class="value" id="statLinesCount">0</div>
+          <label>Active Engineers</label>
+          <div class="value" id="statActiveEngineers">0</div>
         </div>
         <div class="metric-card">
-          <label>Total Qty Shipped</label>
-          <div class="value" id="statTotalQty">0</div>
+          <label>Spend per Head</label>
+          <div class="value" style="color:var(--accent);" id="statSpendPerHead">£0.00</div>
         </div>
         <div class="metric-card">
           <label>Avg Line Value</label>
           <div class="value" id="statAvgLine">£0.00</div>
+        </div>
+        <div class="metric-card">
+          <label>Top Project Cost</label>
+          <div class="value" style="font-size:16px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:8px;" id="statTopProject">N/A</div>
         </div>
         <div class="metric-card">
           <label>Chargeable Spend %</label>
@@ -436,15 +440,15 @@
       <div class="charts-card">
         <div class="charts-grid" style="grid-template-columns: 2fr 1fr 1fr;">
           <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Spend Trend by Date</h4>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Monthly Spend Breakdown</h4>
             <div class="chart-container">
               <canvas id="trendChart"></canvas>
             </div>
           </div>
           <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Chargeability Share</h4>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Project Allocation Share</h4>
             <div class="chart-container" style="height:250px;">
-              <canvas id="chargeabilityChart"></canvas>
+              <canvas id="projectShareChart"></canvas>
             </div>
           </div>
           <div>
@@ -624,7 +628,7 @@
 
     // Charts objects
     let trendChartInstance = null;
-    let chargeabilityChartInstance = null;
+    let projectShareChartInstance = null;
     let topSpendersChartInstance = null;
 
     window.showToast = function(msg, isError = false) {
@@ -928,7 +932,6 @@
     function updateMetrics() {
       const totalSpend = filteredLines.reduce((sum, r) => sum + (r.lineValue || 0), 0);
       const totalLines = filteredLines.length;
-      const totalQty = filteredLines.reduce((sum, r) => sum + (r.qtyShipped || 0), 0);
       
       const chargeableSpend = filteredLines.reduce((sum, r) => {
         const cVal = (r.chargeable || '').toLowerCase().trim();
@@ -939,42 +942,95 @@
       const chgRatio = totalSpend > 0 ? Math.round((chargeableSpend / totalSpend) * 100) : 0;
       const avgLineVal = totalLines > 0 ? (totalSpend / totalLines) : 0;
 
+      // Unique active engineers count
+      const activeEngsSet = new Set();
+      filteredLines.forEach(line => {
+        if (line.name) activeEngsSet.add(line.name);
+      });
+      const activeEngsCount = activeEngsSet.size;
+      const spendPerHead = activeEngsCount > 0 ? (totalSpend / activeEngsCount) : 0;
+
+      // Find top project cost center
+      const projSpends = {};
+      filteredLines.forEach(line => {
+        const pName = line.projectName || 'General / Unspecified';
+        projSpends[pName] = (projSpends[pName] || 0) + (line.lineValue || 0);
+      });
+      let topProjName = 'N/A';
+      let topProjVal = 0;
+      Object.entries(projSpends).forEach(([p, val]) => {
+        if (val > topProjVal) {
+          topProjVal = val;
+          topProjName = p;
+        }
+      });
+
       document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
-      document.getElementById('statLinesCount').textContent = totalLines.toLocaleString();
-      document.getElementById('statTotalQty').textContent = totalQty.toLocaleString();
+      document.getElementById('statActiveEngineers').textContent = activeEngsCount.toLocaleString();
+      document.getElementById('statSpendPerHead').textContent = `£${spendPerHead.toFixed(2)}`;
       document.getElementById('statAvgLine').textContent = `£${avgLineVal.toFixed(2)}`;
+      
+      const topProjEl = document.getElementById('statTopProject');
+      topProjEl.textContent = topProjName !== 'N/A' ? `${topProjName} (£${topProjVal.toFixed(0)})` : 'N/A';
+      topProjEl.title = topProjName !== 'N/A' ? `${topProjName}: £${topProjVal.toFixed(2)}` : '';
+
       document.getElementById('statChargeableRatio').textContent = `${chgRatio}%`;
+    }
+
+    // Date parser helper to group items by Month (YYYY-MM)
+    function getYearMonth(dStr) {
+      if (!dStr) return 'Unknown';
+      
+      // Try parsing direct ISO style YYYY-MM-DD
+      const isoMatch = dStr.match(/^(\d{4})-(\d{2})-\d{2}/);
+      if (isoMatch) {
+        return `${isoMatch[1]}-${isoMatch[2]}`;
+      }
+
+      // Try parsing UK format DD/MM/YYYY
+      const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (ukMatch) {
+        return `${ukMatch[3]}-${ukMatch[2].padStart(2, '0')}`;
+      }
+
+      // Fallback standard Date parser
+      const date = new Date(dStr);
+      if (!isNaN(date.getTime())) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      }
+      return 'Unknown';
     }
 
     // ── Render Charts ──────────────────────────────────────────────────────────
     function renderCharts() {
-      // 1. Spend Trend by Date
-      const dateSpends = {};
+      // 1. Monthly Spend Breakdown (Clean MoM columns)
+      const monthlySpends = {};
       filteredLines.forEach(line => {
         const dStr = line.createDate || line.dateShipped || '';
-        if (dStr) {
-          const key = dStr.split(' ')[0]; // group by day
-          dateSpends[key] = (dateSpends[key] || 0) + (line.lineValue || 0);
-        }
+        const ym = getYearMonth(dStr);
+        monthlySpends[ym] = (monthlySpends[ym] || 0) + (line.lineValue || 0);
       });
 
-      const sortedDates = Object.entries(dateSpends).sort((a, b) => new Date(a[0]) - new Date(b[0])).slice(-15); // last 15 days
+      // Sort keys chronologically
+      const sortedMonths = Object.entries(monthlySpends)
+        .filter(([m]) => m !== 'Unknown')
+        .sort((a, b) => a[0].localeCompare(b[0]));
 
       if (trendChartInstance) trendChartInstance.destroy();
       
       const ctx1 = document.getElementById('trendChart').getContext('2d');
       trendChartInstance = new Chart(ctx1, {
-        type: 'line',
+        type: 'bar',
         data: {
-          labels: sortedDates.map(d => d[0]),
+          labels: sortedMonths.map(d => d[0]),
           datasets: [{
-            label: 'Daily Spend (£)',
-            data: sortedDates.map(d => d[1]),
-            borderColor: '#1e40af',
-            backgroundColor: 'rgba(30, 64, 175, 0.05)',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: true
+            label: 'Monthly Spend (£)',
+            data: sortedMonths.map(d => d[1]),
+            backgroundColor: 'rgba(30, 64, 175, 0.85)',
+            borderRadius: 6,
+            borderWidth: 0
           }]
         },
         options: {
@@ -987,29 +1043,35 @@
         }
       });
 
-      // 2. Chargeability Donut Chart
-      let chgSpend = 0;
-      let nonChgSpend = 0;
+      // 2. Project Cost Distribution Share Chart
+      const projectSpendsMap = {};
       filteredLines.forEach(line => {
-        const cVal = (line.chargeable || '').toLowerCase().trim();
-        const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
-        if (isChg) {
-          chgSpend += (line.lineValue || 0);
-        } else {
-          nonChgSpend += (line.lineValue || 0);
-        }
+        const p = line.projectName || 'General / Unspecified';
+        projectSpendsMap[p] = (projectSpendsMap[p] || 0) + (line.lineValue || 0);
       });
 
-      if (chargeabilityChartInstance) chargeabilityChartInstance.destroy();
+      // Take top 5 projects and sum remaining as "Other"
+      const sortedProj = Object.entries(projectSpendsMap).sort((a, b) => b[1] - a[1]);
+      const topProj = sortedProj.slice(0, 5);
+      const otherProjSum = sortedProj.slice(5).reduce((sum, r) => sum + r[1], 0);
+
+      const labels = topProj.map(d => d[0]);
+      const data = topProj.map(d => d[1]);
+      if (otherProjSum > 0) {
+        labels.push('Other Projects');
+        data.push(otherProjSum);
+      }
+
+      if (projectShareChartInstance) projectShareChartInstance.destroy();
       
-      const ctx3 = document.getElementById('chargeabilityChart').getContext('2d');
-      chargeabilityChartInstance = new Chart(ctx3, {
+      const ctx3 = document.getElementById('projectShareChart').getContext('2d');
+      projectShareChartInstance = new Chart(ctx3, {
         type: 'doughnut',
         data: {
-          labels: ['Chargeable', 'Non-Chargeable'],
+          labels: labels,
           datasets: [{
-            data: [chgSpend, nonChgSpend],
-            backgroundColor: ['#059669', '#ef4444'],
+            data: data,
+            backgroundColor: ['#1e40af', '#059669', '#d97706', '#dc2626', '#7c3aed', '#64748b'],
             borderWidth: 1
           }]
         },
@@ -1019,12 +1081,13 @@
           plugins: {
             legend: {
               position: 'bottom',
-              labels: { boxWidth: 12, font: { size: 10 } }
+              labels: { boxWidth: 10, font: { size: 9 }, padding: 8 }
             }
           },
           cutout: '60%'
         }
       });
+
 
       // 3. Top Spenders Chart
       const spendsMap = {};
