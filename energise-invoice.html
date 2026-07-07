@@ -427,14 +427,14 @@
           <div class="value" id="statAvgLine">£0.00</div>
         </div>
         <div class="metric-card">
-          <label>Top Project Cost</label>
-          <div class="value" style="font-size:16px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:8px;" id="statTopProject">N/A</div>
+          <label>Avg Daily Spend</label>
+          <div class="value" id="statAvgDailySpend">£0.00</div>
         </div>
       </div>
 
       <!-- Spend Charts Panel -->
       <div class="charts-card">
-        <div class="charts-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+        <div class="charts-grid" style="grid-template-columns: repeat(3, 1fr);">
           <div>
             <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Monthly Spend Breakdown</h4>
             <div class="chart-container">
@@ -952,7 +952,6 @@
         return isChg ? sum + (r.lineValue || 0) : sum;
       }, 0);
       
-      const chgRatio = totalSpend > 0 ? Math.round((chargeableSpend / totalSpend) * 100) : 0;
       const avgLineVal = totalLines > 0 ? (totalSpend / totalLines) : 0;
 
       // Unique active engineers count
@@ -963,30 +962,38 @@
       const activeEngsCount = activeEngsSet.size;
       const spendPerHead = activeEngsCount > 0 ? (totalSpend / activeEngsCount) : 0;
 
-      // Find top project cost center
-      const projSpends = {};
-      filteredLines.forEach(line => {
-        const pName = line.projectName || 'General / Unspecified';
-        projSpends[pName] = (projSpends[pName] || 0) + (line.lineValue || 0);
-      });
-      let topProjName = 'N/A';
-      let topProjVal = 0;
-      Object.entries(projSpends).forEach(([p, val]) => {
-        if (val > topProjVal) {
-          topProjVal = val;
-          topProjName = p;
+      // Calculate Average Daily Cost
+      const dates = filteredLines.map(line => {
+        const dStr = line.createDate || line.dateShipped || '';
+        let date;
+        const isoMatch = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (isoMatch) {
+          date = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+        } else {
+          const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (ukMatch) {
+            date = new Date(parseInt(ukMatch[3]), parseInt(ukMatch[2]) - 1, parseInt(ukMatch[1]));
+          } else {
+            date = new Date(dStr);
+          }
         }
-      });
+        return date;
+      }).filter(d => !isNaN(d.getTime()));
+
+      let avgDailyCost = 0;
+      if (dates.length > 0) {
+        const minDate = new Date(Math.min(...dates));
+        const maxDate = new Date(Math.max(...dates));
+        const diffTime = Math.abs(maxDate - minDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive of start day
+        avgDailyCost = totalSpend / diffDays;
+      }
 
       document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
       document.getElementById('statActiveEngineers').textContent = activeEngsCount.toLocaleString();
       document.getElementById('statSpendPerHead').textContent = `£${spendPerHead.toFixed(2)}`;
       document.getElementById('statAvgLine').textContent = `£${avgLineVal.toFixed(2)}`;
-      
-      const topProjEl = document.getElementById('statTopProject');
-      topProjEl.textContent = topProjName !== 'N/A' ? `${topProjName} (£${topProjVal.toFixed(0)})` : 'N/A';
-      topProjEl.title = topProjName !== 'N/A' ? `${topProjName}: £${topProjVal.toFixed(2)}` : '';
-
+      document.getElementById('statAvgDailySpend').textContent = `£${avgDailyCost.toFixed(2)}`;
     }
 
     // Date parser helper to group items by Month (YYYY-MM)
