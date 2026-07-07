@@ -409,7 +409,7 @@
     <!-- Main Content Panel -->
     <main class="main-content">
       <!-- Metrics row -->
-      <div class="metrics-row" style="grid-template-columns: repeat(6, 1fr);">
+      <div class="metrics-row" style="grid-template-columns: repeat(5, 1fr);">
         <div class="metric-card">
           <label>Total Invoice Spend</label>
           <div class="value spend" id="statTotalSpend">£0.00</div>
@@ -425,10 +425,6 @@
         <div class="metric-card">
           <label>Avg Line Value</label>
           <div class="value" id="statAvgLine">£0.00</div>
-        </div>
-        <div class="metric-card">
-          <label>Non-Chargeable Spend</label>
-          <div class="value" style="color:var(--danger);" id="statNonChargeable">£0.00</div>
         </div>
         <div class="metric-card">
           <label>Chargeable Spend %</label>
@@ -471,7 +467,7 @@
         
         <div class="insight-card">
           <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--danger); border-bottom:1px solid var(--border2); padding-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-            <span>High-Value Outliers (Lines > £150)</span>
+            <span>High-Value Outliers (Lines > £50)</span>
             <span class="insight-badge" id="outliersCountBadge" style="background:var(--danger); color:#fff; font-size:12px; padding:2px 8px; border-radius:10px;">0</span>
           </h4>
           <div class="outliers-box" id="outliersList">
@@ -935,19 +931,18 @@
       const totalQty = filteredLines.reduce((sum, r) => sum + (r.qtyShipped || 0), 0);
       
       const chargeableSpend = filteredLines.reduce((sum, r) => {
-        const isChg = (r.chargeable || '').toLowerCase() === 'yes';
+        const cVal = (r.chargeable || '').toLowerCase().trim();
+        const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
         return isChg ? sum + (r.lineValue || 0) : sum;
       }, 0);
       
       const chgRatio = totalSpend > 0 ? Math.round((chargeableSpend / totalSpend) * 100) : 0;
       const avgLineVal = totalLines > 0 ? (totalSpend / totalLines) : 0;
-      const nonChgSpend = totalSpend - chargeableSpend;
 
       document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
       document.getElementById('statLinesCount').textContent = totalLines.toLocaleString();
       document.getElementById('statTotalQty').textContent = totalQty.toLocaleString();
       document.getElementById('statAvgLine').textContent = `£${avgLineVal.toFixed(2)}`;
-      document.getElementById('statNonChargeable').textContent = `£${nonChgSpend.toFixed(2)}`;
       document.getElementById('statChargeableRatio').textContent = `${chgRatio}%`;
     }
 
@@ -958,16 +953,13 @@
       filteredLines.forEach(line => {
         const dStr = line.createDate || line.dateShipped || '';
         if (dStr) {
-          // Format date or group by month/date
           const key = dStr.split(' ')[0]; // group by day
           dateSpends[key] = (dateSpends[key] || 0) + (line.lineValue || 0);
         }
       });
 
-      // Sort date keys ascending
       const sortedDates = Object.entries(dateSpends).sort((a, b) => new Date(a[0]) - new Date(b[0])).slice(-15); // last 15 days
 
-      // Destroy existing chart
       if (trendChartInstance) trendChartInstance.destroy();
       
       const ctx1 = document.getElementById('trendChart').getContext('2d');
@@ -999,7 +991,8 @@
       let chgSpend = 0;
       let nonChgSpend = 0;
       filteredLines.forEach(line => {
-        const isChg = (line.chargeable || '').toLowerCase() === 'yes';
+        const cVal = (line.chargeable || '').toLowerCase().trim();
+        const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
         if (isChg) {
           chgSpend += (line.lineValue || 0);
         } else {
@@ -1100,15 +1093,15 @@
         }).join('');
       }
 
-      // 2. High-Value Outliers (> £150)
-      const outliers = filteredLines.filter(line => (line.lineValue || 0) > 150)
+      // 2. High-Value Outliers (> £50)
+      const outliers = filteredLines.filter(line => (line.lineValue || 0) > 50)
         .sort((a, b) => (b.lineValue || 0) - (a.lineValue || 0));
 
       document.getElementById('outliersCountBadge').textContent = outliers.length;
 
       const outliersList = document.getElementById('outliersList');
       if (outliers.length === 0) {
-        outliersList.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">No high-value outlier lines found (> £150).</div>`;
+        outliersList.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">No high-value outlier lines found (> £50).</div>`;
       } else {
         outliersList.innerHTML = outliers.map(line => `
           <div class="insight-list-item" style="border-left: 3px solid var(--danger); margin-bottom: 2px;">
