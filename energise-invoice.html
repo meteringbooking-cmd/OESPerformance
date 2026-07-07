@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Official Invoice Spend Tracker - Energise</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&family=DM+Mono:ital,wght@0,300..500;1,300..500&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface2: #f1f5f9;
+      --border: #cbd5e1;
+      --border2: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --accent: #1e40af;
+      --accent-h: #1e3a8a;
+      --accent-lt: #eff6ff;
+      --accent2: #059669;
+      --accent2-lt: #ecfdf5;
+      --danger: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .app-header {
+      background: #0f172a;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 24px;
+      color: #fff;
+      text-decoration: none;
+    }
+    .brand span { color: var(--accent2); }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+    .btn:hover { background: var(--surface2); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-success { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+    .btn-success:hover { background: #047857; }
+
+    .layout-wrapper {
+      display: flex;
+      max-width: 98vw;
+      margin: 24px auto;
+      padding: 0 16px;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    /* Sidebar list */
+    .sidebar {
+      width: 320px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      position: sticky;
+      top: 100px;
+      max-height: calc(100vh - 132px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border2);
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      background: var(--bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-list {
+      list-style: none;
+      overflow-y: auto;
+    }
+    .sidebar-list li {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border2);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+    }
+    .sidebar-list li:hover, .sidebar-list li.active {
+      background: var(--accent-lt);
+    }
+    .sidebar-list li.active .eng-name {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .eng-name { font-size: 14px; font-weight: 600; }
+    .eng-spend { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--accent2); font-weight: 600; }
+
+    /* Main Dashboard */
+    .main-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Metrics Row */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+    }
+    .metric-card label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+    .metric-card .value {
+      font-family: 'DM Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-card .value.spend { color: var(--accent); }
+
+    /* Filter Card */
+    .filters-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      gap: 16px;
+      align-items: end;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+    }
+    .input-group { display: flex; flex-direction: column; gap: 6px; }
+    .input-group label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .input-group input, .input-group select {
+      padding: 8px 12px;
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-sm);
+      outline: none;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .input-group input:focus, .input-group select:focus { border-color: var(--accent); }
+
+    /* Charts Container */
+    .charts-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+    }
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .chart-container {
+      height: 250px;
+      position: relative;
+    }
+
+    /* Table styles */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      overflow: hidden;
+    }
+    .table-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .table-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: var(--bg);
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border2);
+      white-space: nowrap;
+    }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border2); font-size: 13px; }
+    tr:hover td { background: #f8fafc; }
+    .price-mono { font-family: 'DM Mono', monospace; font-weight: 600; }
+
+    /* Pagination */
+    .pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: var(--bg);
+      border-top: 1px solid var(--border2);
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: auto; }
+    .modal-content {
+      background: var(--surface); border-radius: var(--radius);
+      width: 90%; max-width: 900px; box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+      transform: translateY(20px); transition: transform 0.2s;
+      display: flex; flex-direction: column; overflow: hidden;
+      max-height: 90vh;
+    }
+    .modal-overlay.show .modal-content { transform: translateY(0); }
+    .modal-header {
+      padding: 18px 24px; border-bottom: 1px solid var(--border2);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-title-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; }
+    .modal-close {
+      background: transparent; border: none; font-size: 24px;
+      color: var(--text-muted); cursor: pointer; line-height: 1;
+    }
+    .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+    .modal-footer {
+      padding: 16px 24px; background: var(--bg); border-top: 1px solid var(--border2);
+      display: flex; justify-content: flex-end; gap: 12px;
+    }
+
+    /* Paste Box */
+    .paste-box {
+      width: 100%; height: 200px; padding: 12px; border: 2px dashed var(--border);
+      border-radius: var(--radius-sm); outline: none; font-family: 'DM Mono', monospace;
+      font-size: 12px; background: var(--bg); resize: none; margin-bottom: 16px;
+    }
+    .paste-box:focus { border-color: var(--accent); background: var(--surface); }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; background: #0f172a;
+      color: #fff; padding: 12px 24px; border-radius: var(--radius-sm);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000;
+      transform: translateY(100px); opacity: 0; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 500; font-size: 14px;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.error { background: var(--danger); }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <a href="#" class="brand">energise<span>.</span> invoices</a>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="openImportModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Copy &amp; Paste Excel Invoice
+      </button>
+      <button class="btn" onclick="window.location.href='energise-order-cost.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
+        Back to Costs Dashboard
+      </button>
+    </div>
+  </header>
+
+  <div class="layout-wrapper">
+    <!-- Sidebar / Top Spenders -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Spends By Engineer</span>
+        <button class="btn" onclick="clearSelectedEngineer()" style="padding: 2px 6px; font-size: 11px;">Clear</button>
+      </div>
+      <ul class="sidebar-list" id="engineerList">
+        <!-- populated dynamically -->
+        <li style="color:var(--text-muted); font-size:13px; text-align:center;">No data loaded.</li>
+      </ul>
+    </aside>
+
+    <!-- Main Content Panel -->
+    <main class="main-content">
+      <!-- Metrics row -->
+      <div class="metrics-row">
+        <div class="metric-card">
+          <label>Total Invoice Spend</label>
+          <div class="value spend" id="statTotalSpend">£0.00</div>
+        </div>
+        <div class="metric-card">
+          <label>Total Lines Imported</label>
+          <div class="value" id="statLinesCount">0</div>
+        </div>
+        <div class="metric-card">
+          <label>Total Qty Shipped</label>
+          <div class="value" id="statTotalQty">0</div>
+        </div>
+        <div class="metric-card">
+          <label>Chargeable Spend</label>
+          <div class="value" id="statChargeableRatio">0%</div>
+        </div>
+      </div>
+
+      <!-- Spend Charts Panel -->
+      <div class="charts-card">
+        <div class="charts-grid">
+          <div>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Spend Trend by Date</h4>
+            <div class="chart-container">
+              <canvas id="trendChart"></canvas>
+            </div>
+          </div>
+          <div>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Top Spenders Spends</h4>
+            <div class="chart-container">
+              <canvas id="topSpendersChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="filters-card">
+        <div class="input-group">
+          <label>Search Parts / Descriptions</label>
+          <input type="text" id="filterSearch" placeholder="Type Part ID, Name, or CHH Order ID..." oninput="applyFilters()">
+        </div>
+        <div class="input-group">
+          <label>Chargeable Status</label>
+          <select id="filterChargeable" onchange="applyFilters()">
+            <option value="">All Lines</option>
+            <option value="Yes">Chargeable Only</option>
+            <option value="No">Non-Chargeable Only</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Line Status</label>
+          <select id="filterStatus" onchange="applyFilters()">
+            <option value="">All Statuses</option>
+            <option value="Shipped">Shipped</option>
+            <option value="Invoiced">Invoiced</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+        <button class="btn" onclick="resetFilters()">Reset Filters</button>
+      </div>
+
+      <!-- Table Card -->
+      <div class="table-card">
+        <div class="table-header-row">
+          <div class="table-title" id="tableTitle">All Official Invoice Lines</div>
+          <button class="btn" onclick="exportFilteredCSV()" style="padding: 6px 12px; font-size: 13px;">
+            Export Filtered CSV
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Create Date</th>
+                <th>Engineer ID</th>
+                <th>Engineer Name</th>
+                <th>CHH Order ID</th>
+                <th>LN</th>
+                <th>Part ID</th>
+                <th>Description</th>
+                <th style="text-align:right;">Unit Price</th>
+                <th style="text-align:center;">Qty</th>
+                <th style="text-align:right;">Line Value</th>
+                <th>Chargeable</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceTableBody">
+              <tr>
+                <td colspan="12" style="text-align:center; padding:32px; color:var(--text-muted);">Loading database...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination -->
+        <div class="pagination-bar">
+          <div style="font-size:13px; color:var(--text-muted);" id="pageStats">Showing 0-0 of 0 lines</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" id="prevPageBtn" onclick="changePage(-1)" style="padding:6px 12px; font-size:13px;" disabled>Prev</button>
+            <button class="btn" id="nextPageBtn" onclick="changePage(1)" style="padding:6px 12px; font-size:13px;" disabled>Next</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Import Modal -->
+  <div class="modal-overlay" id="importModal" onclick="closeImportModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title-text">Import Official Invoice Data</div>
+        <button class="modal-close" onclick="closeImportModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14px; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">
+          Open your invoice spreadsheet in Excel, copy the data (including headers), and paste it into the box below. The headers should include: 
+          <strong>Engineer ID</strong>, <strong>CHH Order ID</strong>, <strong>Part ID</strong>, <strong>Description</strong>, <strong>Unit Price</strong>, <strong>line Value</strong>, <strong>Qty Shipped</strong>, <strong>Name</strong>, <strong>Create Date</strong>, <strong>Chargeable</strong>, etc.
+        </p>
+        <textarea class="paste-box" id="pasteInput" placeholder="Paste copy from Excel spreadsheet here..."></textarea>
+        
+        <div id="previewWrap" style="display:none; margin-top:20px;">
+          <h4 style="font-family:'Syne',sans-serif; font-size:14px; font-weight:700; margin-bottom:8px; color:var(--text);" id="previewCount">Parsed Records Preview</h4>
+          <div class="table-wrap" style="max-height:200px; overflow-y:auto; border:1px solid var(--border2); border-radius:6px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Create Date</th>
+                  <th>Engineer ID</th>
+                  <th>Name</th>
+                  <th>CHH Order ID</th>
+                  <th>LN</th>
+                  <th>Part ID</th>
+                  <th>Description</th>
+                  <th style="text-align:right;">Unit Price</th>
+                  <th style="text-align:center;">Qty</th>
+                  <th style="text-align:right;">Line Value</th>
+                </tr>
+              </thead>
+              <tbody id="previewTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary btn" onclick="closeImportModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="parsePastedData()">Parse Data</button>
+        <button class="btn btn-success" id="saveInvoiceBtn" onclick="saveParsedDataToDatabase()" style="display:none;">Save to Database</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Firebase Integration -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+      authDomain: "oesperformance-a54c0.firebaseapp.com",
+      projectId: "oesperformance-a54c0",
+      storageBucket: "oesperformance-a54c0.firebasestorage.app",
+      messagingSenderId: "484894102454",
+      appId: "1:484894102454:web:17535ee497eac2d90d6717",
+      measurementId: "G-R56BGZYV8N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // Global arrays
+    let allInvoiceLines = [];
+    let filteredLines = [];
+    let parsedLines = [];
+    
+    // Filters & Pagination state
+    let selectedEngineerName = '';
+    let currentPage = 1;
+    const recordsPerPage = 50;
+
+    // Charts objects
+    let trendChartInstance = null;
+    let topSpendersChartInstance = null;
+
+    window.showToast = function(msg, isError = false) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (isError ? ' error' : '');
+      void t.offsetWidth;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3500);
+    };
+
+    // Open/Close Modals
+    window.openImportModal = function() {
+      document.getElementById('pasteInput').value = '';
+      document.getElementById('previewWrap').style.display = 'none';
+      document.getElementById('saveInvoiceBtn').style.display = 'none';
+      document.getElementById('importModal').classList.add('show');
+    };
+    window.closeImportModal = function() {
+      document.getElementById('importModal').classList.remove('show');
+    };
+
+    // ── Parse Paste Box Data ───────────────────────────────────────────────────
+    window.parsePastedData = function() {
+      const input = document.getElementById('pasteInput').value.trim();
+      if (!input) {
+        showToast('Please paste Excel data first.', true);
+        return;
+      }
+
+      const rows = input.split('\n');
+      if (rows.length < 2) {
+        showToast('Pasted text does not contain enough rows (header + data needed).', true);
+        return;
+      }
+
+      // Read header row
+      const headers = rows[0].split('\t').map(h => h.trim().toLowerCase());
+      
+      // Map columns
+      const colMap = {
+        engineerId: headers.indexOf('engineer id'),
+        chhOrderId: headers.indexOf('chh order id'),
+        createDate: headers.indexOf('create date'),
+        dateShipped: headers.indexOf('date shipped'),
+        ln: headers.indexOf('ln'),
+        packlist: headers.indexOf('packlist'),
+        partId: headers.indexOf('part id'),
+        description: headers.indexOf('description'),
+        unitPrice: headers.indexOf('unit price'),
+        lineValue: headers.indexOf('line value'),
+        qtyShipped: headers.indexOf('qty shipped'),
+        engineerDetails: headers.indexOf("engineer's details"),
+        projectName: headers.indexOf('project name'),
+        name: headers.indexOf('name'),
+        company: headers.indexOf('company'),
+        shipTo: headers.indexOf('ship to'),
+        chargeable: headers.indexOf('chargeable'),
+        labourStatus: headers.indexOf('labour status'),
+        status: headers.indexOf('status')
+      };
+
+      // Validation check for key columns
+      if (colMap.chhOrderId === -1 || colMap.partId === -1 || colMap.lineValue === -1) {
+        // Log column names
+        console.warn('Headers parsed:', headers);
+        showToast('Could not find mandatory headers: "CHH Order ID", "Part ID", "line Value".', true);
+        return;
+      }
+
+      parsedLines = [];
+      for (let i = 1; i < rows.length; i++) {
+        if (!rows[i].trim()) continue;
+        const cols = rows[i].split('\t');
+
+        // Helper to get column value safely
+        const val = (idx) => (idx !== -1 && idx < cols.length) ? cols[idx].trim() : '';
+
+        // Parsing numbers
+        const cleanNumber = (str) => parseFloat(str.replace(/[^\d\.\-]/g, '')) || 0;
+
+        const record = {
+          engineerId: val(colMap.engineerId),
+          chhOrderId: val(colMap.chhOrderId),
+          createDate: val(colMap.createDate),
+          dateShipped: val(colMap.dateShipped),
+          ln: val(colMap.ln) || '1',
+          packlist: val(colMap.packlist),
+          partId: val(colMap.partId),
+          description: val(colMap.description),
+          unitPrice: cleanNumber(val(colMap.unitPrice)),
+          lineValue: cleanNumber(val(colMap.lineValue)),
+          qtyShipped: parseInt(val(colMap.qtyShipped).replace(/[^\d]/g, '')) || 0,
+          engineerDetails: val(colMap.engineerDetails),
+          projectName: val(colMap.projectName),
+          name: val(colMap.name) || 'Unknown Engineer',
+          company: val(colMap.company),
+          shipTo: val(colMap.shipTo),
+          chargeable: val(colMap.chargeable) || 'No',
+          labourStatus: val(colMap.labourStatus),
+          status: val(colMap.status) || 'Closed'
+        };
+
+        // Validate basic record info
+        if (record.chhOrderId && record.partId) {
+          parsedLines.push(record);
+        }
+      }
+
+      if (parsedLines.length === 0) {
+        showToast('Parsed 0 records. Check column delimiter (tab-separated is required).', true);
+        return;
+      }
+
+      // Show preview
+      document.getElementById('previewCount').textContent = `Parsed ${parsedLines.length} Invoice Lines (Previewing First 5)`;
+      const tbody = document.getElementById('previewTableBody');
+      tbody.innerHTML = parsedLines.slice(0, 5).map(r => `
+        <tr>
+          <td>${r.createDate}</td>
+          <td>${r.engineerId}</td>
+          <td><strong>${r.name}</strong></td>
+          <td>${r.chhOrderId}</td>
+          <td>${r.ln}</td>
+          <td><span class="sku-mono">${r.partId}</span></td>
+          <td>${r.description}</td>
+          <td style="text-align:right;">£${r.unitPrice.toFixed(2)}</td>
+          <td style="text-align:center;">${r.qtyShipped}</td>
+          <td style="text-align:right; font-weight:600;">£${r.lineValue.toFixed(2)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('previewWrap').style.display = 'block';
+      document.getElementById('saveInvoiceBtn').style.display = 'inline-flex';
+      showToast(`✓ Parsed ${parsedLines.length} records successfully!`);
+    };
+
+    // ── Save Parsed Data to Firebase in Batches ─────────────────────────────────
+    window.saveParsedDataToDatabase = async function() {
+      if (parsedLines.length === 0) return;
+      const btn = document.getElementById('saveInvoiceBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving to Cloud…';
+
+      try {
+        let batch = writeBatch(db);
+        let batchCount = 0;
+        let totalSaved = 0;
+
+        for (let i = 0; i < parsedLines.length; i++) {
+          const item = parsedLines[i];
+          // Construct deterministic document ID based on order, line, and part to prevent duplicates
+          const docId = `${item.chhOrderId}_${item.ln}_${item.partId}`.replace(/[\/\.\#\$\[\]]/g, '_');
+          const docRef = doc(db, 'Energise Invoices', docId);
+          
+          batch.set(docRef, item);
+          batchCount++;
+          totalSaved++;
+
+          // Firestore batch limits is 500 writes
+          if (batchCount === 450) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchCount = 0;
+          }
+        }
+
+        if (batchCount > 0) {
+          await batch.commit();
+        }
+
+        showToast(`✓ Successfully imported ${totalSaved} official invoice lines!`, false);
+        closeImportModal();
+        loadDatabase(); // Refresh dashboard
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to save to database: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save to Database';
+      }
+    };
+
+    // ── Load Invoice Database ──────────────────────────────────────────────────
+    async function loadDatabase() {
+      try {
+        const snap = await getDocs(collection(db, 'Energise Invoices'));
+        allInvoiceLines = [];
+
+        snap.forEach(d => {
+          allInvoiceLines.push({
+            id: d.id,
+            ...d.data()
+          });
+        });
+
+        // Sort descending by Create Date or Date Shipped
+        allInvoiceLines.sort((a, b) => new Date(b.createDate || b.dateShipped) - new Date(a.createDate || a.dateShipped));
+
+        applyFilters();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to load database: ' + err.message, true);
+        document.getElementById('invoiceTableBody').innerHTML = `
+          <tr><td colspan="12" style="text-align:center; padding:32px; color:var(--danger);">Error loading data.</td></tr>
+        `;
+      }
+    }
+
+    // ── Apply Filters, Sidebars, and Charts ────────────────────────────────────
+    window.applyFilters = function() {
+      const search = document.getElementById('filterSearch').value.toLowerCase().trim();
+      const chargeable = document.getElementById('filterChargeable').value;
+      const status = document.getElementById('filterStatus').value;
+
+      filteredLines = allInvoiceLines.filter(line => {
+        // Selected Engineer Sidebar Filter
+        if (selectedEngineerName && line.name !== selectedEngineerName) return false;
+
+        // Search inputs
+        if (search) {
+          const matchSearch = 
+            (line.partId || '').toLowerCase().includes(search) ||
+            (line.description || '').toLowerCase().includes(search) ||
+            (line.chhOrderId || '').toLowerCase().includes(search) ||
+            (line.name || '').toLowerCase().includes(search);
+          if (!matchSearch) return false;
+        }
+
+        // Chargeable
+        if (chargeable) {
+          const isChg = (line.chargeable || '').toLowerCase() === 'yes';
+          if (chargeable === 'Yes' && !isChg) return false;
+          if (chargeable === 'No' && isChg) return false;
+        }
+
+        // Status
+        if (status && line.status !== status) return false;
+
+        return true;
+      });
+
+      currentPage = 1;
+      updateSidebar();
+      updateMetrics();
+      renderCharts();
+      renderTable();
+    };
+
+    window.resetFilters = function() {
+      document.getElementById('filterSearch').value = '';
+      document.getElementById('filterChargeable').value = '';
+      document.getElementById('filterStatus').value = '';
+      selectedEngineerName = '';
+      applyFilters();
+    };
+
+    window.clearSelectedEngineer = function() {
+      selectedEngineerName = '';
+      applyFilters();
+    };
+
+    window.selectEngineer = function(name) {
+      selectedEngineerName = name;
+      applyFilters();
+    };
+
+    // ── Update Sidebar ─────────────────────────────────────────────────────────
+    function updateSidebar() {
+      // Calculate spends per engineer based on CURRENT filters (except engineer selection itself)
+      const engineerSpends = {};
+      
+      allInvoiceLines.forEach(line => {
+        const name = line.name || 'Unknown Engineer';
+        const val = line.lineValue || 0;
+        engineerSpends[name] = (engineerSpends[name] || 0) + val;
+      });
+
+      // Sort engineers descending
+      const sortedEngs = Object.entries(engineerSpends).sort((a, b) => b[1] - a[1]);
+
+      const list = document.getElementById('engineerList');
+      if (sortedEngs.length === 0) {
+        list.innerHTML = `<li style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">No records.</li>`;
+        return;
+      }
+
+      list.innerHTML = sortedEngs.map(([name, spend]) => {
+        const activeClass = (selectedEngineerName === name) ? 'active' : '';
+        return `
+          <li class="${activeClass}" onclick="selectEngineer('${name.replace(/'/g, "\\'")}')">
+            <span class="eng-name">${name}</span>
+            <span class="eng-spend">£${spend.toFixed(2)}</span>
+          </li>
+        `;
+      }).join('');
+    }
+
+    // ── Update Metrics ─────────────────────────────────────────────────────────
+    function updateMetrics() {
+      const totalSpend = filteredLines.reduce((sum, r) => sum + (r.lineValue || 0), 0);
+      const totalLines = filteredLines.length;
+      const totalQty = filteredLines.reduce((sum, r) => sum + (r.qtyShipped || 0), 0);
+      
+      const chargeableSpend = filteredLines.reduce((sum, r) => {
+        const isChg = (r.chargeable || '').toLowerCase() === 'yes';
+        return isChg ? sum + (r.lineValue || 0) : sum;
+      }, 0);
+      
+      const chgRatio = totalSpend > 0 ? Math.round((chargeableSpend / totalSpend) * 100) : 0;
+
+      document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
+      document.getElementById('statLinesCount').textContent = totalLines.toLocaleString();
+      document.getElementById('statTotalQty').textContent = totalQty.toLocaleString();
+      document.getElementById('statChargeableRatio').textContent = `${chgRatio}%`;
+    }
+
+    // ── Render Charts ──────────────────────────────────────────────────────────
+    function renderCharts() {
+      // 1. Spend Trend by Date
+      const dateSpends = {};
+      filteredLines.forEach(line => {
+        const dStr = line.createDate || line.dateShipped || '';
+        if (dStr) {
+          // Format date or group by month/date
+          const key = dStr.split(' ')[0]; // group by day
+          dateSpends[key] = (dateSpends[key] || 0) + (line.lineValue || 0);
+        }
+      });
+
+      // Sort date keys ascending
+      const sortedDates = Object.entries(dateSpends).sort((a, b) => new Date(a[0]) - new Date(b[0])).slice(-15); // last 15 days
+
+      // Destroy existing chart
+      if (trendChartInstance) trendChartInstance.destroy();
+      
+      const ctx1 = document.getElementById('trendChart').getContext('2d');
+      trendChartInstance = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels: sortedDates.map(d => d[0]),
+          datasets: [{
+            label: 'Daily Spend (£)',
+            data: sortedDates.map(d => d[1]),
+            borderColor: '#1e40af',
+            backgroundColor: 'rgba(30, 64, 175, 0.05)',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { callback: (v) => '£' + v } }
+          }
+        }
+      });
+
+      // 2. Top Spenders Chart
+      const spendsMap = {};
+      filteredLines.forEach(line => {
+        const name = line.name || 'Unknown';
+        spendsMap[name] = (spendsMap[name] || 0) + (line.lineValue || 0);
+      });
+      const topSpenders = Object.entries(spendsMap).sort((a, b) => b[1] - a[1]).slice(0, 7);
+
+      if (topSpendersChartInstance) topSpendersChartInstance.destroy();
+
+      const ctx2 = document.getElementById('topSpendersChart').getContext('2d');
+      topSpendersChartInstance = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: topSpenders.map(d => d[0]),
+          datasets: [{
+            data: topSpenders.map(d => d[1]),
+            backgroundColor: '#059669',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { callback: (v) => '£' + v } }
+          }
+        }
+      });
+    }
+
+    // ── Render Details Table ───────────────────────────────────────────────────
+    function renderTable() {
+      const tbody = document.getElementById('invoiceTableBody');
+      const startIdx = (currentPage - 1) * recordsPerPage;
+      const endIdx = startIdx + recordsPerPage;
+      const pageData = filteredLines.slice(startIdx, endIdx);
+
+      const totalRecords = filteredLines.length;
+      document.getElementById('pageStats').textContent = totalRecords > 0
+        ? `Showing ${startIdx + 1}-${Math.min(endIdx, totalRecords)} of ${totalRecords} lines`
+        : `Showing 0-0 of 0 lines`;
+
+      document.getElementById('prevPageBtn').disabled = currentPage === 1;
+      document.getElementById('nextPageBtn').disabled = endIdx >= totalRecords;
+
+      if (pageData.length === 0) {
+        tbody.innerHTML = `
+          <tr><td colspan="12" style="text-align:center; padding:32px; color:var(--text-muted);">No invoice lines match your active filters.</td></tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = pageData.map(line => `
+        <tr>
+          <td>${line.createDate || 'N/A'}</td>
+          <td style="font-family:'DM Mono', monospace; font-size:12px;">${line.engineerId || 'N/A'}</td>
+          <td><strong>${line.name}</strong></td>
+          <td>${line.chhOrderId}</td>
+          <td>${line.ln}</td>
+          <td><span class="sku-mono">${line.partId}</span></td>
+          <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${line.description}">${line.description || 'N/A'}</td>
+          <td class="price-mono" style="text-align:right;">£${(line.unitPrice || 0).toFixed(2)}</td>
+          <td style="text-align:center; font-weight:600;">${line.qtyShipped}</td>
+          <td class="price-mono" style="text-align:right; color:var(--accent2);">£${(line.lineValue || 0).toFixed(2)}</td>
+          <td><span style="font-weight:600; color:${(line.chargeable || '').toLowerCase() === 'yes' ? 'var(--accent2)' : 'var(--text-muted)'};">${line.chargeable}</span></td>
+          <td><span style="background:${line.status === 'Closed' ? '#f1f5f9' : 'var(--accent-lt)'}; color:${line.status === 'Closed' ? 'var(--text-muted)' : 'var(--accent)'}; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600;">${line.status}</span></td>
+        </tr>
+      `).join('');
+
+      document.getElementById('tableTitle').textContent = selectedEngineerName
+        ? `Invoice details for: ${selectedEngineerName}`
+        : `All Official Invoice Lines`;
+    }
+
+    window.changePage = function(direction) {
+      currentPage += direction;
+      renderTable();
+    };
+
+    // ── Export Filtered CSV ────────────────────────────────────────────────────
+    window.exportFilteredCSV = function() {
+      if (filteredLines.length === 0) {
+        showToast('No data to export.', true);
+        return;
+      }
+
+      const rows = [];
+      // Headers
+      rows.push(['Create Date', 'Date Shipped', 'Engineer ID', 'Engineer Name', 'CHH Order ID', 'LN', 'Packlist', 'Part ID', 'Description', 'Unit Price (£)', 'Qty Shipped', 'Line Value (£)', 'Project Name', 'Company', 'Ship To', 'Chargeable', 'Labour Status', 'Status']);
+
+      filteredLines.forEach(line => {
+        rows.push([
+          line.createDate || '',
+          line.dateShipped || '',
+          line.engineerId || '',
+          `"${line.name}"`,
+          line.chhOrderId || '',
+          line.ln || '',
+          line.packlist || '',
+          line.partId || '',
+          `"${line.description || ''}"`,
+          (line.unitPrice || 0).toFixed(2),
+          line.qtyShipped || 0,
+          (line.lineValue || 0).toFixed(2),
+          `"${line.projectName || ''}"`,
+          `"${line.company || ''}"`,
+          `"${line.shipTo || ''}"`,
+          line.chargeable || 'No',
+          line.labourStatus || '',
+          line.status || ''
+        ]);
+      });
+
+      const csvContent = rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `official_invoice_spend_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('✓ CSV Downloaded');
+    };
+
+    // Initial Load
+    loadDatabase();
+  </script>
+</body>
+</html>
