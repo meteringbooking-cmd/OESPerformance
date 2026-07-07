@@ -956,7 +956,7 @@
       autofocus>`;
   };
 
-  window.commitQtyEdit = function(orderId, idx, input) {
+  window.commitQtyEdit = async function(orderId, idx, input) {
     const order = allOrders.find(o => o.id === orderId);
     if (!order) return;
     const newQty = Math.max(1, parseInt(input.value) || 1);
@@ -964,13 +964,23 @@
     // Rebuild the qty cell
     const cell = input.closest('td');
     cell.innerHTML = `<span class="qty-display" title="Click to edit" onclick="startQtyEdit('${orderId}',${idx})">${newQty}</span>`;
-    // Show save button
-    const saveBtn = document.getElementById('save-' + orderId);
-    if (saveBtn) saveBtn.style.display = 'flex';
+    
+    // Auto-save
+    try {
+      await updateDoc(doc(db, "Energise Orders", orderId), {
+        items:     order.items,
+        itemCount: order.items.length
+      });
+      showToast('✓ Quantity updated and saved.', false);
+      updateStats();
+    } catch (err) {
+      console.error(err);
+      showToast('Auto-save failed: ' + err.message, true);
+    }
   };
 
   // ── Delete single line item ───────────────────────────────
-  window.deleteLineItem = function(orderId, idx) {
+  window.deleteLineItem = async function(orderId, idx) {
     const order = allOrders.find(o => o.id === orderId);
     if (!order) return;
     order.items.splice(idx, 1);
@@ -984,9 +994,11 @@
           <td class="item-name-cell">${escHtml(item.name || '')}</td>
           <td><span class="sku-mono">${escHtml(item.sku || '')}</span></td>
           <td><span class="uom-pill">${escHtml(item.uom || '')}</span></td>
+          <td style="color:var(--text-muted);">£${(item.price || 0).toFixed(2)}</td>
           <td class="qty-cell">
             <span class="qty-display" title="Click to edit" onclick="startQtyEdit('${orderId}',${i})">${item.qty ?? 1}</span>
           </td>
+          <td style="font-weight:600; color:var(--accent2);">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
           <td>
             <button class="btn-row-delete" title="Remove this line" onclick="deleteLineItem('${orderId}',${i})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -1004,9 +1016,23 @@
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
       ${order.itemCount} item${order.itemCount !== 1 ? 's' : ''}`;
 
-    // Show save button
-    const saveBtn = document.getElementById('save-' + orderId);
-    if (saveBtn) saveBtn.style.display = 'flex';
+    // Auto-save
+    try {
+      await updateDoc(doc(db, "Energise Orders", orderId), {
+        items:     order.items,
+        itemCount: order.items.length
+      });
+      showToast('✓ Item removed and saved.', false);
+      updateStats();
+      
+      // If order is empty, reload page to hide or remove
+      if (order.items.length === 0) {
+        setTimeout(() => loadOrders(), 1500);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Auto-save failed: ' + err.message, true);
+    }
   };
 
   // ── Save changes to Firestore ────────────────────────────
@@ -1036,12 +1062,6 @@
   window.processOrder = async function(orderId) {
     const order = allOrders.find(o => o.id === orderId);
     if (!order) return;
-
-    // Warn if there are unsaved changes
-    const saveBtn = document.getElementById('save-' + orderId);
-    if (saveBtn && saveBtn.style.display !== 'none') {
-      if (!confirm('You have unsaved changes. Save them before processing, or proceed and send the current saved version?')) return;
-    }
 
     const btn = document.getElementById('process-' + orderId);
     if (!btn) return;
@@ -1103,42 +1123,53 @@
     try {
       const sends = [];
 
-      if (consumables.length > 0) {
-  // Chunk consumables to stay under EmailJS's 50KB variable limit.
-  // ~15 items per chunk is conservative; adjust down if still hitting the limit.
-  const CHUNK_SIZE = 15;
-  const chunks = [];
-  for (let i = 0; i < consumables.length; i += CHUNK_SIZE) {
-    chunks.push(consumables.slice(i, i + CHUNK_SIZE));
-  }
-  chunks.forEach((chunk, chunkIdx) => {
-    const partLabel = chunks.length > 1 ? ` (Part ${chunkIdx + 1} of ${chunks.length})` : '';
-    sends.push(
-      emailjs.send('service_ushej2v', 'template_e9n1jcm', {
-        submitted_by: order.submittedBy,
-        submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-        item_count:   chunk.length,
-        order_type:   `Consumables${partLabel}`,
-        header_color: '#1a56db',
-        items_html:   buildItemsHtml(chunk),
-        order_id:     orderId,
-      })
-    );
-  });
-}
-
-      if (meters.length > 0) {
+      if (consumables.length > 0 && meters.length > 0) {
+        const link = `https://oes-performance.vercel.app/energise-order-cost.html?order=${orderId}`;
+        const mixedHtml = `
+          <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:15px;color:#374151;line-height:1.6;background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:22px;text-align:center;margin-top:10px;">
+            <p style="margin:0 0 10px 0;font-weight:700;color:#d97706;font-size:17px;">📦 Mixed Order: Consumables &amp; Meters</p>
+            <p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;">This order contains both consumable materials and meters. Due to category separation rules, the item list has been split. You can view, audit, and export the entire itemized list in one place using the link below:</p>
+            <a href="${link}" target="_blank" style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:6px;box-shadow:0 4px 12px rgba(26,86,219,0.25);font-size:14px;">View Complete Order Details</a>
+          </div>
+        `;
         sends.push(
           emailjs.send('service_ushej2v', 'template_e9n1jcm', {
             submitted_by: order.submittedBy,
             submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-            item_count:   meters.length,
-            order_type:   'Meters',
-            header_color: '#dc2626',
-            items_html:   buildItemsHtml(meters),
+            item_count:   order.items.length,
+            order_type:   'Mixed (Consumables &amp; Meters)',
+            header_color: '#4f46e5',
+            items_html:   mixedHtml,
             order_id:     orderId,
           })
         );
+      } else {
+        if (consumables.length > 0) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumables.length,
+              order_type:   'Consumables',
+              header_color: '#1a56db',
+              items_html:   buildItemsHtml(consumables),
+              order_id:     orderId,
+            })
+          );
+        }
+        if (meters.length > 0) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   meters.length,
+              order_type:   'Meters',
+              header_color: '#dc2626',
+              items_html:   buildItemsHtml(meters),
+              order_id:     orderId,
+            })
+          );
+        }
       }
 
       if (sends.length === 0) {
@@ -1171,12 +1202,15 @@
         renderProcessed();
       }
 
-const consumableChunkCount = Math.ceil(consumables.length / 15) || 0;
-const sentParts = [
-  consumables.length > 0 ? `consumables (${consumables.length} items, ${consumableChunkCount} email${consumableChunkCount > 1 ? 's' : ''})` : null,
-  meters.length      > 0 ? `meters (${meters.length})`           : null,
-].filter(Boolean).join(' + ');
-showToast(`✓ Order processed — emails sent for ${sentParts}!`, false);
+      if (consumables.length > 0 && meters.length > 0) {
+        showToast(`✓ Order processed — email with link sent for mixed order!`, false);
+      } else {
+        const sentParts = [
+          consumables.length > 0 ? `consumables (${consumables.length})` : null,
+          meters.length      > 0 ? `meters (${meters.length})`           : null,
+        ].filter(Boolean).join(' + ');
+        showToast(`✓ Order processed — email sent for ${sentParts}!`, false);
+      }
 
     } catch (err) {
       console.error('EmailJS error:', err);
