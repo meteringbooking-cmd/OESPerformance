@@ -1142,53 +1142,114 @@
 
     try {
       const sends = [];
+      const link = `https://oes-performance.vercel.app/energise-order-view.html?order=${orderId}`;
 
-      if (consumables.length > 0 && meters.length > 0) {
-        const link = `https://oes-performance.vercel.app/energise-order-view.html?order=${orderId}`;
-        const mixedHtml = `
+      // Helper for large order notice
+      function buildLargeOrderNoticeHtml(orderType, count, linkUrl) {
+        return `
           <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:15px;color:#374151;line-height:1.6;background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:22px;text-align:center;margin-top:10px;">
-            <p style="margin:0 0 10px 0;font-weight:700;color:#d97706;font-size:17px;">📦 Mixed Order: Consumables &amp; Meters</p>
-            <p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;">This order contains both consumable materials and meters. Due to category separation rules, the item list has been split. You can view, audit, and export the entire itemized list in one place using the link below:</p>
-            <a href="${link}" target="_blank" style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:6px;box-shadow:0 4px 12px rgba(26,86,219,0.25);font-size:14px;">View Complete Order Details</a>
+            <p style="margin:0 0 10px 0;font-weight:700;color:#d97706;font-size:17px;">⚠️ Large Order: ${orderType}</p>
+            <p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;">This order contains a large number of items (${count}) and cannot be embedded directly in this email. You can view and print the complete details using the secure receipt link below:</p>
+            <a href="${linkUrl}" target="_blank" style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:6px;font-size:14px;">View Complete Order Details</a>
           </div>
         `;
-        sends.push(
-          emailjs.send('service_ushej2v', 'template_e9n1jcm', {
-            submitted_by: order.submittedBy,
-            submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-            item_count:   order.items.length,
-            order_type:   'Mixed (Consumables &amp; Meters)',
-            header_color: '#4f46e5',
-            items_html:   mixedHtml,
-            order_id:     orderId,
-          })
-        );
-      } else {
-        if (consumables.length > 0) {
+      }
+
+      // Helper for mixed order notice
+      function buildMixedOrderNoticeHtml(count, linkUrl) {
+        return `
+          <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:15px;color:#374151;line-height:1.6;background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:22px;text-align:center;margin-top:10px;">
+            <p style="margin:0 0 10px 0;font-weight:700;color:#d97706;font-size:17px;">📦 Mixed Order: Consumables &amp; Meters</p>
+            <p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;">This order contains a large number of items (${count}) across multiple categories. You can view the entire itemized list using the secure receipt link below:</p>
+            <a href="${linkUrl}" target="_blank" style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:6px;font-size:14px;">View Complete Order Details</a>
+          </div>
+        `;
+      }
+
+      if (consumables.length > 0 && meters.length > 0) {
+        // Mixed Order
+        if (order.items.length <= 10) {
+          // Small mixed order: Display inline
           sends.push(
             emailjs.send('service_ushej2v', 'template_e9n1jcm', {
               submitted_by: order.submittedBy,
               submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-              item_count:   consumables.length,
-              order_type:   'Consumables',
-              header_color: '#1a56db',
-              items_html:   buildItemsHtml(consumables),
+              item_count:   order.items.length,
+              order_type:   'Mixed (Consumables &amp; Meters)',
+              header_color: '#4f46e5',
+              items_html:   buildItemsHtml(order.items),
+              order_id:     orderId,
+            })
+          );
+        } else {
+          // Large mixed order: Show link notice
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   order.items.length,
+              order_type:   'Mixed (Consumables &amp; Meters)',
+              header_color: '#4f46e5',
+              items_html:   buildMixedOrderNoticeHtml(order.items.length, link),
               order_id:     orderId,
             })
           );
         }
+      } else {
+        // Single Category Order (Consumables OR Meters)
+        if (consumables.length > 0) {
+          if (consumables.length <= 10) {
+            sends.push(
+              emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+                submitted_by: order.submittedBy,
+                submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+                item_count:   consumables.length,
+                order_type:   'Consumables',
+                header_color: '#1a56db',
+                items_html:   buildItemsHtml(consumables),
+                order_id:     orderId,
+              })
+            );
+          } else {
+            sends.push(
+              emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+                submitted_by: order.submittedBy,
+                submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+                item_count:   consumables.length,
+                order_type:   'Consumables',
+                header_color: '#1a56db',
+                items_html:   buildLargeOrderNoticeHtml('Consumables', consumables.length, link),
+                order_id:     orderId,
+              })
+            );
+          }
+        }
         if (meters.length > 0) {
-          sends.push(
-            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
-              submitted_by: order.submittedBy,
-              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-              item_count:   meters.length,
-              order_type:   'Meters',
-              header_color: '#dc2626',
-              items_html:   buildItemsHtml(meters),
-              order_id:     orderId,
-            })
-          );
+          if (meters.length <= 10) {
+            sends.push(
+              emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+                submitted_by: order.submittedBy,
+                submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+                item_count:   meters.length,
+                order_type:   'Meters',
+                header_color: '#dc2626',
+                items_html:   buildItemsHtml(meters),
+                order_id:     orderId,
+              })
+            );
+          } else {
+            sends.push(
+              emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+                submitted_by: order.submittedBy,
+                submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+                item_count:   meters.length,
+                order_type:   'Meters',
+                header_color: '#dc2626',
+                items_html:   buildLargeOrderNoticeHtml('Meters', meters.length, link),
+                order_id:     orderId,
+              })
+            );
+          }
         }
       }
 
