@@ -418,7 +418,7 @@
   <!-- Firebase Integration -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, addDoc, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -474,7 +474,10 @@
         snap.forEach(docSnap => {
           const data = docSnap.data();
           if (data.processedAt) {
-            const cost = (data.items || []).reduce((sum, item) => sum + ((item.price || 0) * (item.qty || 1)), 0);
+            const cost = (data.items || []).reduce((sum, item) => {
+              if (item.notDelivered) return sum;
+              return sum + ((item.price || 0) * (item.qty || 1));
+            }, 0);
             const name = data.submittedBy || 'Unknown';
             submittersSet.add(name);
             
@@ -606,16 +609,32 @@
       }
 
       tbody.innerHTML = filteredOrders.map(o => {
-        const itemRows = (o.items || []).map(i => {
-          const lineCost = (i.price || 0) * (i.qty || 1);
+        const itemRows = (o.items || []).map((i, idx) => {
+          const isNotDelivered = !!i.notDelivered;
+          const lineCost = isNotDelivered ? 0 : (i.price || 0) * (i.qty || 1);
+          
+          const statusBadge = isNotDelivered
+            ? `<span style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:#dc2626; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700;">Not Delivered</span>`
+            : `<span style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:#059669; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700;">Delivered</span>`;
+
+          const toggleButton = `
+            <button class="btn" style="padding:4px 8px; font-size:11px; font-weight:600; min-width:130px; text-align:center;" onclick="event.stopPropagation(); toggleItemDelivery('${o.id}', ${idx})">
+              ${isNotDelivered ? 'Mark Delivered' : 'Mark Undelivered'}
+            </button>
+          `;
+
+          const rowStyle = isNotDelivered ? 'text-decoration: line-through; opacity: 0.55;' : '';
+
           return `
-            <tr>
+            <tr style="${rowStyle}">
               <td>${i.sku}</td>
               <td>${i.name}</td>
               <td>${i.category || 'N/A'}</td>
               <td>${i.qty} ${i.uom}</td>
               <td class="item-cost">£${(i.price || 0).toFixed(2)}</td>
               <td class="item-cost">£${lineCost.toFixed(2)}</td>
+              <td style="text-align:center; vertical-align:middle;">${statusBadge}</td>
+              <td style="text-align:right; vertical-align:middle;">${toggleButton}</td>
             </tr>
           `;
         }).join('');
@@ -632,7 +651,18 @@
             <td colspan="5" style="padding:0;">
               <div class="items-container">
                 <table class="items-table">
-                  <thead><tr><th width="80">SKU</th><th>Product Name</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th width="80">SKU</th>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Line Total</th>
+                      <th style="text-align:center;" width="110">Delivery Status</th>
+                      <th style="text-align:right;" width="145">Action</th>
+                    </tr>
+                  </thead>
                   <tbody>${itemRows}</tbody>
                 </table>
               </div>
@@ -776,19 +806,20 @@
     window.exportCSV = function() {
       if (filteredOrders.length === 0) { showToast('No orders to export.', true); return; }
       const rows = [];
-      rows.push(['Order ID', 'Submitter', 'Processed Date', 'SKU', 'Item Name', 'Category', 'Quantity', 'UOM', 'Unit Price (£)', 'Line Total (£)', 'Order Total (£)']);
+      rows.push(['Order ID', 'Submitter', 'Processed Date', 'SKU', 'Item Name', 'Category', 'Quantity', 'UOM', 'Unit Price (£)', 'Line Total (£)', 'Order Total (£)', 'Delivery Status']);
       
       filteredOrders.forEach(o => {
         const orderDate = o.processedAt ? new Date(o.processedAt).toISOString() : '';
         if (o.items && o.items.length > 0) {
           o.items.forEach((i, idx) => {
             const unitPrice = (i.price || 0).toFixed(2);
-            const lineTotal = ((i.price || 0) * (i.qty || 1)).toFixed(2);
+            const isNotDelivered = !!i.notDelivered;
+            const lineTotal = isNotDelivered ? '0.00' : ((i.price || 0) * (i.qty || 1)).toFixed(2);
             const ordTotal  = idx === 0 ? o.orderTotalCost.toFixed(2) : '';
-            rows.push([ o.id, `"${o.submittedBy}"`, orderDate, i.sku, `"${i.name}"`, i.category || '', i.qty || 1, i.uom || '', unitPrice, lineTotal, ordTotal ]);
+            rows.push([ o.id, `"${o.submittedBy}"`, orderDate, i.sku, `"${i.name}"`, i.category || '', i.qty || 1, i.uom || '', unitPrice, lineTotal, ordTotal, isNotDelivered ? 'Not Delivered' : 'Delivered' ]);
           });
         } else {
-          rows.push([o.id, `"${o.submittedBy}"`, orderDate, '', '', '', '', '', '', '', o.orderTotalCost.toFixed(2)]);
+          rows.push([o.id, `"${o.submittedBy}"`, orderDate, '', '', '', '', '', '', '', o.orderTotalCost.toFixed(2), 'Delivered']);
         }
       });
 
@@ -958,6 +989,35 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'Save Processed Order';
+      }
+    };
+
+    window.toggleItemDelivery = async function(orderId, itemIndex) {
+      const order = allOrders.find(o => o.id === orderId);
+      if (!order || !order.items || !order.items[itemIndex]) return;
+      
+      const item = order.items[itemIndex];
+      item.notDelivered = !item.notDelivered;
+      
+      try {
+        const docRef = doc(db, "Energise Orders", orderId);
+        await updateDoc(docRef, {
+          items: order.items
+        });
+        
+        order.orderTotalCost = order.items.reduce((sum, it) => {
+          if (it.notDelivered) return sum;
+          return sum + ((it.price || 0) * (it.qty || 1));
+        }, 0);
+        
+        showToast(item.notDelivered ? '✓ Marked item as Not Delivered.' : '✓ Marked item as Delivered.', false);
+        
+        renderTable();
+        updateStats();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to update status: ' + err.message, true);
+        item.notDelivered = !item.notDelivered;
       }
     };
 
