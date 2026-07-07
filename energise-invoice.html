@@ -327,6 +327,55 @@
     }
     .toast.show { transform: translateY(0); opacity: 1; }
     .toast.error { background: var(--danger); }
+
+    /* Insights & Outliers CSS */
+    .insights-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .insight-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+    }
+    .insight-list {
+      list-style: none;
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .insight-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      padding: 8px 12px;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border2);
+    }
+    .insight-badge {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .outliers-box {
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+      padding-right: 4px;
+    }
   </style>
 </head>
 <body>
@@ -360,7 +409,7 @@
     <!-- Main Content Panel -->
     <main class="main-content">
       <!-- Metrics row -->
-      <div class="metrics-row">
+      <div class="metrics-row" style="grid-template-columns: repeat(6, 1fr);">
         <div class="metric-card">
           <label>Total Invoice Spend</label>
           <div class="value spend" id="statTotalSpend">£0.00</div>
@@ -374,14 +423,22 @@
           <div class="value" id="statTotalQty">0</div>
         </div>
         <div class="metric-card">
-          <label>Chargeable Spend</label>
+          <label>Avg Line Value</label>
+          <div class="value" id="statAvgLine">£0.00</div>
+        </div>
+        <div class="metric-card">
+          <label>Non-Chargeable Spend</label>
+          <div class="value" style="color:var(--danger);" id="statNonChargeable">£0.00</div>
+        </div>
+        <div class="metric-card">
+          <label>Chargeable Spend %</label>
           <div class="value" id="statChargeableRatio">0%</div>
         </div>
       </div>
 
       <!-- Spend Charts Panel -->
       <div class="charts-card">
-        <div class="charts-grid">
+        <div class="charts-grid" style="grid-template-columns: 2fr 1fr 1fr;">
           <div>
             <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Spend Trend by Date</h4>
             <div class="chart-container">
@@ -389,10 +446,36 @@
             </div>
           </div>
           <div>
+            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Chargeability Share</h4>
+            <div class="chart-container" style="height:250px;">
+              <canvas id="chargeabilityChart"></canvas>
+            </div>
+          </div>
+          <div>
             <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Top Spenders Spends</h4>
             <div class="chart-container">
               <canvas id="topSpendersChart"></canvas>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Insights Panel -->
+      <div class="insights-grid">
+        <div class="insight-card">
+          <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border2); padding-bottom:6px;">Top Cost Drivers (Top 5 SKUs)</h4>
+          <ul class="insight-list" id="topCostDriversList">
+            <!-- populated dynamically -->
+          </ul>
+        </div>
+        
+        <div class="insight-card">
+          <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--danger); border-bottom:1px solid var(--border2); padding-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+            <span>High-Value Outliers (Lines > £150)</span>
+            <span class="insight-badge" id="outliersCountBadge" style="background:var(--danger); color:#fff; font-size:12px; padding:2px 8px; border-radius:10px;">0</span>
+          </h4>
+          <div class="outliers-box" id="outliersList">
+            <!-- populated dynamically -->
           </div>
         </div>
       </div>
@@ -545,6 +628,7 @@
 
     // Charts objects
     let trendChartInstance = null;
+    let chargeabilityChartInstance = null;
     let topSpendersChartInstance = null;
 
     window.showToast = function(msg, isError = false) {
@@ -791,6 +875,7 @@
       updateSidebar();
       updateMetrics();
       renderCharts();
+      updateInsights();
       renderTable();
     };
 
@@ -855,10 +940,14 @@
       }, 0);
       
       const chgRatio = totalSpend > 0 ? Math.round((chargeableSpend / totalSpend) * 100) : 0;
+      const avgLineVal = totalLines > 0 ? (totalSpend / totalLines) : 0;
+      const nonChgSpend = totalSpend - chargeableSpend;
 
       document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
       document.getElementById('statLinesCount').textContent = totalLines.toLocaleString();
       document.getElementById('statTotalQty').textContent = totalQty.toLocaleString();
+      document.getElementById('statAvgLine').textContent = `£${avgLineVal.toFixed(2)}`;
+      document.getElementById('statNonChargeable').textContent = `£${nonChgSpend.toFixed(2)}`;
       document.getElementById('statChargeableRatio').textContent = `${chgRatio}%`;
     }
 
@@ -906,7 +995,45 @@
         }
       });
 
-      // 2. Top Spenders Chart
+      // 2. Chargeability Donut Chart
+      let chgSpend = 0;
+      let nonChgSpend = 0;
+      filteredLines.forEach(line => {
+        const isChg = (line.chargeable || '').toLowerCase() === 'yes';
+        if (isChg) {
+          chgSpend += (line.lineValue || 0);
+        } else {
+          nonChgSpend += (line.lineValue || 0);
+        }
+      });
+
+      if (chargeabilityChartInstance) chargeabilityChartInstance.destroy();
+      
+      const ctx3 = document.getElementById('chargeabilityChart').getContext('2d');
+      chargeabilityChartInstance = new Chart(ctx3, {
+        type: 'doughnut',
+        data: {
+          labels: ['Chargeable', 'Non-Chargeable'],
+          datasets: [{
+            data: [chgSpend, nonChgSpend],
+            backgroundColor: ['#059669', '#ef4444'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 12, font: { size: 10 } }
+            }
+          },
+          cutout: '60%'
+        }
+      });
+
+      // 3. Top Spenders Chart
       const spendsMap = {};
       filteredLines.forEach(line => {
         const name = line.name || 'Unknown';
@@ -936,6 +1063,68 @@
           }
         }
       });
+    }
+
+    // ── Update Insights Panel ──────────────────────────────────────────────────
+    function updateInsights() {
+      // 1. Top Cost Drivers (SKUs)
+      const skuSpends = {};
+      const skuNames = {};
+      filteredLines.forEach(line => {
+        const sku = line.partId || 'Unknown SKU';
+        skuSpends[sku] = (skuSpends[sku] || 0) + (line.lineValue || 0);
+        skuNames[sku] = line.description || '';
+      });
+
+      const sortedSKUs = Object.entries(skuSpends).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const totalSpend = filteredLines.reduce((sum, r) => sum + (r.lineValue || 0), 0);
+
+      const driversList = document.getElementById('topCostDriversList');
+      if (sortedSKUs.length === 0) {
+        driversList.innerHTML = `<li class="insight-list-item" style="color:var(--text-muted);">No records found.</li>`;
+      } else {
+        driversList.innerHTML = sortedSKUs.map(([sku, spend]) => {
+          const pct = totalSpend > 0 ? Math.round((spend / totalSpend) * 100) : 0;
+          return `
+            <li class="insight-list-item">
+              <div style="min-width:0; flex:1; padding-right:12px;">
+                <span class="sku-mono" style="font-size:11px; padding:1px 5px;">${sku}</span>
+                <span style="font-weight:600; font-size:12px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;" title="${skuNames[sku]}">${skuNames[sku]}</span>
+              </div>
+              <div style="text-align:right; flex-shrink:0;">
+                <span style="font-weight:600; color:var(--accent); font-size:13px; font-family:'DM Mono', monospace;">£${spend.toFixed(2)}</span>
+                <span style="font-size:10px; color:var(--text-muted); display:block;">(${pct}% share)</span>
+              </div>
+            </li>
+          `;
+        }).join('');
+      }
+
+      // 2. High-Value Outliers (> £150)
+      const outliers = filteredLines.filter(line => (line.lineValue || 0) > 150)
+        .sort((a, b) => (b.lineValue || 0) - (a.lineValue || 0));
+
+      document.getElementById('outliersCountBadge').textContent = outliers.length;
+
+      const outliersList = document.getElementById('outliersList');
+      if (outliers.length === 0) {
+        outliersList.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">No high-value outlier lines found (> £150).</div>`;
+      } else {
+        outliersList.innerHTML = outliers.map(line => `
+          <div class="insight-list-item" style="border-left: 3px solid var(--danger); margin-bottom: 2px;">
+            <div style="min-width:0; flex:1; padding-right:12px;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:12px;">
+                <span style="font-weight:700; color:var(--text);">${line.name}</span>
+                <span class="sku-mono" style="font-size:9px; padding:0 3px;">ID: ${line.chhOrderId}</span>
+              </div>
+              <span style="font-size:11px; color:var(--text-muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">SKU: ${line.partId} &middot; ${line.description}</span>
+            </div>
+            <div style="text-align:right; font-weight:700; color:var(--danger); font-size:13px; font-family:'DM Mono', monospace; flex-shrink:0;">
+              £${(line.lineValue || 0).toFixed(2)}
+            </div>
+          </div>
+        `).join('');
+      }
     }
 
     // ── Render Details Table ───────────────────────────────────────────────────
