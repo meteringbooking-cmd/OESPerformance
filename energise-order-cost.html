@@ -258,6 +258,52 @@
     .toast.error { background: var(--danger); }
     .empty-state { padding: 64px 24px; text-align: center; color: var(--text-muted); }
     .empty-state svg { color: var(--border2); margin-bottom: 16px; }
+
+    /* Manual Order Modal Styles */
+    .manual-modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(17, 24, 39, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+      z-index: 2000; backdrop-filter: blur(4px);
+    }
+    .manual-modal-overlay.show { opacity: 1; pointer-events: auto; }
+    .manual-modal-content {
+      background: var(--surface); border-radius: var(--radius);
+      width: 90%; max-width: 650px; box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      transform: translateY(20px); transition: transform 0.2s;
+      display: flex; flex-direction: column; overflow: hidden;
+      max-height: 90vh;
+    }
+    .manual-modal-overlay.show .manual-modal-content { transform: translateY(0); }
+    .manual-form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+    }
+    .manual-items-table {
+      width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;
+    }
+    .manual-items-table th {
+      background: var(--surface2); padding: 8px 12px; font-weight: 600; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); text-align: left;
+    }
+    .manual-items-table td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle;
+    }
+    .manual-input-text {
+      width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      outline: none; font-size: 13px; background: var(--surface); color: var(--text);
+    }
+    .manual-input-text:focus { border-color: var(--accent); }
+    .btn-add-row {
+      background: var(--accent-lt); border: 1px dashed var(--accent); color: var(--accent);
+      padding: 8px 16px; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;
+      font-size: 13px; text-align: center; width: 100%; margin-top: 12px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-add-row:hover { background: var(--accent); color: #fff; border-style: solid; }
+    .item-detail-text {
+      font-size: 12px; color: var(--text-muted); line-height: 1.3;
+    }
   </style>
 </head>
 <body>
@@ -268,6 +314,10 @@
       <button class="btn" onclick="window.location.href='energise-order-review.html'">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         Back to Pending Orders
+      </button>
+      <button class="btn btn-primary" onclick="openManualOrderModal()" style="background:#10b981; border-color:#10b981;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        + Add Manual Order
       </button>
       <button class="btn btn-primary" onclick="exportCSV()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -368,7 +418,7 @@
   <!-- Firebase Integration -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -410,8 +460,13 @@
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
     }
 
+    // Global catalogues for manual entry
+    window.inventoryCatalogue = {};
+    window.engineerNames = [];
+
     async function loadData() {
       try {
+        // Load orders
         const snap = await getDocs(collection(db, 'Energise Orders'));
         allOrders = [];
         const submittersSet = new Set();
@@ -437,6 +492,46 @@
         
         renderSidebar();
         applyFilters();
+
+        // Also fetch selections for dropdown
+        try {
+          const selSnap = await getDocs(collection(db, 'Energise Selection'));
+          window.engineerNames = [];
+          selSnap.forEach(d => {
+            const name = d.data().name;
+            if (name) window.engineerNames.push(name);
+          });
+          window.engineerNames.sort();
+          
+          // Re-populate dropdown if open
+          const dropdown = document.getElementById('manualEngineerSelect');
+          if (dropdown) {
+            dropdown.innerHTML = '<option value="">-- Choose Engineer --</option>' +
+              window.engineerNames.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+          }
+        } catch(e) {
+          console.warn('Could not load engineer list:', e);
+        }
+
+        // Also fetch inventory catalogue for SKU autocompletion
+        try {
+          const invSnap = await getDocs(collection(db, 'Energise Inventory'));
+          window.inventoryCatalogue = {};
+          invSnap.forEach(d => {
+            const data = d.data();
+            if (data.sku) {
+              window.inventoryCatalogue[String(data.sku).toUpperCase().trim()] = {
+                name: data.name || '',
+                price: parseFloat(data.price) || 0,
+                uom: data.uom || 'each',
+                category: data.category || 'consumable'
+              };
+            }
+          });
+        } catch(e) {
+          console.warn('Could not load inventory catalogue:', e);
+        }
+
       } catch (err) {
         console.error(err);
         showToast('Failed to load orders: ' + err.message, true);
@@ -707,7 +802,214 @@
       showToast('✓ CSV Downloaded');
     };
 
+    // ── Manual Order Form Logic ───────────────────────────────
+    window.openManualOrderModal = function() {
+      // Set date to today
+      document.getElementById('manualProcessedDate').value = new Date().toISOString().split('T')[0];
+      
+      // Populate engineers dropdown
+      const dropdown = document.getElementById('manualEngineerSelect');
+      if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Choose Engineer --</option>' +
+          window.engineerNames.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+      }
+      
+      // Clear rows and add first row
+      const body = document.getElementById('manualItemsBody');
+      body.innerHTML = '';
+      addManualItemRow();
+      
+      // Open modal
+      document.getElementById('manualOrderModal').classList.add('show');
+    };
+    
+    window.closeManualOrderModal = function() {
+      document.getElementById('manualOrderModal').classList.remove('show');
+    };
+    
+    let manualRowCounter = 0;
+    window.addManualItemRow = function() {
+      const body = document.getElementById('manualItemsBody');
+      const rowId = 'manual-row-' + (++manualRowCounter);
+      
+      const tr = document.createElement('tr');
+      tr.id = rowId;
+      tr.innerHTML = `
+        <td>
+          <input type="text" class="manual-input-text manual-sku-input" placeholder="e.g. 28002" oninput="updateManualRowDetails('${rowId}')">
+        </td>
+        <td>
+          <span class="item-detail-text" id="details-text-${rowId}">Type a SKU to lookup...</span>
+        </td>
+        <td>
+          <input type="number" class="manual-input-text manual-qty-input" min="1" max="9999" value="1">
+        </td>
+        <td style="text-align:center;">
+          <button class="btn-row-delete" onclick="deleteManualRow('${rowId}')" title="Delete Row" style="margin:0 auto;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </td>
+      `;
+      body.appendChild(tr);
+    };
+    
+    window.deleteManualRow = function(rowId) {
+      const row = document.getElementById(rowId);
+      if (row) row.remove();
+      
+      // Ensure at least one row remains
+      const body = document.getElementById('manualItemsBody');
+      if (body.children.length === 0) {
+        addManualItemRow();
+      }
+    };
+    
+    window.updateManualRowDetails = function(rowId) {
+      const row = document.getElementById(rowId);
+      if (!row) return;
+      
+      const skuInput = row.querySelector('.manual-sku-input');
+      const sku = skuInput.value.toUpperCase().trim();
+      const detailsSpan = document.getElementById('details-text-' + rowId);
+      
+      if (!sku) {
+        detailsSpan.innerHTML = 'Type a SKU to lookup...';
+        return;
+      }
+      
+      const match = window.inventoryCatalogue[sku];
+      if (match) {
+        detailsSpan.innerHTML = `<strong style="color:var(--accent)">${match.name}</strong><br>Unit: ${match.uom} &middot; Price: £${match.price.toFixed(2)} &middot; Cat: ${match.category}`;
+      } else {
+        detailsSpan.innerHTML = `<span style="color:var(--text-muted)">SKU not in inventory database.<br>Will save with fallback details.</span>`;
+      }
+    };
+    
+    window.submitManualOrder = async function() {
+      const engineer = document.getElementById('manualEngineerSelect').value;
+      const dateVal = document.getElementById('manualProcessedDate').value;
+      const btn = document.getElementById('manualSubmitBtn');
+      
+      if (!engineer) {
+        showToast('Please select an engineer.', true);
+        return;
+      }
+      if (!dateVal) {
+        showToast('Please select a processed date.', true);
+        return;
+      }
+      
+      const rows = document.querySelectorAll('#manualItemsBody tr');
+      const itemsArray = [];
+      let totalQty = 0;
+      
+      for (const row of rows) {
+        const skuInput = row.querySelector('.manual-sku-input');
+        const qtyInput = row.querySelector('.manual-qty-input');
+        
+        const sku = skuInput.value.toUpperCase().trim();
+        const qty = parseInt(qtyInput.value) || 1;
+        
+        if (!sku) continue; // skip empty SKUs
+        
+        const match = window.inventoryCatalogue[sku];
+        const itemObj = {
+          sku: sku,
+          qty: qty,
+          name: match ? match.name : `Manual SKU (${sku})`,
+          price: match ? match.price : 0.00,
+          uom: match ? match.uom : 'each',
+          category: match ? match.category : 'consumable'
+        };
+        
+        itemsArray.push(itemObj);
+        totalQty += qty;
+      }
+      
+      if (itemsArray.length === 0) {
+        showToast('Please add at least one item with a valid SKU.', true);
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      
+      try {
+        const processedDateObj = new Date(dateVal);
+        const now = new Date();
+        processedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        
+        const orderData = {
+          submittedBy: engineer,
+          submittedAt: processedDateObj,
+          processedAt: processedDateObj.toISOString(),
+          itemCount: itemsArray.length,
+          items: itemsArray
+        };
+        
+        await addDoc(collection(db, "Energise Orders"), orderData);
+        
+        showToast('✓ Manual processed order saved successfully.', false);
+        closeManualOrderModal();
+        loadData(); // reload dashboard
+      } catch (e) {
+        console.error(e);
+        showToast('Failed to save manual order: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Processed Order';
+      }
+    };
+
     loadData();
   </script>
+
+  <!-- Manual Order Modal -->
+  <div class="manual-modal-overlay" id="manualOrderModal" onclick="closeManualOrderModal()">
+    <div class="manual-modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Add Manual Processed Order</div>
+        <button class="modal-close" onclick="closeManualOrderModal()">×</button>
+      </div>
+      <div style="padding: 24px; overflow-y: auto; flex: 1;">
+        <div class="manual-form-grid">
+          <div class="input-group">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Engineer</label>
+            <select id="manualEngineerSelect" class="manual-input-text" style="height: 38px; padding-left: 10px;">
+              <option value="">-- Choose Engineer --</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Processed Date</label>
+            <input type="date" id="manualProcessedDate" class="manual-input-text" style="height: 38px;">
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+          <h4 style="font-family:'Syne',sans-serif; font-size:14px; font-weight:700; color:var(--text); margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:6px;">Order Items</h4>
+          <div style="max-height: 250px; overflow-y: auto;">
+            <table class="manual-items-table">
+              <thead>
+                <tr>
+                  <th width="140">SKU</th>
+                  <th>Product Details</th>
+                  <th width="80">Qty</th>
+                  <th width="40"></th>
+                </tr>
+              </thead>
+              <tbody id="manualItemsBody">
+                <!-- dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+          <button class="btn-add-row" onclick="addManualItemRow()">+ Add Item Row</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeManualOrderModal()">Cancel</button>
+        <button class="btn btn-primary" id="manualSubmitBtn" onclick="submitManualOrder()" style="background:#10b981; border-color:#10b981;">Save Processed Order</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
