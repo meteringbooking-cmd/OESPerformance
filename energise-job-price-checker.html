@@ -480,20 +480,30 @@
       }
     }
 
-    // ── Automatic Pack-Size Detection ─────────────────────────────────────────
-    function detectPackSize(uom, name) {
+    // ── Automatic Pack-Size & Unit Detection ──────────────────────────────────
+    function detectPackDetails(uom, name) {
       const uomStr = (uom || '').toLowerCase().trim();
       const nameStr = (name || '').toLowerCase().trim();
 
-      // Check uom first: pk-100, pack of 100, box of 50, etc.
-      let match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || uomStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
-      if (match) return parseInt(match[1]);
+      // Check roll with meter length, e.g. RL-10m, RL-100m, 10m roll, etc.
+      let match = uomStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
+                  uomStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i) || 
+                  nameStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
+                  nameStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i);
+      if (match) {
+        return { packSize: parseFloat(match[1]), unit: 'm' };
+      }
 
-      // Check name: "screws pk-100", "clips box of 50", etc.
-      match = nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || nameStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
-      if (match) return parseInt(match[1]);
+      // Check standard pk-100, pack of 100, box of 50
+      match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
+              uomStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i) ||
+              nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
+              nameStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
+      if (match) {
+        return { packSize: parseInt(match[1]), unit: 'pcs' };
+      }
 
-      return 1; // Default single item
+      return { packSize: 1, unit: 'each' };
     }
 
     // ── Autocomplete / Search Handling ────────────────────────────────────────
@@ -547,13 +557,14 @@
       if (existing) {
         existing.requiredQty++;
       } else {
-        const detectedSize = detectPackSize(item.uom, item.name);
+        const details = detectPackDetails(item.uom, item.name);
         estimationBasket.push({
           sku: item.sku,
           name: item.name,
           price: item.price,
           uom: item.uom,
-          packSize: detectedSize,
+          packSize: details.packSize,
+          unit: details.unit,
           requiredQty: 1
         });
       }
@@ -587,8 +598,8 @@
 
       tbody.innerHTML = estimationBasket.map((item, idx) => {
         // Validation of values
-        const packSize = Math.max(1, parseInt(item.packSize) || 1);
-        const reqQty = Math.max(0, parseInt(item.requiredQty) || 0);
+        const packSize = Math.max(0.001, parseFloat(item.packSize) || 1);
+        const reqQty = Math.max(0, parseFloat(item.requiredQty) || 0);
         const price = parseFloat(item.price) || 0;
 
         // calculations:
@@ -604,7 +615,6 @@
         totalPurchaseCost += purchaseCost;
         totalUsedCost += usedValue;
 
-        const isPackItem = packSize > 1;
         const wasteBadge = wastage > 0.01 
           ? `<span class="badge-waste">£${wastage.toFixed(2)} waste</span>` 
           : `<span class="badge-ok">No waste</span>`;
@@ -616,10 +626,16 @@
             <td class="price-mono" style="text-align:right;">£${price.toFixed(2)}</td>
             <td style="text-align:center; color:var(--text-muted); font-size:12px;">${item.uom}</td>
             <td style="text-align:center;">
-              <input type="number" class="tbl-input" min="1" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)">
+              <div style="display:inline-flex; align-items:center; gap:4px;">
+                <input type="number" class="tbl-input" min="0.001" step="any" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
+              </div>
             </td>
             <td style="text-align:center;">
-              <input type="number" class="tbl-input" min="0" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)">
+              <div style="display:inline-flex; align-items:center; gap:4px;">
+                <input type="number" class="tbl-input" min="0" step="any" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
+              </div>
             </td>
             <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${packsToBuy}</td>
             <td class="price-mono" style="text-align:right;">£${purchaseCost.toFixed(2)}</td>
@@ -639,13 +655,13 @@
 
     // ── Update Row Fields ─────────────────────────────────────────────────────
     window.updateRowPackSize = function(idx, val) {
-      const num = parseInt(val) || 1;
-      estimationBasket[idx].packSize = Math.max(1, num);
+      const num = parseFloat(val) || 1;
+      estimationBasket[idx].packSize = Math.max(0.001, num);
       recalculateEstimate();
     };
 
     window.updateRowRequiredQty = function(idx, val) {
-      const num = parseInt(val) || 0;
+      const num = parseFloat(val) || 0;
       estimationBasket[idx].requiredQty = Math.max(0, num);
       recalculateEstimate();
     };
