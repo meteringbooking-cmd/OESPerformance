@@ -92,50 +92,10 @@
       max-width: 1400px;
       margin: 24px auto;
       padding: 0 16px;
-      display: grid;
-      grid-template-columns: 340px 1fr;
+      display: flex;
+      flex-direction: column;
       gap: 24px;
-      align-items: flex-start;
     }
-
-    /* Sidebar controls */
-    .sidebar {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    .sidebar-title {
-      font-family: 'Syne', sans-serif;
-      font-size: 16px;
-      font-weight: 700;
-      border-bottom: 1px solid var(--border2);
-      padding-bottom: 8px;
-    }
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .form-group label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .form-group input, .form-group select {
-      padding: 10px 12px;
-      border: 1px solid var(--border2);
-      border-radius: var(--radius-sm);
-      outline: none;
-      font-family: inherit;
-      font-size: 14px;
-    }
-    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
 
     /* Main estimation screen */
     .main-estimator {
@@ -290,9 +250,12 @@
   <header class="app-header">
     <a href="#" class="brand">energise<span>.</span> job price checker</a>
     <div class="header-actions">
+      <select id="savedJobsDropdown" onchange="loadSavedJob(this.value)" style="padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: #fff; outline: none; font-size: 14px; cursor: pointer;">
+        <option value="" style="color: #000;">— Load Saved Estimate —</option>
+      </select>
       <button class="btn btn-success" onclick="saveJobToFirebase()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        Save Job Estimate
+        Save Estimate
       </button>
       <button class="btn" onclick="window.location.href='energise-order-form.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
         Back to Order Form
@@ -301,37 +264,8 @@
   </header>
 
   <div class="layout-wrapper">
-    <!-- Sidebar Control Form -->
-    <aside class="sidebar">
-      <div class="sidebar-title">Estimate Details</div>
-      
-      <div class="form-group">
-        <label>Job Name / Reference</label>
-        <input type="text" id="jobName" placeholder="e.g. Job #1023 - Smith St" oninput="toggleSaveButtonState()">
-      </div>
-
-      <div class="form-group">
-        <label>Target Engineer</label>
-        <input type="text" id="engineerName" placeholder="Enter engineer name...">
-      </div>
-
-      <div class="form-group">
-        <label>Job Description</label>
-        <input type="text" id="jobDesc" placeholder="e.g. Boiler install / repair...">
-      </div>
-
-      <div class="sidebar-title" style="margin-top: 10px;">Saved Jobs</div>
-      
-      <div class="form-group">
-        <label>Load Previous Estimate</label>
-        <select id="savedJobsDropdown" onchange="loadSavedJob(this.value)">
-          <option value="">— Select a saved job —</option>
-        </select>
-      </div>
-    </aside>
-
     <!-- Main Estimator Screen -->
-    <main class="main-estimator">
+    <main class="main-estimator" style="width: 100%;">
       
       <!-- Metrics row -->
       <div class="metrics-row">
@@ -694,26 +628,23 @@
 
     // ── Save Estimate to Firebase ─────────────────────────────────────────────
     window.saveJobToFirebase = async function() {
-      const jobNameVal = document.getElementById('jobName').value.trim();
-      const engName = document.getElementById('engineerName').value.trim();
-      const desc = document.getElementById('jobDesc').value.trim();
-
-      if (!jobNameVal) {
-        showToast('Please enter a Job Name / Reference to save.', true);
-        return;
-      }
-
       if (estimationBasket.length === 0) {
         showToast('Please add at least one material to the list before saving.', true);
         return;
       }
 
+      const jobNameVal = prompt("Enter a Job Name / Reference to save this estimate:");
+      if (jobNameVal === null) return; // User cancelled
+      const trimmedName = jobNameVal.trim();
+      if (!trimmedName) {
+        showToast('Job Name cannot be empty.', true);
+        return;
+      }
+
       try {
-        const docId = jobNameVal.replace(/[\/\.\#\$\[\]]/g, '_');
+        const docId = trimmedName.replace(/[\/\.\#\$\[\]]/g, '_');
         await setDoc(doc(db, 'Energise Job Estimates', docId), {
-          jobName: jobNameVal,
-          engineerName: engName,
-          jobDesc: desc,
+          jobName: trimmedName,
           items: estimationBasket,
           updatedAt: new Date().toISOString()
         });
@@ -737,13 +668,12 @@
         });
 
         if (foundData) {
-          document.getElementById('jobName').value = foundData.jobName || '';
-          document.getElementById('engineerName').value = foundData.engineerName || '';
-          document.getElementById('jobDesc').value = foundData.jobDesc || '';
-          
           estimationBasket = foundData.items || [];
           recalculateEstimate();
-          showToast(`✓ Loaded estimate: ${foundData.jobName}`);
+          
+          // Update table title to show active loaded job
+          document.getElementById('estimatorTitle').textContent = `Job Materials List: ${foundData.jobName}`;
+          showToast(`✓ Loaded estimate: ${foundData.foundName || foundData.jobName}`);
         }
       } catch (err) {
         console.error(err);
