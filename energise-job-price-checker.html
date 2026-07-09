@@ -397,6 +397,10 @@
     let ITEMS = [];             // Inventory items
     let estimationBasket = [{ ...BYBOX_ITEM }];  // Items added to active estimate
 
+    // Loaded Estimate Tracking
+    let currentLoadedJobId = null;
+    let currentLoadedJobName = null;
+
     window.showToast = function(msg, isError = false) {
       const t = document.getElementById('toast');
       t.textContent = msg;
@@ -651,6 +655,10 @@
 
     window.clearEstimationList = function() {
       estimationBasket = [{ ...BYBOX_ITEM }];
+      currentLoadedJobId = null;
+      currentLoadedJobName = null;
+      document.getElementById('estimatorTitle').textContent = `Job Materials List`;
+      document.getElementById('savedJobsDropdown').value = "";
       recalculateEstimate();
     };
 
@@ -677,24 +685,44 @@
         return;
       }
 
-      const jobNameVal = prompt("Enter a Job Name / Reference to save this estimate:");
-      if (jobNameVal === null) return; // User cancelled
-      const trimmedName = jobNameVal.trim();
-      if (!trimmedName) {
-        showToast('Job Name cannot be empty.', true);
-        return;
+      let targetId = null;
+      let targetName = null;
+
+      if (currentLoadedJobId && currentLoadedJobName) {
+        const overwrite = confirm(`Would you like to overwrite and update the existing estimate "${currentLoadedJobName}"?\n\nClick OK to update it.\nClick Cancel to save as a new estimate.`);
+        if (overwrite) {
+          targetId = currentLoadedJobId;
+          targetName = currentLoadedJobName;
+        }
+      }
+
+      if (!targetId) {
+        const newName = prompt("Enter a Job Name / Reference to save this estimate:");
+        if (newName === null) return; // User cancelled
+        const trimmedName = newName.trim();
+        if (!trimmedName) {
+          showToast('Job Name cannot be empty.', true);
+          return;
+        }
+        targetName = trimmedName;
+        targetId = trimmedName.replace(/[\/\.\#\$\[\]]/g, '_');
       }
 
       try {
-        const docId = trimmedName.replace(/[\/\.\#\$\[\]]/g, '_');
-        await setDoc(doc(db, 'Energise Job Estimates', docId), {
-          jobName: trimmedName,
+        await setDoc(doc(db, 'Energise Job Estimates', targetId), {
+          jobName: targetName,
           items: estimationBasket,
           updatedAt: new Date().toISOString()
         });
 
-        showToast('✓ Job Estimate saved successfully!');
-        loadSavedJobsDropdown();
+        currentLoadedJobId = targetId;
+        currentLoadedJobName = targetName;
+
+        showToast(`✓ Estimate "${targetName}" saved successfully!`);
+        await loadSavedJobsDropdown();
+        
+        document.getElementById('savedJobsDropdown').value = targetId;
+        document.getElementById('estimatorTitle').textContent = `Job Materials List: ${targetName}`;
       } catch (err) {
         console.error(err);
         showToast('Failed to save estimate: ' + err.message, true);
@@ -703,7 +731,12 @@
 
     // ── Load Saved Job ────────────────────────────────────────────────────────
     window.loadSavedJob = async function(id) {
-      if (!id) return;
+      if (!id) {
+        currentLoadedJobId = null;
+        currentLoadedJobName = null;
+        document.getElementById('estimatorTitle').textContent = `Job Materials List`;
+        return;
+      }
       try {
         const snap = await getDocs(collection(db, 'Energise Job Estimates'));
         let foundData = null;
@@ -716,9 +749,12 @@
           ensureByBoxItem(estimationBasket);
           recalculateEstimate();
           
+          currentLoadedJobId = id;
+          currentLoadedJobName = foundData.jobName || id;
+
           // Update table title to show active loaded job
-          document.getElementById('estimatorTitle').textContent = `Job Materials List: ${foundData.jobName}`;
-          showToast(`✓ Loaded estimate: ${foundData.foundName || foundData.jobName}`);
+          document.getElementById('estimatorTitle').textContent = `Job Materials List: ${currentLoadedJobName}`;
+          showToast(`✓ Loaded estimate: ${currentLoadedJobName}`);
         }
       } catch (err) {
         console.error(err);
