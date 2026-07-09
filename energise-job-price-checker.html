@@ -365,9 +365,37 @@
     const app = initializeApp(firebaseConfig);
     const db  = getFirestore(app);
 
+    // System Locker Cost definition
+    const BYBOX_ITEM = {
+      sku: 'BYBOX-DEL',
+      name: 'ByBox Locker Delivery Cost',
+      price: 5.22,
+      uom: 'each',
+      packSize: 1,
+      unit: 'each',
+      requiredQty: 1,
+      isSystemLocked: true
+    };
+
+    function ensureByBoxItem(basket) {
+      const hasByBox = basket.some(item => item.sku === 'BYBOX-DEL');
+      if (!hasByBox) {
+        basket.unshift({ ...BYBOX_ITEM });
+      } else {
+        const item = basket.find(i => i.sku === 'BYBOX-DEL');
+        item.name = BYBOX_ITEM.name;
+        item.price = BYBOX_ITEM.price;
+        item.uom = BYBOX_ITEM.uom;
+        item.packSize = BYBOX_ITEM.packSize;
+        item.unit = BYBOX_ITEM.unit;
+        item.requiredQty = BYBOX_ITEM.requiredQty;
+        item.isSystemLocked = true;
+      }
+    }
+
     // Global arrays
     let ITEMS = [];             // Inventory items
-    let estimationBasket = [];  // Items added to active estimate
+    let estimationBasket = [{ ...BYBOX_ITEM }];  // Items added to active estimate
 
     window.showToast = function(msg, isError = false) {
       const t = document.getElementById('toast');
@@ -559,31 +587,37 @@
           ? `<span class="badge-waste">£${wastage.toFixed(2)} waste</span>` 
           : `<span class="badge-ok">No waste</span>`;
 
+        const packSizeHtml = item.isSystemLocked 
+          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>` 
+          : `<div style="display:inline-flex; align-items:center; gap:4px;">
+               <input type="number" class="tbl-input" min="0.001" step="any" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
+               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
+             </div>`;
+             
+        const reqQtyHtml = item.isSystemLocked 
+          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>` 
+          : `<div style="display:inline-flex; align-items:center; gap:4px;">
+               <input type="number" class="tbl-input" min="0" step="any" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
+               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
+             </div>`;
+
+        const deleteButtonHtml = item.isSystemLocked 
+          ? `<span style="font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase;">System</span>` 
+          : `<button class="btn btn-danger" onclick="deleteRow(${idx})" style="padding: 4px 8px; font-size: 12px;">×</button>`;
+
         return `
           <tr>
             <td><span class="sku-mono">${item.sku}</span></td>
             <td><strong>${item.name}</strong></td>
             <td class="price-mono" style="text-align:right;">£${price.toFixed(2)}</td>
             <td style="text-align:center; color:var(--text-muted); font-size:12px;">${item.uom}</td>
-            <td style="text-align:center;">
-              <div style="display:inline-flex; align-items:center; gap:4px;">
-                <input type="number" class="tbl-input" min="0.001" step="any" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
-                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
-              </div>
-            </td>
-            <td style="text-align:center;">
-              <div style="display:inline-flex; align-items:center; gap:4px;">
-                <input type="number" class="tbl-input" min="0" step="any" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
-                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
-              </div>
-            </td>
+            <td style="text-align:center;">${packSizeHtml}</td>
+            <td style="text-align:center;">${reqQtyHtml}</td>
             <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${packsToBuy}</td>
             <td class="price-mono" style="text-align:right;">£${purchaseCost.toFixed(2)}</td>
             <td class="price-mono" style="text-align:right; color:var(--accent2);">£${usedValue.toFixed(2)}</td>
             <td style="text-align:center;">${wasteBadge}</td>
-            <td style="text-align:center;">
-              <button class="btn btn-danger" onclick="deleteRow(${idx})" style="padding: 4px 8px; font-size: 12px;">×</button>
-            </td>
+            <td style="text-align:center;">${deleteButtonHtml}</td>
           </tr>
         `;
       }).join('');
@@ -607,12 +641,16 @@
     };
 
     window.deleteRow = function(idx) {
+      if (estimationBasket[idx] && estimationBasket[idx].isSystemLocked) {
+        showToast('Cannot delete ByBox locker delivery cost.', true);
+        return;
+      }
       estimationBasket.splice(idx, 1);
       recalculateEstimate();
     };
 
     window.clearEstimationList = function() {
-      estimationBasket = [];
+      estimationBasket = [{ ...BYBOX_ITEM }];
       recalculateEstimate();
     };
 
@@ -675,6 +713,7 @@
 
         if (foundData) {
           estimationBasket = foundData.items || [];
+          ensureByBoxItem(estimationBasket);
           recalculateEstimate();
           
           // Update table title to show active loaded job
