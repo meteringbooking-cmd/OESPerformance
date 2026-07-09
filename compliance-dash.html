@@ -1,695 +1,1200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Job Material Spend & Price Checker - Energise</title>
-  
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&family=DM+Mono:ital,wght@0,300..500;1,300..500&display=swap" rel="stylesheet">
-  
-  <style>
-    :root {
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --surface2: #f1f5f9;
-      --border: #cbd5e1;
-      --border2: #e2e8f0;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --accent: #1e40af;
-      --accent-h: #1e3a8a;
-      --accent-lt: #eff6ff;
-      --accent2: #059669;
-      --accent2-lt: #ecfdf5;
-      --danger: #ef4444;
-      --danger-lt: #fef2f2;
-      --radius: 12px;
-      --radius-sm: 8px;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      line-height: 1.5;
-    }
-
-    .app-header {
-      background: #0f172a;
-      color: #fff;
-      padding: 16px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .brand {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 24px;
-      color: #fff;
-      text-decoration: none;
-    }
-    .brand span { color: var(--accent2); }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 16px;
-      border-radius: var(--radius-sm);
-      font-weight: 500;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
-      font-size: 14px;
-    }
-    .btn:hover { background: var(--surface2); }
-    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn-primary:hover { background: var(--accent-h); }
-    .btn-success { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-    .btn-success:hover { background: #047857; }
-    .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
-    .btn-danger:hover { background: #dc2626; }
-
-    .layout-wrapper {
-      max-width: 1400px;
-      margin: 24px auto;
-      padding: 0 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* Main estimation screen */
-    .main-estimator {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* Metrics Row */
-    .metrics-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-    }
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      position: relative;
-      overflow: hidden;
-    }
-    .metric-card label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-muted);
-      display: block;
-      margin-bottom: 6px;
-    }
-    .metric-card .value {
-      font-family: 'DM Mono', monospace;
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .metric-card .value.cost { color: var(--accent); }
-    .metric-card .value.used { color: var(--accent2); }
-    .metric-card .value.waste { color: var(--danger); }
-    .metric-card .value.efficiency { color: var(--text); }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NGU Compliance Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
-    /* Progress bar indicator for efficiency */
-    .efficiency-bar-bg {
-      position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: var(--surface2);
-    }
-    .efficiency-bar-fg {
-      height: 100%; width: 0%; background: var(--accent2); transition: width 0.3s;
-    }
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    /* Search & Autocomplete panel */
-    .search-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      position: relative;
-    }
-    .search-wrapper { position: relative; }
-    .search-input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      outline: none;
-      font-size: 15px;
-      font-family: inherit;
-    }
-    .search-input:focus { border-color: var(--accent); }
-    
-    /* Suggestion Box */
-    .suggestion-box {
-      position: absolute; top: 100%; left: 0; width: 100%;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-      z-index: 200; max-height: 280px; overflow-y: auto;
-      display: none;
-    }
-    .suggestion-item {
-      padding: 12px 16px; border-bottom: 1px solid var(--border2);
-      cursor: pointer; display: flex; justify-content: space-between; align-items: center;
-      transition: background 0.15s;
-    }
-    .suggestion-item:last-child { border-bottom: none; }
-    .suggestion-item:hover { background: var(--bg); }
-    .suggest-details { display: flex; flex-direction: column; }
-    .suggest-name { font-weight: 600; font-size: 14px; }
-    .suggest-sku { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
-    .suggest-price { font-family: 'DM Mono', monospace; font-weight: 700; color: var(--accent2); }
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh; padding: 16px; position: relative; color: #fff;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px),
+                repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.03) 2px, rgba(255,255,255,0.03) 4px);
+            pointer-events: none; z-index: 0;
+        }
+        
+        .container { max-width: 96%; margin: 0 auto; position: relative; z-index: 1; }
+        
+        /* Header */
+        .header { text-align: center; color: white; margin-bottom: 30px; animation: fadeInDown 0.8s ease; position: relative; }
+        .header-logo-img {
+            position: absolute; top: 0; right: 0; height: 70px; width: auto;
+            filter: drop-shadow(0 4px 12px rgba(0,210,255,0.3)); animation: fadeIn 1s ease;
+        }
+        @media (max-width: 600px) {
+            .header-logo-img { position: static; display: block; margin: 0 auto 16px auto; height: 55px; }
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .logo {
+            font-size: 2.5em; font-weight: 900; margin-bottom: 10px;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 50%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            text-transform: uppercase; letter-spacing: 4px;
+        }
+        .date-display { font-size: 1em; opacity: 0.9; margin-bottom: 8px; font-weight: 400; color: #00d2ff; }
 
-    /* Parts Table */
-    .table-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      overflow: hidden;
-    }
-    .table-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border2);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .table-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; text-align: left; }
-    th {
-      background: var(--bg);
-      padding: 12px 16px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid var(--border2);
-      white-space: nowrap;
-    }
-    td { padding: 12px 16px; border-bottom: 1px solid var(--border2); font-size: 13px; }
-    tr:hover td { background: #f8fafc; }
+        /* Grid & Cards */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(26,32,44,0.9), rgba(45,55,72,0.9));
+            border-radius: 12px; padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+            transition: all 0.3s ease; animation: slideUp 0.8s ease;
+            position: relative; overflow: hidden; border: 1px solid rgba(0,210,255,0.2);
+            display: flex; flex-direction: column;
+        }
+        .kpi-card::after {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0,210,255,0.05), transparent);
+            animation: shimmerSlide 4s infinite;
+        }
+        @keyframes shimmerSlide { 0% { left: -100%; } 100% { left: 100%; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,210,255,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+            border-color: rgba(0,210,255,0.4);
+        }
 
-    /* Quantity inputs inside table */
-    .tbl-input {
-      width: 80px; padding: 6px 10px; border: 1px solid var(--border);
-      border-radius: var(--radius-sm); font-family: 'DM Mono', monospace; font-size: 13px; text-align: center;
-    }
-    .tbl-input:focus { border-color: var(--accent); outline: none; }
+        .clickable-card { cursor: pointer; border-color: rgba(16, 185, 129, 0.4); }
+        .clickable-card:hover { border-color: #10b981; box-shadow: 0 10px 30px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255,255,255,0.15); }
+        
+        .kpi-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid rgba(0,210,255,0.2);
+        }
+        .kpi-title { font-size: 0.9em; color: #00d2ff; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; }
+        
+        .kpi-value {
+            font-size: 2.4em; font-weight: 900;
+            background: linear-gradient(135deg, #ffffff 0%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 8px; letter-spacing: -1px; line-height: 1;
+        }
+        .kpi-target { font-size: 0.85em; color: #a8dadc; margin-bottom: 4px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; }
 
-    .sku-mono { font-family: 'DM Mono', monospace; font-size: 12px; background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-weight: 600; }
-    .price-mono { font-family: 'DM Mono', monospace; font-weight: 600; }
-    .badge-waste { background: var(--danger-lt); color: var(--danger); padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-    .badge-ok { background: var(--accent2-lt); color: var(--accent2); padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+        /* Status Colors */
+        .color-green { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .color-red { background: linear-gradient(135deg, #ef4444 0%, #f87171 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75em; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .badge.red { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
 
-    /* Toast */
-    .toast {
-      position: fixed; bottom: 24px; right: 24px; background: #0f172a;
-      color: #fff; padding: 12px 24px; border-radius: var(--radius-sm);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000;
-      transform: translateY(100px); opacity: 0; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      font-weight: 500; font-size: 14px;
-    }
-    .toast.show { transform: translateY(0); opacity: 1; }
-    .toast.error { background: var(--danger); }
+        /* Forms */
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px; }
+        .field-group { display: flex; flex-direction: column; gap: 6px; }
+        .field-label { font-size: 0.75em; color: #a8dadc; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .field-input, .field-select {
+            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(0,210,255,0.2); color: #fff;
+            padding: 12px 14px; font-family: 'Inter', sans-serif; font-size: 0.9em; border-radius: 8px; outline: none; transition: all 0.3s;
+        }
+        .field-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23a8dadc' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 1rem center; background-repeat: no-repeat; background-size: 1.2em; padding-right: 2.5rem;
+        }
+        .field-input:focus, .field-select:focus { border-color: #00d2ff; box-shadow: 0 0 10px rgba(0,210,255,0.2); background: rgba(0,0,0,0.5); }
+        .field-input:disabled { opacity: 0.5; cursor: not-allowed; }
+        .field-select option { background: #16213e; color: #fff; }
+        
+        .btn-submit {
+            padding: 12px 24px; background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(58,123,213,0.3));
+            border: 1px solid rgba(0,210,255,0.4); border-radius: 8px; color: #00d2ff;
+            font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            cursor: pointer; transition: all 0.3s ease; display: inline-block;
+        }
+        .btn-submit:hover { background: linear-gradient(135deg, rgba(0,210,255,0.4), rgba(58,123,213,0.5)); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,210,255,0.3); }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-    /* Fix dropdown option colors (prevent white-on-white text) */
-    #savedJobsDropdown option {
-      color: var(--text) !important;
-      background-color: var(--surface) !important;
-    }
-  </style>
+        .btn-hide { background: transparent; border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 0.7em; margin-left: 8px; transition: all 0.2s; }
+        .btn-hide:hover { background: rgba(239,68,68,0.2); color: #fff; border-color: rgba(239,68,68,0.8); }
+
+        #failFields { display: none; margin-top: 16px; padding: 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; border-left: 4px solid #ef4444; }
+
+        /* Tables */
+        .historical-table { width: 100%; border-collapse: collapse; font-size: 0.85em; background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; margin-top: 8px; }
+        .historical-table th { text-align: left; padding: 12px 14px; background: rgba(0,210,255,0.15); color: #00d2ff; font-weight: 700; border-bottom: 2px solid rgba(0,210,255,0.3); text-transform: uppercase; font-size: 0.8em; letter-spacing: 1px; }
+        .historical-table td { padding: 12px 14px; border-bottom: 1px solid rgba(0,210,255,0.1); color: #e1e8ed; }
+        .historical-table tr:last-child td { border-bottom: none; }
+        .historical-table tr:hover { background: rgba(0,210,255,0.08); }
+        .table-wrap { overflow-y: auto; max-height: 400px; flex: 1; -webkit-overflow-scrolling: touch; }
+        .table-wrap::-webkit-scrollbar { width: 6px; }
+        .table-wrap::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        .table-wrap::-webkit-scrollbar-thumb { background: rgba(0,210,255,0.3); border-radius: 4px; }
+        .table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(0,210,255,0.5); }
+
+        .metric-label { font-size: 0.6em; color: #a8dadc; text-transform: uppercase; font-weight: 700; letter-spacing: 1px; margin-top: 4px; }
+        .metric-group { text-align: center; display: flex; flex-direction: column; justify-content: flex-end; }
+        .divider { font-size: 1.5em; color: rgba(255,255,255,0.1); margin: 0 10px; margin-bottom: 12px; font-weight: 300; }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 52, 96, 0.8); backdrop-filter: blur(5px); z-index: 1000;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+        .modal-content {
+            background: linear-gradient(135deg, #1a202c, #2d3748); border: 1px solid rgba(0,210,255,0.3);
+            border-radius: 12px; width: 100%; max-width: 900px; padding: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); position: relative; animation: slideUp 0.3s ease;
+        }
+        .close-modal {
+            position: absolute; top: 16px; right: 20px; color: #a8dadc; font-size: 1.5em;
+            cursor: pointer; transition: color 0.2s; background: none; border: none;
+        }
+        .close-modal:hover { color: #fff; }
+        .chart-container { position: relative; height: 400px; width: 100%; margin-top: 16px; }
+
+        @media (max-width: 1024px) {
+            .logo { font-size: 2em; }
+            .kpi-value { font-size: 2em; }
+        }
+    </style>
 </head>
 <body>
 
-  <header class="app-header">
-    <a href="#" class="brand">energise<span>.</span> job price checker</a>
-    <div class="header-actions">
-      <select id="savedJobsDropdown" onchange="loadSavedJob(this.value)" style="padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: #fff; outline: none; font-size: 14px; cursor: pointer;">
-        <option value="" style="color: #000;">— Load Saved Estimate —</option>
-      </select>
-      <button class="btn btn-success" onclick="saveJobToFirebase()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        Save Estimate
-      </button>
-      <button class="btn" onclick="window.location.href='energise-order-form.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
-        Back to Order Form
-      </button>
+    <div class="container">
+        <div class="header">
+            <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
+            <div class="logo">Compliance Dashboard</div>
+            <div class="date-display" id="statsDate">Loading System...</div>
+            <div class="last-updated" style="font-size: 0.8em; opacity: 0.6;">Secure Access Portal</div>
+        </div>
+
+        <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+            <div class="kpi-card">
+                <div class="kpi-header"><span class="kpi-title">Previous Week</span></div>
+                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
+                    <div class="metric-group">
+                        <div class="kpi-value color-green" id="prevWeekPass" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Pass</div>
+                    </div>
+                    <div class="divider">/</div>
+                    <div class="metric-group">
+                        <div class="kpi-value color-red" id="prevWeekFail" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Fail</div>
+                    </div>
+                </div>
+                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="prevWeekPct" style="font-size: 1.2em;">0%</strong></div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header"><span class="kpi-title">Current Month</span></div>
+                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
+                    <div class="metric-group">
+                        <div class="kpi-value color-green" id="currMonthPass" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Pass</div>
+                    </div>
+                    <div class="divider">/</div>
+                    <div class="metric-group">
+                        <div class="kpi-value color-red" id="currMonthFail" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Fail</div>
+                    </div>
+                </div>
+                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="currMonthPct" style="font-size: 1.2em;">0%</strong></div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header"><span class="kpi-title">Previous Month</span></div>
+                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
+                    <div class="metric-group">
+                        <div class="kpi-value color-green" id="prevMonthPass" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Pass</div>
+                    </div>
+                    <div class="divider">/</div>
+                    <div class="metric-group">
+                        <div class="kpi-value color-red" id="prevMonthFail" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Fail</div>
+                    </div>
+                </div>
+                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="prevMonthPct" style="font-size: 1.2em;">0%</strong></div>
+            </div>
+
+            <div class="kpi-card clickable-card" onclick="openChartModal()">
+                <div class="kpi-header">
+                    <span class="kpi-title" style="color: #10b981;">Running Year</span>
+                    <span style="font-size: 0.7em; opacity: 0.7; border: 1px solid rgba(16,185,129,0.5); padding: 2px 6px; border-radius: 4px;">Click for Trend</span>
+                </div>
+                <div style="display: flex; align-items: flex-end; margin-bottom: 12px; justify-content: center;">
+                    <div class="metric-group">
+                        <div class="kpi-value color-green" id="runYearPass" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Pass</div>
+                    </div>
+                    <div class="divider">/</div>
+                    <div class="metric-group">
+                        <div class="kpi-value color-red" id="runYearFail" style="margin-bottom: 0;">0</div>
+                        <div class="metric-label">Fail</div>
+                    </div>
+                </div>
+                <div class="kpi-target" style="justify-content: center; font-size: 0.9em;">Rate:&nbsp;&nbsp;<strong class="color-green" id="runYearPct" style="font-size: 1.2em;">0%</strong></div>
+            </div>
+        </div>
+
+        <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+            <div class="kpi-card" style="border-color: rgba(239,68,68,0.3);">
+                <div class="kpi-header"><span class="kpi-title" style="color: #fca5a5;">Cat 1 Fails</span></div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px;">
+                    <div class="metric-group" style="align-items: flex-start;"><div class="kpi-value color-red" id="cat1CM" style="font-size: 2em; margin-bottom: 0;">0</div><div class="metric-label">Current Mth</div></div>
+                    <div class="metric-group" style="align-items: flex-end;"><div class="kpi-value color-red" id="cat1PM" style="font-size: 1.5em; margin-bottom: 0; opacity: 0.7;">0</div><div class="metric-label">Prev Mth</div></div>
+                </div>
+            </div>
+            <div class="kpi-card" style="border-color: rgba(239,68,68,0.3);">
+                <div class="kpi-header"><span class="kpi-title" style="color: #fca5a5;">Cat 2 Fails</span></div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px;">
+                    <div class="metric-group" style="align-items: flex-start;"><div class="kpi-value color-red" id="cat2CM" style="font-size: 2em; margin-bottom: 0;">0</div><div class="metric-label">Current Mth</div></div>
+                    <div class="metric-group" style="align-items: flex-end;"><div class="kpi-value color-red" id="cat2PM" style="font-size: 1.5em; margin-bottom: 0; opacity: 0.7;">0</div><div class="metric-label">Prev Mth</div></div>
+                </div>
+            </div>
+            <div class="kpi-card" style="border-color: rgba(239,68,68,0.3);">
+                <div class="kpi-header"><span class="kpi-title" style="color: #fca5a5;">Cat 3 Fails</span></div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px;">
+                    <div class="metric-group" style="align-items: flex-start;"><div class="kpi-value color-red" id="cat3CM" style="font-size: 2em; margin-bottom: 0;">0</div><div class="metric-label">Current Mth</div></div>
+                    <div class="metric-group" style="align-items: flex-end;"><div class="kpi-value color-red" id="cat3PM" style="font-size: 1.5em; margin-bottom: 0; opacity: 0.7;">0</div><div class="metric-label">Prev Mth</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); align-items: start;">
+            <div class="kpi-card" style="min-height: 480px;">
+                <div class="kpi-header"><span class="kpi-title">Worst Offenders - Current Month</span></div>
+                <div class="table-wrap">
+                    <table class="historical-table" id="offendersTableCM">
+                        <thead><tr><th>Engineer</th><th>Team Leader</th><th style="text-align: right;">Fails (Breakdown)</th></tr></thead>
+                        <tbody><tr><td colspan="3" style="text-align:center; font-style:italic;">Loading data...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="kpi-card" style="min-height: 480px;">
+                <div class="kpi-header"><span class="kpi-title">Worst Offenders - Previous Month</span></div>
+                <div class="table-wrap">
+                    <table class="historical-table" id="offendersTablePM">
+                        <thead><tr><th>Engineer</th><th>Team Leader</th><th style="text-align: right;">Fails (Breakdown)</th></tr></thead>
+                        <tbody><tr><td colspan="3" style="text-align:center; font-style:italic;">Loading data...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="kpi-card" style="min-height: 480px;">
+                <div class="kpi-header"><span class="kpi-title">Longest Time Since WIP</span></div>
+                <div class="table-wrap">
+                    <table class="historical-table" id="wipTable">
+                        <thead><tr><th>Engineer</th><th>Last WIP Date</th><th style="text-align: right;">Days Ago</th></tr></thead>
+                        <tbody><tr><td colspan="3" style="text-align:center; font-style:italic;">Loading data...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-card" style="margin-bottom: 24px;">
+            <div class="kpi-header" style="margin-bottom: 8px;">
+                <span class="kpi-title">Submit New Audit Record</span>
+            </div>
+            
+           <form id="auditForm" onsubmit="submitAudit(event)">
+    <div class="form-grid">
+        <div class="field-group">
+            <label class="field-label">Engineer Name</label>
+            <select class="field-select" id="engineerName" required onchange="populateEngineerDetails()">
+                <option value="">Loading Engineers...</option>
+                <option value="__new__">+ Add New Engineer</option>
+            </select>
+            <input class="field-input" type="text" id="newEngineerName" style="display:none; margin-top: 8px;" placeholder="Enter new engineer's full name">
+        </div>
+        <div class="field-group">
+            <label class="field-label">Team Leader</label>
+            <input class="field-input" type="text" id="teamLeader" disabled placeholder="Autopopulates...">
+        </div>
+        <div class="field-group">
+            <label class="field-label">Contract</label>
+            <input class="field-input" type="text" id="contract" disabled placeholder="Autopopulates...">
+        </div>
+        <div class="field-group">
+            <label class="field-label">Audit Type</label>
+            <select class="field-select" id="auditType" required>
+                <option value="">Select Type</option>
+                <option value="Post Complete">Post Complete</option>
+                <option value="WIP">WIP</option>
+            </select>
+        </div>
+                    <div class="field-group">
+                        <label class="field-label">Date</label>
+                        <input class="field-input" type="date" id="auditDate" required>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Result</label>
+                        <select class="field-select" id="auditResult" required onchange="toggleFailFields()">
+                            <option value="">Select Result</option>
+                            <option value="Pass">Pass</option>
+                            <option value="Fail">Fail</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="failFields">
+                    <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); margin-bottom: 0;">
+                        <div class="field-group">
+                            <label class="field-label" style="color: #fca5a5;">Cat 1 Qty</label>
+                            <input class="field-input" type="number" id="cat1Qty" min="0" value="0" style="border-color: rgba(239,68,68,0.4);">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" style="color: #fca5a5;">Cat 2 Qty</label>
+                            <input class="field-input" type="number" id="cat2Qty" min="0" value="0" style="border-color: rgba(239,68,68,0.4);">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" style="color: #fca5a5;">Cat 3 Qty</label>
+                            <input class="field-input" type="number" id="cat3Qty" min="0" value="0" style="border-color: rgba(239,68,68,0.4);">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 16px; text-align: right;">
+                    <button type="submit" class="btn-submit" id="submitBtn">Submit Record</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="kpi-card" style="margin-bottom: 24px;">
+            <div class="kpi-header" style="margin-bottom: 8px;">
+                <span class="kpi-title">Bulk Upload Audits (Excel / CSV)</span>
+            </div>
+            
+            <div class="form-grid" id="uploadStep1">
+                <div class="field-group">
+                    <label class="field-label">Step 1: Select File</label>
+                    <input type="file" id="fileUpload" class="field-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onchange="handleFileSelection(event)">
+                </div>
+            </div>
+            <div id="fileReadStatus" style="font-size: 0.85em; color: #a8dadc; font-weight: 500; margin-top: 8px;"></div>
+
+            <div id="mappingSection" style="display: none; margin-top: 20px; border-top: 1px solid rgba(0,210,255,0.2); padding-top: 20px;">
+                <label class="field-label" style="display: block; margin-bottom: 12px; color: #00d2ff;">Step 2: Map Your Columns</label>
+                
+                <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                    <div class="field-group"><label class="field-label">Job ID</label><select class="field-select map-dropdown" id="mapJobId"></select></div>
+                    <div class="field-group"><label class="field-label">Audit Type</label><select class="field-select map-dropdown" id="mapAuditType"></select></div>
+                    <div class="field-group"><label class="field-label">Date</label><select class="field-select map-dropdown" id="mapDate"></select></div>
+                    <div class="field-group"><label class="field-label">Engineer Name</label><select class="field-select map-dropdown" id="mapEngineer"></select></div>
+                    <div class="field-group"><label class="field-label">Result (Pass/Fail)</label><select class="field-select map-dropdown" id="mapResult"></select></div>
+                    <div class="field-group"><label class="field-label">Elec Defects</label><select class="field-select map-dropdown" id="mapElecDefects"></select></div>
+                    <div class="field-group"><label class="field-label">Gas Defects</label><select class="field-select map-dropdown" id="mapGasDefects"></select></div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: right; display: flex; justify-content: space-between; align-items: center;">
+                    <div id="uploadStatus" style="font-size: 0.85em; color: #fcd34d; font-weight: 500;"></div>
+                    <button type="button" class="btn-submit" id="uploadBtn" onclick="executeMappedUpload()">Confirm & Upload</button>
+                </div>
+            </div>
+        </div>
+
     </div>
-  </header>
 
-  <div class="layout-wrapper">
-    <!-- Main Estimator Screen -->
-    <main class="main-estimator" style="width: 100%;">
-      
-      <!-- Metrics row -->
-      <div class="metrics-row">
-        <div class="metric-card">
-          <label>Job Purchase Cost</label>
-          <div class="value cost" id="metricPurchaseCost">£0.00</div>
-          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Total cost of purchasing packs</p>
+    <div class="modal-overlay" id="chartModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeChartModal()">✖</button>
+            <div class="kpi-title" style="margin-bottom: 8px;">Running Year - Weekly Pass Rate (%)</div>
+            <div style="font-size: 0.85em; color: #a8dadc; margin-bottom: 16px;">Historical trend for the past 52 weeks</div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
         </div>
-        <div class="metric-card">
-          <label>Actual Materials Used</label>
-          <div class="value used" id="metricUsedCost">£0.00</div>
-          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Cost of parts actually required</p>
-        </div>
-        <div class="metric-card">
-          <label>Waste / Leftover Stock</label>
-          <div class="value waste" id="metricWastageCost">£0.00</div>
-          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Value of remaining unused items</p>
-        </div>
-        <div class="metric-card">
-          <label>Material Efficiency</label>
-          <div class="value efficiency" id="metricEfficiency">0.0%</div>
-          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Used cost relative to total buy</p>
-          <div class="efficiency-bar-bg">
-            <div class="efficiency-bar-fg" id="metricEfficiencyBar"></div>
-          </div>
-        </div>
-      </div>
+    </div>
 
-      <!-- Search & Autocomplete panel -->
-      <div class="search-card">
-        <div class="search-wrapper">
-          <input type="text" class="search-input" id="inventorySearchInput" placeholder="🔍 Search Inventory by SKU, Part Name, or Category to add..." oninput="handleSearchInput(this.value)" autocomplete="off">
-          <div class="suggestion-box" id="inventorySuggestions"></div>
-        </div>
-      </div>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
-      <!-- Estimator Items Table -->
-      <div class="table-card">
-        <div class="table-header">
-          <div class="table-title" id="estimatorTitle">Job Materials List</div>
-          <button class="btn btn-danger" onclick="clearEstimationList()" style="padding: 6px 12px; font-size: 13px;">Clear All</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th width="100">SKU</th>
-                <th>Product Description</th>
-                <th width="100" style="text-align:right;">Pack Price</th>
-                <th width="120" style="text-align:center;">UOM</th>
-                <th width="110" style="text-align:center;">Pack Size</th>
-                <th width="110" style="text-align:center;">Required Qty</th>
-                <th width="100" style="text-align:center;">Packs to Buy</th>
-                <th width="110" style="text-align:right;">Purchase Cost</th>
-                <th width="110" style="text-align:right;">Used Value</th>
-                <th width="120" style="text-align:center;">Wastage</th>
-                <th width="70" style="text-align:center;">Action</th>
-              </tr>
-            </thead>
-            <tbody id="estimatorTableBody">
-              <tr>
-                <td colspan="11" style="text-align:center; padding:48px; color:var(--text-muted);">
-                  No items selected yet. Search inventory above and click to add items to your job materials list.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <script>
+        // --- Firebase Config ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
 
-    </main>
-  </div>
+        // --- Globals ---
+        let engineersData = [];
+        let globalAuditsCache = []; 
+        let trendChartInstance = null; 
+        let globalExcelRows = [];
 
-  <div class="toast" id="toast"></div>
-
-  <!-- Firebase & Estimation Scripts -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
-      authDomain: "oesperformance-a54c0.firebaseapp.com",
-      projectId: "oesperformance-a54c0",
-      storageBucket: "oesperformance-a54c0.firebasestorage.app",
-      messagingSenderId: "484894102454",
-      appId: "1:484894102454:web:17535ee497eac2d90d6717",
-      measurementId: "G-R56BGZYV8N"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
-
-    // Global arrays
-    let ITEMS = [];             // Inventory items
-    let estimationBasket = [];  // Items added to active estimate
-
-    window.showToast = function(msg, isError = false) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = 'toast' + (isError ? ' error' : '');
-      void t.offsetWidth;
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 3500);
-    };
-
-    // ── Load Inventory ────────────────────────────────────────────────────────
-    async function loadInventory() {
-      try {
-        const snap = await getDocs(collection(db, 'Energise Inventory'));
-        ITEMS = [];
-        snap.forEach(d => {
-          const data = d.data();
-          if (data.sku && data.name) {
-            ITEMS.push({
-              sku: data.sku,
-              name: data.name,
-              price: parseFloat(data.price) || 0,
-              uom: data.uom || 'each'
-            });
-          }
-        });
-        ITEMS.sort((a, b) => a.name.localeCompare(b.name));
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to load inventory from Firebase: ' + err.message, true);
-      }
-    }
-
-    // ── Load Saved Jobs Dropdown ──────────────────────────────────────────────
-    async function loadSavedJobsDropdown() {
-      try {
-        const snap = await getDocs(collection(db, 'Energise Job Estimates'));
-        const dropdown = document.getElementById('savedJobsDropdown');
-        dropdown.innerHTML = '<option value="">— Select a saved job —</option>';
-        
-        snap.forEach(d => {
-          const data = d.data();
-          const option = document.createElement('option');
-          option.value = d.id;
-          option.textContent = data.jobName || d.id;
-          dropdown.appendChild(option);
-        });
-      } catch (err) {
-        console.error('Error loading estimates dropdown:', err);
-      }
-    }
-
-    // ── Automatic Pack-Size & Unit Detection ──────────────────────────────────
-    function detectPackDetails(uom, name) {
-      const uomStr = (uom || '').toLowerCase().trim();
-      const nameStr = (name || '').toLowerCase().trim();
-
-      // Check roll with meter length, e.g. RL-10m, RL-100m, 10m roll, etc.
-      let match = uomStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
-                  uomStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i) || 
-                  nameStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
-                  nameStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i);
-      if (match) {
-        return { packSize: parseFloat(match[1]), unit: 'm' };
-      }
-
-      // Check standard pk-100, pack of 100, box of 50
-      match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
-              uomStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i) ||
-              nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
-              nameStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
-      if (match) {
-        return { packSize: parseInt(match[1]), unit: 'pcs' };
-      }
-
-      return { packSize: 1, unit: 'each' };
-    }
-
-    // ── Autocomplete / Search Handling ────────────────────────────────────────
-    window.handleSearchInput = function(val) {
-      const box = document.getElementById('inventorySuggestions');
-      const query = val.toLowerCase().trim();
-      
-      if (!query) {
-        box.style.display = 'none';
-        return;
-      }
-
-      // Filter matches
-      const matches = ITEMS.filter(item => 
-        item.sku.toLowerCase().includes(query) || 
-        item.name.toLowerCase().includes(query)
-      ).slice(0, 10);
-
-      if (matches.length === 0) {
-        box.innerHTML = '<div style="padding:12px; color:var(--text-muted); text-align:center;">No matching parts found.</div>';
-        box.style.display = 'block';
-        return;
-      }
-
-      box.innerHTML = matches.map(item => `
-        <div class="suggestion-item" onclick="addItemToEstimate('${item.sku}')">
-          <div class="suggest-details">
-            <span class="suggest-name">${item.name}</span>
-            <span class="suggest-sku">${item.sku} &middot; UOM: ${item.uom}</span>
-          </div>
-          <span class="suggest-price">£${item.price.toFixed(2)}</span>
-        </div>
-      `).join('');
-      box.style.display = 'block';
-    };
-
-    // Close suggestions on outside click
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.search-wrapper')) {
-        document.getElementById('inventorySuggestions').style.display = 'none';
-      }
-    });
-
-    // ── Add Item to active estimate basket ────────────────────────────────────
-    window.addItemToEstimate = function(sku) {
-      const item = ITEMS.find(i => i.sku === sku);
-      if (!item) return;
-
-      // Check if already in basket
-      const existing = estimationBasket.find(i => i.sku === sku);
-      if (existing) {
-        existing.requiredQty++;
-      } else {
-        const details = detectPackDetails(item.uom, item.name);
-        estimationBasket.push({
-          sku: item.sku,
-          name: item.name,
-          price: item.price,
-          uom: item.uom,
-          packSize: details.packSize,
-          unit: details.unit,
-          requiredQty: 1
-        });
-      }
-
-      // Reset search
-      document.getElementById('inventorySearchInput').value = '';
-      document.getElementById('inventorySuggestions').style.display = 'none';
-
-      showToast(`✓ Added ${item.name} to estimate`);
-      recalculateEstimate();
-    };
-
-    // ── Recalculate and Render Estimate Basket ────────────────────────────────
-    window.recalculateEstimate = function() {
-      const tbody = document.getElementById('estimatorTableBody');
-      
-      if (estimationBasket.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="11" style="text-align:center; padding:48px; color:var(--text-muted);">
-              No items selected yet. Search inventory above and click to add items to your job materials list.
-            </td>
-          </tr>
-        `;
-        updateMetrics(0, 0, 0, 0);
-        return;
-      }
-
-      let totalPurchaseCost = 0;
-      let totalUsedCost = 0;
-
-      tbody.innerHTML = estimationBasket.map((item, idx) => {
-        // Validation of values
-        const packSize = Math.max(0.001, parseFloat(item.packSize) || 1);
-        const reqQty = Math.max(0, parseFloat(item.requiredQty) || 0);
-        const price = parseFloat(item.price) || 0;
-
-        // calculations:
-        // Packs to Buy = Ceil(Req Qty / Pack Size)
-        const packsToBuy = Math.ceil(reqQty / packSize);
-        // Purchase Cost = Packs * Price
-        const purchaseCost = packsToBuy * price;
-        // Used Value = (Price / Pack Size) * Req Qty
-        const usedValue = (price / packSize) * reqQty;
-        // Wastage = Purchase Cost - Used Value
-        const wastage = purchaseCost - usedValue;
-        
-        totalPurchaseCost += purchaseCost;
-        totalUsedCost += usedValue;
-
-        const wasteBadge = wastage > 0.01 
-          ? `<span class="badge-waste">£${wastage.toFixed(2)} waste</span>` 
-          : `<span class="badge-ok">No waste</span>`;
-
-        return `
-          <tr>
-            <td><span class="sku-mono">${item.sku}</span></td>
-            <td><strong>${item.name}</strong></td>
-            <td class="price-mono" style="text-align:right;">£${price.toFixed(2)}</td>
-            <td style="text-align:center; color:var(--text-muted); font-size:12px;">${item.uom}</td>
-            <td style="text-align:center;">
-              <div style="display:inline-flex; align-items:center; gap:4px;">
-                <input type="number" class="tbl-input" min="0.001" step="any" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
-                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
-              </div>
-            </td>
-            <td style="text-align:center;">
-              <div style="display:inline-flex; align-items:center; gap:4px;">
-                <input type="number" class="tbl-input" min="0" step="any" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
-                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
-              </div>
-            </td>
-            <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${packsToBuy}</td>
-            <td class="price-mono" style="text-align:right;">£${purchaseCost.toFixed(2)}</td>
-            <td class="price-mono" style="text-align:right; color:var(--accent2);">£${usedValue.toFixed(2)}</td>
-            <td style="text-align:center;">${wasteBadge}</td>
-            <td style="text-align:center;">
-              <button class="btn btn-danger" onclick="deleteRow(${idx})" style="padding: 4px 8px; font-size: 12px;">×</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-      const totalWastage = totalPurchaseCost - totalUsedCost;
-      const efficiency = totalPurchaseCost > 0 ? (totalUsedCost / totalPurchaseCost) * 100 : 0;
-      updateMetrics(totalPurchaseCost, totalUsedCost, totalWastage, efficiency);
-    };
-
-    // ── Update Row Fields ─────────────────────────────────────────────────────
-    window.updateRowPackSize = function(idx, val) {
-      const num = parseFloat(val) || 1;
-      estimationBasket[idx].packSize = Math.max(0.001, num);
-      recalculateEstimate();
-    };
-
-    window.updateRowRequiredQty = function(idx, val) {
-      const num = parseFloat(val) || 0;
-      estimationBasket[idx].requiredQty = Math.max(0, num);
-      recalculateEstimate();
-    };
-
-    window.deleteRow = function(idx) {
-      estimationBasket.splice(idx, 1);
-      recalculateEstimate();
-    };
-
-    window.clearEstimationList = function() {
-      estimationBasket = [];
-      recalculateEstimate();
-    };
-
-    // ── Update Dashboard Metrics ──────────────────────────────────────────────
-    function updateMetrics(purchase, used, waste, eff) {
-      document.getElementById('metricPurchaseCost').textContent = `£${purchase.toFixed(2)}`;
-      document.getElementById('metricUsedCost').textContent = `£${used.toFixed(2)}`;
-      document.getElementById('metricWastageCost').textContent = `£${waste.toFixed(2)}`;
-      
-      document.getElementById('metricEfficiency').textContent = `${eff.toFixed(1)}%`;
-      document.getElementById('metricEfficiencyBar').style.width = `${Math.min(100, eff)}%`;
-
-      // Color mapping on efficiency card
-      const effCard = document.getElementById('metricEfficiency');
-      if (eff >= 80) effCard.style.color = 'var(--accent2)';
-      else if (eff >= 50) effCard.style.color = 'var(--accent)';
-      else effCard.style.color = 'var(--danger)';
-    }
-
-    // ── Save Estimate to Firebase ─────────────────────────────────────────────
-    window.saveJobToFirebase = async function() {
-      if (estimationBasket.length === 0) {
-        showToast('Please add at least one material to the list before saving.', true);
-        return;
-      }
-
-      const jobNameVal = prompt("Enter a Job Name / Reference to save this estimate:");
-      if (jobNameVal === null) return; // User cancelled
-      const trimmedName = jobNameVal.trim();
-      if (!trimmedName) {
-        showToast('Job Name cannot be empty.', true);
-        return;
-      }
-
-      try {
-        const docId = trimmedName.replace(/[\/\.\#\$\[\]]/g, '_');
-        await setDoc(doc(db, 'Energise Job Estimates', docId), {
-          jobName: trimmedName,
-          items: estimationBasket,
-          updatedAt: new Date().toISOString()
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const now = new Date();
+            document.getElementById('statsDate').innerText = now.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            document.getElementById('auditDate').valueAsDate = now;
+            loadDashboardData();
         });
 
-        showToast('✓ Job Estimate saved successfully!');
-        loadSavedJobsDropdown();
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to save estimate: ' + err.message, true);
-      }
-    };
+        // --- Chart.js Modal Logic ---
+        function generateWeeklyTrendData() {
+            const now = new Date();
+            const weeksData = [];
+            const labels = [];
 
-    // ── Load Saved Job ────────────────────────────────────────────────────────
-    window.loadSavedJob = async function(id) {
-      if (!id) return;
-      try {
-        const snap = await getDocs(collection(db, 'Energise Job Estimates'));
-        let foundData = null;
-        snap.forEach(d => {
-          if (d.id === id) foundData = d.data();
-        });
+            for (let i = 51; i >= 0; i--) {
+                const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (i * 7));
+                end.setHours(23, 59, 59, 999);
+                const start = new Date(end.getTime() - (6 * 24 * 60 * 60 * 1000));
+                start.setHours(0, 0, 0, 0);
 
-        if (foundData) {
-          estimationBasket = foundData.items || [];
-          recalculateEstimate();
-          
-          // Update table title to show active loaded job
-          document.getElementById('estimatorTitle').textContent = `Job Materials List: ${foundData.jobName}`;
-          showToast(`✓ Loaded estimate: ${foundData.foundName || foundData.jobName}`);
+                const label = start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                labels.push(label);
+
+                let pass = 0; let fail = 0;
+                globalAuditsCache.forEach(a => {
+                    if (!a.date) return;
+                    const d = new Date(a.date);
+                    if (d >= start && d <= end) {
+                        if (a.result === 'Pass') pass++;
+                        else if (a.result === 'Fail') fail++;
+                    }
+                });
+
+                const total = pass + fail;
+                const pct = total === 0 ? null : parseFloat(((pass / total) * 100).toFixed(1)); 
+                weeksData.push(pct);
+            }
+            return { labels, data: weeksData };
         }
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to load saved estimate: ' + err.message, true);
-      }
-    };
 
-    // Initialize
-    await loadInventory();
-    await loadSavedJobsDropdown();
-  </script>
+        function openChartModal() {
+            document.getElementById('chartModal').style.display = 'flex';
+            const trend = generateWeeklyTrendData();
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (trendChartInstance) {
+                trendChartInstance.destroy(); 
+            }
+
+            trendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trend.labels,
+                    datasets: [{
+                        label: 'Pass Rate %',
+                        data: trend.data,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#10b981',
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        spanGaps: true 
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: false, 
+                            min: 0, 
+                            max: 105,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#a8dadc', stepSize: 20 }
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: '#a8dadc', maxTicksLimit: 12 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.parsed.y + '% Pass Rate';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function closeChartModal() {
+            document.getElementById('chartModal').style.display = 'none';
+        }
+
+        // --- Standard Forms/Functions ---
+        function populateEngineerDetails() {
+            const val = document.getElementById('engineerName').value;
+            const newNameInput = document.getElementById('newEngineerName');
+            const teamLeaderInput = document.getElementById('teamLeader');
+            const contractInput = document.getElementById('contract');
+
+            if (val === '__new__') {
+                newNameInput.style.display = 'block';
+                newNameInput.required = true;
+                newNameInput.value = '';
+                newNameInput.focus();
+
+                teamLeaderInput.disabled = false;
+                teamLeaderInput.value = '';
+                teamLeaderInput.placeholder = 'Enter team leader';
+
+                contractInput.disabled = false;
+                contractInput.value = '';
+                contractInput.placeholder = 'Enter contract';
+                return;
+            }
+
+            newNameInput.style.display = 'none';
+            newNameInput.required = false;
+            newNameInput.value = '';
+
+            teamLeaderInput.disabled = true;
+            teamLeaderInput.placeholder = 'Autopopulates...';
+
+            contractInput.disabled = true;
+            contractInput.placeholder = 'Autopopulates...';
+
+            const eng = engineersData.find(e => e.name === val);
+            if (eng) {
+                teamLeaderInput.value = eng.leader;
+                contractInput.value = eng.contract;
+            } else {
+                teamLeaderInput.value = '';
+                contractInput.value = '';
+            }
+        }
+
+        function toggleFailFields() {
+            const res = document.getElementById('auditResult').value;
+            const fields = document.getElementById('failFields');
+            
+            if (res === 'Fail') {
+                fields.style.display = 'block';
+            } else {
+                fields.style.display = 'none';
+                document.getElementById('cat1Qty').value = '0';
+                document.getElementById('cat2Qty').value = '0';
+                document.getElementById('cat3Qty').value = '0';
+            }
+        }
+
+        async function updateTeamLeader(engineerName, newLeader) {
+            if (!newLeader) return; 
+            try {
+                const snapshot = await db.collection("Compliance Dashboard")
+                                         .where("engineerName", "==", engineerName)
+                                         .get();
+                
+                let batch = db.batch();
+                let batchCount = 0;
+
+                snapshot.docs.forEach(doc => {
+                    batch.update(doc.ref, { teamLeader: newLeader });
+                    batchCount++;
+                    if (batchCount === 500) {
+                        batch.commit();
+                        batch = db.batch();
+                        batchCount = 0;
+                    }
+                });
+
+                if (batchCount > 0) await batch.commit();
+                loadDashboardData(); 
+
+            } catch (error) {
+                console.error("Error updating Team Leader:", error);
+                alert("Failed to update Team Leader. " + error.message);
+            }
+        }
+
+        async function hideFromWip(engineerName) {
+            if (!confirm(`Are you sure you want to hide ${engineerName} from the WIP tracking list? \n\nTheir performance metrics and failures will still be counted everywhere else.`)) return;
+            try {
+                await db.collection("WipExclusions").add({ 
+                    name: engineerName,
+                    excludedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                loadDashboardData(); 
+            } catch (error) {
+                console.error("Error hiding engineer:", error);
+                alert("Failed to hide engineer. " + error.message);
+            }
+        }
+
+        async function submitAudit(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true; btn.textContent = 'Submitting...';
+
+            const engineerSelectVal = document.getElementById('engineerName').value;
+            const finalEngineerName = engineerSelectVal === '__new__'
+                ? document.getElementById('newEngineerName').value.trim()
+                : engineerSelectVal;
+
+            if (!finalEngineerName) {
+                alert("Please enter a valid engineer name.");
+                btn.disabled = false; btn.textContent = 'Submit Record';
+                return;
+            }
+
+            const data = {
+                engineerName: finalEngineerName,
+                teamLeader: document.getElementById('teamLeader').value,
+                contract: document.getElementById('contract').value,
+                auditType: document.getElementById('auditType').value,
+                date: document.getElementById('auditDate').value,
+                result: document.getElementById('auditResult').value,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (data.result === 'Fail') {
+                data.cat1Qty = parseInt(document.getElementById('cat1Qty').value, 10) || 0;
+                data.cat2Qty = parseInt(document.getElementById('cat2Qty').value, 10) || 0;
+                data.cat3Qty = parseInt(document.getElementById('cat3Qty').value, 10) || 0;
+                
+                if (data.cat1Qty > 0) data.failCategory = "Cat 1";
+                else if (data.cat2Qty > 0) data.failCategory = "Cat 2";
+                else if (data.cat3Qty > 0) data.failCategory = "Cat 3";
+                else data.failCategory = "Cat Unspecified";
+            }
+
+            try {
+                await db.collection("Compliance Dashboard").add(data);
+                alert("Audit Submitted Successfully");
+                document.getElementById('auditForm').reset();
+                document.getElementById('auditDate').valueAsDate = new Date();
+                document.getElementById('newEngineerName').style.display = 'none';
+                document.getElementById('newEngineerName').required = false;
+                document.getElementById('teamLeader').disabled = true;
+                document.getElementById('teamLeader').placeholder = 'Autopopulates...';
+                document.getElementById('contract').disabled = true;
+                document.getElementById('contract').placeholder = 'Autopopulates...';
+                toggleFailFields();
+                loadDashboardData();
+            } catch (err) {
+                console.error(err);
+                alert("Error submitting audit: " + err.message);
+            } finally {
+                btn.disabled = false; btn.textContent = 'Submit Record';
+            }
+        }
+
+        // --- Bulk Upload Functions ---
+        function handleFileSelection(event) {
+            const file = event.target.files[0];
+            const statusDiv = document.getElementById('fileReadStatus');
+            const mappingSection = document.getElementById('mappingSection');
+            
+            if (!file) {
+                mappingSection.style.display = 'none';
+                return;
+            }
+
+            statusDiv.textContent = "Reading file headers...";
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    globalExcelRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+console.log('Sheet names found:', workbook.SheetNames);
+console.log('Total rows parsed:', globalExcelRows.length);
+console.log('Row 0 (header):', globalExcelRows[0]);
+console.log('Row 1:', globalExcelRows[1]);
+console.log('Row 2:', globalExcelRows[2]);
+
+if (globalExcelRows.length < 2) throw new Error("File appears to be empty or missing data.");
+
+                    const headers = globalExcelRows[0].map((h, i) => h ? String(h).trim() : `Column ${i + 1}`);
+
+                    const dropdowns = document.querySelectorAll('.map-dropdown');
+                    dropdowns.forEach(select => {
+                        select.innerHTML = '<option value="">-- Ignore / Not Present --</option>';
+                        headers.forEach((header, index) => {
+                            select.innerHTML += `<option value="${index}">${header}</option>`;
+                        });
+                    });
+
+                    const findCol = (keyword) => headers.findIndex(h => h.toLowerCase().includes(keyword));
+                    
+                    document.getElementById('mapJobId').value = findCol('job') >= 0 ? findCol('job') : (findCol('id') >= 0 ? findCol('id') : "");
+                    document.getElementById('mapAuditType').value = findCol('type') >= 0 ? findCol('type') : "";
+                    document.getElementById('mapDate').value = findCol('date') >= 0 ? findCol('date') : "";
+                    document.getElementById('mapEngineer').value = findCol('engineer') >= 0 ? findCol('engineer') : "";
+                    document.getElementById('mapResult').value = findCol('result') >= 0 ? findCol('result') : (findCol('pass') >= 0 ? findCol('pass') : "");
+                    document.getElementById('mapElecDefects').value = findCol('elec') >= 0 ? findCol('elec') : "";
+                    document.getElementById('mapGasDefects').value = findCol('gas') >= 0 ? findCol('gas') : "";
+
+                    statusDiv.textContent = `Found ${globalExcelRows.length - 1} data rows. Please map the columns below.`;
+                    mappingSection.style.display = 'block';
+
+                } catch (error) {
+                    console.error(error);
+                    statusDiv.textContent = "Error reading file: " + error.message;
+                    mappingSection.style.display = 'none';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function executeMappedUpload() {
+            const btn = document.getElementById('uploadBtn');
+            const statusDiv = document.getElementById('uploadStatus');
+
+            const getCol = (id) => {
+                const val = document.getElementById(id).value;
+                return val === "" ? -1 : parseInt(val, 10);
+            };
+
+            const colJobId = getCol('mapJobId');
+            const colAuditType = getCol('mapAuditType');
+            const colDate = getCol('mapDate');
+            const colEngineer = getCol('mapEngineer');
+            const colResult = getCol('mapResult');
+            const colElec = getCol('mapElecDefects');
+            const colGas = getCol('mapGasDefects');
+
+            if (colAuditType === -1 || colDate === -1 || colEngineer === -1) {
+                alert("You must map at least the Audit Type, Date, and Engineer Name.");
+                return;
+            }
+
+            btn.disabled = true; btn.textContent = 'Processing...';
+            statusDiv.textContent = "Checking for duplicates and preparing data...";
+
+            // Create a set of existing Job IDs from global cache to check for duplicates
+            const existingJobIds = new Set(
+                globalAuditsCache
+                    .filter(a => a.jobId)
+                    .map(a => String(a.jobId).trim())
+            );
+
+            let recordsToUpload = [];
+            let skippedCount = 0;
+
+            for (let i = 1; i < globalExcelRows.length; i++) {
+                const row = globalExcelRows[i];
+                if (!row || row.length === 0) continue;
+
+                const jobIdRaw = colJobId >= 0 ? String(row[colJobId] || '').trim() : '';
+
+                // Prevent Duplicates based on Job ID
+                if (jobIdRaw && existingJobIds.has(jobIdRaw)) {
+                    skippedCount++;
+                    continue;
+                }
+
+                const auditTypeRaw = colAuditType >= 0 ? String(row[colAuditType] || '').toUpperCase() : '';
+                const dateRaw = colDate >= 0 ? row[colDate] : null;
+                const engineerRaw = colEngineer >= 0 ? String(row[colEngineer] || '').trim() : '';
+                const resultRaw = colResult >= 0 ? String(row[colResult] || '').trim() : '';
+
+                let parsedAuditType = "";
+                if (auditTypeRaw.includes("PC")) parsedAuditType = "Post Complete";
+                else if (auditTypeRaw.includes("WIP")) parsedAuditType = "WIP";
+                else continue; 
+
+                let parsedDate = "";
+                if (dateRaw instanceof Date) {
+                    const offsetDate = new Date(dateRaw.getTime() - (dateRaw.getTimezoneOffset() * 60000));
+                    parsedDate = offsetDate.toISOString().split('T')[0];
+                } else if (typeof dateRaw === 'string' || typeof dateRaw === 'number') {
+                    const tempDate = new Date(dateRaw);
+                    if (!isNaN(tempDate)) parsedDate = tempDate.toISOString().split('T')[0];
+                }
+                
+                if (!parsedDate) continue; 
+
+                const eng = engineersData.find(e => e.name.toLowerCase() === engineerRaw.toLowerCase());
+                const teamLeader = eng ? eng.leader : "Unknown";
+                const contract = eng ? eng.contract : "Unknown";
+
+                const rawElec = colElec >= 0 ? String(row[colElec] || '').trim() : '';
+                const rawGas = colGas >= 0 ? String(row[colGas] || '').trim() : '';
+                const combinedReason = [rawElec, rawGas].filter(Boolean).join(" | ");
+                const searchStr = combinedReason.toUpperCase();
+
+                let parsedResult = "Pass"; 
+                if (resultRaw.toUpperCase().includes("FAIL")) parsedResult = "Fail";
+                else if (resultRaw.toUpperCase().includes("PASS")) parsedResult = "Pass";
+
+                if (parsedResult === "Pass" && (searchStr.includes("CAT") || searchStr.includes("CAT 1") || searchStr.includes("CAT 2") || searchStr.includes("CAT 3"))) {
+                    parsedResult = "Fail";
+                }
+
+                const record = {
+                    jobId: jobIdRaw,
+                    engineerName: eng ? eng.name : engineerRaw,
+                    teamLeader: teamLeader,
+                    contract: contract,
+                    auditType: parsedAuditType,
+                    date: parsedDate,
+                    result: parsedResult,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                if (parsedResult === "Fail") {
+                    let c1Count = (searchStr.match(/CAT[\s_\-]*1/g) || []).length;
+                    let c2Count = (searchStr.match(/CAT[\s_\-]*2/g) || []).length;
+                    let c3Count = (searchStr.match(/CAT[\s_\-]*3/g) || []).length;
+
+                    record.cat1Qty = c1Count;
+                    record.cat2Qty = c2Count;
+                    record.cat3Qty = c3Count;
+
+                    if (c1Count > 0) record.failCategory = "Cat 1";
+                    else if (c2Count > 0) record.failCategory = "Cat 2";
+                    else if (c3Count > 0) record.failCategory = "Cat 3";
+                    else record.failCategory = "Cat Unspecified"; 
+                    
+                    record.failReason = combinedReason || "Bulk Uploaded Defect"; 
+                }
+
+                recordsToUpload.push(record);
+            }
+
+            if (recordsToUpload.length === 0) {
+                statusDiv.textContent = `0 valid records found. (${skippedCount} duplicates skipped based on Job ID). Check mapping and data.`;
+                btn.disabled = false; btn.textContent = 'Confirm & Upload';
+                return;
+            }
+
+            statusDiv.textContent = `Uploading ${recordsToUpload.length} new records... (Skipped ${skippedCount} duplicates)`;
+
+            try {
+                let batch = db.batch();
+                let batchCount = 0;
+
+                for (const record of recordsToUpload) {
+                    const docRef = db.collection("Compliance Dashboard").doc();
+                    batch.set(docRef, record);
+                    batchCount++;
+                    if (batchCount === 500) {
+                        await batch.commit();
+                        batch = db.batch();
+                        batchCount = 0;
+                    }
+                }
+                if (batchCount > 0) await batch.commit(); 
+
+                alert(`Successfully uploaded ${recordsToUpload.length} records! (${skippedCount} duplicate Job IDs were ignored)`);
+                document.getElementById('fileUpload').value = ''; 
+                document.getElementById('mappingSection').style.display = 'none';
+                document.getElementById('fileReadStatus').textContent = '';
+                statusDiv.textContent = "";
+                
+                loadDashboardData(); 
+            } catch (error) {
+                console.error("Upload Error:", error);
+                alert("Error writing to database: " + error.message);
+                statusDiv.textContent = "Upload failed.";
+            } finally {
+                btn.disabled = false; btn.textContent = 'Confirm & Upload';
+            }
+        }
+
+        // --- Date Utilities ---
+        function getWeekRange(date) {
+            const d = new Date(date);
+            const day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1); 
+            const start = new Date(d.setDate(diff)); start.setHours(0,0,0,0);
+            const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23,59,59,999);
+            return { start, end };
+        }
+
+        function getMonthRange(date) {
+            const start = new Date(date.getFullYear(), date.getMonth(), 1);
+            const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+            return { start, end };
+        }
+
+        function getRollingYearRange(date) {
+            const end = new Date(date);
+            end.setHours(23,59,59,999);
+            const start = new Date(date);
+            start.setFullYear(start.getFullYear() - 1);
+            start.setHours(0,0,0,0);
+            return { start, end };
+        }
+
+        function calculatePassRate(pass, fail) {
+            const total = pass + fail;
+            if (total === 0) return '0%';
+            return ((pass / total) * 100).toFixed(1) + '%';
+        }
+
+        function renderOffendersTable(dataObj, tbodyId) {
+            const arr = Object.values(dataObj).filter(e => e.fails > 0).sort((a,b) => b.fails - a.fails);
+            const tbody = document.querySelector(tbodyId);
+            tbody.innerHTML = '';
+            
+            if (arr.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#a8dadc;">No failed audits in this period.</td></tr>';
+            } else {
+                arr.forEach(e => {
+                    let breakdown = [];
+                    if (e.cat1 > 0) breakdown.push(`CAT 1 x${e.cat1}`);
+                    if (e.cat2 > 0) breakdown.push(`CAT 2 x${e.cat2}`);
+                    if (e.cat3 > 0) breakdown.push(`CAT 3 x${e.cat3}`);
+                    if (e.catU > 0) breakdown.push(`Unspec x${e.catU}`);
+                    
+                    let breakdownHTML = breakdown.length > 0 
+                        ? `<div style="font-size: 0.8em; color: #fca5a5; margin-top: 4px; font-weight: 500;">(${breakdown.join(', ')})</div>` 
+                        : '';
+
+                    let leaderHTML = `<span style="font-family:'JetBrains Mono', monospace; font-size:0.85em; color: #a8dadc;">${e.leader}</span>`;
+                    
+                    if (e.leader === 'Unknown' || e.leader === 'UNKNOWN' || e.leader === '') {
+                        let safeName = e.name.replace(/'/g, "\\'"); 
+                        leaderHTML = `
+                            <select class="field-select" style="padding: 4px 8px; font-size: 0.85em; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); width: 140px; color: #fca5a5; background-position: right 0.5rem center;" onchange="updateTeamLeader('${safeName}', this.value)">
+                                <option value="">Assign Leader</option>
+                                <option value="Richard Wiecko">Richard Wiecko</option>
+                                <option value="Scott Carson">Scott Carson</option>
+                                <option value="Stuart Whyte">Stuart Whyte</option>
+                                <option value="Tom Green">Tom Green</option>
+                            </select>
+                        `;
+                    }
+
+                    tbody.innerHTML += `<tr>
+                        <td><strong style="color: #fff;">${e.name}</strong></td>
+                        <td>${leaderHTML}</td>
+                        <td style="text-align: right;">
+                            <span class="badge red">${e.fails} Fails</span>
+                            ${breakdownHTML}
+                        </td>
+                    </tr>`;
+                });
+            }
+        }
+
+        // --- Load & Calculate Data ---
+        async function loadDashboardData() {
+            try {
+                const snap = await db.collection("Compliance Dashboard").get();
+                const audits = [];
+                snap.forEach(doc => audits.push(doc.data()));
+                
+                globalAuditsCache = audits;
+
+                let excludedWipNames = [];
+                // SAFETEY NET: Wrap exclusions in try/catch so permission errors don't break the dashboard
+                try {
+                    const exclSnap = await db.collection("WipExclusions").get();
+                    excludedWipNames = exclSnap.docs.map(doc => doc.data().name);
+                } catch (exclusionError) {
+                    console.warn("Could not load WIP exclusions list. Continuing anyway.", exclusionError);
+                }
+
+                // SAFETY NET: Ensure valid dates for sorting to prevent NaN crashes
+                audits.sort((a, b) => {
+                    let dA = a.date ? new Date(a.date).getTime() : 0;
+                    let dB = b.date ? new Date(b.date).getTime() : 0;
+                    return dB - dA;
+                });
+
+                const now = new Date();
+                const prevWeek = getWeekRange(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
+                const currMonth = getMonthRange(now);
+                const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const prevMonth = getMonthRange(prevMonthDate);
+                const runningYear = getRollingYearRange(now);
+                const baselineDate = new Date('2026-01-01T00:00:00');
+
+                let stats = {
+                    pwPass: 0, pwFail: 0,
+                    cmPass: 0, cmFail: 0, pmPass: 0, pmFail: 0,
+                    ryPass: 0, ryFail: 0,
+                    cat1CM: 0, cat1PM: 0, 
+                    cat2CM: 0, cat2PM: 0, 
+                    cat3CM: 0, cat3PM: 0
+                };
+
+                let dynamicEngineers = {};
+                let engineerFailsCM = {};
+                let engineerFailsPM = {};
+                let engineerWIPs = {};
+
+                audits.forEach(a => {
+                    if (!a.date || !a.engineerName) return;
+
+                    if (!dynamicEngineers[a.engineerName]) {
+                        dynamicEngineers[a.engineerName] = {
+                            name: a.engineerName, leader: a.teamLeader || "Unknown", contract: a.contract || "Unknown"
+                        };
+                    }
+
+                    if (!engineerFailsCM[a.engineerName]) {
+                        engineerFailsCM[a.engineerName] = { name: a.engineerName, leader: a.teamLeader || "Unknown", fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
+                        engineerFailsPM[a.engineerName] = { name: a.engineerName, leader: a.teamLeader || "Unknown", fails: 0, cat1: 0, cat2: 0, cat3: 0, catU: 0 };
+                        engineerWIPs[a.engineerName] = null;
+                    }
+
+                    const aDate = new Date(a.date);
+                    const isPass = a.result === 'Pass';
+                    const isFail = a.result === 'Fail';
+
+                    if (aDate >= prevWeek.start && aDate <= prevWeek.end) {
+                        if(isPass) stats.pwPass++; if(isFail) stats.pwFail++;
+                    }
+
+                    if (aDate >= runningYear.start && aDate <= runningYear.end) {
+                        if(isPass) stats.ryPass++; if(isFail) stats.ryFail++;
+                    }
+
+                    const isCurrMonth = aDate >= currMonth.start && aDate <= currMonth.end;
+                    const isPrevMonth = aDate >= prevMonth.start && aDate <= prevMonth.end;
+
+                    if (isCurrMonth) {
+                        if(isPass) stats.cmPass++; if(isFail) stats.cmFail++;
+                    } else if (isPrevMonth) {
+                        if(isPass) stats.pmPass++; if(isFail) stats.pmFail++;
+                    }
+
+                    if (isFail) {
+                        let c1 = a.cat1Qty || (a.failCategory === 'Cat 1' ? 1 : 0);
+                        let c2 = a.cat2Qty || (a.failCategory === 'Cat 2' ? 1 : 0);
+                        let c3 = a.cat3Qty || (a.failCategory === 'Cat 3' ? 1 : 0);
+                        let cU = (c1 === 0 && c2 === 0 && c3 === 0) ? 1 : 0;
+
+                        if (isCurrMonth) {
+                            stats.cat1CM += c1; stats.cat2CM += c2; stats.cat3CM += c3;
+                            engineerFailsCM[a.engineerName].fails++; 
+                            engineerFailsCM[a.engineerName].cat1 += c1; 
+                            engineerFailsCM[a.engineerName].cat2 += c2;
+                            engineerFailsCM[a.engineerName].cat3 += c3;
+                            engineerFailsCM[a.engineerName].catU += cU;
+                        } else if (isPrevMonth) {
+                            stats.cat1PM += c1; stats.cat2PM += c2; stats.cat3PM += c3;
+                            engineerFailsPM[a.engineerName].fails++;
+                            engineerFailsPM[a.engineerName].cat1 += c1;
+                            engineerFailsPM[a.engineerName].cat2 += c2;
+                            engineerFailsPM[a.engineerName].cat3 += c3;
+                            engineerFailsPM[a.engineerName].catU += cU;
+                        }
+                    }
+
+                    if (a.auditType === 'WIP') {
+                        if (!engineerWIPs[a.engineerName] || aDate > engineerWIPs[a.engineerName]) {
+                            engineerWIPs[a.engineerName] = aDate;
+                        }
+                    }
+                });
+
+                // SAFETY NET: Ensure names act as strings before comparing
+                engineersData = Object.values(dynamicEngineers).sort((a,b) => String(a.name).localeCompare(String(b.name)));
+                
+                const select = document.getElementById('engineerName');
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">Select an Engineer</option><option value="__new__">+ Add New Engineer</option>';
+                engineersData.forEach(eng => {
+                    const opt = document.createElement('option');
+                    opt.value = eng.name; opt.textContent = eng.name;
+                    select.appendChild(opt);
+                });
+                if(currentValue) select.value = currentValue;
+
+                document.getElementById('prevWeekPass').innerText = stats.pwPass;
+                document.getElementById('prevWeekFail').innerText = stats.pwFail;
+                document.getElementById('prevWeekPct').innerText = calculatePassRate(stats.pwPass, stats.pwFail);
+                
+                document.getElementById('currMonthPass').innerText = stats.cmPass;
+                document.getElementById('currMonthFail').innerText = stats.cmFail;
+                document.getElementById('currMonthPct').innerText = calculatePassRate(stats.cmPass, stats.cmFail);
+
+                document.getElementById('prevMonthPass').innerText = stats.pmPass;
+                document.getElementById('prevMonthFail').innerText = stats.pmFail;
+                document.getElementById('prevMonthPct').innerText = calculatePassRate(stats.pmPass, stats.pmFail);
+
+                document.getElementById('runYearPass').innerText = stats.ryPass;
+                document.getElementById('runYearFail').innerText = stats.ryFail;
+                document.getElementById('runYearPct').innerText = calculatePassRate(stats.ryPass, stats.ryFail);
+
+                document.getElementById('cat1CM').innerText = stats.cat1CM;
+                document.getElementById('cat1PM').innerText = stats.cat1PM;
+                document.getElementById('cat2CM').innerText = stats.cat2CM;
+                document.getElementById('cat2PM').innerText = stats.cat2PM;
+                document.getElementById('cat3CM').innerText = stats.cat3CM;
+                document.getElementById('cat3PM').innerText = stats.cat3PM;
+
+                renderOffendersTable(engineerFailsCM, '#offendersTableCM tbody');
+                renderOffendersTable(engineerFailsPM, '#offendersTablePM tbody');
+
+                let wipArr = Object.keys(engineerWIPs)
+                    .filter(name => !excludedWipNames.includes(name))
+                    .map(name => {
+                        const lastDate = engineerWIPs[name];
+                        let daysAgo = 0;
+                        if (lastDate) {
+                            const diffTime = Math.abs(now - lastDate);
+                            daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        } else {
+                            const diffTime = Math.abs(now - baselineDate);
+                            daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                        }
+                        return { name, lastDate, daysAgo };
+                    });
+
+                wipArr.sort((a,b) => b.daysAgo - a.daysAgo);
+
+                const wipTbody = document.querySelector('#wipTable tbody');
+                wipTbody.innerHTML = '';
+                
+                if (wipArr.length === 0) {
+                     wipTbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#a8dadc;">No visible engineers.</td></tr>';
+                } else {
+                    wipArr.slice(0, 20).forEach(e => {
+                        const dateStr = e.lastDate ? e.lastDate.toLocaleDateString('en-GB') : 'No WIP Found';
+                        const daysStr = `${e.daysAgo} Days`;
+                        
+                        let bgCol = "rgba(16,185,129,0.2)"; let txtCol = "#6ee7b7"; let borCol = "rgba(16,185,129,0.4)"; 
+                        if (e.daysAgo > 30) {
+                            bgCol = "rgba(239,68,68,0.2)"; txtCol = "#fca5a5"; borCol = "rgba(239,68,68,0.4)"; 
+                        } else if (e.daysAgo > 14) {
+                            bgCol = "rgba(245,158,11,0.2)"; txtCol = "#fcd34d"; borCol = "rgba(245,158,11,0.4)"; 
+                        }
+
+                        let safeName = e.name.replace(/'/g, "\\'"); 
+
+                        wipTbody.innerHTML += `<tr>
+                            <td>
+                                <div style="display: flex; align-items: center;">
+                                    <strong style="color: #fff;">${e.name}</strong>
+                                    <button class="btn-hide" onclick="hideFromWip('${safeName}')" title="Hide from WIP tracker">✕</button>
+                                </div>
+                            </td>
+                            <td style="font-family:'JetBrains Mono', monospace; font-size:0.9em; color: #a8dadc;">${dateStr}</td>
+                            <td style="text-align: right;"><span class="badge" style="background:${bgCol}; color:${txtCol}; border: 1px solid ${borCol};">${daysStr}</span></td>
+                        </tr>`;
+                    });
+                }
+
+            } catch (error) {
+                console.error("Error loading dashboard data:", error);
+            }
+        }
+    </script>
 </body>
 </html>
