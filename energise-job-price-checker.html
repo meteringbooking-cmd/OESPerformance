@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Material Spend & Price Checker - Energise</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&family=DM+Mono:ital,wght@0,300..500;1,300..500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface2: #f1f5f9;
+      --border: #cbd5e1;
+      --border2: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --accent: #1e40af;
+      --accent-h: #1e3a8a;
+      --accent-lt: #eff6ff;
+      --accent2: #059669;
+      --accent2-lt: #ecfdf5;
+      --danger: #ef4444;
+      --danger-lt: #fef2f2;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .app-header {
+      background: #0f172a;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 24px;
+      color: #fff;
+      text-decoration: none;
+    }
+    .brand span { color: var(--accent2); }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+    .btn:hover { background: var(--surface2); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-success { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+    .btn-success:hover { background: #047857; }
+    .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .btn-danger:hover { background: #dc2626; }
+
+    .layout-wrapper {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    /* Sidebar controls */
+    .sidebar {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .sidebar-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border2);
+      padding-bottom: 8px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .form-group input, .form-group select {
+      padding: 10px 12px;
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-sm);
+      outline: none;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+
+    /* Main estimation screen */
+    .main-estimator {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Metrics Row */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-card label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+    .metric-card .value {
+      font-family: 'DM Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .metric-card .value.cost { color: var(--accent); }
+    .metric-card .value.used { color: var(--accent2); }
+    .metric-card .value.waste { color: var(--danger); }
+    .metric-card .value.efficiency { color: var(--text); }
+    
+    /* Progress bar indicator for efficiency */
+    .efficiency-bar-bg {
+      position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: var(--surface2);
+    }
+    .efficiency-bar-fg {
+      height: 100%; width: 0%; background: var(--accent2); transition: width 0.3s;
+    }
+
+    /* Search & Autocomplete panel */
+    .search-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      position: relative;
+    }
+    .search-wrapper { position: relative; }
+    .search-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      font-size: 15px;
+      font-family: inherit;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    
+    /* Suggestion Box */
+    .suggestion-box {
+      position: absolute; top: 100%; left: 0; width: 100%;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      z-index: 200; max-height: 280px; overflow-y: auto;
+      display: none;
+    }
+    .suggestion-item {
+      padding: 12px 16px; border-bottom: 1px solid var(--border2);
+      cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+      transition: background 0.15s;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: var(--bg); }
+    .suggest-details { display: flex; flex-direction: column; }
+    .suggest-name { font-weight: 600; font-size: 14px; }
+    .suggest-sku { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
+    .suggest-price { font-family: 'DM Mono', monospace; font-weight: 700; color: var(--accent2); }
+
+    /* Parts Table */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+      overflow: hidden;
+    }
+    .table-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .table-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: var(--bg);
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border2);
+      white-space: nowrap;
+    }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border2); font-size: 13px; }
+    tr:hover td { background: #f8fafc; }
+
+    /* Quantity inputs inside table */
+    .tbl-input {
+      width: 80px; padding: 6px 10px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-family: 'DM Mono', monospace; font-size: 13px; text-align: center;
+    }
+    .tbl-input:focus { border-color: var(--accent); outline: none; }
+
+    .sku-mono { font-family: 'DM Mono', monospace; font-size: 12px; background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .price-mono { font-family: 'DM Mono', monospace; font-weight: 600; }
+    .badge-waste { background: var(--danger-lt); color: var(--danger); padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+    .badge-ok { background: var(--accent2-lt); color: var(--accent2); padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; background: #0f172a;
+      color: #fff; padding: 12px 24px; border-radius: var(--radius-sm);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000;
+      transform: translateY(100px); opacity: 0; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 500; font-size: 14px;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.error { background: var(--danger); }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <a href="#" class="brand">energise<span>.</span> job price checker</a>
+    <div class="header-actions">
+      <button class="btn btn-success" onclick="saveJobToFirebase()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save Job Estimate
+      </button>
+      <button class="btn" onclick="window.location.href='energise-order-form.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
+        Back to Order Form
+      </button>
+    </div>
+  </header>
+
+  <div class="layout-wrapper">
+    <!-- Sidebar Control Form -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Estimate Details</div>
+      
+      <div class="form-group">
+        <label>Job Name / Reference</label>
+        <input type="text" id="jobName" placeholder="e.g. Job #1023 - Smith St" oninput="toggleSaveButtonState()">
+      </div>
+
+      <div class="form-group">
+        <label>Target Engineer</label>
+        <input type="text" id="engineerName" placeholder="Enter engineer name...">
+      </div>
+
+      <div class="form-group">
+        <label>Job Description</label>
+        <input type="text" id="jobDesc" placeholder="e.g. Boiler install / repair...">
+      </div>
+
+      <div class="sidebar-title" style="margin-top: 10px;">Saved Jobs</div>
+      
+      <div class="form-group">
+        <label>Load Previous Estimate</label>
+        <select id="savedJobsDropdown" onchange="loadSavedJob(this.value)">
+          <option value="">— Select a saved job —</option>
+        </select>
+      </div>
+    </aside>
+
+    <!-- Main Estimator Screen -->
+    <main class="main-estimator">
+      
+      <!-- Metrics row -->
+      <div class="metrics-row">
+        <div class="metric-card">
+          <label>Job Purchase Cost</label>
+          <div class="value cost" id="metricPurchaseCost">£0.00</div>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Total cost of purchasing packs</p>
+        </div>
+        <div class="metric-card">
+          <label>Actual Materials Used</label>
+          <div class="value used" id="metricUsedCost">£0.00</div>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Cost of parts actually required</p>
+        </div>
+        <div class="metric-card">
+          <label>Waste / Leftover Stock</label>
+          <div class="value waste" id="metricWastageCost">£0.00</div>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Value of remaining unused items</p>
+        </div>
+        <div class="metric-card">
+          <label>Material Efficiency</label>
+          <div class="value efficiency" id="metricEfficiency">0.0%</div>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Used cost relative to total buy</p>
+          <div class="efficiency-bar-bg">
+            <div class="efficiency-bar-fg" id="metricEfficiencyBar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search & Autocomplete panel -->
+      <div class="search-card">
+        <div class="search-wrapper">
+          <input type="text" class="search-input" id="inventorySearchInput" placeholder="🔍 Search Inventory by SKU, Part Name, or Category to add..." oninput="handleSearchInput(this.value)" autocomplete="off">
+          <div class="suggestion-box" id="inventorySuggestions"></div>
+        </div>
+      </div>
+
+      <!-- Estimator Items Table -->
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title" id="estimatorTitle">Job Materials List</div>
+          <button class="btn btn-danger" onclick="clearEstimationList()" style="padding: 6px 12px; font-size: 13px;">Clear All</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th width="100">SKU</th>
+                <th>Product Description</th>
+                <th width="100" style="text-align:right;">Pack Price</th>
+                <th width="120" style="text-align:center;">UOM</th>
+                <th width="110" style="text-align:center;">Pack Size</th>
+                <th width="110" style="text-align:center;">Required Qty</th>
+                <th width="100" style="text-align:center;">Packs to Buy</th>
+                <th width="110" style="text-align:right;">Purchase Cost</th>
+                <th width="110" style="text-align:right;">Used Value</th>
+                <th width="120" style="text-align:center;">Wastage</th>
+                <th width="70" style="text-align:center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="estimatorTableBody">
+              <tr>
+                <td colspan="11" style="text-align:center; padding:48px; color:var(--text-muted);">
+                  No items selected yet. Search inventory above and click to add items to your job materials list.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Firebase & Estimation Scripts -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+      authDomain: "oesperformance-a54c0.firebaseapp.com",
+      projectId: "oesperformance-a54c0",
+      storageBucket: "oesperformance-a54c0.firebasestorage.app",
+      messagingSenderId: "484894102454",
+      appId: "1:484894102454:web:17535ee497eac2d90d6717",
+      measurementId: "G-R56BGZYV8N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // Global arrays
+    let ITEMS = [];             // Inventory items
+    let estimationBasket = [];  // Items added to active estimate
+
+    window.showToast = function(msg, isError = false) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (isError ? ' error' : '');
+      void t.offsetWidth;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3500);
+    };
+
+    // ── Load Inventory ────────────────────────────────────────────────────────
+    async function loadInventory() {
+      try {
+        const snap = await getDocs(collection(db, 'Energise Inventory'));
+        ITEMS = [];
+        snap.forEach(d => {
+          const data = d.data();
+          if (data.sku && data.name) {
+            ITEMS.push({
+              sku: data.sku,
+              name: data.name,
+              price: parseFloat(data.price) || 0,
+              uom: data.uom || 'each'
+            });
+          }
+        });
+        ITEMS.sort((a, b) => a.name.localeCompare(b.name));
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to load inventory from Firebase: ' + err.message, true);
+      }
+    }
+
+    // ── Load Saved Jobs Dropdown ──────────────────────────────────────────────
+    async function loadSavedJobsDropdown() {
+      try {
+        const snap = await getDocs(collection(db, 'Energise Job Estimates'));
+        const dropdown = document.getElementById('savedJobsDropdown');
+        dropdown.innerHTML = '<option value="">— Select a saved job —</option>';
+        
+        snap.forEach(d => {
+          const data = d.data();
+          const option = document.createElement('option');
+          option.value = d.id;
+          option.textContent = data.jobName || d.id;
+          dropdown.appendChild(option);
+        });
+      } catch (err) {
+        console.error('Error loading estimates dropdown:', err);
+      }
+    }
+
+    // ── Automatic Pack-Size Detection ─────────────────────────────────────────
+    function detectPackSize(uom, name) {
+      const uomStr = (uom || '').toLowerCase().trim();
+      const nameStr = (name || '').toLowerCase().trim();
+
+      // Check uom first: pk-100, pack of 100, box of 50, etc.
+      let match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || uomStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
+      if (match) return parseInt(match[1]);
+
+      // Check name: "screws pk-100", "clips box of 50", etc.
+      match = nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || nameStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
+      if (match) return parseInt(match[1]);
+
+      return 1; // Default single item
+    }
+
+    // ── Autocomplete / Search Handling ────────────────────────────────────────
+    window.handleSearchInput = function(val) {
+      const box = document.getElementById('inventorySuggestions');
+      const query = val.toLowerCase().trim();
+      
+      if (!query) {
+        box.style.display = 'none';
+        return;
+      }
+
+      // Filter matches
+      const matches = ITEMS.filter(item => 
+        item.sku.toLowerCase().includes(query) || 
+        item.name.toLowerCase().includes(query)
+      ).slice(0, 10);
+
+      if (matches.length === 0) {
+        box.innerHTML = '<div style="padding:12px; color:var(--text-muted); text-align:center;">No matching parts found.</div>';
+        box.style.display = 'block';
+        return;
+      }
+
+      box.innerHTML = matches.map(item => `
+        <div class="suggestion-item" onclick="addItemToEstimate('${item.sku}')">
+          <div class="suggest-details">
+            <span class="suggest-name">${item.name}</span>
+            <span class="suggest-sku">${item.sku} &middot; UOM: ${item.uom}</span>
+          </div>
+          <span class="suggest-price">£${item.price.toFixed(2)}</span>
+        </div>
+      `).join('');
+      box.style.display = 'block';
+    };
+
+    // Close suggestions on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-wrapper')) {
+        document.getElementById('inventorySuggestions').style.display = 'none';
+      }
+    });
+
+    // ── Add Item to active estimate basket ────────────────────────────────────
+    window.addItemToEstimate = function(sku) {
+      const item = ITEMS.find(i => i.sku === sku);
+      if (!item) return;
+
+      // Check if already in basket
+      const existing = estimationBasket.find(i => i.sku === sku);
+      if (existing) {
+        existing.requiredQty++;
+      } else {
+        const detectedSize = detectPackSize(item.uom, item.name);
+        estimationBasket.push({
+          sku: item.sku,
+          name: item.name,
+          price: item.price,
+          uom: item.uom,
+          packSize: detectedSize,
+          requiredQty: 1
+        });
+      }
+
+      // Reset search
+      document.getElementById('inventorySearchInput').value = '';
+      document.getElementById('inventorySuggestions').style.display = 'none';
+
+      showToast(`✓ Added ${item.name} to estimate`);
+      recalculateEstimate();
+    };
+
+    // ── Recalculate and Render Estimate Basket ────────────────────────────────
+    window.recalculateEstimate = function() {
+      const tbody = document.getElementById('estimatorTableBody');
+      
+      if (estimationBasket.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="11" style="text-align:center; padding:48px; color:var(--text-muted);">
+              No items selected yet. Search inventory above and click to add items to your job materials list.
+            </td>
+          </tr>
+        `;
+        updateMetrics(0, 0, 0, 0);
+        return;
+      }
+
+      let totalPurchaseCost = 0;
+      let totalUsedCost = 0;
+
+      tbody.innerHTML = estimationBasket.map((item, idx) => {
+        // Validation of values
+        const packSize = Math.max(1, parseInt(item.packSize) || 1);
+        const reqQty = Math.max(0, parseInt(item.requiredQty) || 0);
+        const price = parseFloat(item.price) || 0;
+
+        // calculations:
+        // Packs to Buy = Ceil(Req Qty / Pack Size)
+        const packsToBuy = Math.ceil(reqQty / packSize);
+        // Purchase Cost = Packs * Price
+        const purchaseCost = packsToBuy * price;
+        // Used Value = (Price / Pack Size) * Req Qty
+        const usedValue = (price / packSize) * reqQty;
+        // Wastage = Purchase Cost - Used Value
+        const wastage = purchaseCost - usedValue;
+        
+        totalPurchaseCost += purchaseCost;
+        totalUsedCost += usedValue;
+
+        const isPackItem = packSize > 1;
+        const wasteBadge = wastage > 0.01 
+          ? `<span class="badge-waste">£${wastage.toFixed(2)} waste</span>` 
+          : `<span class="badge-ok">No waste</span>`;
+
+        return `
+          <tr>
+            <td><span class="sku-mono">${item.sku}</span></td>
+            <td><strong>${item.name}</strong></td>
+            <td class="price-mono" style="text-align:right;">£${price.toFixed(2)}</td>
+            <td style="text-align:center; color:var(--text-muted); font-size:12px;">${item.uom}</td>
+            <td style="text-align:center;">
+              <input type="number" class="tbl-input" min="1" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)">
+            </td>
+            <td style="text-align:center;">
+              <input type="number" class="tbl-input" min="0" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)">
+            </td>
+            <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${packsToBuy}</td>
+            <td class="price-mono" style="text-align:right;">£${purchaseCost.toFixed(2)}</td>
+            <td class="price-mono" style="text-align:right; color:var(--accent2);">£${usedValue.toFixed(2)}</td>
+            <td style="text-align:center;">${wasteBadge}</td>
+            <td style="text-align:center;">
+              <button class="btn btn-danger" onclick="deleteRow(${idx})" style="padding: 4px 8px; font-size: 12px;">×</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      const totalWastage = totalPurchaseCost - totalUsedCost;
+      const efficiency = totalPurchaseCost > 0 ? (totalUsedCost / totalPurchaseCost) * 100 : 0;
+      updateMetrics(totalPurchaseCost, totalUsedCost, totalWastage, efficiency);
+    };
+
+    // ── Update Row Fields ─────────────────────────────────────────────────────
+    window.updateRowPackSize = function(idx, val) {
+      const num = parseInt(val) || 1;
+      estimationBasket[idx].packSize = Math.max(1, num);
+      recalculateEstimate();
+    };
+
+    window.updateRowRequiredQty = function(idx, val) {
+      const num = parseInt(val) || 0;
+      estimationBasket[idx].requiredQty = Math.max(0, num);
+      recalculateEstimate();
+    };
+
+    window.deleteRow = function(idx) {
+      estimationBasket.splice(idx, 1);
+      recalculateEstimate();
+    };
+
+    window.clearEstimationList = function() {
+      estimationBasket = [];
+      recalculateEstimate();
+    };
+
+    // ── Update Dashboard Metrics ──────────────────────────────────────────────
+    function updateMetrics(purchase, used, waste, eff) {
+      document.getElementById('metricPurchaseCost').textContent = `£${purchase.toFixed(2)}`;
+      document.getElementById('metricUsedCost').textContent = `£${used.toFixed(2)}`;
+      document.getElementById('metricWastageCost').textContent = `£${waste.toFixed(2)}`;
+      
+      document.getElementById('metricEfficiency').textContent = `${eff.toFixed(1)}%`;
+      document.getElementById('metricEfficiencyBar').style.width = `${Math.min(100, eff)}%`;
+
+      // Color mapping on efficiency card
+      const effCard = document.getElementById('metricEfficiency');
+      if (eff >= 80) effCard.style.color = 'var(--accent2)';
+      else if (eff >= 50) effCard.style.color = 'var(--accent)';
+      else effCard.style.color = 'var(--danger)';
+    }
+
+    // ── Save Estimate to Firebase ─────────────────────────────────────────────
+    window.saveJobToFirebase = async function() {
+      const jobNameVal = document.getElementById('jobName').value.trim();
+      const engName = document.getElementById('engineerName').value.trim();
+      const desc = document.getElementById('jobDesc').value.trim();
+
+      if (!jobNameVal) {
+        showToast('Please enter a Job Name / Reference to save.', true);
+        return;
+      }
+
+      if (estimationBasket.length === 0) {
+        showToast('Please add at least one material to the list before saving.', true);
+        return;
+      }
+
+      try {
+        const docId = jobNameVal.replace(/[\/\.\#\$\[\]]/g, '_');
+        await setDoc(doc(db, 'Energise Job Estimates', docId), {
+          jobName: jobNameVal,
+          engineerName: engName,
+          jobDesc: desc,
+          items: estimationBasket,
+          updatedAt: new Date().toISOString()
+        });
+
+        showToast('✓ Job Estimate saved successfully!');
+        loadSavedJobsDropdown();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to save estimate: ' + err.message, true);
+      }
+    };
+
+    // ── Load Saved Job ────────────────────────────────────────────────────────
+    window.loadSavedJob = async function(id) {
+      if (!id) return;
+      try {
+        const snap = await getDocs(collection(db, 'Energise Job Estimates'));
+        let foundData = null;
+        snap.forEach(d => {
+          if (d.id === id) foundData = d.data();
+        });
+
+        if (foundData) {
+          document.getElementById('jobName').value = foundData.jobName || '';
+          document.getElementById('engineerName').value = foundData.engineerName || '';
+          document.getElementById('jobDesc').value = foundData.jobDesc || '';
+          
+          estimationBasket = foundData.items || [];
+          recalculateEstimate();
+          showToast(`✓ Loaded estimate: ${foundData.jobName}`);
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to load saved estimate: ' + err.message, true);
+      }
+    };
+
+    // Initialize
+    await loadInventory();
+    await loadSavedJobsDropdown();
+  </script>
+</body>
+</html>
