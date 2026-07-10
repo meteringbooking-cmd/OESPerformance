@@ -460,6 +460,58 @@
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
     }
 
+    function getDateLastOrdered(sku, currentOrderId, currentOrderDate) {
+      if (!sku) return 'Never';
+      const cleanSku = String(sku).toUpperCase().trim();
+      const currentEpoch = currentOrderDate ? new Date(currentOrderDate).getTime() : 0;
+      
+      let lastDate = null;
+      let lastEpoch = 0;
+      
+      allOrders.forEach(o => {
+        if (o.id === currentOrderId) return;
+        const hasItem = (o.items || []).some(item => String(item.sku).toUpperCase().trim() === cleanSku);
+        if (hasItem) {
+          const pDate = new Date(o.processedAt);
+          if (!isNaN(pDate.getTime())) {
+            const epoch = pDate.getTime();
+            if (epoch < currentEpoch && epoch > lastEpoch) {
+              lastEpoch = epoch;
+              lastDate = pDate;
+            }
+          }
+        }
+      });
+      
+      if (lastDate) {
+        return formatDate(lastDate.toISOString());
+      }
+      
+      // Fallback
+      let fallbackDate = null;
+      let fallbackEpoch = 0;
+      allOrders.forEach(o => {
+        if (o.id === currentOrderId) return;
+        const hasItem = (o.items || []).some(item => String(item.sku).toUpperCase().trim() === cleanSku);
+        if (hasItem) {
+          const pDate = new Date(o.processedAt);
+          if (!isNaN(pDate.getTime())) {
+            const epoch = pDate.getTime();
+            if (epoch > fallbackEpoch) {
+              fallbackEpoch = epoch;
+              fallbackDate = pDate;
+            }
+          }
+        }
+      });
+      
+      if (fallbackDate) {
+        return formatDate(fallbackDate.toISOString());
+      }
+      
+      return 'Never';
+    }
+
     // Global catalogues for manual entry
     window.inventoryCatalogue = {};
     window.engineerNames = [];
@@ -624,12 +676,14 @@
           `;
 
           const rowStyle = isNotDelivered ? 'text-decoration: line-through; opacity: 0.55;' : '';
+          const lastOrderedDate = getDateLastOrdered(i.sku, o.id, o.processedAt);
 
           return `
             <tr style="${rowStyle}">
               <td>${i.sku}</td>
               <td>${i.name}</td>
               <td>${i.category || 'N/A'}</td>
+              <td><span class="date-badge">${lastOrderedDate}</span></td>
               <td>${i.qty} ${i.uom}</td>
               <td class="item-cost">£${(i.price || 0).toFixed(2)}</td>
               <td class="item-cost">£${lineCost.toFixed(2)}</td>
@@ -656,6 +710,7 @@
                       <th width="80">SKU</th>
                       <th>Product Name</th>
                       <th>Category</th>
+                      <th>Last Ordered</th>
                       <th>Qty</th>
                       <th>Unit Price</th>
                       <th>Line Total</th>
