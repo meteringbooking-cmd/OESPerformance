@@ -96,6 +96,19 @@
         #vanCheckTable input:focus, #vanCheckTable select:focus { outline: none; border-color: #667eea; }
         #vanCheckTable tbody tr:hover { background-color: #f8f9ff; }
 
+        .replace-banner {
+            display: none;
+            margin-bottom: 20px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        .replace-banner.show { display: block; }
+
         .btn-group { display: flex; gap: 10px; }
         .btn-group .btn { flex: 1; }
 
@@ -358,6 +371,7 @@
                     <label for="vanCheckDate">Select Date for Van Check Data</label>
                     <input type="date" id="vanCheckDate" required>
                 </div>
+                <div class="replace-banner" id="vanCheckReplaceBanner"></div>
                 <div class="form-group">
                     <label>Upload Excel File (.xlsx)</label>
                     <div class="file-upload-area" id="vanCheckUploadArea">
@@ -425,7 +439,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         // Added query, where, and getDocs to the imports
-        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -447,6 +461,9 @@
         document.getElementById('milesDate').valueAsDate = yesterday;
         document.getElementById('profitDate').valueAsDate = yesterday;
         document.getElementById('vanCheckDate').valueAsDate = yesterday;
+
+        // Check for existing records on page load
+        setTimeout(checkExistingVanChecks, 500);
 
         // Set default dates for the export section
         const aWeekAgo = new Date();
@@ -898,12 +915,35 @@
             reader.readAsArrayBuffer(file);
         }
 
+        async function checkExistingVanChecks() {
+            const dateVal = document.getElementById('vanCheckDate').value;
+            const banner = document.getElementById('vanCheckReplaceBanner');
+            if (!dateVal) { banner.classList.remove('show'); return; }
+            try {
+                const q = query(collection(db, "vehicle check"), where("date", "==", dateVal));
+                const snap = await getDocs(q);
+                if (snap.size > 0) {
+                    banner.textContent = `⚠️ ${snap.size} existing vehicle check record(s) for ${dateVal} — saving will replace them.`;
+                    banner.classList.add('show');
+                } else {
+                    banner.classList.remove('show');
+                }
+            } catch (e) {
+                console.error(e);
+                banner.classList.remove('show');
+            }
+        }
+
+        document.getElementById('vanCheckDate').addEventListener('change', checkExistingVanChecks);
+
         document.getElementById('cancelVanCheckBtn').addEventListener('click', () => {
             document.getElementById('vanCheckPreview').style.display = 'none';
             document.getElementById('vanCheckForm').reset();
             document.getElementById('vanCheckFileInfo').classList.remove('show');
             document.getElementById('vanCheckDate').valueAsDate = yesterday;
+            document.getElementById('vanCheckReplaceBanner').classList.remove('show');
             vanCheckData = [];
+            checkExistingVanChecks();
         });
 
         document.getElementById('vanCheckForm').addEventListener('submit', async (e) => {
@@ -914,6 +954,21 @@
             btn.disabled = true;
             btn.textContent = 'Saving…';
             try {
+                // Delete existing records for this date
+                const q = query(collection(db, "vehicle check"), where("date", "==", date));
+                const snap = await getDocs(q);
+                let deletedCount = 0;
+                if (!snap.empty) {
+                    const docs = [];
+                    snap.forEach(d => docs.push(d));
+                    for (let i = 0; i < docs.length; i += 400) {
+                        const batch = writeBatch(db);
+                        docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+                        await batch.commit();
+                    }
+                    deletedCount = docs.length;
+                }
+
                 for (const r of vanCheckData) {
                     await addDoc(collection(db, "vehicle check"), {
                         date,
@@ -923,12 +978,20 @@
                         submittedAt: serverTimestamp()
                     });
                 }
-                showMessage(`Successfully saved ${vanCheckData.length} van check records for ${date}!`, 'success');
+                
+                let msgText = `Successfully saved ${vanCheckData.length} van check records for ${date}!`;
+                if (deletedCount > 0) {
+                    msgText += ` (Replaced ${deletedCount} existing records)`;
+                }
+                showMessage(msgText, 'success');
+                
                 document.getElementById('vanCheckPreview').style.display = 'none';
                 document.getElementById('vanCheckForm').reset();
                 document.getElementById('vanCheckFileInfo').classList.remove('show');
                 document.getElementById('vanCheckDate').valueAsDate = yesterday;
+                document.getElementById('vanCheckReplaceBanner').classList.remove('show');
                 vanCheckData = [];
+                checkExistingVanChecks();
             } catch (err) {
                 showMessage('Error saving van check data: ' + err.message, 'error');
             } finally {
