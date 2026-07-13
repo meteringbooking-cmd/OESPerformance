@@ -386,12 +386,14 @@
                     </div>
                 </div>
 
-                <!-- Health & Safety -->
+                <!-- Missing Vehicle Checks -->
                 <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-title">Health &amp; Safety</span><span class="kpi-icon">🛡️</span></div>
-                    <div class="kpi-value" id="daysSinceAccident" style="font-size: 2.5em;">—</div>
-                    <div class="kpi-target" id="hsTarget">Days Since Last Accident</div>
-
+                    <div class="kpi-header">
+                        <span class="kpi-title">Missing Vehicle Checks</span>
+                        <span class="kpi-icon">🚐</span>
+                    </div>
+                    <div class="kpi-value" id="statMissingVehicleChecks" style="font-size: 2.2em; background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px;">—</div>
+                    <div class="kpi-target" id="missingChecksList" style="font-size: 0.8em; color: #a8dadc; max-height: 110px; overflow-y: auto;">Loading checks...</div>
                 </div>
 
                 <!-- Workforce -->
@@ -1216,13 +1218,39 @@
                 return{cat1,cat2,cat3};
             }catch(err){console.error("Fail count error:",err);return{cat1:0,cat2:0,cat3:0};}
         }
-        async function loadLastAccident() {
+        async function loadVehicleChecks(dateStr) {
             try {
-                const snap=await getDocs(query(collection(performanceDb,"accidents"),orderBy("accidentDate","desc"),limit(1)));
-                if(snap.empty){document.getElementById('daysSinceAccident').textContent='N/A';document.getElementById('hsTarget').textContent='No Accidents Recorded';return;}
-                const days=Math.floor((Date.now()-new Date(snap.docs[0].data().accidentDate))/86400000);
-                document.getElementById('daysSinceAccident').textContent=days;
-            }catch(err){console.error("Accident load error:",err);document.getElementById('daysSinceAccident').textContent='Error';}
+                const q = query(collection(performanceDb, "vehicle check"), where("date", "==", dateStr));
+                const snap = await getDocs(q);
+                const missingNames = [];
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.checkComplete === 0 && d.attendance === 'X') {
+                        missingNames.push(d.name);
+                    }
+                });
+                
+                const valueEl = document.getElementById('statMissingVehicleChecks');
+                const targetEl = document.getElementById('missingChecksList');
+                
+                if (valueEl) {
+                    valueEl.textContent = missingNames.length;
+                }
+                
+                if (targetEl) {
+                    if (missingNames.length > 0) {
+                        targetEl.innerHTML = `<div style="text-align: left; padding: 2px; color: #fb7185; line-height: 1.4;">` + 
+                            missingNames.map(name => `• ${name}`).join('<br>') + 
+                            `</div>`;
+                    } else {
+                        targetEl.innerHTML = `<div style="color: #10b981; font-weight: 600; text-align: center; margin-top: 5px;">All checks complete!</div>`;
+                    }
+                }
+            } catch (err) {
+                console.error("Error loading vehicle checks:", err);
+                const valueEl = document.getElementById('statMissingVehicleChecks');
+                if (valueEl) valueEl.textContent = 'Err';
+            }
         }
 
         function getSPCompletionDate() {
@@ -1377,7 +1405,7 @@
                 document.getElementById('lastUpdated').textContent=`Last updated: ${new Date().toLocaleTimeString()}`;
                 document.getElementById('loadingDiv').style.display='none';
                 document.getElementById('dashboardContent').style.display='block';
-                await loadLastAccident();
+                await loadVehicleChecks(dateStr);
             }catch(err){console.error("Dashboard load error:",err);document.getElementById('loadingDiv').innerHTML='<div style="color:#ef4444">Error loading data – check console</div>';}
         }
 
@@ -1406,7 +1434,6 @@
 
         loadDashboard();
 setInterval(loadDashboard, 300000);
-loadLastAccident();
 
         async function getEngineerCount(teamLeader) {
             const dataKey = dataTeamLeader(teamLeader);
