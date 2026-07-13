@@ -115,6 +115,7 @@
         .attempt-box.filled { border-color: rgba(56,189,248,0.2); }
         .attempt-box.no-answer { border-color: rgba(245,158,11,0.3); }
         .attempt-box.rebooked { border-color: rgba(52,211,153,0.3); }
+        .attempt-box.customer-rearrange { border-color: rgba(167,139,250,0.35); }
         .attempt-number { font-size: 0.75em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 14px; }
         .attempt-number span { color: var(--accent-cyan); }
 
@@ -129,6 +130,7 @@
         .outcome-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 0.75em; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
         .outcome-badge.no-answer { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35); color: var(--accent-amber); }
         .outcome-badge.rebooked { background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.35); color: var(--success); }
+        .outcome-badge.customer-rearrange { background: rgba(167,139,250,0.15); border: 1px solid rgba(167,139,250,0.35); color: var(--accent-violet); }
 
         .attempt-saved { display: flex; flex-direction: column; gap: 8px; }
         .attempt-row { display: flex; justify-content: space-between; align-items: center; }
@@ -152,6 +154,7 @@
         .overall-status.no-answer { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); color: var(--accent-amber); }
         .overall-status.rebooked { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
         .overall-status.exhausted { background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.3); color: var(--accent-rose); }
+        .overall-status.customer-rearrange { background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.3); color: var(--accent-violet); }
 
         /* Sub-section divider inside attempt box */
         .sub-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
@@ -243,6 +246,7 @@
                             <option value="open">Open</option>
                             <option value="no-answer">No Answer</option>
                             <option value="rebooked">Rebooked</option>
+                            <option value="customer-rearrange">Customer Rearranged</option>
                             <option value="exhausted">3 Attempts Made</option>
                         </select>
                     </div>
@@ -333,6 +337,7 @@ function getOverallStatus(doc) {
     if (!filled.length) return 'open';
     const last = filled[filled.length - 1];
     if (last.outcome === 'rebooked') return 'rebooked';
+    if (last.outcome === 'customer-rearrange') return 'customer-rearrange';
     if (filled.length >= 3) return 'exhausted';
     return 'no-answer';
 }
@@ -439,6 +444,7 @@ function renderCards() {
     const open   = data.filter(r => getOverallStatus(r) === 'open').length;
     const noan   = data.filter(r => getOverallStatus(r) === 'no-answer').length;
     const rebook = data.filter(r => getOverallStatus(r) === 'rebooked').length;
+    const custr  = data.filter(r => getOverallStatus(r) === 'customer-rearrange').length;
     const exh    = data.filter(r => getOverallStatus(r) === 'exhausted').length;
 
     document.getElementById('summaryRow').innerHTML = `
@@ -446,6 +452,7 @@ function renderCards() {
         ${open   ? `<div class="chip">🔵 ${open} Open</div>` : ''}
         ${noan   ? `<div class="chip amber">⚠️ ${noan} No Answer</div>` : ''}
         ${rebook ? `<div class="chip green">✅ ${rebook} Rebooked</div>` : ''}
+        ${custr  ? `<div class="chip violet">🔁 ${custr} Customer Rearranged</div>` : ''}
         ${exh    ? `<div class="chip rose">🚫 ${exh} 3 Attempts Made</div>` : ''}
     `;
 
@@ -468,6 +475,7 @@ function buildCard(r) {
         'open':      `<span class="overall-status open">Open</span>`,
         'no-answer': `<span class="overall-status no-answer">No Answer</span>`,
         'rebooked':  `<span class="overall-status rebooked">Rebooked</span>`,
+        'customer-rearrange': `<span class="overall-status customer-rearrange">Customer Rearranged</span>`,
         'exhausted': `<span class="overall-status exhausted">3 Attempts</span>`
     }[status] || '';
 
@@ -522,15 +530,15 @@ function dispositionOptions(selected) {
 /* ── BUILD ATTEMPT BOX ── */
 function buildAttemptBox(docId, att, index, allAttempts) {
     const prevFilled = index === 0 || (allAttempts[index-1] && allAttempts[index-1].outcome);
-    const anyRebooked = allAttempts.slice(0, index).some(a => a && a.outcome === 'rebooked');
-    const locked = (index > 0 && !prevFilled) || anyRebooked;
+    const anyResolved = allAttempts.slice(0, index).some(a => a && (a.outcome === 'rebooked' || a.outcome === 'customer-rearrange'));
+    const locked = (index > 0 && !prevFilled) || anyResolved;
     const filled = att && att.outcome;
 
     let boxClass = 'attempt-box';
     if (filled) boxClass += ' filled ' + att.outcome;
 
     if (locked) {
-        const lockMsg = anyRebooked ? 'Rebooked — no further attempts needed' : `Complete attempt ${index} first`;
+        const lockMsg = anyResolved ? 'Resolved — no further attempts needed' : `Complete attempt ${index} first`;
         return `<div class="${boxClass}" style="opacity:0.35;cursor:not-allowed">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
             <div class="locked-hint">${lockMsg}</div>
@@ -568,14 +576,23 @@ function buildAttemptBox(docId, att, index, allAttempts) {
             ${att.bookedOn ? `<div class="attempt-row"><span class="attempt-row-label">Engineer Booked On</span><span class="attempt-row-val" style="color:var(--accent-amber)">${esc(att.bookedOn)}</span></div>` : ''}
         ` : '';
 
+        const customerInfo = att.outcome === 'customer-rearrange' ? `
+            <div class="attempt-row"><span class="attempt-row-label">Rearranged Date</span><span class="attempt-row-val">${esc(fmtDate(att.rearrangeDate||''))}</span></div>
+            ${att.rearrangeReason ? `<div class="attempt-row"><span class="attempt-row-label">Reason</span><span class="attempt-row-val" style="color:var(--accent-violet)">${esc(att.rearrangeReason)}</span></div>` : ''}
+            ${att.newJobNumber ? `<div class="attempt-row"><span class="attempt-row-label">New Job No.</span><span class="attempt-row-val">${esc(att.newJobNumber)}</span></div>` : ''}
+        ` : '';
+
+        const badgeLabel = att.outcome === 'rebooked' ? 'Rebooked' : att.outcome === 'customer-rearrange' ? 'Customer Rearranged' : 'No Answer';
+
         return `<div class="${boxClass}">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
             <div class="attempt-saved">
                 <div class="attempt-row"><span class="attempt-row-label">Date</span><span class="attempt-row-val">${esc(fmtDate(att.date||''))}</span></div>
-                <div class="attempt-row"><span class="attempt-row-label">Outcome</span><span><span class="outcome-badge ${att.outcome}">${att.outcome==='rebooked'?'Rebooked':'No Answer'}</span></span></div>
+                <div class="attempt-row"><span class="attempt-row-label">Outcome</span><span><span class="outcome-badge ${att.outcome}">${badgeLabel}</span></span></div>
                 ${dispRow}
                 ${secondNumHtml}
                 ${rebookInfo}
+                ${customerInfo}
             </div>
             <button class="btn btn-sm amber attempt-edit-btn" onclick="editAttempt('${docId}',${index})">Edit</button>
         </div>`;
@@ -589,6 +606,8 @@ function buildAttemptBox(docId, att, index, allAttempts) {
     const rebookDate = att._editing ? (att.rebookDate||'') : '';
     const newJob    = att._editing ? (att.newJobNumber||'') : '';
     const bookedOn  = att._editing ? (att.bookedOn||'') : '';
+    const rearrangeDate  = att._editing ? (att.rearrangeDate||'') : '';
+    const rearrangeReason = att._editing ? (att.rearrangeReason||'') : '';
 
     /* second number state */
     const sn = (att._editing && att.secondNumber) ? att.secondNumber : {};
@@ -600,6 +619,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
 
     const showNoAnswerExtra = selVal === 'no-answer';
     const showRebookFields  = selVal === 'rebooked';
+    const showCustomerFields = selVal === 'customer-rearrange';
     const showSnForm        = showNoAnswerExtra && snTried === 'yes';
     const showAvailableForm = showNoAnswerExtra && snTried === 'no';
 
@@ -616,6 +636,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                     <option value="">— Select —</option>
                     <option value="no-answer" ${selVal==='no-answer'?'selected':''}>No Answer</option>
                     <option value="rebooked" ${selVal==='rebooked'?'selected':''}>Rebooked</option>
+                    <option value="customer-rearrange" ${selVal==='customer-rearrange'?'selected':''}>Customer Requested Rearrange</option>
                 </select>
             </div>
 
@@ -684,6 +705,22 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                 </div>
             </div>
 
+            <!-- Customer Requested Rearrange fields -->
+            <div id="customer-fields-${docId}-${index}" style="display:${showCustomerFields?'flex':'none'};flex-direction:column;gap:10px">
+                <div class="form-group">
+                    <label class="form-label">Rearranged Date</label>
+                    <input type="date" id="att-rearrangedate-${docId}-${index}" value="${rearrangeDate}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Reason (optional)</label>
+                    <input type="text" id="att-rearrangereason-${docId}-${index}" placeholder="e.g. Customer on holiday" value="${rearrangeReason}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">New Job Number (optional)</label>
+                    <input type="text" id="att-rearrangejob-${docId}-${index}" placeholder="e.g. 87654321" value="${newJob}">
+                </div>
+            </div>
+
             <button class="btn btn-sm green" onclick="saveAttempt('${docId}',${index})">Save Attempt</button>
             ${att._editing ? `<button class="btn btn-sm" style="opacity:0.5" onclick="cancelEdit('${docId}',${index})">Cancel</button>` : ''}
         </div>
@@ -702,8 +739,10 @@ function onOutcomeChange(docId, index) {
     const sel  = document.getElementById(`att-outcome-${docId}-${index}`);
     const naEl = document.getElementById(`no-answer-fields-${docId}-${index}`);
     const rbEl = document.getElementById(`rebook-fields-${docId}-${index}`);
+    const crEl = document.getElementById(`customer-fields-${docId}-${index}`);
     if (naEl) naEl.style.display = sel.value === 'no-answer' ? 'flex' : 'none';
     if (rbEl) rbEl.style.display = sel.value === 'rebooked'  ? 'flex' : 'none';
+    if (crEl) crEl.style.display = sel.value === 'customer-rearrange' ? 'flex' : 'none';
 }
 window.onOutcomeChange = onOutcomeChange;
 
@@ -789,6 +828,15 @@ async function saveAttempt(docId, index) {
         attemptData.rebookDate   = rbDateEl   ? rbDateEl.value        : '';
         attemptData.newJobNumber = newJobEl   ? newJobEl.value.trim() : '';
         attemptData.bookedOn     = bookedOnEl ? bookedOnEl.value.trim(): '';
+    }
+
+    if (outcome === 'customer-rearrange') {
+        const rrDateEl   = document.getElementById(`att-rearrangedate-${docId}-${index}`);
+        const rrReasonEl = document.getElementById(`att-rearrangereason-${docId}-${index}`);
+        const rrJobEl    = document.getElementById(`att-rearrangejob-${docId}-${index}`);
+        attemptData.rearrangeDate   = rrDateEl   ? rrDateEl.value          : '';
+        attemptData.rearrangeReason = rrReasonEl ? rrReasonEl.value.trim() : '';
+        attemptData.newJobNumber    = rrJobEl    ? rrJobEl.value.trim()    : '';
     }
 
     const rec = window._naData.find(r => r.id === docId);
