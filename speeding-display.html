@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speeding Incidents - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo {
+            font-size: 2em; font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 10px;
+        }
+        .subtitle { color: #666; font-size: 1.1em; }
+
+        .filters {
+            display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;
+            background: #f8f9fa; border: 2px solid #e0e0e0; border-radius: 10px;
+            padding: 20px; margin-bottom: 25px;
+        }
+        .filter-group { flex: 1; min-width: 160px; }
+        .filter-group label { display: block; margin-bottom: 6px; color: #333; font-weight: 600; font-size: 0.9em; }
+        .filter-group select, .filter-group input {
+            width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 0.95em;
+        }
+        .filter-group select:focus, .filter-group input:focus { outline: none; border-color: #667eea; }
+        .btn {
+            padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border: none; border-radius: 8px; font-size: 0.95em; font-weight: 600;
+            cursor: pointer; white-space: nowrap;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn.secondary { background: #e0e0e0; color: #333; }
+
+        .summary-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 15px; margin-bottom: 30px;
+        }
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border-radius: 12px; padding: 18px; text-align: center;
+        }
+        .card .value { font-size: 1.8em; font-weight: bold; }
+        .card .label { font-size: 0.85em; opacity: 0.9; margin-top: 4px; }
+        .card.alt { background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%); }
+        .card.alt2 { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .card.alt3 { background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); }
+
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+        .tab-btn {
+            padding: 10px 20px; background: none; border: none; cursor: pointer;
+            font-size: 1em; font-weight: 600; color: #999; border-bottom: 3px solid transparent;
+        }
+        .tab-btn.active { color: #667eea; border-bottom-color: #667eea; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        table { width: 100%; border-collapse: collapse; background: white; font-size: 0.9em; }
+        thead { background: #667eea; color: white; }
+        th { padding: 10px 8px; text-align: left; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
+        th:hover { background: #5a6fd8; }
+        th.sorted::after { content: ' ▾'; }
+        th.sorted-asc::after { content: ' ▴'; }
+        td { padding: 8px; border-bottom: 1px solid #e0e0e0; }
+        tbody tr:hover { background-color: #f8f9ff; }
+        .table-wrap { overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px; }
+
+        .pill {
+            display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.85em; font-weight: 700;
+        }
+        .pill.zero { background: #d4edda; color: #155724; }
+        .pill.low { background: #fff3cd; color: #856404; }
+        .pill.high { background: #f8d7da; color: #721c24; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #999; }
+        .empty-state .icon { font-size: 3em; margin-bottom: 15px; }
+
+        .loading { text-align: center; padding: 40px; color: #667eea; font-weight: 600; }
+
+        .chart-wrap { background: #f8f9fa; border: 2px solid #e0e0e0; border-radius: 10px; padding: 20px; margin-bottom: 25px; }
+        .chart-wrap h3 { margin-bottom: 15px; color: #333; font-size: 1.05em; }
+        canvas { max-height: 350px; }
+
+        .back-link { display: block; text-align: center; margin-top: 25px; color: #667eea; text-decoration: none; font-weight: 600; }
+
+        @media (max-width: 768px) {
+            .container { padding: 20px; }
+            .filters { flex-direction: column; }
+            table { font-size: 0.78em; }
+            th, td { padding: 6px 4px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🚗 Speeding Incidents</div>
+            <div class="subtitle">Weekly Dashboard</div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label for="filterWeek">Week Commencing</label>
+                <select id="filterWeek"><option value="">All Weeks</option></select>
+            </div>
+            <div class="filter-group">
+                <label for="filterLeader">Team Leader</label>
+                <select id="filterLeader"><option value="">All Team Leaders</option></select>
+            </div>
+            <div class="filter-group">
+                <label for="filterEngineer">Search Engineer</label>
+                <input type="text" id="filterEngineer" placeholder="Type a name...">
+            </div>
+            <button class="btn secondary" id="resetFiltersBtn">Reset</button>
+        </div>
+
+        <div class="summary-cards">
+            <div class="card">
+                <div class="value" id="statTotalIncidents">0</div>
+                <div class="label">Total Incidents</div>
+            </div>
+            <div class="card alt">
+                <div class="value" id="statEngineersInvolved">0</div>
+                <div class="label">Engineers Involved</div>
+            </div>
+            <div class="card alt2">
+                <div class="value" id="statHighestSpeed">0</div>
+                <div class="label">Highest Speed Recorded</div>
+            </div>
+            <div class="card alt3">
+                <div class="value" id="statAvgPerEngineer">0</div>
+                <div class="label">Avg Incidents / Engineer</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="tableTab">📋 Table</button>
+            <button class="tab-btn" data-tab="chartTab">📊 Charts</button>
+        </div>
+
+        <div id="tableTab" class="tab-content active">
+            <div id="tableArea">
+                <div class="loading">Loading speeding data…</div>
+            </div>
+        </div>
+
+        <div id="chartTab" class="tab-content">
+            <div class="chart-wrap">
+                <h3>Incidents by Speed Limit Band</h3>
+                <canvas id="bandChart"></canvas>
+            </div>
+            <div class="chart-wrap">
+                <h3>Incidents by Team Leader</h3>
+                <canvas id="leaderChart"></canvas>
+            </div>
+            <div class="chart-wrap">
+                <h3>Incidents Trend by Week</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <a href="index.html" class="back-link">← Back to Home</a>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const COLLECTION_NAME = "speeding";
+
+        let allRecords = [];
+        let sortField = 'weekCommencing';
+        let sortDir = 'desc';
+        let bandChart, leaderChart, trendChart;
+
+        onSnapshot(collection(db, COLLECTION_NAME), (snapshot) => {
+            allRecords = [];
+            snapshot.forEach(doc => allRecords.push({ id: doc.id, ...doc.data() }));
+            populateFilterOptions();
+            renderAll();
+        }, (err) => {
+            document.getElementById('tableArea').innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error loading data: ${err.message}</p></div>`;
+        });
+
+        function populateFilterOptions() {
+            const weekSelect = document.getElementById('filterWeek');
+            const leaderSelect = document.getElementById('filterLeader');
+            const currentWeek = weekSelect.value;
+            const currentLeader = leaderSelect.value;
+
+            const weeks = [...new Set(allRecords.map(r => r.weekCommencing).filter(Boolean))].sort().reverse();
+            const leaders = [...new Set(allRecords.map(r => r.teamLeader).filter(Boolean))].sort();
+
+            weekSelect.innerHTML = '<option value="">All Weeks</option>' + weeks.map(w => `<option value="${w}">${formatDate(w)}</option>`).join('');
+            leaderSelect.innerHTML = '<option value="">All Team Leaders</option>' + leaders.map(l => `<option value="${l}">${l}</option>`).join('');
+
+            weekSelect.value = currentWeek;
+            leaderSelect.value = currentLeader;
+        }
+
+        function formatDate(dstr) {
+            if (!dstr) return '';
+            const d = new Date(dstr + 'T00:00:00');
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        function getFiltered() {
+            const week = document.getElementById('filterWeek').value;
+            const leader = document.getElementById('filterLeader').value;
+            const engineerSearch = document.getElementById('filterEngineer').value.trim().toLowerCase();
+
+            return allRecords.filter(r => {
+                if (week && r.weekCommencing !== week) return false;
+                if (leader && r.teamLeader !== leader) return false;
+                if (engineerSearch && !(r.engineer || '').toLowerCase().includes(engineerSearch)) return false;
+                return true;
+            });
+        }
+
+        function incidentPillClass(n) {
+            if (!n) return 'zero';
+            if (n <= 2) return 'low';
+            return 'high';
+        }
+
+        function renderTable() {
+            const data = getFiltered();
+            const area = document.getElementById('tableArea');
+
+            if (data.length === 0) {
+                area.innerHTML = `<div class="empty-state"><div class="icon">🚦</div><p>No speeding records match the current filters.</p></div>`;
+                return;
+            }
+
+            const sorted = [...data].sort((a, b) => {
+                let av = a[sortField], bv = b[sortField];
+                if (typeof av === 'string') av = av.toLowerCase();
+                if (typeof bv === 'string') bv = bv.toLowerCase();
+                if (av < bv) return sortDir === 'asc' ? -1 : 1;
+                if (av > bv) return sortDir === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            const columns = [
+                { key: 'weekCommencing', label: 'Week Commencing', fmt: formatDate },
+                { key: 'teamLeader', label: 'Team Leader' },
+                { key: 'engineer', label: 'Engineer' },
+                { key: 'speedingIncidents', label: 'Incidents', pill: true },
+                { key: 'highestSpeed', label: 'Highest Speed' },
+                { key: 'speed20', label: '20' },
+                { key: 'speed30', label: '30' },
+                { key: 'speed40', label: '40' },
+                { key: 'speed50', label: '50' },
+                { key: 'speed60', label: '60' },
+                { key: 'speed70', label: '70' }
+            ];
+
+            let html = '<div class="table-wrap"><table><thead><tr>';
+            columns.forEach(c => {
+                let cls = '';
+                if (c.key === sortField) cls = sortDir === 'asc' ? 'sorted-asc' : 'sorted';
+                html += `<th class="${cls}" data-field="${c.key}">${c.label}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            sorted.forEach(r => {
+                html += '<tr>';
+                columns.forEach(c => {
+                    let val = r[c.key];
+                    if (c.fmt) val = c.fmt(val);
+                    if (c.pill) {
+                        html += `<td><span class="pill ${incidentPillClass(val)}">${val ?? 0}</span></td>`;
+                    } else {
+                        html += `<td>${val ?? 0}</td>`;
+                    }
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            area.innerHTML = html;
+
+            area.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+                const field = th.dataset.field;
+                if (sortField === field) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                else { sortField = field; sortDir = 'asc'; }
+                renderTable();
+            }));
+        }
+
+        function renderStats() {
+            const data = getFiltered();
+            const totalIncidents = data.reduce((s, r) => s + (r.speedingIncidents || 0), 0);
+            const engineersInvolved = new Set(data.filter(r => (r.speedingIncidents || 0) > 0).map(r => r.engineer)).size;
+            const highestSpeed = data.reduce((m, r) => Math.max(m, r.highestSpeed || 0), 0);
+            const engineerCount = new Set(data.map(r => r.engineer)).size;
+            const avg = engineerCount > 0 ? (totalIncidents / engineerCount).toFixed(1) : '0';
+
+            document.getElementById('statTotalIncidents').textContent = totalIncidents;
+            document.getElementById('statEngineersInvolved').textContent = engineersInvolved;
+            document.getElementById('statHighestSpeed').textContent = highestSpeed ? highestSpeed + ' mph' : '—';
+            document.getElementById('statAvgPerEngineer').textContent = avg;
+        }
+
+        function renderCharts() {
+            const data = getFiltered();
+            const bandLabels = ['20', '30', '40', '50', '60', '70'];
+            const bandTotals = bandLabels.map(b => data.reduce((s, r) => s + (r['speed' + b] || 0), 0));
+
+            const leaderMap = {};
+            data.forEach(r => {
+                const key = r.teamLeader || 'Unknown';
+                leaderMap[key] = (leaderMap[key] || 0) + (r.speedingIncidents || 0);
+            });
+
+            const weekMap = {};
+            data.forEach(r => {
+                const key = r.weekCommencing || 'Unknown';
+                weekMap[key] = (weekMap[key] || 0) + (r.speedingIncidents || 0);
+            });
+            const sortedWeeks = Object.keys(weekMap).sort();
+
+            const ctxBand = document.getElementById('bandChart');
+            const ctxLeader = document.getElementById('leaderChart');
+            const ctxTrend = document.getElementById('trendChart');
+
+            if (bandChart) bandChart.destroy();
+            if (leaderChart) leaderChart.destroy();
+            if (trendChart) trendChart.destroy();
+
+            bandChart = new Chart(ctxBand, {
+                type: 'bar',
+                data: {
+                    labels: bandLabels.map(b => b + ' mph zone'),
+                    datasets: [{ label: 'Incidents', data: bandTotals, backgroundColor: '#667eea' }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+
+            leaderChart = new Chart(ctxLeader, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(leaderMap),
+                    datasets: [{ label: 'Incidents', data: Object.values(leaderMap), backgroundColor: '#764ba2' }]
+                },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+            });
+
+            trendChart = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: sortedWeeks.map(formatDate),
+                    datasets: [{ label: 'Total Incidents', data: sortedWeeks.map(w => weekMap[w]), borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.15)', fill: true, tension: 0.3 }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        function renderAll() {
+            renderStats();
+            renderTable();
+            renderCharts();
+        }
+
+        document.getElementById('filterWeek').addEventListener('change', renderAll);
+        document.getElementById('filterLeader').addEventListener('change', renderAll);
+        document.getElementById('filterEngineer').addEventListener('input', renderAll);
+        document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+            document.getElementById('filterWeek').value = '';
+            document.getElementById('filterLeader').value = '';
+            document.getElementById('filterEngineer').value = '';
+            renderAll();
+        });
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+                if (btn.dataset.tab === 'chartTab') renderCharts();
+            });
+        });
+    </script>
+</body>
+</html>
