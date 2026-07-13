@@ -281,8 +281,14 @@
 
         #chartTab.active {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            grid-template-columns: 1fr;
             gap: 24px;
+        }
+
+        @media (min-width: 1024px) {
+            #chartTab.active {
+                grid-template-columns: 1fr 1fr;
+            }
         }
 
         /* Tables */
@@ -593,10 +599,6 @@
 
         <div id="chartTab" class="tab-content">
             <div class="chart-wrap">
-                <h3>Driver Safety Profile (Compliance Ratio)</h3>
-                <canvas id="complianceChart"></canvas>
-            </div>
-            <div class="chart-wrap">
                 <h3>Weekly Performance Trend (Avg Incidents / Driver)</h3>
                 <canvas id="incidentRateTrendChart"></canvas>
             </div>
@@ -605,11 +607,11 @@
                 <canvas id="trendChart"></canvas>
             </div>
             <div class="chart-wrap">
-                <h3>Incidents by Speed Limit Band</h3>
+                <h3 id="bandChartTitle">Incidents by Speed Limit Band</h3>
                 <canvas id="bandChart"></canvas>
             </div>
             <div class="chart-wrap">
-                <h3>Incidents by Team Leader</h3>
+                <h3 id="leaderChartTitle">Incidents by Team Leader</h3>
                 <canvas id="leaderChart"></canvas>
             </div>
         </div>
@@ -642,7 +644,7 @@
         let allRecords = [];
         let sortField = 'weekCommencing';
         let sortDir = 'desc';
-        let bandChart, leaderChart, trendChart, complianceChart, incidentRateTrendChart;
+        let bandChart, leaderChart, trendChart, incidentRateTrendChart;
 
         onSnapshot(collection(db, COLLECTION_NAME), (snapshot) => {
             allRecords = [];
@@ -774,17 +776,57 @@
             document.getElementById('statAvgPerEngineer').textContent = avg;
         }
 
+        function getPreviousWeekCommencingFromData(records) {
+            const weeks = [...new Set(records.map(r => r.weekCommencing).filter(Boolean))].sort();
+            if (weeks.length === 0) return '';
+            
+            // Find current Monday
+            const today = new Date();
+            const day = today.getDay();
+            const diff = (day === 0 ? -6 : 1) - day;
+            const currentMonday = new Date(today);
+            currentMonday.setDate(today.getDate() + diff);
+            const currentMondayStr = currentMonday.toISOString().split('T')[0];
+            
+            // If the most recent week in data is >= currentMonday, and there's a previous week in the data, return the previous week.
+            // Otherwise, return the most recent week in the data.
+            const mostRecentWeek = weeks[weeks.length - 1];
+            if (mostRecentWeek >= currentMondayStr && weeks.length > 1) {
+                return weeks[weeks.length - 2];
+            }
+            return mostRecentWeek;
+        }
+
+        function getFilteredExcludeWeek() {
+            const leader = document.getElementById('filterLeader').value;
+            const engineerSearch = document.getElementById('filterEngineer').value.trim().toLowerCase();
+
+            return allRecords.filter(r => {
+                if (leader && r.teamLeader !== leader) return false;
+                if (engineerSearch && !(r.engineer || '').toLowerCase().includes(engineerSearch)) return false;
+                return true;
+            });
+        }
+
         function renderCharts() {
             const data = getFiltered();
             const bandLabels = ['20', '30', '40', '50', '60', '70'];
-            const bandTotals = bandLabels.map(b => data.reduce((s, r) => s + (r['speed' + b] || 0), 0));
 
+            // Find previous working week
+            const prevWeek = getPreviousWeekCommencingFromData(allRecords);
+            const prevWeekData = getFilteredExcludeWeek().filter(r => r.weekCommencing === prevWeek);
+            
+            // Speed band totals for previous week only
+            const bandTotals = bandLabels.map(b => prevWeekData.reduce((s, r) => s + (r['speed' + b] || 0), 0));
+
+            // Leader incidents for previous week only
             const leaderMap = {};
-            data.forEach(r => {
+            prevWeekData.forEach(r => {
                 const key = r.teamLeader || 'Unknown';
                 leaderMap[key] = (leaderMap[key] || 0) + (r.speedingIncidents || 0);
             });
 
+            // Weekly maps for general trends (over all weeks matching filters)
             const weekMap = {};
             const weekDriverMap = {}; // unique engineers per week
             data.forEach(r => {
@@ -795,35 +837,18 @@
             });
             const sortedWeeks = Object.keys(weekMap).sort();
 
-            // Calculate Driver Safety Profile (Compliance Ratio)
-            const driverIncidentSums = {};
-            data.forEach(r => {
-                if (!r.engineer) return;
-                driverIncidentSums[r.engineer] = (driverIncidentSums[r.engineer] || 0) + (r.speedingIncidents || 0);
-            });
-            
-            let compliantCount = 0; // 0 incidents
-            let moderateCount = 0;  // 1-2 incidents
-            let highCount = 0;      // 3+ incidents
+            // Dynamic headers updating to show the previous week Commencing date
+            const prevWeekFormatted = formatDate(prevWeek);
+            const bandHeader = document.getElementById('bandChartTitle');
+            const leaderHeader = document.getElementById('leaderChartTitle');
+            if (bandHeader) bandHeader.textContent = `Incidents by Speed Limit Band (${prevWeekFormatted || 'No Data'})`;
+            if (leaderHeader) leaderHeader.textContent = `Incidents by Team Leader (${prevWeekFormatted || 'No Data'})`;
 
-            Object.values(driverIncidentSums).forEach(sum => {
-                if (sum === 0) compliantCount++;
-                else if (sum <= 2) moderateCount++;
-                else highCount++;
-            });
-
-            // If empty, add a default compliant count to avoid empty chart
-            if (Object.keys(driverIncidentSums).length === 0) {
-                compliantCount = 0;
-            }
-
-            const ctxCompliance = document.getElementById('complianceChart').getContext('2d');
             const ctxIncidentRateTrend = document.getElementById('incidentRateTrendChart').getContext('2d');
             const ctxBand = document.getElementById('bandChart').getContext('2d');
             const ctxLeader = document.getElementById('leaderChart').getContext('2d');
             const ctxTrend = document.getElementById('trendChart').getContext('2d');
 
-            if (complianceChart) complianceChart.destroy();
             if (incidentRateTrendChart) incidentRateTrendChart.destroy();
             if (bandChart) bandChart.destroy();
             if (leaderChart) leaderChart.destroy();
@@ -860,40 +885,7 @@
 
             const gridConfig = { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false };
 
-            // 1. Driver Safety Profile Chart (Doughnut)
-            complianceChart = new Chart(ctxCompliance, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Fully Compliant (0 Incidents)', 'Moderate Risk (1-2 Incidents)', 'High Risk (3+ Incidents)'],
-                    datasets: [{
-                        data: [compliantCount, moderateCount, highCount],
-                        backgroundColor: [
-                            'rgba(16, 185, 129, 0.85)', // Emerald
-                            'rgba(245, 158, 11, 0.85)',  // Amber
-                            'rgba(244, 63, 94, 0.85)'    // Rose
-                        ],
-                        borderColor: '#111424',
-                        borderWidth: 2,
-                        hoverOffset: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: '#cbd5e1',
-                                padding: 16,
-                                font: { size: 12, weight: '500' }
-                            }
-                        }
-                    },
-                    cutout: '65%'
-                }
-            });
-
-            // 2. Weekly Average Incident Rate per Driver (Line)
+            // 1. Weekly Average Incident Rate per Driver (Line)
             const weeklyIncidentRatios = sortedWeeks.map(w => {
                 const totalIncidents = weekMap[w] || 0;
                 const uniqueDrivers = weekDriverMap[w] ? weekDriverMap[w].size : 0;
@@ -938,7 +930,7 @@
                 }
             });
 
-            // 3. Band Chart (Bar)
+            // 2. Band Chart (Bar) - Previous Week Only
             bandChart = new Chart(ctxBand, {
                 type: 'bar',
                 data: {
@@ -963,7 +955,7 @@
                 }
             });
 
-            // 4. Leader Chart (Horizontal Bar)
+            // 3. Leader Chart (Horizontal Bar) - Previous Week Only
             leaderChart = new Chart(ctxLeader, {
                 type: 'bar',
                 data: {
@@ -989,7 +981,7 @@
                 }
             });
 
-            // 5. Trend Chart (Line)
+            // 4. Trend Chart (Line)
             trendChart = new Chart(ctxTrend, {
                 type: 'line',
                 data: {
