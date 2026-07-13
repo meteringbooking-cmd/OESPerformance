@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speeding Incidents - OES Performance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        .header { text-align: center; margin-bottom: 40px; }
+        .logo {
+            font-size: 2em; font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 10px;
+        }
+        .subtitle { color: #666; font-size: 1.1em; }
+        .info-box { background: #e3f2fd; border-left: 4px solid #2196F3; padding: 15px; margin-bottom: 30px; border-radius: 5px; }
+        .info-box h3 { color: #1976D2; margin-bottom: 8px; font-size: 1em; }
+        .info-box p { color: #555; font-size: 0.9em; line-height: 1.6; }
+        .form-section { margin-bottom: 30px; }
+        .section-title { font-size: 1.3em; color: #333; margin-bottom: 20px; font-weight: 600; }
+        .form-group { margin-bottom: 25px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #333; font-weight: 600; font-size: 0.95em; }
+        .form-group input[type="date"],
+        .form-group input[type="text"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 8px;
+            font-size: 1em; transition: border-color 0.3s ease; font-family: inherit;
+        }
+        .form-group textarea { min-height: 160px; resize: vertical; font-family: 'Courier New', monospace; font-size: 0.85em; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #667eea; }
+        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .btn {
+            width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border: none; border-radius: 8px; font-size: 1.1em; font-weight: 600;
+            cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; margin-top: 10px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); }
+        .btn-group { display: flex; gap: 10px; }
+        .btn-group .btn { flex: 1; }
+        .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
+        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .message.show { display: block; }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: #667eea; text-decoration: none; font-weight: 600; }
+        .replace-banner {
+            display: none; margin-bottom: 20px; padding: 12px 15px; border-radius: 8px;
+            background: #fff3cd; border: 1px solid #ffeeba; color: #856404; font-size: 0.9em; font-weight: 600;
+        }
+        .replace-banner.show { display: block; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+        .checkbox-row input { width: auto; }
+        .checkbox-row label { margin-bottom: 0; font-weight: 500; }
+
+        #speedingTable { font-size: 0.9em; width: 100%; border-collapse: collapse; background: white; }
+        #speedingTable th { padding: 10px 6px; text-align: left; font-weight: 600; white-space: nowrap; }
+        #speedingTable td { padding: 8px 6px; border-bottom: 1px solid #e0e0e0; }
+        #speedingTable input { width: 100%; padding: 6px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; }
+        #speedingTable input:focus { outline: none; border-color: #667eea; }
+        #speedingTable tbody tr:hover { background-color: #f8f9ff; }
+        #speedingTable input.narrow { width: 55px; text-align: center; }
+        .summary-bar {
+            margin-top: 12px; padding: 10px 14px; background: #f8f9fa; border-radius: 6px;
+            border: 1px solid #e0e0e0; font-size: 0.9em; color: #555;
+        }
+        .summary-bar strong { color: #667eea; }
+
+        @media (max-width: 768px) {
+            .container { padding: 20px; }
+            .row-2 { grid-template-columns: 1fr; }
+            #speedingTable { font-size: 0.75em; }
+            #speedingTable th, #speedingTable td { padding: 6px 3px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">Speeding Incidents</div>
+            <div class="subtitle">Paste Weekly Speeding Data from Excel</div>
+        </div>
+        <div id="message" class="message"></div>
+
+        <div class="form-section">
+            <div class="info-box">
+                <h3>How to use</h3>
+                <p>Select the week commencing date and team leader, then copy the engineer rows from your Excel sheet (Engineer Name, Speeding Incidents, Highest Speed Exceeded Figure, 20, 30, 40, 50, 60, 70) and paste them into the box below. Preview, edit if needed, then save.</p>
+            </div>
+
+            <form id="speedingForm">
+                <div class="row-2">
+                    <div class="form-group">
+                        <label for="weekCommencing">Week Commencing</label>
+                        <input type="date" id="weekCommencing" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="teamLeader">Team Leader</label>
+                        <select id="teamLeader" required>
+                            <option value="">-- Select Team Leader --</option>
+                            <option value="Richard Wiecko">Richard Wiecko</option>
+                            <option value="Scott Carson">Scott Carson</option>
+                            <option value="Stuart Whyte">Stuart Whyte</option>
+                            <option value="Thomas Green">Thomas Green</option>
+                            <option value="Team Leader">Team Leader</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="replace-banner" id="replaceBanner"></div>
+
+                <div class="form-group">
+                    <label for="pasteArea">Paste Data Here (copied directly from Excel)</label>
+                    <textarea id="pasteArea" placeholder="Engineer Name	Speeding Incidents	Highest Speed Exceeded Figure	20	30	40	50	60	70
+John Smith	3	52	1	0	1	0	1	0
+Jane Doe	0	0	0	0	0	0	0	0"></textarea>
+                </div>
+
+                <div class="checkbox-row">
+                    <input type="checkbox" id="hasHeaderRow" checked>
+                    <label for="hasHeaderRow">First pasted row is a header row (skip it)</label>
+                </div>
+
+                <button type="button" class="btn" id="parseBtn">Parse Pasted Data</button>
+
+                <div id="speedingPreview" style="display: none; margin-top: 25px;">
+                    <h3 style="margin-bottom: 15px; color: #333;">Preview &amp; Edit Data</h3>
+                    <div style="overflow-x: auto; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        <table id="speedingTable">
+                            <thead style="background: #667eea; color: white;">
+                                <tr>
+                                    <th>Engineer</th>
+                                    <th>Incidents</th>
+                                    <th>Highest Speed</th>
+                                    <th>20</th>
+                                    <th>30</th>
+                                    <th>40</th>
+                                    <th>50</th>
+                                    <th>60</th>
+                                    <th>70</th>
+                                </tr>
+                            </thead>
+                            <tbody id="speedingTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="summary-bar">
+                        Engineers: <strong id="summaryCount">0</strong>
+                        &nbsp;|&nbsp;
+                        Total Incidents: <strong id="summaryIncidents">0</strong>
+                    </div>
+                    <div class="btn-group" style="margin-top: 20px;">
+                        <button type="submit" class="btn" id="saveBtn">Save Speeding Data</button>
+                        <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <a href="index.html" class="back-link">← Back to Home</a>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const COLLECTION_NAME = "speeding";
+
+        // Default week commencing to the most recent Monday
+        function mostRecentMonday() {
+            const d = new Date();
+            const day = d.getDay(); // 0 = Sun, 1 = Mon...
+            const diff = (day === 0 ? -6 : 1) - day;
+            d.setDate(d.getDate() + diff);
+            return d;
+        }
+        document.getElementById('weekCommencing').valueAsDate = mostRecentMonday();
+
+        let speedingData = [];
+
+        function parseNum(v) {
+            const n = parseFloat(String(v).replace(/[£,\s]/g, ''));
+            return isNaN(n) ? 0 : n;
+        }
+
+        function parsePastedData() {
+            const raw = document.getElementById('pasteArea').value;
+            if (!raw.trim()) { showMessage('Please paste some data first', 'error'); return; }
+
+            const skipHeader = document.getElementById('hasHeaderRow').checked;
+            const lines = raw.split(/\r?\n/).filter(l => l.trim() !== '');
+            if (lines.length === 0) { showMessage('No data found in paste', 'error'); return; }
+
+            const startIdx = skipHeader ? 1 : 0;
+            speedingData = [];
+
+            for (let i = startIdx; i < lines.length; i++) {
+                // Excel paste is tab-separated; fall back to comma if no tabs found
+                let cells = lines[i].split('\t');
+                if (cells.length < 2) cells = lines[i].split(',');
+                if (cells.length < 2) continue;
+
+                const engineer = (cells[0] || '').trim();
+                if (!engineer) continue;
+
+                speedingData.push({
+                    engineer,
+                    speedingIncidents: parseNum(cells[1]),
+                    highestSpeed: parseNum(cells[2]),
+                    speed20: parseNum(cells[3]),
+                    speed30: parseNum(cells[4]),
+                    speed40: parseNum(cells[5]),
+                    speed50: parseNum(cells[6]),
+                    speed60: parseNum(cells[7]),
+                    speed70: parseNum(cells[8])
+                });
+            }
+
+            if (speedingData.length === 0) {
+                showMessage('No valid rows could be parsed. Check the pasted data format.', 'error');
+                return;
+            }
+
+            renderTable();
+            document.getElementById('speedingPreview').style.display = 'block';
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('speedingTableBody');
+            tbody.innerHTML = '';
+            const fields = ['engineer', 'speedingIncidents', 'highestSpeed', 'speed20', 'speed30', 'speed40', 'speed50', 'speed60', 'speed70'];
+
+            speedingData.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                fields.forEach(f => {
+                    const td = document.createElement('td');
+                    const isEngineer = f === 'engineer';
+                    const type = isEngineer ? 'text' : 'number';
+                    const cls = isEngineer ? '' : 'narrow';
+                    td.innerHTML = `<input type="${type}" value="${r[f]}" data-row="${idx}" data-field="${f}" class="${cls}">`;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            tbody.querySelectorAll('input').forEach(inp => inp.addEventListener('input', (e) => {
+                const row = parseInt(e.target.dataset.row);
+                const field = e.target.dataset.field;
+                if (field === 'engineer') speedingData[row][field] = e.target.value;
+                else { speedingData[row][field] = parseNum(e.target.value); refreshSummary(); }
+            }));
+
+            refreshSummary();
+        }
+
+        function refreshSummary() {
+            document.getElementById('summaryCount').textContent = speedingData.length;
+            const total = speedingData.reduce((s, r) => s + (r.speedingIncidents || 0), 0);
+            document.getElementById('summaryIncidents').textContent = total;
+        }
+
+        document.getElementById('parseBtn').addEventListener('click', parsePastedData);
+
+        async function checkExisting() {
+            const dateVal = document.getElementById('weekCommencing').value;
+            const leader = document.getElementById('teamLeader').value;
+            const banner = document.getElementById('replaceBanner');
+            if (!dateVal || !leader) { banner.classList.remove('show'); return; }
+            try {
+                const q = query(collection(db, COLLECTION_NAME), where("weekCommencing", "==", dateVal), where("teamLeader", "==", leader));
+                const snap = await getDocs(q);
+                if (snap.size > 0) {
+                    banner.textContent = `⚠️ ${snap.size} existing record(s) for ${leader}, week commencing ${dateVal} — saving will replace them.`;
+                    banner.classList.add('show');
+                } else {
+                    banner.classList.remove('show');
+                }
+            } catch (err) {
+                console.error(err);
+                banner.classList.remove('show');
+            }
+        }
+        document.getElementById('weekCommencing').addEventListener('change', checkExisting);
+        document.getElementById('teamLeader').addEventListener('change', checkExisting);
+
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            document.getElementById('speedingPreview').style.display = 'none';
+            document.getElementById('pasteArea').value = '';
+            speedingData = [];
+        });
+
+        document.getElementById('speedingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (speedingData.length === 0) { showMessage('No data to save — parse the pasted data first', 'error'); return; }
+
+            const weekCommencing = document.getElementById('weekCommencing').value;
+            const teamLeader = document.getElementById('teamLeader').value;
+            if (!weekCommencing || !teamLeader) { showMessage('Please select a week commencing date and team leader', 'error'); return; }
+
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+
+            try {
+                // Remove any existing records for this week + team leader combo
+                const q = query(collection(db, COLLECTION_NAME), where("weekCommencing", "==", weekCommencing), where("teamLeader", "==", teamLeader));
+                const snap = await getDocs(q);
+                let deletedCount = 0;
+                if (!snap.empty) {
+                    const docs = [];
+                    snap.forEach(d => docs.push(d));
+                    for (let i = 0; i < docs.length; i += 400) {
+                        const batch = writeBatch(db);
+                        docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+                        await batch.commit();
+                    }
+                    deletedCount = docs.length;
+                }
+
+                for (const r of speedingData) {
+                    await addDoc(collection(db, COLLECTION_NAME), {
+                        weekCommencing,
+                        teamLeader,
+                        engineer: r.engineer,
+                        speedingIncidents: r.speedingIncidents,
+                        highestSpeed: r.highestSpeed,
+                        speed20: r.speed20,
+                        speed30: r.speed30,
+                        speed40: r.speed40,
+                        speed50: r.speed50,
+                        speed60: r.speed60,
+                        speed70: r.speed70,
+                        submittedAt: serverTimestamp()
+                    });
+                }
+
+                let msgText = `Successfully saved ${speedingData.length} speeding records for ${teamLeader}, week commencing ${weekCommencing}!`;
+                if (deletedCount > 0) msgText += ` (Replaced ${deletedCount} existing records)`;
+                showMessage(msgText, 'success');
+
+                document.getElementById('speedingPreview').style.display = 'none';
+                document.getElementById('pasteArea').value = '';
+                speedingData = [];
+                checkExisting();
+            } catch (err) {
+                console.error(err);
+                showMessage('Error saving speeding data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Speeding Data';
+            }
+        });
+
+        function showMessage(text, type) {
+            const m = document.getElementById('message');
+            m.textContent = text;
+            m.className = `message ${type} show`;
+            setTimeout(() => m.classList.remove('show'), 6000);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
