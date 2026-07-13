@@ -42,9 +42,10 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 24px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-            max-width: 1200px;
+            max-width: 98%;
+            width: 98%;
             margin: 0 auto;
-            padding: 48px;
+            padding: 32px 40px;
         }
 
         .header {
@@ -276,6 +277,12 @@
 
         .tab-content.active {
             display: block;
+        }
+
+        #chartTab.active {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 24px;
         }
 
         /* Tables */
@@ -586,16 +593,24 @@
 
         <div id="chartTab" class="tab-content">
             <div class="chart-wrap">
+                <h3>Driver Safety Profile (Compliance Ratio)</h3>
+                <canvas id="complianceChart"></canvas>
+            </div>
+            <div class="chart-wrap">
+                <h3>Weekly Performance Trend (Avg Incidents / Driver)</h3>
+                <canvas id="incidentRateTrendChart"></canvas>
+            </div>
+            <div class="chart-wrap">
+                <h3>Incidents Trend by Week</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+            <div class="chart-wrap">
                 <h3>Incidents by Speed Limit Band</h3>
                 <canvas id="bandChart"></canvas>
             </div>
             <div class="chart-wrap">
                 <h3>Incidents by Team Leader</h3>
                 <canvas id="leaderChart"></canvas>
-            </div>
-            <div class="chart-wrap">
-                <h3>Incidents Trend by Week</h3>
-                <canvas id="trendChart"></canvas>
             </div>
         </div>
 
@@ -627,7 +642,7 @@
         let allRecords = [];
         let sortField = 'weekCommencing';
         let sortDir = 'desc';
-        let bandChart, leaderChart, trendChart;
+        let bandChart, leaderChart, trendChart, complianceChart, incidentRateTrendChart;
 
         onSnapshot(collection(db, COLLECTION_NAME), (snapshot) => {
             allRecords = [];
@@ -771,16 +786,45 @@
             });
 
             const weekMap = {};
+            const weekDriverMap = {}; // unique engineers per week
             data.forEach(r => {
                 const key = r.weekCommencing || 'Unknown';
                 weekMap[key] = (weekMap[key] || 0) + (r.speedingIncidents || 0);
+                if (!weekDriverMap[key]) weekDriverMap[key] = new Set();
+                if (r.engineer) weekDriverMap[key].add(r.engineer);
             });
             const sortedWeeks = Object.keys(weekMap).sort();
 
+            // Calculate Driver Safety Profile (Compliance Ratio)
+            const driverIncidentSums = {};
+            data.forEach(r => {
+                if (!r.engineer) return;
+                driverIncidentSums[r.engineer] = (driverIncidentSums[r.engineer] || 0) + (r.speedingIncidents || 0);
+            });
+            
+            let compliantCount = 0; // 0 incidents
+            let moderateCount = 0;  // 1-2 incidents
+            let highCount = 0;      // 3+ incidents
+
+            Object.values(driverIncidentSums).forEach(sum => {
+                if (sum === 0) compliantCount++;
+                else if (sum <= 2) moderateCount++;
+                else highCount++;
+            });
+
+            // If empty, add a default compliant count to avoid empty chart
+            if (Object.keys(driverIncidentSums).length === 0) {
+                compliantCount = 0;
+            }
+
+            const ctxCompliance = document.getElementById('complianceChart').getContext('2d');
+            const ctxIncidentRateTrend = document.getElementById('incidentRateTrendChart').getContext('2d');
             const ctxBand = document.getElementById('bandChart').getContext('2d');
             const ctxLeader = document.getElementById('leaderChart').getContext('2d');
             const ctxTrend = document.getElementById('trendChart').getContext('2d');
 
+            if (complianceChart) complianceChart.destroy();
+            if (incidentRateTrendChart) incidentRateTrendChart.destroy();
             if (bandChart) bandChart.destroy();
             if (leaderChart) leaderChart.destroy();
             if (trendChart) trendChart.destroy();
@@ -798,6 +842,10 @@
             gradientTrend.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
             gradientTrend.addColorStop(1, 'rgba(99, 102, 241, 0)');
 
+            let gradientRateTrend = ctxIncidentRateTrend.createLinearGradient(0, 0, 0, 300);
+            gradientRateTrend.addColorStop(0, 'rgba(16, 185, 129, 0.3)');
+            gradientRateTrend.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
             // Global Chart.js configuration overrides for the dark theme
             Chart.defaults.color = '#94a3b8';
             Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
@@ -812,6 +860,85 @@
 
             const gridConfig = { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false };
 
+            // 1. Driver Safety Profile Chart (Doughnut)
+            complianceChart = new Chart(ctxCompliance, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Fully Compliant (0 Incidents)', 'Moderate Risk (1-2 Incidents)', 'High Risk (3+ Incidents)'],
+                    datasets: [{
+                        data: [compliantCount, moderateCount, highCount],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.85)', // Emerald
+                            'rgba(245, 158, 11, 0.85)',  // Amber
+                            'rgba(244, 63, 94, 0.85)'    // Rose
+                        ],
+                        borderColor: '#111424',
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#cbd5e1',
+                                padding: 16,
+                                font: { size: 12, weight: '500' }
+                            }
+                        }
+                    },
+                    cutout: '65%'
+                }
+            });
+
+            // 2. Weekly Average Incident Rate per Driver (Line)
+            const weeklyIncidentRatios = sortedWeeks.map(w => {
+                const totalIncidents = weekMap[w] || 0;
+                const uniqueDrivers = weekDriverMap[w] ? weekDriverMap[w].size : 0;
+                return uniqueDrivers > 0 ? parseFloat((totalIncidents / uniqueDrivers).toFixed(2)) : 0;
+            });
+
+            incidentRateTrendChart = new Chart(ctxIncidentRateTrend, {
+                type: 'line',
+                data: {
+                    labels: sortedWeeks.map(formatDate),
+                    datasets: [{
+                        label: 'Avg Incidents / Driver',
+                        data: weeklyIncidentRatios,
+                        borderColor: '#10b981', // Emerald
+                        borderWidth: 2.5,
+                        pointBackgroundColor: '#34d399',
+                        pointBorderColor: '#090b14',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 6,
+                        pointRadius: 4,
+                        backgroundColor: gradientRateTrend,
+                        fill: true,
+                        tension: 0.35
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { 
+                            beginAtZero: true, 
+                            grid: gridConfig,
+                            title: {
+                                display: true,
+                                text: 'Avg Incidents per Driver',
+                                color: '#94a3b8',
+                                font: { size: 10, weight: '600' }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 3. Band Chart (Bar)
             bandChart = new Chart(ctxBand, {
                 type: 'bar',
                 data: {
@@ -836,6 +963,7 @@
                 }
             });
 
+            // 4. Leader Chart (Horizontal Bar)
             leaderChart = new Chart(ctxLeader, {
                 type: 'bar',
                 data: {
@@ -861,6 +989,7 @@
                 }
             });
 
+            // 5. Trend Chart (Line)
             trendChart = new Chart(ctxTrend, {
                 type: 'line',
                 data: {
