@@ -89,8 +89,18 @@
 
         .kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 28px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1400px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 800px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+        }
             margin-bottom: 30px;
         }
 
@@ -848,7 +858,7 @@
         <div id="loadingDiv" class="loading">Loading performance data...</div>
 
         <div id="dashboardContent" style="display: none;">
-            <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));">
+            <div class="kpi-grid">
                 <!-- Meters KPI -->
                 <div class="kpi-card expandable" onclick="toggleExpand(this, 'meters')">
                     <span class="expand-indicator">▼</span>
@@ -1426,6 +1436,23 @@
                     const percentage = day.revenueTarget > 0 ? ((day.totalValue / day.revenueTarget) * 100).toFixed(1) : 0;
                     row.innerHTML = `<td>${day.displayDate}</td><td>£${Math.round(day.totalValue).toLocaleString()}</td><td>£${day.revenueTarget.toLocaleString()}</td><td>${percentage}%</td>`;
                 });
+            } else if (type === 'energiseMeters') {
+                const tbody = document.getElementById('energiseMetersHistory');
+                tbody.innerHTML = '';
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    const krakenVal = day.energiseKrakenMeters !== null ? day.energiseKrakenMeters.toLocaleString() : '—';
+                    const target = window.energiseEngineerCount * 4;
+                    const pct = target > 0 ? ((day.energiseMeters / target) * 100).toFixed(1) : 0;
+                    row.innerHTML = `<td>${day.displayDate}</td><td>${day.energiseMeters.toLocaleString()}</td><td>${krakenVal}</td><td>${target}</td><td>${pct}%</td>`;
+                });
+            } else if (type === 'energiseCompletion') {
+                const tbody = document.getElementById('energiseCompletionHistory');
+                tbody.innerHTML = '';
+                historicalData.forEach(day => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `<td>${day.displayDate}</td><td>${day.energiseCompleted.toLocaleString()}</td><td>${day.energiseJobs.toLocaleString()}</td><td>${day.energiseCompletionRate}%</td>`;
+                });
             }
         }
 
@@ -1593,6 +1620,11 @@
                 document.getElementById('edfCount').textContent = edfEngineers;
                 document.getElementById('backOfficeCount').textContent = backOfficeCount;
 
+                const energiseStaffQuery = await getDocs(collection(staffDb, "employees energise"));
+                let engCount = 0;
+                energiseStaffQuery.forEach(doc => { if (!doc.data().leaveDate) engCount++; });
+                window.energiseEngineerCount = engCount;
+
                 const metersTarget = Math.round(oesEngineers * 6 * 0.9);
                 const revenueTarget = Math.round((oesEngineers - 6) * 413 * 0.9);
                 document.getElementById('metersTarget').textContent = metersTarget;
@@ -1629,6 +1661,41 @@
                 document.getElementById('revenueActual').textContent = '£' + Math.round(totalValue).toLocaleString();
                 document.getElementById('revenueProgressText').textContent = revenuePercentage + '%';
                 updateProgressBar('revenueProgress', parseFloat(revenuePercentage));
+
+                // Energise Data loading
+                const ePerfQuery = query(collection(performanceDb, "performance - Energise"), where("date", "==", dateString));
+                const ePerfSnap = await getDocs(ePerfQuery);
+                let eMeters = 0, eJobs = 0, eCompleted = 0;
+                ePerfSnap.forEach(doc => {
+                    const d = doc.data();
+                    eMeters += d.meters || 0;
+                    eJobs += d.jobs || 0;
+                    eCompleted += d.completed || 0;
+                });
+                const eTarget = window.energiseEngineerCount * 4;
+                const ePct = eTarget > 0 ? ((eMeters / eTarget) * 100).toFixed(1) : 0;
+                const eCompPct = eJobs > 0 ? ((eCompleted / eJobs) * 100).toFixed(1) : 0;
+
+                document.getElementById('energiseMetersActual').textContent = eMeters.toLocaleString();
+                document.getElementById('energiseMetersTarget').textContent = eTarget;
+                document.getElementById('energiseMetersProgressText').textContent = ePct + '%';
+                updateProgressBar('energiseMetersProgress', parseFloat(ePct));
+
+                document.getElementById('energiseCompletionActual').textContent = eCompPct;
+                document.getElementById('energiseCompletionProgressText').textContent = `${eCompleted.toLocaleString()} of ${eJobs.toLocaleString()} jobs`;
+                updateProgressBar('energiseCompletionProgress', parseFloat(eCompPct));
+                updateStatusIndicator('energiseCompletionStatus', parseFloat(eCompPct), 90);
+
+                const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
+                const [eKrakenToday, eKrakenPrev] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "KrakenAM Energise"), where("date", "==", todayStr))),
+                    getDocs(query(collection(performanceDb, "KrakenAM Energise"), where("date", "==", dateString)))
+                ]);
+                let kToday = 0, kPrev = 0;
+                eKrakenToday.forEach(doc => kToday += doc.data().totalMeters || 0);
+                eKrakenPrev.forEach(doc => kPrev += doc.data().totalMeters || 0);
+                document.getElementById('energiseKrakenTodayMeters').textContent = eKrakenToday.empty ? 'No data' : Math.round(kToday).toLocaleString();
+                document.getElementById('energiseKrakenPrevDayMeters').textContent = eKrakenPrev.empty ? 'No data' : Math.round(kPrev).toLocaleString();
 
                 const garethStatsQuery = query(collection(performanceDb, "garethstats"), where("date", "==", dateString));
                 const garethStatsSnapshot = await getDocs(garethStatsQuery);
@@ -1852,7 +1919,32 @@
                     const revenueTarget = Math.round((oesEngineerCount - 6) * 413 * 0.9);
                     const completionRate = totalJobs > 0 ? ((totalCompleted / totalJobs) * 100).toFixed(1) : 0;
 
-                    historicalData.push({ displayDate, dateString, totalMeters, metersTarget, totalJobs, totalCompleted, completionRate, totalValue, revenueTarget, atWorkPercent, holPercent, sickPercent, aaupPercent });
+                    const energisePerfQuery = query(collection(performanceDb, "performance - Energise"), where("date", "==", dateString));
+                    const energisePerfSnap = await getDocs(energisePerfQuery);
+                    let energiseMeters = 0, energiseJobs = 0, energiseCompleted = 0;
+                    energisePerfSnap.forEach(doc => {
+                        const data = doc.data();
+                        energiseMeters += data.meters || 0;
+                        energiseJobs += data.jobs || 0;
+                        energiseCompleted += data.completed || 0;
+                    });
+                    
+                    const eKrakenQuery = query(collection(performanceDb, "KrakenAM Energise"), where("date", "==", dateString));
+                    const eKrakenSnap = await getDocs(eKrakenQuery);
+                    let energiseKrakenMeters = null;
+                    if (!eKrakenSnap.empty) {
+                        energiseKrakenMeters = 0;
+                        eKrakenSnap.forEach(doc => { energiseKrakenMeters += doc.data().totalMeters || 0; });
+                        energiseKrakenMeters = Math.round(energiseKrakenMeters);
+                    }
+                    
+                    const energiseCompletionRate = energiseJobs > 0 ? ((energiseCompleted / energiseJobs) * 100).toFixed(1) : 0;
+
+                    historicalData.push({ 
+                        displayDate, dateString, totalMeters, metersTarget, totalJobs, totalCompleted, 
+                        completionRate, totalValue, revenueTarget, atWorkPercent, holPercent, sickPercent, aaupPercent,
+                        energiseMeters, energiseJobs, energiseCompleted, energiseCompletionRate, energiseKrakenMeters
+                    });
                 }
             } catch (error) {
                 console.error("Error loading historical data:", error);
