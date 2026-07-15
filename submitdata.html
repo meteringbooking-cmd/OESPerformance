@@ -500,7 +500,9 @@
         <div class="tab-nav">
             <button class="tab-btn active" onclick="switchTab('entry', this)">📋 Data Entry</button>
             <button class="tab-btn" onclick="switchTab('export', this)">📊 Export Matrix</button>
+            <button class="tab-btn" onclick="switchTab('aborts', this)">❌ Aborts</button>
         </div>
+
 
         <!-- ═══════════════════════════════════════
              TAB: DATA ENTRY
@@ -618,6 +620,62 @@
 
         </div><!-- /tab-export -->
 
+        <!-- ═══════════════════════════════════════
+             TAB: ABORTS
+        ════════════════════════════════════════ -->
+        <div class="tab-panel" id="tab-aborts">
+
+            <div class="controls-bar">
+                <div class="ctrl-group">
+                    <span class="ctrl-label">Search Engineer</span>
+                    <input type="text" id="abortSearch" class="ctrl-input" placeholder="Search by name or leader..." oninput="filterAbortsTable()">
+                </div>
+                <div class="ctrl-group" style="height: 38px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="abortOnlyWithAborts" checked onchange="filterAbortsTable()" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--amber);">
+                    <label for="abortOnlyWithAborts" class="ctrl-label" style="cursor: pointer; user-select: none; margin-bottom: 0;">Show only with aborts</label>
+                </div>
+                <div class="ctrl-actions">
+                    <button class="btn-secondary" onclick="loadAbortsData()" id="refreshAbortsBtn">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div id="abortMessage" class="message"></div>
+
+            <div class="table-wrap">
+                <div id="abortLoadingDiv" class="loading-state">
+                    <span class="spinner"></span>Loading aborts data…
+                </div>
+
+                <div id="abortTableContainer" style="display:none;">
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Engineer</th>
+                                    <th>Last Abort Date</th>
+                                    <th>Subsequent Work Days</th>
+                                    <th>Jobs</th>
+                                    <th>Completed</th>
+                                    <th>Aborted</th>
+                                    <th>Meters</th>
+                                    <th>Value</th>
+                                    <th>Duals</th>
+                                    <th>Singles</th>
+                                    <th>Comms / Site</th>
+                                    <th>Dual Rem.</th>
+                                    <th>Single Rem.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="abortsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /tab-aborts -->
+
     </main>
 
     <script type="module">
@@ -690,7 +748,185 @@
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById('tab-' + tab).classList.add('active');
+            if (tab === 'aborts') {
+                loadAbortsData();
+            }
         };
+
+        /* ════════════════════════════════
+           ABORTS DATA
+        ════════════════════════════════ */
+        window.allAbortsData = [];
+
+        window.loadAbortsData = async function() {
+            const loadingDiv = document.getElementById('abortLoadingDiv');
+            const tableContainer = document.getElementById('abortTableContainer');
+            const messageDiv = document.getElementById('abortMessage');
+            
+            loadingDiv.style.display = 'block';
+            tableContainer.style.display = 'none';
+            messageDiv.className = 'message';
+            
+            try {
+                if (engineers.length === 0) {
+                    const querySnapshot = await getDocs(collection(db, "engineers"));
+                    engineers = [];
+                    querySnapshot.forEach((doc) => engineers.push({ id: doc.id, ...doc.data() }));
+                    engineers.sort((a, b) => {
+                        const l = a.teamLeader.localeCompare(b.teamLeader);
+                        return l !== 0 ? l : a.engineerName.localeCompare(b.engineerName);
+                    });
+                }
+                
+                const q = query(collection(db, "performance"), orderBy("date", "desc"));
+                const querySnapshot = await getDocs(q);
+                
+                const recordsByEngineer = {};
+                
+                engineers.forEach(eng => {
+                    recordsByEngineer[eng.engineerName] = {
+                        engineer: eng,
+                        lastAbort: null,
+                        subsequentJobsCount: 0,
+                        candidateSubsequentDays: new Set(),
+                        hasAbort: false
+                    };
+                });
+                
+                querySnapshot.forEach(doc => {
+                    const record = doc.data();
+                    const engName = record.engineerName;
+                    
+                    if (!recordsByEngineer[engName]) {
+                        recordsByEngineer[engName] = {
+                            engineer: { engineerName: engName, teamLeader: record.teamLeader || 'Unknown' },
+                            lastAbort: null,
+                            subsequentJobsCount: 0,
+                            candidateSubsequentDays: new Set(),
+                            hasAbort: false
+                        };
+                    }
+                    
+                    const engObj = recordsByEngineer[engName];
+                    
+                    if (!engObj.hasAbort) {
+                        if (record.aborted > 0) {
+                            engObj.lastAbort = record;
+                            engObj.hasAbort = true;
+                        } else {
+                            if (record.jobs > 0) {
+                                engObj.candidateSubsequentDays.add(record.date);
+                            }
+                        }
+                    }
+                });
+                
+                const abortsProcessed = Object.values(recordsByEngineer);
+                
+                abortsProcessed.sort((a, b) => {
+                    const leaderA = a.engineer.teamLeader || '';
+                    const leaderB = b.engineer.teamLeader || '';
+                    const l = leaderA.localeCompare(leaderB);
+                    if (l !== 0) return l;
+                    return a.engineer.engineerName.localeCompare(b.engineer.engineerName);
+                });
+                
+                window.allAbortsData = abortsProcessed;
+                
+                window.filterAbortsTable();
+                
+                loadingDiv.style.display = 'none';
+                tableContainer.style.display = 'block';
+                
+            } catch (error) {
+                console.error("Error loading aborts data:", error);
+                loadingDiv.style.display = 'none';
+                showMessage('Error loading aborts data. Please try again.', 'error', 'abortMessage');
+            }
+        };
+
+        window.filterAbortsTable = function() {
+            const queryText = (document.getElementById('abortSearch').value || '').toLowerCase().trim();
+            const onlyWithAborts = document.getElementById('abortOnlyWithAborts').checked;
+            
+            const filtered = window.allAbortsData.filter(item => {
+                const nameMatch = item.engineer.engineerName.toLowerCase().includes(queryText);
+                const leaderMatch = (item.engineer.teamLeader || '').toLowerCase().includes(queryText);
+                const queryMatch = nameMatch || leaderMatch;
+                
+                if (onlyWithAborts && !item.hasAbort) {
+                    return false;
+                }
+                
+                return queryMatch;
+            });
+            
+            renderAbortsTableRows(filtered);
+        };
+
+        function renderAbortsTableRows(data) {
+            const tbody = document.getElementById('abortsBody');
+            tbody.innerHTML = '';
+            
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="13" class="matrix-empty">No engineers match the current filters.</td></tr>`;
+                return;
+            }
+            
+            data.forEach(item => {
+                const name = item.engineer.engineerName;
+                const leader = item.engineer.teamLeader;
+                
+                let rowHtml = `
+                    <td>
+                        <div class="eng-name">${name}</div>
+                        <div class="eng-leader">${leader}</div>
+                    </td>
+                `;
+                
+                if (item.hasAbort && item.lastAbort) {
+                    const r = item.lastAbort;
+                    const parts = r.date.split('-');
+                    const fullFormattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    const subDays = item.candidateSubsequentDays.size;
+                    
+                    rowHtml += `
+                        <td style="font-family:'DM Mono', monospace; color:var(--amber); font-weight:600;">${fullFormattedDate}</td>
+                        <td style="font-family:'DM Mono', monospace; font-weight:600; text-align:center; color:var(--cyan);">${subDays} day${subDays === 1 ? '' : 's'}</td>
+                        <td style="text-align:center;">${r.jobs || 0}</td>
+                        <td style="text-align:center;">${r.completed || 0}</td>
+                        <td style="text-align:center; color:var(--danger); font-weight:600;">${r.aborted || 0}</td>
+                        <td style="text-align:center;">${r.meters ? r.meters.toFixed(1) : '0'}</td>
+                        <td style="text-align:center;">£${r.value ? r.value.toFixed(2) : '0.00'}</td>
+                        <td style="text-align:center;">${r.duals || 0}</td>
+                        <td style="text-align:center;">${r.singles || 0}</td>
+                        <td style="text-align:center;">${r.comms || 0}</td>
+                        <td style="text-align:center;">${r.dualRemoval || 0}</td>
+                        <td style="text-align:center;">${r.singleRemoval || 0}</td>
+                    `;
+                } else {
+                    rowHtml += `
+                        <td style="color:var(--text-dim); font-style:italic;">Never</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="color:var(--text-dim); text-align:center;">—</td>
+                    `;
+                }
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = rowHtml;
+                tbody.appendChild(tr);
+            });
+        }
+
 
         /* ════════════════════════════════
            LOAD ENGINEERS (shared)
