@@ -643,6 +643,11 @@
 
             <div id="abortMessage" class="message"></div>
 
+            <div class="info-strip" style="background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.2); margin-bottom: 20px;">
+                Showing engineers with performance entries within the last 4 weeks (since <strong id="cutoffDateLabel" style="color: var(--amber);">...</strong>).
+            </div>
+
+
             <div class="table-wrap">
                 <div id="abortLoadingDiv" class="loading-state">
                     <span class="spinner"></span>Loading aborts data…
@@ -796,7 +801,8 @@
                         candidateSubsequentDays: new Set(),
                         hasAbort: false,
                         longestRun: 0,
-                        currentRun: 0
+                        currentRun: 0,
+                        newestRecordDate: null
                     };
                 });
                 
@@ -812,11 +818,17 @@
                             candidateSubsequentDays: new Set(),
                             hasAbort: false,
                             longestRun: 0,
-                            currentRun: 0
+                            currentRun: 0,
+                            newestRecordDate: null
                         };
                     }
                     
                     const engObj = recordsByEngineer[engName];
+                    
+                    // The first record we encounter for this engineer is their newest record (since query is sorted date desc)
+                    if (!engObj.newestRecordDate) {
+                        engObj.newestRecordDate = record.date;
+                    }
                     
                     // Update run without aborts
                     if ((record.aborted || 0) === 0) {
@@ -838,7 +850,22 @@
                     }
                 });
                 
-                const abortsProcessed = Object.values(recordsByEngineer);
+                // Calculate 4 weeks ago date string (28 days ago)
+                const fourWeeksAgo = new Date();
+                fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+                const y = fourWeeksAgo.getFullYear();
+                const m = String(fourWeeksAgo.getMonth() + 1).padStart(2, '0');
+                const d = String(fourWeeksAgo.getDate()).padStart(2, '0');
+                const cutoffDateStr = `${y}-${m}-${d}`;
+                
+                // Show cutoff date in info strip
+                const displayCutoffDate = `${d}/${m}/${y}`;
+                document.getElementById('cutoffDateLabel').textContent = displayCutoffDate;
+                
+                // Filter: keep only engineers who have entries within the last 4 weeks
+                const abortsProcessed = Object.values(recordsByEngineer).filter(item => {
+                    return item.newestRecordDate && item.newestRecordDate >= cutoffDateStr;
+                });
                 
                 window.allAbortsData = abortsProcessed;
                 window.sortAborts(window.abortSortKey, true);
