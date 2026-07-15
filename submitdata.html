@@ -656,6 +656,7 @@
                                     <th onclick="sortAborts('name')" style="cursor: pointer; user-select: none;">Engineer <span id="sort-icon-name" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                     <th onclick="sortAborts('date')" style="cursor: pointer; user-select: none;">Last Abort Date <span id="sort-icon-date" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                     <th onclick="sortAborts('subsequent')" style="cursor: pointer; user-select: none; text-align: center;">Subsequent Work Days <span id="sort-icon-subsequent" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('longestRun')" style="cursor: pointer; user-select: none; text-align: center;">Longest Run (No Aborts) <span id="sort-icon-longestRun" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                     <th onclick="sortAborts('jobs')" style="cursor: pointer; user-select: none; text-align: center;">Jobs <span id="sort-icon-jobs" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                     <th onclick="sortAborts('completed')" style="cursor: pointer; user-select: none; text-align: center;">Completed <span id="sort-icon-completed" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                     <th onclick="sortAborts('aborted')" style="cursor: pointer; user-select: none; text-align: center;">Aborted <span id="sort-icon-aborted" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
@@ -668,6 +669,7 @@
                                     <th onclick="sortAborts('singleRemoval')" style="cursor: pointer; user-select: none; text-align: center;">Single Rem. <span id="sort-icon-singleRemoval" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                 </tr>
                             </thead>
+
 
                             <tbody id="abortsBody"></tbody>
                         </table>
@@ -792,7 +794,9 @@
                         lastAbort: null,
                         subsequentJobsCount: 0,
                         candidateSubsequentDays: new Set(),
-                        hasAbort: false
+                        hasAbort: false,
+                        longestRun: 0,
+                        currentRun: 0
                     };
                 });
                 
@@ -806,11 +810,21 @@
                             lastAbort: null,
                             subsequentJobsCount: 0,
                             candidateSubsequentDays: new Set(),
-                            hasAbort: false
+                            hasAbort: false,
+                            longestRun: 0,
+                            currentRun: 0
                         };
                     }
                     
                     const engObj = recordsByEngineer[engName];
+                    
+                    // Update run without aborts
+                    if ((record.aborted || 0) === 0) {
+                        engObj.currentRun++;
+                        engObj.longestRun = Math.max(engObj.longestRun, engObj.currentRun);
+                    } else {
+                        engObj.currentRun = 0;
+                    }
                     
                     if (!engObj.hasAbort) {
                         if (record.aborted > 0) {
@@ -872,6 +886,9 @@
             if (key === 'subsequent') {
                 return item.hasAbort ? item.candidateSubsequentDays.size : -1;
             }
+            if (key === 'longestRun') {
+                return item.longestRun;
+            }
             if (item.hasAbort && item.lastAbort) {
                 return item.lastAbort[key] || 0;
             }
@@ -879,7 +896,7 @@
         }
 
         function updateSortIcons() {
-            const keys = ['name', 'date', 'subsequent', 'jobs', 'completed', 'aborted', 'meters', 'value', 'duals', 'singles', 'comms', 'dualRemoval', 'singleRemoval'];
+            const keys = ['name', 'date', 'subsequent', 'longestRun', 'jobs', 'completed', 'aborted', 'meters', 'value', 'duals', 'singles', 'comms', 'dualRemoval', 'singleRemoval'];
             keys.forEach(k => {
                 const el = document.getElementById(`sort-icon-${k}`);
                 if (!el) return;
@@ -913,13 +930,12 @@
             updateSortIcons();
         };
 
-
         function renderAbortsTableRows(data) {
             const tbody = document.getElementById('abortsBody');
             tbody.innerHTML = '';
             
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="13" class="matrix-empty">No engineers match the current filters.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="14" class="matrix-empty">No engineers match the current filters.</td></tr>`;
                 return;
             }
             
@@ -934,6 +950,9 @@
                     </td>
                 `;
                 
+                const longest = item.longestRun;
+                const longestDisp = longest > 0 ? `${longest} day${longest === 1 ? '' : 's'}` : '—';
+                
                 if (item.hasAbort && item.lastAbort) {
                     const r = item.lastAbort;
                     const parts = r.date.split('-');
@@ -943,6 +962,7 @@
                     rowHtml += `
                         <td style="font-family:'DM Mono', monospace; color:var(--amber); font-weight:600;">${fullFormattedDate}</td>
                         <td style="font-family:'DM Mono', monospace; font-weight:600; text-align:center; color:var(--cyan);">${subDays} day${subDays === 1 ? '' : 's'}</td>
+                        <td style="font-family:'DM Mono', monospace; font-weight:600; text-align:center; color:var(--success);">${longestDisp}</td>
                         <td style="text-align:center;">${r.jobs || 0}</td>
                         <td style="text-align:center;">${r.completed || 0}</td>
                         <td style="text-align:center; color:var(--danger); font-weight:600;">${r.aborted || 0}</td>
@@ -958,6 +978,7 @@
                     rowHtml += `
                         <td style="color:var(--text-dim); font-style:italic;">Never</td>
                         <td style="color:var(--text-dim); text-align:center;">—</td>
+                        <td style="font-family:'DM Mono', monospace; font-weight:600; text-align:center; color:var(--success);">${longestDisp}</td>
                         <td style="color:var(--text-dim); text-align:center;">—</td>
                         <td style="color:var(--text-dim); text-align:center;">—</td>
                         <td style="color:var(--text-dim); text-align:center;">—</td>
