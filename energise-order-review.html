@@ -1104,8 +1104,9 @@
     const timeStr = order.submittedAt ? formatTime(order.submittedAt) : '';
 
     // ── Split items by category ───────────────────────────────────────────
-    const consumables = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable');
-    const meters      = order.items.filter(i => (i.category || '').toLowerCase() === 'meter');
+    const consumablesNoRA = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable' && !i.requiresAuthorisation);
+    const consumablesRA   = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable' &&  i.requiresAuthorisation);
+    const meters          = order.items.filter(i => (i.category || '').toLowerCase() === 'meter');
 
     // Build a styled HTML table for a given item list
     function buildItemsHtml(items) {
@@ -1161,16 +1162,17 @@
           </div>
         `;
       }
-      if (consumables.length > 0) {
-        if (consumables.length <= 10) {
+      // ── Consumables (No Authorisation Required) ───────────────────────
+      if (consumablesNoRA.length > 0) {
+        if (consumablesNoRA.length <= 10) {
           sends.push(
             emailjs.send('service_ushej2v', 'template_e9n1jcm', {
               submitted_by: order.submittedBy,
               submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-              item_count:   consumables.length,
-              order_type:   'Consumables',
+              item_count:   consumablesNoRA.length,
+              order_type:   'Consumables — No Authorisation Required',
               header_color: '#1a56db',
-              items_html:   buildItemsHtml(consumables),
+              items_html:   buildItemsHtml(consumablesNoRA),
               order_id:     orderId,
             })
           );
@@ -1179,15 +1181,45 @@
             emailjs.send('service_ushej2v', 'template_e9n1jcm', {
               submitted_by: order.submittedBy,
               submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
-              item_count:   consumables.length,
-              order_type:   'Consumables',
+              item_count:   consumablesNoRA.length,
+              order_type:   'Consumables — No Authorisation Required',
               header_color: '#1a56db',
-              items_html:   buildLargeOrderNoticeHtml('Consumables', consumables.length, link),
+              items_html:   buildLargeOrderNoticeHtml('Consumables (No RA)', consumablesNoRA.length, link),
               order_id:     orderId,
             })
           );
         }
       }
+
+      // ── Consumables (Requires Authorisation) ──────────────────────────
+      if (consumablesRA.length > 0) {
+        if (consumablesRA.length <= 10) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesRA.length,
+              order_type:   'Consumables — Requires Authorisation',
+              header_color: '#d97706',
+              items_html:   buildItemsHtml(consumablesRA),
+              order_id:     orderId,
+            })
+          );
+        } else {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesRA.length,
+              order_type:   'Consumables — Requires Authorisation',
+              header_color: '#d97706',
+              items_html:   buildLargeOrderNoticeHtml('Consumables (RA)', consumablesRA.length, link),
+              order_id:     orderId,
+            })
+          );
+        }
+      }
+
 
       if (meters.length > 0) {
         if (meters.length <= 10) {
@@ -1248,10 +1280,11 @@
       }
 
       const sentParts = [
-        consumables.length > 0 ? `consumables (${consumables.length})` : null,
-        meters.length > 0 ? `meters (${meters.length})` : null
-      ].filter(Boolean).join(' and ');
-      showToast(`✓ Order processed — ${sentParts} email sent!`, false);
+        consumablesNoRA.length > 0 ? `consumables no-auth (${consumablesNoRA.length})` : null,
+        consumablesRA.length   > 0 ? `consumables RA (${consumablesRA.length})`         : null,
+        meters.length          > 0 ? `meters (${meters.length})`                        : null
+      ].filter(Boolean).join(', ');
+      showToast(`✓ Order processed — ${sentParts} email${sends.length > 1 ? 's' : ''} sent!`, false);
 
     } catch (err) {
       console.error('EmailJS error:', err);
