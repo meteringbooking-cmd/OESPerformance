@@ -653,21 +653,22 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Engineer</th>
-                                    <th>Last Abort Date</th>
-                                    <th>Subsequent Work Days</th>
-                                    <th>Jobs</th>
-                                    <th>Completed</th>
-                                    <th>Aborted</th>
-                                    <th>Meters</th>
-                                    <th>Value</th>
-                                    <th>Duals</th>
-                                    <th>Singles</th>
-                                    <th>Comms / Site</th>
-                                    <th>Dual Rem.</th>
-                                    <th>Single Rem.</th>
+                                    <th onclick="sortAborts('name')" style="cursor: pointer; user-select: none;">Engineer <span id="sort-icon-name" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('date')" style="cursor: pointer; user-select: none;">Last Abort Date <span id="sort-icon-date" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('subsequent')" style="cursor: pointer; user-select: none; text-align: center;">Subsequent Work Days <span id="sort-icon-subsequent" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('jobs')" style="cursor: pointer; user-select: none; text-align: center;">Jobs <span id="sort-icon-jobs" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('completed')" style="cursor: pointer; user-select: none; text-align: center;">Completed <span id="sort-icon-completed" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('aborted')" style="cursor: pointer; user-select: none; text-align: center;">Aborted <span id="sort-icon-aborted" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('meters')" style="cursor: pointer; user-select: none; text-align: center;">Meters <span id="sort-icon-meters" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('value')" style="cursor: pointer; user-select: none; text-align: center;">Value <span id="sort-icon-value" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('duals')" style="cursor: pointer; user-select: none; text-align: center;">Duals <span id="sort-icon-duals" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('singles')" style="cursor: pointer; user-select: none; text-align: center;">Singles <span id="sort-icon-singles" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('comms')" style="cursor: pointer; user-select: none; text-align: center;">Comms / Site <span id="sort-icon-comms" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('dualRemoval')" style="cursor: pointer; user-select: none; text-align: center;">Dual Rem. <span id="sort-icon-dualRemoval" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
+                                    <th onclick="sortAborts('singleRemoval')" style="cursor: pointer; user-select: none; text-align: center;">Single Rem. <span id="sort-icon-singleRemoval" style="font-size: 0.6rem; vertical-align: middle;">⇅</span></th>
                                 </tr>
                             </thead>
+
                             <tbody id="abortsBody"></tbody>
                         </table>
                     </div>
@@ -757,6 +758,8 @@
            ABORTS DATA
         ════════════════════════════════ */
         window.allAbortsData = [];
+        window.abortSortKey = 'name';
+        window.abortSortAsc = true;
 
         window.loadAbortsData = async function() {
             const loadingDiv = document.getElementById('abortLoadingDiv');
@@ -823,17 +826,8 @@
                 
                 const abortsProcessed = Object.values(recordsByEngineer);
                 
-                abortsProcessed.sort((a, b) => {
-                    const leaderA = a.engineer.teamLeader || '';
-                    const leaderB = b.engineer.teamLeader || '';
-                    const l = leaderA.localeCompare(leaderB);
-                    if (l !== 0) return l;
-                    return a.engineer.engineerName.localeCompare(b.engineer.engineerName);
-                });
-                
                 window.allAbortsData = abortsProcessed;
-                
-                window.filterAbortsTable();
+                window.sortAborts(window.abortSortKey, true);
                 
                 loadingDiv.style.display = 'none';
                 tableContainer.style.display = 'block';
@@ -844,6 +838,60 @@
                 showMessage('Error loading aborts data. Please try again.', 'error', 'abortMessage');
             }
         };
+
+        window.sortAborts = function(key, forceDirection = false) {
+            if (key === window.abortSortKey && !forceDirection) {
+                window.abortSortAsc = !window.abortSortAsc;
+            } else if (!forceDirection) {
+                window.abortSortKey = key;
+                window.abortSortAsc = (key === 'name');
+            }
+            
+            window.allAbortsData.sort((a, b) => {
+                const valA = getSortValue(a, key);
+                const valB = getSortValue(b, key);
+                
+                if (valA !== valB) {
+                    if (valA < valB) return window.abortSortAsc ? -1 : 1;
+                    if (valA > valB) return window.abortSortAsc ? 1 : -1;
+                }
+                
+                return a.engineer.engineerName.localeCompare(b.engineer.engineerName);
+            });
+            
+            window.filterAbortsTable();
+        };
+
+        function getSortValue(item, key) {
+            if (key === 'name') {
+                return item.engineer.engineerName.toLowerCase();
+            }
+            if (key === 'date') {
+                return item.hasAbort && item.lastAbort ? item.lastAbort.date : '0000-00-00';
+            }
+            if (key === 'subsequent') {
+                return item.hasAbort ? item.candidateSubsequentDays.size : -1;
+            }
+            if (item.hasAbort && item.lastAbort) {
+                return item.lastAbort[key] || 0;
+            }
+            return -1;
+        }
+
+        function updateSortIcons() {
+            const keys = ['name', 'date', 'subsequent', 'jobs', 'completed', 'aborted', 'meters', 'value', 'duals', 'singles', 'comms', 'dualRemoval', 'singleRemoval'];
+            keys.forEach(k => {
+                const el = document.getElementById(`sort-icon-${k}`);
+                if (!el) return;
+                if (k === window.abortSortKey) {
+                    el.textContent = window.abortSortAsc ? ' ▲' : ' ▼';
+                    el.style.color = 'var(--amber)';
+                } else {
+                    el.textContent = ' ⇅';
+                    el.style.color = 'var(--text-dim)';
+                }
+            });
+        }
 
         window.filterAbortsTable = function() {
             const queryText = (document.getElementById('abortSearch').value || '').toLowerCase().trim();
@@ -862,7 +910,9 @@
             });
             
             renderAbortsTableRows(filtered);
+            updateSortIcons();
         };
+
 
         function renderAbortsTableRows(data) {
             const tbody = document.getElementById('abortsBody');
