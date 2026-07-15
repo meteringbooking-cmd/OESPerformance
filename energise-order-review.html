@@ -732,6 +732,26 @@
         };
       });
 
+      // ── Backfill requiresAuthorisation from inventory by SKU ─────────
+      try {
+        const invSnap = await getDocs(collection(db, 'Energise Inventory'));
+        const raMap = {};
+        invSnap.forEach(d => {
+          const inv = d.data();
+          if (inv.sku) raMap[String(inv.sku).trim().toUpperCase()] = !!inv.requiresAuthorisation;
+        });
+        allOrders.forEach(o => {
+          o.items.forEach(item => {
+            if (item.requiresAuthorisation === undefined || item.requiresAuthorisation === null) {
+              const key = String(item.sku || '').trim().toUpperCase();
+              item.requiresAuthorisation = raMap[key] || false;
+            }
+          });
+        });
+      } catch (invErr) {
+        console.warn('Could not load inventory for RA lookup:', invErr);
+      }
+
       updateStats();
       applyFilters();
       renderProcessed();
