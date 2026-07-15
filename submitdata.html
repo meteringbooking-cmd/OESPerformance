@@ -787,6 +787,14 @@
                 const q = query(collection(db, "performance"), orderBy("date", "desc"));
                 const querySnapshot = await getDocs(q);
                 
+                const performanceRecords = [];
+                querySnapshot.forEach(doc => {
+                    performanceRecords.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Explicitly sort descending by date string to guarantee correct chronological order
+                performanceRecords.sort((a, b) => b.date.localeCompare(a.date));
+                
                 const recordsByEngineer = {};
                 
                 engineers.forEach(eng => {
@@ -801,12 +809,16 @@
                         newestRecordDate: null,
                         totalJobsSinceAbort: 0,
                         totalCompletedSinceAbort: 0,
-                        totalMetersSinceAbort: 0
+                        totalMetersSinceAbort: 0,
+                        totalDualsSinceAbort: 0,
+                        totalSinglesSinceAbort: 0,
+                        totalCommsSinceAbort: 0,
+                        totalDualRemovalSinceAbort: 0,
+                        totalSingleRemovalSinceAbort: 0
                     };
                 });
                 
-                querySnapshot.forEach(doc => {
-                    const record = doc.data();
+                performanceRecords.forEach(record => {
                     const engName = record.engineerName;
                     
                     if (!recordsByEngineer[engName]) {
@@ -821,19 +833,34 @@
                             newestRecordDate: null,
                             totalJobsSinceAbort: 0,
                             totalCompletedSinceAbort: 0,
-                            totalMetersSinceAbort: 0
+                            totalMetersSinceAbort: 0,
+                            totalDualsSinceAbort: 0,
+                            totalSinglesSinceAbort: 0,
+                            totalCommsSinceAbort: 0,
+                            totalDualRemovalSinceAbort: 0,
+                            totalSingleRemovalSinceAbort: 0
                         };
                     }
                     
                     const engObj = recordsByEngineer[engName];
                     
-                    // The first record we encounter for this engineer is their newest record (since query is sorted date desc)
+                    // The first record we encounter for this engineer is their newest record
                     if (!engObj.newestRecordDate) {
                         engObj.newestRecordDate = record.date;
                     }
                     
+                    const recordAborted = Number(record.aborted) || 0;
+                    const recordJobs = Number(record.jobs) || 0;
+                    const recordCompleted = Number(record.completed) || 0;
+                    const recordMeters = Number(record.meters) || 0;
+                    const recordDuals = Number(record.duals) || 0;
+                    const recordSingles = Number(record.singles) || 0;
+                    const recordComms = Number(record.comms) || 0;
+                    const recordDualRemoval = Number(record.dualRemoval) || 0;
+                    const recordSingleRemoval = Number(record.singleRemoval) || 0;
+                    
                     // Update run without aborts
-                    if ((record.aborted || 0) === 0) {
+                    if (recordAborted === 0) {
                         engObj.currentRun++;
                         engObj.longestRun = Math.max(engObj.longestRun, engObj.currentRun);
                     } else {
@@ -841,17 +868,24 @@
                     }
                     
                     if (!engObj.hasAbort) {
-                        if (record.aborted > 0) {
+                        if (recordAborted > 0) {
                             engObj.lastAbort = record;
                             engObj.hasAbort = true;
                         } else {
-                            if (record.jobs > 0) {
+                            if (recordJobs > 0) {
                                 engObj.candidateSubsequentDays.add(record.date);
                             }
-                            engObj.totalJobsSinceAbort += record.jobs || 0;
-                            engObj.totalCompletedSinceAbort += record.completed || 0;
-                            engObj.totalMetersSinceAbort += record.meters || 0;
                         }
+                        
+                        // Accumulate metrics for all days in the period, including the abort day
+                        engObj.totalJobsSinceAbort += recordJobs;
+                        engObj.totalCompletedSinceAbort += recordCompleted;
+                        engObj.totalMetersSinceAbort += recordMeters;
+                        engObj.totalDualsSinceAbort += recordDuals;
+                        engObj.totalSinglesSinceAbort += recordSingles;
+                        engObj.totalCommsSinceAbort += recordComms;
+                        engObj.totalDualRemovalSinceAbort += recordDualRemoval;
+                        engObj.totalSingleRemovalSinceAbort += recordSingleRemoval;
                     }
                 });
                 
