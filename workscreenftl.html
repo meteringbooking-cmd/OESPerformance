@@ -402,7 +402,7 @@
                 <!-- Missing Vehicle Checks -->
                 <div class="kpi-card">
                     <div class="kpi-header">
-                        <span class="kpi-title">Missing Vehicle Checks</span>
+                        <span class="kpi-title">Missing Vehicle Checks <span id="vehicleChecksDate" style="font-size: 0.75em; opacity: 0.7; font-weight: normal; margin-left: 6px;"></span></span>
                         <span class="kpi-icon">🚐</span>
                     </div>
                     <div class="kpi-value" id="statMissingVehicleChecks" style="font-size: 2.2em; background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px;">—</div>
@@ -1233,7 +1233,23 @@
         }
         async function loadVehicleChecks(dateStr) {
             try {
-                const q = query(collection(performanceDb, "vehicle check"), where("date", "==", dateStr));
+                // Find the most recent date for which there are vehicle checks uploaded
+                const latestQuery = query(collection(performanceDb, "vehicle check"), orderBy("date", "desc"), limit(1));
+                const latestSnap = await getDocs(latestQuery);
+                let targetDate = dateStr;
+                if (!latestSnap.empty) {
+                    latestSnap.forEach(doc => {
+                        targetDate = doc.data().date;
+                    });
+                }
+
+                const dateEl = document.getElementById('vehicleChecksDate');
+                if (dateEl && targetDate) {
+                    const dObj = new Date(targetDate + 'T12:00:00');
+                    dateEl.textContent = `(${formatDate(dObj)})`;
+                }
+
+                const q = query(collection(performanceDb, "vehicle check"), where("date", "==", targetDate));
                 const snap = await getDocs(q);
                 const missingNames = [];
                 snap.forEach(doc => {
