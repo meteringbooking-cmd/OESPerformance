@@ -831,6 +831,7 @@
           <span class="qty-display" title="Click to edit" onclick="startQtyEdit('${order.id}',${idx})">${item.qty ?? 1}</span>
         </td>
         <td id="linetotal-${order.id}-${idx}" style="font-weight:600; color:var(--accent2);">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
+        <td style="color:var(--text-muted);font-size:13px;">${getDateLastOrdered(item.sku, order.id, order.submittedAt, order.submittedBy)}</td>
         <td style="text-align:center;">${item.requiresAuthorisation
           ? '<span title="Requires Authorisation" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:13px;font-weight:700;">✓</span>'
           : ''}</td>
@@ -876,6 +877,7 @@
                   <th>Price</th>
                   <th>Qty <span style="font-weight:400;opacity:0.6">(click to edit)</span></th>
                   <th>Total</th>
+                  <th>Last Ordered</th>
                   <th title="Requires Authorisation">RA</th>
                   <th></th>
                 </tr>
@@ -1036,6 +1038,7 @@
             <span class="qty-display" title="Click to edit" onclick="startQtyEdit('${orderId}',${i})">${item.qty ?? 1}</span>
           </td>
           <td id="linetotal-${orderId}-${i}" style="font-weight:600; color:var(--accent2);">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
+          <td style="color:var(--text-muted);font-size:13px;">${getDateLastOrdered(item.sku, orderId, order.submittedAt, order.submittedBy)}</td>
           <td style="text-align:center;">${item.requiresAuthorisation
             ? '<span title="Requires Authorisation" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:13px;font-weight:700;">✓</span>'
             : ''}</td>
@@ -1350,6 +1353,40 @@
   };
 
   // ── Helpers ───────────────────────────────────────────────
+  function getDateLastOrdered(sku, currentOrderId, currentOrderSubmittedAt, submitterName) {
+    if (!sku) return 'Never';
+    const cleanSku = String(sku).toUpperCase().trim();
+    const cleanName = String(submitterName || '').trim().toLowerCase();
+    const currentEpoch = currentOrderSubmittedAt ? new Date(currentOrderSubmittedAt).getTime() : new Date().getTime();
+    
+    let lastDate = null;
+    let lastEpoch = 0;
+    
+    allOrders.forEach(o => {
+      if (o.id === currentOrderId) return;
+      if (!o.processedAt) return; // Only match historically processed orders
+      if (String(o.submittedBy || '').trim().toLowerCase() !== cleanName) return;
+      
+      const hasItem = (o.items || []).some(item => String(item.sku).toUpperCase().trim() === cleanSku);
+      if (hasItem) {
+        const pDate = new Date(o.processedAt);
+        if (!isNaN(pDate.getTime())) {
+          const epoch = pDate.getTime();
+          // Must be strictly prior to the current order's submission/reference time
+          if (epoch < currentEpoch && epoch > lastEpoch) {
+            lastEpoch = epoch;
+            lastDate = pDate;
+          }
+        }
+      }
+    });
+    
+    if (lastDate) {
+      return formatDate(lastDate);
+    }
+    return 'Never';
+  }
+
   function formatDate(d) { return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
   function formatTime(d) { return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
   function escHtml(str) {
