@@ -186,7 +186,7 @@
     <div class="container">
         <div class="header">
             <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
-            <div class="logo">Office Stats Monitor</div>
+            <div class="logo">Office Screen</div>
             <div style="text-align: right;">
                 <div class="date-display" id="statsDate">Loading...</div>
                 <div class="last-updated" id="lastUpdated">Last updated: --</div>
@@ -571,27 +571,29 @@
 
         async function loadSPCompletion(dateStr) {
             try {
-                const spDate = dateStr;
-                const dateParts = spDate.split('/');
-                const dateQuery = dateParts.length === 3 ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` : spDate;
-                
-                document.getElementById('spCompletionDateLabel').textContent = `Date: ${spDate}`;
-                
-                const snap = await getDocs(query(collection(performanceDb, 'SP Submitted Data'), where('submissionDate', '==', dateQuery)));
-                const engSnap = await getDocs(collection(performanceDb, 'engineers'));
-                
+                const spD = new Date(dateStr + 'T12:00:00');
+                const spLabel = spD.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+                const nowHour = new Date().getHours();
+                const spNote = nowHour < 11 ? '(before 11am — showing day before yesterday)' : '(from 11am — showing yesterday)';
+                const labelEl = document.getElementById('spCompletionDateLabel');
+                if (labelEl) labelEl.textContent = `${spLabel} ${spNote}`;
+
+                const [jobsSnap, teamsSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, 'SP Submitted Data'),
+                        where('submissionDate', '==', dateStr))),
+                    getDocs(collection(performanceDb, 'SP - Teams'))
+                ]);
+
                 const knownEngineers = new Set();
-                engSnap.forEach(doc => {
-                    const d = doc.data();
-                    if (d.contract === 'OES - Scottish Power' || d.contract === 'OES - Sureserve') {
-                        knownEngineers.add((d.engineerName || '').trim().toLowerCase());
-                    }
+                teamsSnap.forEach(d => {
+                    const name = (d.data().engineerName || '').trim().toLowerCase();
+                    if (name) knownEngineers.add(name);
                 });
 
                 let total = 0, completed = 0;
-                snap.forEach(d => {
-                    const data = d.data();
-                    const eng = (data.outcomeResource || '').trim().toLowerCase();
+                jobsSnap.forEach(d => {
+                    const data   = d.data();
+                    const eng    = (data.outcomeResource || '').trim().toLowerCase();
                     const status = (data.jobStatus || '').trim().toLowerCase();
                     if (!knownEngineers.has(eng)) return;
                     if (status === 'completed' || status === 'full abort') {
@@ -601,71 +603,101 @@
                 });
 
                 const pct = total > 0 ? ((completed / total) * 100).toFixed(1) : 0;
-                document.getElementById('spCompletionActual').textContent = pct;
-                document.getElementById('spCompletionProgressText').textContent = total > 0 ? `${completed} of ${total} jobs` : 'No data';
-                
-                const bar = document.getElementById('spCompletionProgress');
-                bar.style.width = pct + '%';
-                bar.className = 'progress-bar' + (pct >= 90 ? '' : pct >= 70 ? ' warning' : ' danger');
-            } catch(err) { console.error('SP Completion error:', err); }
+                document.getElementById('spCompletionActual').textContent      = pct;
+                document.getElementById('spCompletionProgressText').textContent = total > 0 ? `${completed} of ${total} jobs` : 'No data for this date';
+                updateProgressBar('spCompletionProgress', +pct);
+            } catch(err) {
+                console.error('SP Completion load error:', err);
+                document.getElementById('spCompletionActual').textContent      = 'Err';
+                document.getElementById('spCompletionProgressText').textContent = 'Error loading data';
+            }
         }
 
         function getSPCompletionDate() {
             const now = new Date();
-            let d = new Date(now); d.setDate(now.getDate() - 1);
-            while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
-            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+            const hourNow = now.getHours();
+            const daysBack = hourNow < 11 ? 2 : 1;
+            let target = new Date();
+            let count = 0;
+            while (count < daysBack) {
+                target.setDate(target.getDate() - 1);
+                if (isWorkingDay(target)) count++;
+            }
+            return formatDateForQuery(target);
         }
 
         async function loadComplianceData() {
             try {
                 const now = new Date();
-                const histStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                const histStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+                histStart.setHours(0, 0, 0, 0);
                 const histStartStr = `${histStart.getFullYear()}-${String(histStart.getMonth()+1).padStart(2,'0')}-01`;
-                const snap = await getDocs(query(collection(performanceDb, 'Compliance Dashboard'), where('date', '>=', histStartStr)));
-                
-                let wipPass = 0, wipTotal = 0, pcPass = 0, pcTotal = 0;
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    const total = (d.pass || 0) + (d.fail || 0);
-                    if (d.type === 'wip') { wipPass += d.pass || 0; wipTotal += total; }
-                    else { pcPass += d.pass || 0; pcTotal += total; }
-                });
 
-                const wipRate = wipTotal ? Math.round((wipPass / wipTotal) * 100) : 0;
-                const pcRate = pcTotal ? Math.round((pcPass / pcTotal) * 100) : 0;
-                const overallRate = (wipTotal + pcTotal) ? Math.round(((wipPass + pcPass) / (wipTotal + pcTotal)) * 100) : 0;
+                const snap = await getDocs(
+                    query(collection(performanceDb, 'Compliance Dashboard'),
+                          where('date', '>=', histStartStr))
+                );
+                const audits = snap.docs.map(d => d.data());
 
-                document.getElementById('wipPassRate').textContent = wipTotal ? `${wipRate}%` : '—';
-                document.getElementById('postCompPassRate').textContent = pcTotal ? `${pcRate}%` : '—';
-                document.getElementById('complianceOverallPass').textContent = (wipTotal + pcTotal) ? overallRate : '—';
+                const inRange = (a, start, end) => {
+                    if (!a.date) return false;
+                    const d = new Date(a.date + 'T00:00:00');
+                    return d >= start && d <= end;
+                };
+                const rate = (p, t) => t === 0 ? '0' : ((p / t) * 100).toFixed(1);
+
+                const cmStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                cmStart.setHours(0, 0, 0, 0);
+                const cmEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                const cmAudits  = audits.filter(a => inRange(a, cmStart, cmEnd));
+                const cmWip     = cmAudits.filter(a => a.auditType === 'WIP');
+                const cmPost    = cmAudits.filter(a => a.auditType === 'Post Complete');
+                const wipPass   = cmWip.filter(a => a.result === 'Pass').length;
+                const wipTotal  = cmWip.length;
+                const postPass  = cmPost.filter(a => a.result === 'Pass').length;
+                const postTotal = cmPost.length;
+                const allPass   = wipPass + postPass;
+                const allTotal  = wipTotal + postTotal;
+                const overallPct = allTotal === 0 ? 0 : (allPass / allTotal) * 100;
+
+                document.getElementById('complianceOverallPass').textContent = allTotal === 0 ? '—' : overallPct.toFixed(1);
+                document.getElementById('wipPassRate').textContent      = rate(wipPass, wipTotal) + '%';
+                document.getElementById('postCompPassRate').textContent  = rate(postPass, postTotal) + '%';
             } catch(err) { console.error('Compliance error:', err); }
         }
 
         async function loadVehicleChecks(dateStr) {
             try {
-                const collRef = collection(performanceDb, "vehicle check");
-                const q = query(collRef, orderBy("date", "desc"), limit(1));
-                const snap = await getDocs(q);
-                if (snap.empty) {
-                    document.getElementById('statMissingVehicleChecks').textContent = '0';
-                    document.getElementById('missingChecksList').textContent = 'No data uploads found';
-                    return;
+                const latestQuery = query(collection(performanceDb, "vehicle check"), orderBy("date", "desc"), limit(1));
+                const latestSnap = await getDocs(latestQuery);
+                let targetDate = dateStr;
+                if (!latestSnap.empty) {
+                    latestSnap.forEach(doc => {
+                        targetDate = doc.data().date;
+                    });
                 }
-                const latestDoc = snap.docs[0];
-                const latestData = latestDoc.data();
-                const latestDateStr = latestData.date;
-                const parts = latestDateStr.split('-');
-                const displayDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : latestDateStr;
+
+                const dateEl = document.getElementById('vehicleChecksDate');
+                if (dateEl && targetDate) {
+                    const dObj = new Date(targetDate + 'T12:00:00');
+                    dateEl.textContent = `(${formatDate(dObj)})`;
+                }
+
+                const q = query(collection(performanceDb, "vehicle check"), where("date", "==", targetDate));
+                const snap = await getDocs(q);
+                const missingNames = [];
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.checkComplete === 0 && d.attendance === 'X') {
+                        missingNames.push(d.name);
+                    }
+                });
                 
-                document.getElementById('vehicleChecksDate').textContent = `(${displayDate})`;
-                
-                const names = latestData.names || [];
-                document.getElementById('statMissingVehicleChecks').textContent = names.length;
-                if (names.length === 0) {
+                document.getElementById('statMissingVehicleChecks').textContent = missingNames.length;
+                if (missingNames.length === 0) {
                     document.getElementById('missingChecksList').textContent = 'All checked';
                 } else {
-                    document.getElementById('missingChecksList').innerHTML = names.map(n => `<span class="engineer-tag">${n}</span>`).join('');
+                    document.getElementById('missingChecksList').innerHTML = missingNames.map(n => `<span class="engineer-tag">${n}</span>`).join('');
                 }
             } catch(err) {
                 console.error("Error loading vehicle checks:", err);
