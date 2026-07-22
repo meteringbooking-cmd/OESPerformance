@@ -918,7 +918,7 @@
                 allAttendance = [];
                 attendanceSnapshot.forEach((doc) => {
                     const data = doc.data();
-                    if (data.attendance) {
+                    if (data.attendance && data.attendance !== 'X') {
                         allAttendance.push(data);
                     }
                 });
@@ -1352,6 +1352,7 @@
             
             let allWeekdayDates = [];
             const dateMap = {};
+            const headsMap = {};
 
             if (groupingFilter === 'daily') {
                 for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
@@ -1362,10 +1363,14 @@
                 }
                 allWeekdayDates.forEach(date => {
                     dateMap[date] = 0;
+                    if (isMetersPerHead) headsMap[date] = new Set();
                 });
                 filteredData.forEach(record => {
                     if (dateMap.hasOwnProperty(record.date)) {
                         dateMap[record.date] += record[baseMetric] || 0;
+                        if (isMetersPerHead && record[baseMetric] > 0) {
+                            headsMap[record.date].add(record.engineerName);
+                        }
                     }
                 });
             } else {
@@ -1378,6 +1383,7 @@
                     if (!allWeekdayDates.includes(mondayStr)) {
                         allWeekdayDates.push(mondayStr);
                         dateMap[mondayStr] = 0;
+                        if (isMetersPerHead) headsMap[mondayStr] = new Set();
                     }
                 }
                 filteredData.forEach(record => {
@@ -1388,136 +1394,21 @@
                     let rMondayStr = 'W/C ' + rMonday.toISOString().split('T')[0];
                     if (dateMap.hasOwnProperty(rMondayStr)) {
                         dateMap[rMondayStr] += record[baseMetric] || 0;
+                        if (isMetersPerHead && record[baseMetric] > 0) {
+                            headsMap[rMondayStr].add(record.engineerName);
+                        }
                     }
                 });
             }
 
             const dates = allWeekdayDates;
-            let headsMap = {};
-            if (isMetersPerHead) {
-                dates.forEach(date => headsMap[date] = 0);
-                
-                let filteredAttendance = allAttendance;
-                if (teamLeaderFilter !== 'all') {
-                    filteredAttendance = filteredAttendance.filter(a => a.teamLeader === teamLeaderFilter);
-                }
-                if (engineerFilter !== 'all') {
-                    filteredAttendance = filteredAttendance.filter(a => a.engineerName === engineerFilter);
-                }
-                
-                filteredAttendance.forEach(att => {
-                    if (att.attendance === 'X') {
-                        let targetDateStr;
-                        if (groupingFilter === 'daily') {
-                            targetDateStr = att.date;
-                        } else {
-                            let rDate = new Date(att.date);
-                            let rDay = rDate.getUTCDay();
-                            let rDiff = rDate.getUTCDate() - rDay + (rDay === 0 ? -6 : 1);
-                            let rMonday = new Date(rDate.setUTCDate(rDiff));
-                            targetDateStr = 'W/C ' + rMonday.toISOString().split('T')[0];
-                        }
-                        if (headsMap.hasOwnProperty(targetDateStr)) {
-                            headsMap[targetDateStr] += 1;
-                        }
-                    }
-                });
-            }
-
             const values = dates.map(date => {
                 if (isMetersPerHead) {
-                    const heads = headsMap[date] || 0;
+                    const heads = headsMap[date].size;
                     return heads > 0 ? dateMap[date] / heads : 0;
                 }
                 return dateMap[date];
             });
-
-            const startDateStr = document.getElementById('startDate').value;
-            const startDateObj = new Date(startDateStr);
-            const fourWeeksAgo = new Date(startDateObj);
-            fourWeeksAgo.setUTCDate(fourWeeksAgo.getUTCDate() - 28);
-            const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0];
-
-            let previous4WeeksAvg = 0;
-            try {
-                const prevQuery = query(
-                    collection(db, "performance"),
-                    where("date", ">=", fourWeeksAgoStr),
-                    where("date", "<", startDateStr),
-                    orderBy("date", "desc")
-                );
-
-                const prevSnapshot = await getDocs(prevQuery);
-                let prevData = [];
-                prevSnapshot.forEach((doc) => {
-                    prevData.push(doc.data());
-                });
-
-                if (teamLeaderFilter !== 'all') {
-                    prevData = prevData.filter(d => d.teamLeader === teamLeaderFilter);
-                }
-                if (engineerFilter !== 'all') {
-                    prevData = prevData.filter(d => d.engineerName === engineerFilter);
-                }
-
-                let prevAttendanceData = [];
-                if (isMetersPerHead) {
-                    const prevAttQuery = query(
-                        collection(db, "attendance"),
-                        where("date", ">=", fourWeeksAgoStr),
-                        where("date", "<", startDateStr)
-                    );
-                    const prevAttSnap = await getDocs(prevAttQuery);
-                    prevAttSnap.forEach(doc => prevAttendanceData.push(doc.data()));
-
-                    if (teamLeaderFilter !== 'all') {
-                        prevAttendanceData = prevAttendanceData.filter(a => a.teamLeader === teamLeaderFilter);
-                    }
-                    if (engineerFilter !== 'all') {
-                        prevAttendanceData = prevAttendanceData.filter(a => a.engineerName === engineerFilter);
-                    }
-                }
-
-                const prevDateMap = {};
-                prevData.forEach(record => {
-                    if (!prevDateMap[record.date]) {
-                        prevDateMap[record.date] = 0;
-                    }
-                    prevDateMap[record.date] += record[baseMetric] || 0;
-                });
-
-                let prevDailyTotals = [];
-                if (isMetersPerHead) {
-                    const prevHeadsMap = {};
-                    prevAttendanceData.forEach(att => {
-                        if (att.attendance === 'X') {
-                            if (!prevHeadsMap[att.date]) prevHeadsMap[att.date] = 0;
-                            prevHeadsMap[att.date] += 1;
-                        }
-                    });
-                    
-                    for (let d in prevHeadsMap) {
-                        const heads = prevHeadsMap[d];
-                        const m = prevDateMap[d] || 0;
-                        if (heads > 0) {
-                            prevDailyTotals.push(m / heads);
-                        }
-                    }
-                } else {
-                    prevDailyTotals = Object.values(prevDateMap);
-                }
-
-                if (prevDailyTotals.length > 0) {
-                    const prevSum = prevDailyTotals.reduce((sum, val) => sum + val, 0);
-                    previous4WeeksAvg = prevSum / prevDailyTotals.length;
-                }
-            } catch (error) {
-                console.log("Could not fetch previous 4 weeks data:", error);
-            }
-
-            if (groupingFilter === 'weekly') {
-                previous4WeeksAvg *= 5;
-            }
 
             if (currentChart) {
                 currentChart.destroy();
@@ -1563,8 +1454,6 @@
                 trendValues = new Array(values.length).fill(null);
             }
 
-            const avgValues = new Array(dates.length).fill(previous4WeeksAvg);
-
             const datasets = [{
                 label: metricLabels[metric],
                 data: values,
@@ -1587,20 +1476,6 @@
                     pointRadius: 0,
                     fill: false,
                     order: 0
-                });
-            }
-
-            if (previous4WeeksAvg > 0) {
-                datasets.push({
-                    label: 'Previous 4 Weeks Avg',
-                    data: avgValues,
-                    borderColor: '#28a745',
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    borderDash: [10, 5],
-                    pointRadius: 0,
-                    fill: false,
-                    order: 1
                 });
             }
 
@@ -1764,7 +1639,7 @@
             const absenceSummary = document.getElementById('absenceSummary');
             const absenceByDate = document.getElementById('absenceByDate');
 
-            let filteredAbsences = allAttendance.filter(a => a.attendance !== 'X');
+            let filteredAbsences = allAttendance;
             if (teamLeaderFilter !== 'all') {
                 filteredAbsences = filteredAbsences.filter(a => a.teamLeader === teamLeaderFilter);
             }
