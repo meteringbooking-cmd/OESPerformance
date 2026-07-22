@@ -1353,6 +1353,7 @@
             let allWeekdayDates = [];
             const dateMap = {};
             const headsMap = {};
+            const daysMap = {};
 
             if (groupingFilter === 'daily') {
                 for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
@@ -1383,7 +1384,10 @@
                     if (!allWeekdayDates.includes(mondayStr)) {
                         allWeekdayDates.push(mondayStr);
                         dateMap[mondayStr] = 0;
-                        if (isMetersPerHead) headsMap[mondayStr] = new Set();
+                        if (isMetersPerHead) {
+                            headsMap[mondayStr] = new Set();
+                            daysMap[mondayStr] = new Set();
+                        }
                     }
                 }
                 filteredData.forEach(record => {
@@ -1394,8 +1398,11 @@
                     let rMondayStr = 'W/C ' + rMonday.toISOString().split('T')[0];
                     if (dateMap.hasOwnProperty(rMondayStr)) {
                         dateMap[rMondayStr] += record[baseMetric] || 0;
-                        if (isMetersPerHead && record[baseMetric] > 0) {
-                            headsMap[rMondayStr].add(record.engineerName);
+                        if (isMetersPerHead) {
+                            daysMap[rMondayStr].add(record.date);
+                            if (record[baseMetric] > 0) {
+                                headsMap[rMondayStr].add(record.engineerName);
+                            }
                         }
                     }
                 });
@@ -1405,7 +1412,16 @@
             const values = dates.map(date => {
                 if (isMetersPerHead) {
                     const heads = headsMap[date].size;
-                    return heads > 0 ? dateMap[date] / heads : 0;
+                    let val = heads > 0 ? dateMap[date] / heads : 0;
+                    
+                    if (groupingFilter === 'weekly') {
+                        const workingDays = daysMap[date].size;
+                        if (workingDays > 0) {
+                            val = val / workingDays;
+                        }
+                    }
+                    
+                    return val;
                 }
                 return dateMap[date];
             });
