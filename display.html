@@ -22,7 +22,7 @@
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 1400px;
+            max-width: 98%;
             margin: 0 auto;
             padding: 40px;
         }
@@ -770,6 +770,10 @@
                 <select id="chartFilter" onchange="updateChart()">
                     <option value="all">All Engineers</option>
                 </select>
+                <select id="groupingFilter" onchange="updateChart()">
+                    <option value="daily">Daily View</option>
+                    <option value="weekly">Weekly View</option>
+                </select>
             </div>
             <canvas id="chartCanvas"></canvas>
             
@@ -1327,6 +1331,7 @@
             const metric = currentView;
             const engineerFilter = document.getElementById('chartFilter').value;
             const teamLeaderFilter = document.getElementById('teamLeaderFilter').value;
+            const groupingFilter = document.getElementById('groupingFilter') ? document.getElementById('groupingFilter').value : 'daily';
 
             let filteredData = allData;
             if (teamLeaderFilter !== 'all') {
@@ -1340,25 +1345,48 @@
             const endDate = document.getElementById('endDate').value;
             const start = new Date(startDate);
             const end = new Date(endDate);
-            const allWeekdayDates = [];
             
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const dayOfWeek = d.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                    allWeekdayDates.push(d.toISOString().split('T')[0]);
-                }
-            }
-
+            let allWeekdayDates = [];
             const dateMap = {};
-            allWeekdayDates.forEach(date => {
-                dateMap[date] = 0;
-            });
-            
-            filteredData.forEach(record => {
-                if (dateMap.hasOwnProperty(record.date)) {
-                    dateMap[record.date] += record[metric] || 0;
+
+            if (groupingFilter === 'daily') {
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        allWeekdayDates.push(d.toISOString().split('T')[0]);
+                    }
                 }
-            });
+                allWeekdayDates.forEach(date => {
+                    dateMap[date] = 0;
+                });
+                filteredData.forEach(record => {
+                    if (dateMap.hasOwnProperty(record.date)) {
+                        dateMap[record.date] += record[metric] || 0;
+                    }
+                });
+            } else {
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    let dCopy = new Date(d);
+                    let day = dCopy.getDay();
+                    let diff = dCopy.getDate() - day + (day === 0 ? -6 : 1);
+                    let monday = new Date(dCopy.setDate(diff));
+                    let mondayStr = 'W/C ' + monday.toISOString().split('T')[0];
+                    if (!allWeekdayDates.includes(mondayStr)) {
+                        allWeekdayDates.push(mondayStr);
+                        dateMap[mondayStr] = 0;
+                    }
+                }
+                filteredData.forEach(record => {
+                    let rDate = new Date(record.date);
+                    let rDay = rDate.getDay();
+                    let rDiff = rDate.getDate() - rDay + (rDay === 0 ? -6 : 1);
+                    let rMonday = new Date(rDate.setDate(rDiff));
+                    let rMondayStr = 'W/C ' + rMonday.toISOString().split('T')[0];
+                    if (dateMap.hasOwnProperty(rMondayStr)) {
+                        dateMap[rMondayStr] += record[metric] || 0;
+                    }
+                });
+            }
 
             const dates = allWeekdayDates;
             const values = dates.map(date => dateMap[date]);
@@ -1406,6 +1434,10 @@
                 }
             } catch (error) {
                 console.log("Could not fetch previous 4 weeks data:", error);
+            }
+
+            if (groupingFilter === 'weekly') {
+                previous4WeeksAvg *= 5;
             }
 
             if (currentChart) {
