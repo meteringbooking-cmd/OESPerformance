@@ -248,7 +248,10 @@ Adam AyubSBB2 6NF | PVD | LIVE"></textarea>
   <div class="card" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
     <div class="card-title">
       <span>Database Records</span>
-      <button class="btn btn-ghost" id="refreshBtn" style="padding: 6px 12px; font-size: 11px;">↻ Refresh</button>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-ghost" id="exportCsvBtn" style="padding: 6px 12px; font-size: 11px;">⬇ Export CSV</button>
+        <button class="btn btn-ghost" id="refreshBtn" style="padding: 6px 12px; font-size: 11px;">↻ Refresh</button>
+      </div>
     </div>
     <div class="grid-header">
       <div>Resource</div>
@@ -300,6 +303,8 @@ function escapeHtml(unsafe) {
   return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+let currentRecords = [];
+
 async function loadData() {
   const list = $('dataList');
   list.innerHTML = '<div class="empty-state">Loading records...</div>';
@@ -310,11 +315,13 @@ async function loadData() {
     
     if (records.length === 0) {
       list.innerHTML = '<div class="empty-state">No engineers found in the database.</div>';
+      currentRecords = [];
       return;
     }
     
     // Sort alphabetically by resource
     records.sort((a, b) => (a.Resource || '').localeCompare(b.Resource || ''));
+    currentRecords = records;
     
     list.innerHTML = records.map(r => {
       const status = r['Current status'] || 'Unknown';
@@ -583,10 +590,50 @@ async function processDailyJobs() {
   }
 }
 
+function exportToCSV() {
+  if (!currentRecords || currentRecords.length === 0) {
+    toast('No data to export', true);
+    return;
+  }
+  
+  const headers = ['Resource', 'Status', 'Employer', 'Level', 'Postcode', 'Avg Jobs', 'Info'];
+  const rows = currentRecords.map(r => {
+    const status = r['Current status'] || 'Unknown';
+    const jobValuesObj = r.jobValues || {};
+    const values = Object.values(jobValuesObj).filter(v => v >= 1);
+    let avgVal = '-';
+    if (values.length > 0) {
+      const sum = values.reduce((a, b) => a + b, 0);
+      avgVal = (sum / values.length).toFixed(1);
+    }
+    
+    return [
+      r.Resource || '',
+      status,
+      r.employer || '',
+      r.Level || '',
+      r.Postcode || '',
+      avgVal,
+      r.AdditionalInfo || ''
+    ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
+  });
+  
+  const csvContent = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.setAttribute('href', url);
+  a.setAttribute('download', `Sureserve_Engineers_${new Date().toISOString().slice(0,10)}.csv`);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 $('uploadBtn').addEventListener('click', processAndUpload);
 $('uploadLevelBtn').addEventListener('click', processLevelLocation);
 $('uploadJobBtn').addEventListener('click', processDailyJobs);
 $('refreshBtn').addEventListener('click', loadData);
+$('exportCsvBtn').addEventListener('click', exportToCSV);
 
 const todayStr = new Date().toISOString().slice(0, 10);
 $('jobDate').value = todayStr;
