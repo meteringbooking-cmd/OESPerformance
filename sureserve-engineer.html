@@ -55,13 +55,17 @@ body::before {
 .header-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
 
 .main {
-  position: relative; z-index: 1;
-  padding: 30px 24px; max-width: 1200px; margin: 0 auto;
-  display: grid; grid-template-columns: 1fr 2fr; gap: 24px;
+  height: calc(100vh - 64px);
+  padding: 20px 24px; max-width: 1600px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 20px;
 }
-
-@media(max-width: 900px) {
-  .main { grid-template-columns: 1fr; }
+.uploads-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;
+  flex-shrink: 0;
+}
+@media(max-width: 1000px) {
+  .uploads-grid { grid-template-columns: 1fr; }
+  .main { height: auto; }
 }
 
 .card {
@@ -79,7 +83,7 @@ body::before {
 }
 
 .paste-area {
-  width: 100%; height: 200px;
+  width: 100%; height: 120px;
   background: var(--bg4);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -182,7 +186,7 @@ body::before {
 </header>
 
 <div class="main">
-  <div style="display:flex; flex-direction:column; gap:24px;">
+  <div class="uploads-grid">
   <!-- Upload Section -->
   <div class="card">
     <div class="card-title">Upload Data</div>
@@ -241,12 +245,9 @@ Adam AyubSBB2 6NF | PVD | LIVE"></textarea>
   </div>
 
   <!-- Display Section -->
-  <div class="card">
+  <div class="card" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
     <div class="card-title">
-      <div style="display: flex; gap: 16px; align-items: center;">
-        <span>Database Records</span>
-        <input type="date" id="viewDate" style="background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:4px 8px; border-radius:4px; font-size:11px; outline:none; font-family:var(--sans);">
-      </div>
+      <span>Database Records</span>
       <button class="btn btn-ghost" id="refreshBtn" style="padding: 6px 12px; font-size: 11px;">↻ Refresh</button>
     </div>
     <div class="grid-header">
@@ -255,10 +256,10 @@ Adam AyubSBB2 6NF | PVD | LIVE"></textarea>
       <div>Employer</div>
       <div>Level</div>
       <div>Postcode</div>
-      <div>Jobs (<span id="viewDateLabel"></span>)</div>
+      <div>Avg Jobs</div>
       <div>Info</div>
     </div>
-    <div id="dataList" style="display: flex; flex-direction: column;">
+    <div id="dataList" style="display: flex; flex-direction: column; overflow-y: auto; flex: 1; padding-right: 8px;">
       <div class="empty-state">Loading records...</div>
     </div>
   </div>
@@ -319,8 +320,13 @@ async function loadData() {
       const status = r['Current status'] || 'Unknown';
       const statusClass = status.toLowerCase().includes('active') && !status.toLowerCase().includes('inactive') ? 'status-active' : 'status-inactive';
       
-      const selectedDate = $('viewDate') ? $('viewDate').value : new Date().toISOString().slice(0, 10);
-      const jobVal = (r.jobValues && r.jobValues[selectedDate] !== undefined) ? r.jobValues[selectedDate] : '-';
+      const jobValuesObj = r.jobValues || {};
+      const values = Object.values(jobValuesObj).filter(v => v >= 1);
+      let avgVal = '-';
+      if (values.length > 0) {
+        const sum = values.reduce((a, b) => a + b, 0);
+        avgVal = (sum / values.length).toFixed(1);
+      }
       
       return `
         <div class="grid-row">
@@ -329,7 +335,7 @@ async function loadData() {
           <div style="color: var(--muted);">${escapeHtml(r.employer || 'N/A')}</div>
           <div><span class="badge badge-level">${escapeHtml(r.Level || '')}</span></div>
           <div style="font-family: var(--mono);">${escapeHtml(r.Postcode || '')}</div>
-          <div style="font-weight: 600; color: var(--accent);">${escapeHtml(String(jobVal))}</div>
+          <div style="font-weight: 600; color: var(--accent);">${escapeHtml(String(avgVal))}</div>
           <div style="color: var(--muted); font-size: 11px;">${escapeHtml(r.AdditionalInfo || '')}</div>
         </div>
       `;
@@ -565,8 +571,6 @@ async function processDailyJobs() {
     toast(`Successfully uploaded jobs for ${successCount} engineers!`);
     $('pasteJobArea').value = '';
     
-    $('viewDate').value = dateStr;
-    $('viewDateLabel').textContent = dateStr;
     loadData();
     
   } catch (e) {
@@ -584,16 +588,8 @@ $('uploadLevelBtn').addEventListener('click', processLevelLocation);
 $('uploadJobBtn').addEventListener('click', processDailyJobs);
 $('refreshBtn').addEventListener('click', loadData);
 
-if ($('viewDate')) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  $('viewDate').value = todayStr;
-  $('jobDate').value = todayStr;
-  $('viewDateLabel').textContent = todayStr;
-  $('viewDate').addEventListener('change', () => {
-    $('viewDateLabel').textContent = $('viewDate').value;
-    loadData();
-  });
-}
+const todayStr = new Date().toISOString().slice(0, 10);
+$('jobDate').value = todayStr;
 
 // Initial load
 loadData();
