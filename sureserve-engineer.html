@@ -110,13 +110,13 @@ body::before {
 .btn-ghost:hover { border-color: var(--accent); }
 
 .grid-header {
-  display: grid; grid-template-columns: 1.5fr 1fr 1.2fr 0.6fr 1fr 1.5fr;
+  display: grid; grid-template-columns: 1.5fr 1fr 1.2fr 0.6fr 1fr 0.8fr 1.5fr;
   background: var(--bg3); border-radius: 8px;
   padding: 10px 14px; font-size: 10px; font-weight: 600;
   letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
 }
 .grid-row {
-  display: grid; grid-template-columns: 1.5fr 1fr 1.2fr 0.6fr 1fr 1.5fr;
+  display: grid; grid-template-columns: 1.5fr 1fr 1.2fr 0.6fr 1fr 0.8fr 1.5fr;
   padding: 12px 14px; border-bottom: 1px solid var(--border2);
   font-size: 13px; align-items: center;
   transition: background .15s;
@@ -220,12 +220,33 @@ Adam AyubSBB2 6NF | PVD | LIVE"></textarea>
       <span class="btn-text">Extract & Upload to Firebase</span>
     </button>
   </div>
+
+  <!-- Daily Job Values Section -->
+  <div class="card">
+    <div class="card-title">Upload Daily Jobs</div>
+    <div style="font-size: 12px; color: var(--muted); line-height: 1.5;">
+      Paste your daily schedule text below. Select a date to calculate and store the total job value assigned to each engineer.
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <label for="jobDate" style="font-size: 12px; font-weight: 600;">Assign to Date:</label>
+      <input type="date" id="jobDate" style="background:var(--bg4); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; font-family:var(--sans); font-size:13px; outline:none;">
+    </div>
+    <textarea id="pasteJobArea" class="paste-area" placeholder="Adam AyubSBB2 6NF | PVD | LIVEShow Warning: Timeline Validation Errors..."></textarea>
+    
+    <button class="btn btn-accent" id="uploadJobBtn">
+      <div class="loader"></div>
+      <span class="btn-text">Calculate & Upload to Firebase</span>
+    </button>
+  </div>
   </div>
 
   <!-- Display Section -->
   <div class="card">
     <div class="card-title">
-      <span>Database Records</span>
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <span>Database Records</span>
+        <input type="date" id="viewDate" style="background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:4px 8px; border-radius:4px; font-size:11px; outline:none; font-family:var(--sans);">
+      </div>
       <button class="btn btn-ghost" id="refreshBtn" style="padding: 6px 12px; font-size: 11px;">↻ Refresh</button>
     </div>
     <div class="grid-header">
@@ -234,6 +255,7 @@ Adam AyubSBB2 6NF | PVD | LIVE"></textarea>
       <div>Employer</div>
       <div>Level</div>
       <div>Postcode</div>
+      <div>Jobs (<span id="viewDateLabel"></span>)</div>
       <div>Info</div>
     </div>
     <div id="dataList" style="display: flex; flex-direction: column;">
@@ -297,6 +319,9 @@ async function loadData() {
       const status = r['Current status'] || 'Unknown';
       const statusClass = status.toLowerCase().includes('active') && !status.toLowerCase().includes('inactive') ? 'status-active' : 'status-inactive';
       
+      const selectedDate = $('viewDate') ? $('viewDate').value : new Date().toISOString().slice(0, 10);
+      const jobVal = (r.jobValues && r.jobValues[selectedDate] !== undefined) ? r.jobValues[selectedDate] : '-';
+      
       return `
         <div class="grid-row">
           <div style="font-weight: 500;">${escapeHtml(r.Resource || 'Unnamed')}</div>
@@ -304,6 +329,7 @@ async function loadData() {
           <div style="color: var(--muted);">${escapeHtml(r.employer || 'N/A')}</div>
           <div><span class="badge badge-level">${escapeHtml(r.Level || '')}</span></div>
           <div style="font-family: var(--mono);">${escapeHtml(r.Postcode || '')}</div>
+          <div style="font-weight: 600; color: var(--accent);">${escapeHtml(String(jobVal))}</div>
           <div style="color: var(--muted); font-size: 11px;">${escapeHtml(r.AdditionalInfo || '')}</div>
         </div>
       `;
@@ -467,9 +493,107 @@ async function processLevelLocation() {
   }
 }
 
+const JOB_VALUES = {
+  'dualfuelmetercommission': 1,
+  'dualfuelmeterexchange': 2,
+  'dualfuelnewconnection': 2,
+  'electricitymeterexchange': 1,
+  'electricitymeternewconnection': 1,
+  'electricitymeterremoval': 1,
+  'electricitymetercommission': 1,
+  'gasmetercommission': 1,
+  'gasmeterexchange': 1,
+  'gasmeternewconnection': 1,
+  'gasmeterremoval': 1,
+  'installconsumerdevice': 1,
+  'communicationshubexchange': 1,
+  'installisolatorswitch': 1,
+  'meteringaccuracytest': 1,
+  'siteinvestigation': 1,
+  'traceandlabel': 1,
+  'fusepull': 1,
+  'dualfuelremoval': 2
+};
+
+async function processDailyJobs() {
+  const text = $('pasteJobArea').value.trim();
+  const dateStr = $('jobDate').value;
+  if (!text) { toast('Please paste daily job data', true); return; }
+  if (!dateStr) { toast('Please select a date', true); return; }
+  
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  const btn = $('uploadJobBtn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  $('pasteJobArea').disabled = true;
+  
+  try {
+    let successCount = 0;
+    const promises = [];
+    const regex = /^(.*?)([A-Z])([A-Z0-9]{2,4}\s?[0-9][A-Z]{2})/;
+
+    for (let line of lines) {
+      let name = '';
+      const match = line.match(regex);
+      if (match) name = match[1].trim();
+      else continue;
+      
+      if (!name) continue;
+      
+      let totalValue = 0;
+      const normalizedStr = line.toLowerCase().replace(/\s+/g, '');
+      
+      for (const [job, val] of Object.entries(JOB_VALUES)) {
+        const occurrences = normalizedStr.split(job).length - 1;
+        if (occurrences > 0) {
+          totalValue += occurrences * val;
+        }
+      }
+      
+      const docId = name.replace(/[^a-zA-Z0-9_-]/g, '_'); 
+      const data = {
+        Resource: name,
+        jobValues: { [dateStr]: totalValue },
+        lastUpdated: new Date().toISOString()
+      };
+      
+      promises.push(setDoc(doc(db, COLLECTION_NAME, docId), data, { merge: true }));
+      successCount++;
+    }
+    
+    await Promise.all(promises);
+    toast(`Successfully uploaded jobs for ${successCount} engineers!`);
+    $('pasteJobArea').value = '';
+    
+    $('viewDate').value = dateStr;
+    $('viewDateLabel').textContent = dateStr;
+    loadData();
+    
+  } catch (e) {
+    console.error('Job upload error', e);
+    toast('An error occurred during job upload', true);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    $('pasteJobArea').disabled = false;
+  }
+}
+
 $('uploadBtn').addEventListener('click', processAndUpload);
 $('uploadLevelBtn').addEventListener('click', processLevelLocation);
+$('uploadJobBtn').addEventListener('click', processDailyJobs);
 $('refreshBtn').addEventListener('click', loadData);
+
+if ($('viewDate')) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  $('viewDate').value = todayStr;
+  $('jobDate').value = todayStr;
+  $('viewDateLabel').textContent = todayStr;
+  $('viewDate').addEventListener('change', () => {
+    $('viewDateLabel').textContent = $('viewDate').value;
+    loadData();
+  });
+}
 
 // Initial load
 loadData();
