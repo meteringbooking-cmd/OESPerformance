@@ -1167,7 +1167,7 @@
                 const prevDay=getPreviousWorkingDay(),dateStr=formatDateForQuery(prevDay);
                 document.getElementById('statsDate').textContent=`Stats for ${formatDate(prevDay)}`;
                 const staffSnap=await getDocs(collection(staffDb,"employees energise"));
-                let oes=19
+                let oes=11
                     ,sp=0,edf=0,bo=0;
                 staffSnap.forEach(doc=>{
                     const d=doc.data();if(d.leaveDate)return;
@@ -1275,6 +1275,8 @@ _setTxt('metersTarget', Math.round(oes*4));
         setInterval(loadDashboard, 300000);
 
         async function getEngineerCount(teamLeader) {
+            if (teamLeader === 'Scott Carson') return 13;
+            if (teamLeader === 'Scott Carson - Scot') return 4;
             const dataKey = dataTeamLeader(teamLeader);
             if(!dataKey) return oesEngineerCount;
             const staffSnap=await getDocs(collection(staffDb,"employees energise")); let count=0;
@@ -1283,7 +1285,8 @@ _setTxt('metersTarget', Math.round(oes*4));
                 const tl=(d['Team Leader']||d.teamLeader||'').trim();
                 const loc=d.Location||d.location||'';
                 const tlNorm=/^ftl\s*4$/i.test(tl)?'FTL 4':tl==='Tom Green'?'FTL 4':tl;
-                if(tlNorm===dataKey&&loc==='OES')count++;
+                const isMatch = (dataKey === 'Scott Carson') ? (tlNorm === 'Scott Carson' || tlNorm === 'Scott Carson - Scot') : (tlNorm === dataKey);
+                if(isMatch&&loc==='OES')count++;
             });
             return count;
         }
@@ -1300,6 +1303,12 @@ _setTxt('metersTarget', Math.round(oes*4));
                     getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
                 ]);
                 return mergeSnaps(s1, s2, s3);
+            } else if (dataKey === 'Scott Carson') {
+                const [s1, s2] = await Promise.all([
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","Scott Carson"))),
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==","Scott Carson - Scot")))
+                ]);
+                return mergeSnaps(s1, s2);
             } else if (dataKey) {
                 return getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
             } else {
@@ -1314,6 +1323,12 @@ _setTxt('metersTarget', Math.round(oes*4));
                     getDocs(query(collection(performanceDb,"aborts energise"),where("date","==",dateStr),where("teamLeader","==","Tom Green")))
                 ]);
                 return mergeSnaps(a1, a2, a3);
+            } else if (dataKey === 'Scott Carson') {
+                const [a1, a2] = await Promise.all([
+                    getDocs(query(collection(performanceDb,"aborts energise"),where("date","==",dateStr),where("teamLeader","==","Scott Carson"))),
+                    getDocs(query(collection(performanceDb,"aborts energise"),where("date","==",dateStr),where("teamLeader","==","Scott Carson - Scot")))
+                ]);
+                return mergeSnaps(a1, a2);
             } else if (dataKey) {
                 return getDocs(query(collection(performanceDb,"aborts energise"),where("date","==",dateStr),where("teamLeader","==",dataKey)));
             } else {
@@ -1411,17 +1426,16 @@ _setTxt('metersTarget', Math.round(oes*4));
             const btn=document.getElementById('exportPptxBtn');
             btn.disabled=true; btn.textContent='⏳ Fetching data...';
             try {
-                const pptx=new PptxGenJS(); pptx.layout='LAYOUT_16x9'; pptx.author='OES Performance System'; pptx.company='NGU'; pptx.title='OES Weekly Performance Report';
-                const teamLeaders=['Richard Wiecko','Scott Carson','Scott Carson - Scot','Stuart Whyte','Tom Green'];
+                const pptx=new PptxGenJS(); pptx.layout='LAYOUT_16x9'; pptx.author='Energise Performance System'; pptx.company='NGU'; pptx.title='Energise Weekly Performance Report';
+                const teamLeaders=['Richard Wiecko','Scott Carson','Stuart Whyte','Tom Green'];
                 
                 btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx, wcDate);
                 btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx, wcDate);
-                btn.textContent='⏳ SP Completion...'; await createSPSlide(pptx, wcDate);
                 for(let i=0;i<teamLeaders.length;i++){btn.textContent=`⏳ ${teamLeaders[i]}...`;await createTeamSlide(pptx, teamLeaders[i], wcDate);}
                 
                 btn.textContent='⏳ Saving...'; 
                 const niceDateStr = `${wcDate.getFullYear()}-${String(wcDate.getMonth()+1).padStart(2,'0')}-${String(wcDate.getDate()).padStart(2,'0')}`;
-                await pptx.writeFile({fileName:`OES_Performance_WC_${niceDateStr}.pptx`});
+                await pptx.writeFile({fileName:`Energise_Performance_WC_${niceDateStr}.pptx`});
                 
                 btn.textContent='✅ Done!'; setTimeout(()=>{btn.textContent='📊 Export PowerPoint';btn.disabled=false;},2500);
             }catch(err){console.error('Export error:',err);alert('Error generating PowerPoint: '+err.message);btn.textContent='📊 Export PowerPoint';btn.disabled=false;}
@@ -1430,7 +1444,7 @@ _setTxt('metersTarget', Math.round(oes*4));
         async function createOverallSlide1(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Meters, Completion & Attendance', 'Selected Week vs Prior Week  ·  ' + todayLabel);
+            addHeader(pptx, slide, 'Energise Overall Performance  —  Meters, Completion & Attendance', 'Selected Week vs Prior Week  ·  ' + todayLabel);
             
             const currentWeekDates = getWorkingDaysForWeek(wcDate);
             const priorMon = new Date(wcDate); priorMon.setDate(wcDate.getDate() - 7);
@@ -1464,7 +1478,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                 {name:'This Week',labels:perf.dates,values:perf.meters},
                 {name:'Prior Week',labels:perf.dates,values:priorPerf.meters}
             ],{x:cols[0],y:chartY,w:cw,h:chartH,barDir:'col',barGrouping:'clustered',chartColors:['1D6FA4','5A7FA4'],showLegend:true,legendPos:'b',legendFontSize:8,legendColor:'CCCCCC',showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:9,dataLabelColor:'FFFFFF',valAxisMaxVal:metersMax});
-            slide.addText('Target: '+dailyTarget.toLocaleString()+' meters/day  (engineers × 6 × 90%)',{x:cols[0],y:chartY+chartH+0.03,w:cw,h:0.18,fontSize:8,color:'F59E0B',fontFace:'Calibri',italic:true,margin:0});
+            slide.addText('Target: '+dailyTarget.toLocaleString()+' meters/day  (4 per engineer)',{x:cols[0],y:chartY+chartH+0.03,w:cw,h:0.18,fontSize:8,color:'F59E0B',fontFace:'Calibri',italic:true,margin:0});
 
             const compDiff = avgComp - priorAvgComp;
             const compDiffStr = (compDiff>=0?'▲':'▼')+Math.abs(compDiff).toFixed(1)+'% WoW';
@@ -1485,7 +1499,7 @@ _setTxt('metersTarget', Math.round(oes*4));
         async function createOverallSlide2(pptx, wcDate) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'OES Overall Performance  —  Aborts', 'Selected Week vs Prior Week  ·  ' + todayLabel);
+            addHeader(pptx, slide, 'Energise Overall Performance  —  Aborts', 'Selected Week vs Prior Week  ·  ' + todayLabel);
             
             const currentWeekDates = getWorkingDaysForWeek(wcDate);
             const priorMon = new Date(wcDate); priorMon.setDate(wcDate.getDate() - 7);
@@ -1526,70 +1540,12 @@ _setTxt('metersTarget', Math.round(oes*4));
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
 
-        async function createSPSlide(pptx, wcDate) {
-            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            addHeader(pptx, slide, 'Scottish Power  —  Completion Rate', 'Selected Week  ·  ' + todayLabel);
 
-            const teamsSnap = await getDocs(collection(performanceDb, 'SP - Teams'));
-            const knownEngineers = new Set();
-            teamsSnap.forEach(d => {
-                const name = (d.data().engineerName || '').trim().toLowerCase();
-                if (name) knownEngineers.add(name);
-            });
-
-            const dates = getWorkingDaysForWeek(wcDate);
-            const dayLabels=[], totalArr=[], completedArr=[], pctArr=[], abortArr=[];
-
-            for (const date of dates) {
-                const ds = formatDateForQuery(date);
-                const snap = await getDocs(query(collection(performanceDb, 'SP Submitted Data'), where('submissionDate', '==', ds)));
-                let total=0, completed=0, aborts=0;
-                snap.forEach(d => {
-                    const data=d.data();
-                    const eng=(data.outcomeResource||'').trim().toLowerCase();
-                    const status=(data.jobStatus||'').trim().toLowerCase();
-                    if (!knownEngineers.has(eng)) return;
-                    if (status==='completed'||status==='full abort') {
-                        total++;
-                        if (status==='completed') completed++;
-                        if (status==='full abort') aborts++;
-                    }
-                });
-                dayLabels.push(formatDate(date));
-                totalArr.push(total); completedArr.push(completed); abortArr.push(aborts);
-                pctArr.push(total>0?parseFloat(((completed/total)*100).toFixed(1)):0);
-            }
-
-            const avgPct=avg(pctArr);
-            const totalJobs=totalArr.reduce((a,b)=>a+b,0);
-            const totalCompleted=completedArr.reduce((a,b)=>a+b,0);
-            const totalAborts=abortArr.reduce((a,b)=>a+b,0);
-            const pctColor=avgPct>=90?'10B981':avgPct>=80?'F59E0B':'EF4444';
-            const totalMax=niceMax(Math.max(...totalArr));
-            const abortMax=niceMax(Math.max(...abortArr,1));
-            const cols=[0.25,3.45,6.65],cw=3.0,statY=0.83,labelY=statY+0.52,chartY=labelY+0.24,chartH=2.85;
-
-            addStatStrip(slide,[{label:'5-Day Avg',value:avgPct.toFixed(1)+'%',color:pctColor},{label:'Best Day',value:Math.max(...pctArr).toFixed(1)+'%',color:'FFFFFF'},{label:'Worst Day',value:Math.min(...pctArr).toFixed(1)+'%',color:'FFFFFF'}],cols[0],statY,cw);
-            slide.addText('Completion Rate %',{x:cols[0],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'10B981',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Completion %',labels:dayLabels,values:pctArr}],{x:cols[0],y:chartY,w:cw,h:chartH,barDir:'col',chartColors:['0E7C5B'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',valAxisMaxVal:100});
-            slide.addText('Target: 90% completion rate',{x:cols[0],y:chartY+chartH+0.03,w:cw,h:0.18,fontSize:8,color:'F59E0B',fontFace:'Calibri',italic:true,margin:0});
-
-            addStatStrip(slide,[{label:'5-Day Total Jobs',value:totalJobs.toString(),color:'FFFFFF'},{label:'5-Day Completed',value:totalCompleted.toString(),color:'10B981'},{label:'5-Day Full Aborts',value:totalAborts.toString(),color:'F59E0B'}],cols[1],statY,cw);
-            slide.addText('Jobs: Total vs Completed',{x:cols[1],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'00D2FF',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Total Jobs',labels:dayLabels,values:totalArr},{name:'Completed',labels:dayLabels,values:completedArr}],{x:cols[1],y:chartY,w:cw,h:chartH,barDir:'col',barGrouping:'clustered',chartColors:['1D6FA4','10B981'],showLegend:true,legendPos:'b',legendFontSize:9,legendColor:'CCCCCC',showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:10,dataLabelColor:'FFFFFF',valAxisMaxVal:totalMax});
-
-            addStatStrip(slide,[{label:'5-Day Total',value:totalAborts.toString(),color:totalAborts===0?'10B981':'FFFFFF'},{label:'Highest Day',value:Math.max(...abortArr).toString(),color:'EF4444'},{label:'Daily Avg',value:(Math.round(totalAborts/5*10)/10).toFixed(1),color:'FFFFFF'}],cols[2],statY,cw);
-            slide.addText('Full Aborts',{x:cols[2],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'EF4444',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Full Aborts',labels:dayLabels,values:abortArr}],{x:cols[2],y:chartY,w:cw,h:chartH,barDir:'col',chartColors:['9B2335'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',valAxisMaxVal:abortMax});
-            addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
-        }
 
         async function createTeamSlide(pptx, teamLeader, wcDate) {
             const slide=pptx.addSlide(); slide.background={color:'131F2E'};
             
             let displayName = teamLeader;
-            if (teamLeader === 'Scott Carson') displayName = 'Scott Carson - NE';
             
             const todayLabel = 'W/C ' + wcDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
             addHeader(pptx,slide,displayName,'Selected Week vs Prior Week  ·  '+todayLabel);
@@ -1689,14 +1645,13 @@ _setTxt('metersTarget', Math.round(oes*4));
 
             try {
                 const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_16x9'; 
-                pptx.author = 'OES Performance System'; pptx.company = 'NGU'; 
-                pptx.title = 'OES Trend Performance Report';
+                pptx.author = 'Energise Performance System'; pptx.company = 'NGU'; 
+                pptx.title = 'Energise Trend Performance Report';
                 
-                const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Scott Carson - Scot', 'Stuart Whyte', 'Tom Green'];
+                const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Stuart Whyte', 'Tom Green'];
                 
                 btn.textContent = '⏳ Overall 1...'; await createLongOverallSlide1(pptx, startDate, endDate, bucketType);
                 btn.textContent = '⏳ Overall 2...'; await createLongOverallSlide2(pptx, startDate, endDate, bucketType);
-                btn.textContent = '⏳ SP Completion...'; await createLongSPSlide(pptx, startDate, endDate, bucketType);
                 
                 for(let i=0; i<teamLeaders.length; i++) {
                     btn.textContent = `⏳ ${teamLeaders[i]}...`;
@@ -1704,7 +1659,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                 }
                 
                 btn.textContent = '⏳ Saving...'; 
-                await pptx.writeFile({fileName: `OES_Trend_${startStr}_to_${endStr}.pptx`});
+                await pptx.writeFile({fileName: `Energise_Trend_${startStr}_to_${endStr}.pptx`});
                 
                 btn.textContent = '✅ Done!'; 
                 setTimeout(() => { btn.textContent = '📅 Long Export'; btn.disabled = false; }, 2500);
@@ -1742,13 +1697,14 @@ _setTxt('metersTarget', Math.round(oes*4));
             const endStr = formatDateForQuery(endDate);
             const dataKey = teamLeader ? dataTeamLeader(teamLeader) : null;
 
-            const perfSnap = await getDocs(query(collection(performanceDb, "performance energise"), where("date", ">=", startStr), where("date", "<=", endStr)));
+            const perfSnap = await getDocs(query(collection(performanceDb, "performance - Energise"), where("date", ">=", startStr), where("date", "<=", endStr)));
             perfSnap.forEach(d => {
                 const data = d.data();
                 const tl = data.teamLeader;
                 let match = false;
                 if(!dataKey) match = true;
                 else if(dataKey === 'FTL 4' && (tl === 'FTL 4' || tl === 'FTL4' || tl === 'Tom Green')) match = true;
+                else if(dataKey === 'Scott Carson' && (tl === 'Scott Carson' || tl === 'Scott Carson - Scot')) match = true;
                 else if(tl === dataKey) match = true;
 
                 if(match) {
@@ -1771,6 +1727,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                 let match = false;
                 if(!dataKey) match = true;
                 else if(dataKey === 'FTL 4' && (tl === 'FTL 4' || tl === 'FTL4' || tl === 'Tom Green')) match = true;
+                else if(dataKey === 'Scott Carson' && (tl === 'Scott Carson' || tl === 'Scott Carson - Scot')) match = true;
                 else if(tl === dataKey) match = true;
 
                 if(match) {
@@ -1805,14 +1762,14 @@ _setTxt('metersTarget', Math.round(oes*4));
 
             let heads = oesEngineerCount;
             if (teamLeader === 'Scott Carson - Scot') heads = 4;
-            else if (teamLeader === 'Scott Carson') heads = 9;
+            else if (teamLeader === 'Scott Carson') heads = 13;
             else if (teamLeader) heads = await getEngineerCount(teamLeader);
 
             for(let [key, b] of buckets) {
                 if(b.workingDays === 0) continue; 
                 result.labels.push(key);
                 result.meters.push(b.meters);
-                const target = Math.round(heads * 6 * 0.9 * b.workingDays);
+                const target = Math.round(heads * 4 * b.workingDays);
                 result.targets.push(target);
                 result.vsTargetPct.push(target > 0 ? Math.round((b.meters/target)*1000)/10 : 0);
                 result.completion.push(b.jobs > 0 ? Math.round((b.completed/b.jobs)*1000)/10 : 0);
@@ -1831,7 +1788,7 @@ _setTxt('metersTarget', Math.round(oes*4));
         async function createLongOverallSlide1(pptx, startDate, endDate, bucketType) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
-            addHeader(pptx, slide, 'OES Overall Trend  —  Meters, Completion & Attendance', `Trending by ${bucketType}  ·  ${dateLabel}`);
+            addHeader(pptx, slide, 'Energise Overall Trend  —  Meters, Completion & Attendance', `Trending by ${bucketType}  ·  ${dateLabel}`);
             
             const perf = await getLongPeriodData(null, startDate, endDate, bucketType);
             
@@ -1865,7 +1822,7 @@ _setTxt('metersTarget', Math.round(oes*4));
         async function createLongOverallSlide2(pptx, startDate, endDate, bucketType) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
-            addHeader(pptx, slide, 'OES Overall Trend  —  Aborts', `Trending by ${bucketType}  ·  ${dateLabel}`);
+            addHeader(pptx, slide, 'Energise Overall Trend  —  Aborts', `Trending by ${bucketType}  ·  ${dateLabel}`);
             
             const perf = await getLongPeriodData(null, startDate, endDate, bucketType);
             const totalAborts = perf.aborts.reduce((a,b)=>a+b,0);
@@ -1891,95 +1848,12 @@ _setTxt('metersTarget', Math.round(oes*4));
             addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
         }
 
-        async function createLongSPSlide(pptx, startDate, endDate, bucketType) {
-            const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
-            const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
-            addHeader(pptx, slide, 'Scottish Power  —  Completion Rate', `Trending by ${bucketType}  ·  ${dateLabel}`);
 
-            const teamsSnap = await getDocs(collection(performanceDb, 'SP - Teams'));
-            const knownEngineers = new Set();
-            teamsSnap.forEach(d => { if ((d.data().engineerName || '').trim()) knownEngineers.add(d.data().engineerName.trim().toLowerCase()); });
-
-            const startStr = formatDateForQuery(startDate);
-            const endStr = formatDateForQuery(endDate);
-            
-            const buckets = new Map();
-            let curr = new Date(startDate);
-            while(curr <= endDate) {
-                if(isWorkingDay(curr)) {
-                    let key = '';
-                    if (bucketType === 'month') {
-                        key = formatMonth(curr);
-                    } else {
-                        const tempD = new Date(curr); 
-                        const day = tempD.getDay();
-                        const diff = tempD.getDate() - day + (day === 0 ? -6 : 1);
-                        tempD.setDate(diff);
-                        key = 'W/C ' + String(tempD.getDate()).padStart(2,'0') + '/' + String(tempD.getMonth()+1).padStart(2,'0');
-                    }
-                    if(!buckets.has(key)) buckets.set(key, { total:0, completed:0, aborts:0, dateStrs:[] });
-                    buckets.get(key).dateStrs.push(formatDateForQuery(curr));
-                }
-                curr.setDate(curr.getDate()+1);
-            }
-
-            const snap = await getDocs(query(collection(performanceDb, 'SP Submitted Data'), where('submissionDate', '>=', startStr), where('submissionDate', '<=', endStr)));
-            snap.forEach(d => {
-                const data = d.data();
-                const eng = (data.outcomeResource || '').trim().toLowerCase();
-                const status = (data.jobStatus || '').trim().toLowerCase();
-                if (!knownEngineers.has(eng)) return;
-
-                if (status === 'completed' || status === 'full abort') {
-                    for(let [k, b] of buckets) {
-                        if(b.dateStrs.includes(data.submissionDate)) {
-                            b.total++;
-                            if (status === 'completed') b.completed++;
-                            if (status === 'full abort') b.aborts++;
-                            break;
-                        }
-                    }
-                }
-            });
-
-            const labels=[], pctArr=[], totalArr=[], completedArr=[], abortArr=[];
-            for(let [key, b] of buckets) {
-                if(b.total === 0 && b.dateStrs.length === 0) continue;
-                labels.push(key);
-                pctArr.push(b.total > 0 ? parseFloat(((b.completed/b.total)*100).toFixed(1)) : 0);
-                totalArr.push(b.total);
-                completedArr.push(b.completed);
-                abortArr.push(b.aborts);
-            }
-
-            const avgPct=avg(pctArr);
-            const totalJobs=totalArr.reduce((a,b)=>a+b,0);
-            const totalCompleted=completedArr.reduce((a,b)=>a+b,0);
-            const totalAborts=abortArr.reduce((a,b)=>a+b,0);
-            const pctColor=avgPct>=90?'10B981':avgPct>=80?'F59E0B':'EF4444';
-            const totalMax=niceMax(Math.max(...totalArr, 0));
-            const abortMax=niceMax(Math.max(...abortArr, 1));
-            const cols=[0.25,3.45,6.65],cw=3.0,statY=0.83,labelY=statY+0.52,chartY=labelY+0.24,chartH=2.85;
-
-            addStatStrip(slide,[{label:'Period Avg',value:avgPct.toFixed(1)+'%',color:pctColor},{label:'Peak Period',value:Math.max(...pctArr, 0).toFixed(1)+'%',color:'FFFFFF'},{label:'Lowest Period',value:Math.min(...pctArr, 100).toFixed(1)+'%',color:'FFFFFF'}],cols[0],statY,cw);
-            slide.addText('Completion Rate %',{x:cols[0],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'10B981',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Completion %',labels:labels,values:pctArr}],{x:cols[0],y:chartY,w:cw,h:chartH,barDir:'col',chartColors:['0E7C5B'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',valAxisMaxVal:100});
-
-            addStatStrip(slide,[{label:'Total Jobs',value:totalJobs.toString(),color:'FFFFFF'},{label:'Completed',value:totalCompleted.toString(),color:'10B981'},{label:'Full Aborts',value:totalAborts.toString(),color:'F59E0B'}],cols[1],statY,cw);
-            slide.addText('Jobs: Total vs Completed',{x:cols[1],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'00D2FF',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Total Jobs',labels:labels,values:totalArr},{name:'Completed',labels:labels,values:completedArr}],{x:cols[1],y:chartY,w:cw,h:chartH,barDir:'col',barGrouping:'clustered',chartColors:['1D6FA4','10B981'],showLegend:true,legendPos:'b',legendFontSize:9,legendColor:'CCCCCC',showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:10,dataLabelColor:'FFFFFF',valAxisMaxVal:totalMax});
-
-            addStatStrip(slide,[{label:'Total Aborts',value:totalAborts.toString(),color:totalAborts===0?'10B981':'FFFFFF'},{label:'Peak Aborts',value:Math.max(...abortArr, 0).toString(),color:'EF4444'},{label:'Avg / Period',value:(totalAborts/Math.max(labels.length,1)).toFixed(1),color:'FFFFFF'}],cols[2],statY,cw);
-            slide.addText('Full Aborts',{x:cols[2],y:labelY,w:cw,h:0.22,fontSize:10,bold:true,color:'EF4444',fontFace:'Calibri',margin:0});
-            slide.addChart(pptx.charts.BAR,[{name:'Full Aborts',labels:labels,values:abortArr}],{x:cols[2],y:chartY,w:cw,h:chartH,barDir:'col',chartColors:['9B2335'],showLegend:false,showTitle:false,catAxisLabelColor:'8EAEC9',valAxisLabelColor:'8EAEC9',catAxisLabelFontSize:10,valAxisLabelFontSize:9,showValue:true,dataLabelFontSize:11,dataLabelColor:'FFFFFF',valAxisMaxVal:abortMax});
-            addCommentaryBox(pptx, slide, 0.25, 4.65, 9.5, 2.75);
-        }
 
         async function createLongTeamSlide(pptx, teamLeader, startDate, endDate, bucketType) {
             const slide = pptx.addSlide(); slide.background = { color: '131F2E' };
             
             let displayName = teamLeader;
-            if (teamLeader === 'Scott Carson') displayName = 'Scott Carson - NE';
             
             const dateLabel = startDate.toLocaleDateString('en-GB') + ' to ' + endDate.toLocaleDateString('en-GB');
             addHeader(pptx, slide, displayName, `Trending by ${bucketType}  ·  ${dateLabel}`);
