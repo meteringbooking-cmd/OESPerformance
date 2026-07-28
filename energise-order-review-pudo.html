@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pudo — Order Submissions</title>
+<meta name="description" content="Review and manage all Pudo Stock Order submissions">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  // ── Replace with your EmailJS public key (Account → API Keys) ──
+  emailjs.init('ziLnha91scpGjFABh');
+</script>
+<style>
+  :root {
+    --bg:         #f4f6f9;
+    --surface:    #ffffff;
+    --surface2:   #f0f2f5;
+    --border:     #d8dde6;
+    --border2:    #c4cad4;
+    --accent:     #1a56db;
+    --accent-lt:  #eff4ff;
+    --accent2:    #0ea5e9;
+    --text:       #111827;
+    --text-mid:   #374151;
+    --text-muted: #6b7280;
+    --green:      #16a34a;
+    --green-lt:   #f0fdf4;
+    --red:        #dc2626;
+    --red-lt:     #fef2f2;
+    --amber:      #d97706;
+    --amber-lt:   #fffbeb;
+    --radius:     8px;
+    --shadow:     0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md:  0 4px 16px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    gap: 20px;
+    box-shadow: var(--shadow);
+    flex-wrap: wrap;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 14px; }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .logo span { color: var(--accent); }
+
+  .page-tag {
+    background: var(--accent-lt);
+    border: 1px solid rgba(26,86,219,0.2);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .refresh-btn {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    color: var(--text-mid);
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    box-shadow: var(--shadow);
+  }
+  .refresh-btn:hover { background: var(--accent-lt); border-color: var(--accent); color: var(--accent); }
+  .refresh-btn svg { transition: transform 0.5s; }
+  .refresh-btn.loading svg { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── SUMMARY CARDS ──────────────────────────────────────── */
+  .summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    padding: 28px 36px 0;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: var(--shadow);
+  }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .stat-value {
+    font-family: 'DM Mono', monospace;
+    font-size: 32px;
+    font-weight: 500;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .stat-sub { font-size: 13px; color: var(--text-muted); }
+
+  /* ── FILTERS ────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 24px 36px 12px;
+  }
+
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 220px;
+  }
+  .search-wrap svg {
+    position: absolute; left: 12px; top: 50%;
+    transform: translateY(-50%); pointer-events: none; color: var(--text-muted);
+  }
+
+  input[type="search"], input[type="date"], select.filter-select {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 10px 14px 10px 38px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-shadow: var(--shadow);
+  }
+  input[type="date"] { padding-left: 14px; }
+  select.filter-select { padding-left: 14px; cursor: pointer; min-width: 160px; width: auto; }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,86,219,0.12); }
+  input[type="search"]::placeholder { color: var(--text-muted); }
+
+  .filter-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* ── ORDERS LIST ────────────────────────────────────────── */
+  .orders-wrap { padding: 8px 36px 48px; }
+
+  .state-box { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+  .state-box .icon { font-size: 52px; margin-bottom: 18px; opacity: 0.5; }
+  .state-box p { font-size: 16px; }
+
+  /* ── ORDER CARD ─────────────────────────────────────────── */
+  .order-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-shadow: var(--shadow);
+  }
+  .order-card:hover { border-color: var(--border2); box-shadow: var(--shadow-md); }
+  .order-card.expanded { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,86,219,0.1), var(--shadow-md); }
+
+  .order-card-head {
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .order-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1a56db 0%, #0ea5e9 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(26,86,219,0.3);
+  }
+
+  .order-meta { flex: 1; min-width: 0; }
+  .order-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .order-date {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .order-badges { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-items {
+    background: var(--accent-lt);
+    border: 1px solid rgba(26,86,219,0.2);
+    color: var(--accent);
+  }
+
+  .chevron {
+    color: var(--text-muted);
+    transition: transform 0.25s;
+    flex-shrink: 0;
+  }
+  .order-card.expanded .chevron { transform: rotate(180deg); }
+
+  /* ── EXPANDED ITEMS TABLE ───────────────────────────────── */
+  .order-items-wrapper {
+    overflow-x: auto;
+    width: 100%;
+  }
+  .order-items {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding: 0 22px 18px;
+    background: var(--surface);
+    overflow-x: auto;
+  }
+  .order-card.expanded .order-items { display: block; }
+
+  .items-table {
+    width: 100%;
+    min-width: 650px;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+  .items-table th {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    background: var(--surface2);
+  }
+  .items-table th:first-child { border-radius: 6px 0 0 0; }
+  .items-table th:last-child  { border-radius: 0 6px 0 0; }
+
+  .items-table td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    font-size: 14px;
+    color: var(--text-mid);
+  }
+  .items-table tr:last-child td { border-bottom: none; }
+  .items-table tr:hover td { background: var(--surface2); }
+
+  .item-name-cell { font-weight: 500; color: var(--text); font-size: 14px; }
+
+  .sku-mono {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .uom-pill {
+    display: inline-block;
+    background: #eff4ff;
+    border: 1px solid rgba(26,86,219,0.2);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  /* Inline qty edit */
+  .qty-cell { white-space: nowrap; }
+  .qty-display {
+    font-family: 'DM Mono', monospace;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background: var(--surface2);
+    display: inline-block;
+    min-width: 44px;
+    text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .qty-display:hover { border-color: var(--accent); background: var(--accent-lt); }
+  .qty-edit-input {
+    font-family: 'DM Mono', monospace;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    width: 64px;
+    text-align: center;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    padding: 4px 8px;
+    outline: none;
+    background: var(--accent-lt);
+    box-shadow: 0 0 0 3px rgba(26,86,219,0.12);
+    -moz-appearance: textfield;
+  }
+  .qty-edit-input::-webkit-inner-spin-button,
+  .qty-edit-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  /* Row-level delete */
+  .btn-row-delete {
+    background: none;
+    border: 1px solid var(--border2);
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    padding: 0;
+  }
+  .btn-row-delete:hover { background: var(--red-lt); border-color: var(--red); color: var(--red); }
+
+  /* ── ORDER ACTIONS ──────────────────────────────────────── */
+  .order-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 14px;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .btn-delete {
+    background: var(--red-lt);
+    border: 1px solid rgba(220,38,38,0.25);
+    color: var(--red);
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-delete:hover { background: #fee2e2; border-color: var(--red); }
+
+  .btn-save {
+    background: var(--green-lt);
+    border: 1px solid rgba(22,163,74,0.25);
+    color: var(--green);
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-save:hover { background: #dcfce7; border-color: var(--green); }
+  .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-process {
+    background: #1a56db;
+    border: 1px solid #1a56db;
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    margin-left: auto;
+  }
+  .btn-process:hover { background: #1648c0; transform: translateY(-1px); }
+  .btn-process:disabled { background: #93a8d6; border-color: #93a8d6; cursor: not-allowed; transform: none; }
+  .btn-process.sent {
+    background: var(--green);
+    border-color: var(--green);
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* ── CONFIRM DIALOG ─────────────────────────────────────── */
+  .confirm-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .confirm-overlay.open { display: flex; }
+  .confirm-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px;
+    width: 380px;
+    max-width: 92vw;
+    text-align: center;
+    box-shadow: var(--shadow-md);
+  }
+  .confirm-box h3 { font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+  .confirm-box p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-bottom: 26px; }
+  .confirm-btns { display: flex; gap: 10px; }
+  .confirm-btns button { flex: 1; padding: 11px; border-radius: var(--radius); font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: background 0.15s; }
+  .confirm-cancel { background: var(--surface2); border-color: var(--border2) !important; color: var(--text-mid); }
+  .confirm-cancel:hover { background: var(--bg); }
+  .confirm-delete { background: var(--red); color: #fff; }
+  .confirm-delete:hover { background: #b91c1c; }
+
+  /* ── TOAST ──────────────────────────────────────────────── */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface);
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 13px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+  }
+  .toast.error { border-color: var(--red); color: var(--red); }
+  .toast.show   { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── PROCESSED SECTION ───────────────────────────────────── */
+  .processed-section {
+    padding: 0 36px 48px;
+  }
+  .processed-section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    padding: 14px 0;
+    border-top: 2px solid var(--border);
+    margin-bottom: 0;
+  }
+  .processed-section-head:hover .processed-toggle-label { color: var(--green); }
+  .processed-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green); flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+  }
+  .processed-toggle-label {
+    font-size: 13px; font-weight: 700; color: var(--text-muted);
+    letter-spacing: 0.04em; transition: color 0.15s; flex: 1;
+  }
+  .processed-count-badge {
+    background: var(--green-lt); border: 1px solid rgba(22,163,74,0.25);
+    color: var(--green); font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .processed-chevron {
+    color: var(--text-muted); transition: transform 0.25s;
+  }
+  .processed-section.open .processed-chevron { transform: rotate(180deg); }
+  .processed-list { display: none; padding-top: 12px; }
+  .processed-section.open .processed-list { display: block; }
+
+  .processed-card {
+    background: var(--surface);
+    border: 1px solid rgba(22,163,74,0.2);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    opacity: 0.85;
+    transition: opacity 0.15s;
+  }
+  .processed-card:hover { opacity: 1; }
+  .processed-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--green) 0%, #86efac 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+    color: #fff; flex-shrink: 0;
+  }
+  .processed-meta { flex: 1; min-width: 0; }
+  .processed-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .processed-dates { font-size: 12px; color: var(--text-muted); }
+  .processed-badge {
+    background: var(--green-lt); border: 1px solid rgba(22,163,74,0.25);
+    color: var(--green); font-size: 11px; font-weight: 700;
+    padding: 4px 10px; border-radius: 20px; display: flex; align-items: center; gap: 5px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  @keyframes slideOut {
+    from { opacity: 1; transform: translateX(0); max-height: 200px; }
+    to   { opacity: 0; transform: translateX(40px); max-height: 0; padding: 0; margin: 0; }
+  }
+  .order-card.processing-out {
+    animation: slideOut 0.4s ease forwards;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* ── RESPONSIVE ─────────────────────────────────────── */
+  @media (max-width: 700px) {
+    header, .toolbar, .orders-wrap, .summary-bar, .processed-section { padding-left: 16px; padding-right: 16px; }
+    .order-badges { flex-direction: column; gap: 4px; align-items: flex-start; }
+    .summary-bar { grid-template-columns: 1fr; }
+    .items-table { font-size: 13px; overflow-x: auto; display: block; }
+    .order-meta { width: calc(100% - 62px); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">energise<span>.</span></div>
+    <span class="page-tag">Order Submissions</span>
+  </div>
+  <button class="refresh-btn" id="refreshBtn" onclick="loadOrders()">
+    <svg id="refreshIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+    Refresh
+  </button>
+</header>
+
+<div class="summary-bar">
+  <div class="stat-card">
+    <div class="stat-label">Total Orders</div>
+    <div class="stat-value" id="statTotal">—</div>
+    <div class="stat-sub">all time</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Unique Submitters</div>
+    <div class="stat-value" id="statPeople">—</div>
+    <div class="stat-sub">individuals</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Line Items</div>
+    <div class="stat-value" id="statItems">—</div>
+    <div class="stat-sub">across all orders</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Latest Order</div>
+    <div class="stat-value" id="statLatest" style="font-size:17px;margin-top:6px;">—</div>
+    <div class="stat-sub" id="statLatestDate">—</div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input type="search" id="searchInput" placeholder="Search by submitter name…" oninput="applyFilters()">
+  </div>
+  <input type="date" id="dateFrom" title="From date" onchange="applyFilters()">
+  <input type="date" id="dateTo"   title="To date"   onchange="applyFilters()">
+  <select class="filter-select" id="sortOrder" onchange="applyFilters()">
+    <option value="desc">Newest first</option>
+    <option value="asc">Oldest first</option>
+  </select>
+  <span class="filter-count" id="filterCount"></span>
+</div>
+
+<div class="orders-wrap" id="ordersWrap">
+  <div class="state-box">
+    <div class="icon">⏳</div>
+    <p>Loading orders…</p>
+  </div>
+</div>
+
+<!-- Processed orders section -->
+<div class="processed-section" id="processedSection" style="display:none">
+  <div class="processed-section-head" onclick="toggleProcessedSection()">
+    <div class="processed-dot"></div>
+    <span class="processed-toggle-label">Processed Orders</span>
+    <span class="processed-count-badge" id="processedCountBadge">0</span>
+    <svg class="processed-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+  <div class="processed-list" id="processedList"></div>
+</div>
+
+<!-- Confirm delete dialog -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <h3>Delete Order?</h3>
+    <p>This will permanently remove this entire order from the database. This cannot be undone.</p>
+    <div class="confirm-btns">
+      <button class="confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="confirm-delete" id="confirmDeleteBtn" onclick="doDelete()">Delete Order</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getFirestore, collection, getDocs, deleteDoc, doc,
+    query, orderBy, updateDoc
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  let allOrders = [];
+  let pendingDeleteId = null;
+
+  // ── Load ─────────────────────────────────────────────────
+  window.loadOrders = async function() {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('loading');
+    btn.disabled = true;
+
+    try {
+      const q    = query(collection(db, "Energise Orders Pudo"), orderBy("submittedAt", "desc"));
+      const snap = await getDocs(q);
+
+      allOrders = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id:          d.id,
+          submittedBy: data.submittedBy || 'Unknown',
+          submittedAt: data.submittedAt ? data.submittedAt.toDate() : null,
+          itemCount:   data.itemCount   || (data.items ? data.items.length : 0),
+          items:       (data.items || []).map(i => ({ ...i })),
+          processedAt: data.processedAt ? new Date(data.processedAt) : null
+        };
+      });
+
+      // ── Backfill requiresAuthorisation from inventory by SKU ─────────
+      try {
+        const invSnap = await getDocs(collection(db, 'Energise Inventory Pudo'));
+        const raMap = {};
+        invSnap.forEach(d => {
+          const inv = d.data();
+          if (inv.sku) raMap[String(inv.sku).trim().toUpperCase()] = !!inv.requiresAuthorisation;
+        });
+        allOrders.forEach(o => {
+          o.items.forEach(item => {
+            if (item.requiresAuthorisation === undefined || item.requiresAuthorisation === null) {
+              const key = String(item.sku || '').trim().toUpperCase();
+              item.requiresAuthorisation = raMap[key] || false;
+            }
+          });
+        });
+      } catch (invErr) {
+        console.warn('Could not load inventory for RA lookup:', invErr);
+      }
+
+      updateStats();
+      applyFilters();
+      renderProcessed();
+    } catch (err) {
+      console.error(err);
+      showState('⚠️', 'Failed to load orders: ' + err.message);
+      showToast('Error: ' + err.message, true);
+    } finally {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+    }
+  };
+
+  // ── Stats ─────────────────────────────────────────────────
+  function updateStats() {
+    document.getElementById('statTotal').textContent = allOrders.length;
+    const people = new Set(allOrders.map(o => o.submittedBy.toLowerCase().trim()));
+    document.getElementById('statPeople').textContent = people.size;
+    const totalItems = allOrders.reduce((s, o) => s + o.itemCount, 0);
+    document.getElementById('statItems').textContent = totalItems;
+    if (allOrders.length > 0) {
+      const latest = allOrders[0];
+      document.getElementById('statLatest').textContent = latest.submittedBy;
+      document.getElementById('statLatestDate').textContent = latest.submittedAt ? formatDate(latest.submittedAt) : 'Unknown date';
+    }
+  }
+
+  // ── Filter + Sort ─────────────────────────────────────────
+  window.applyFilters = function() {
+    const q       = document.getElementById('searchInput').value.toLowerCase().trim();
+    const fromVal = document.getElementById('dateFrom').value;
+    const toVal   = document.getElementById('dateTo').value;
+    const sort    = document.getElementById('sortOrder').value;
+
+    let filtered = allOrders.filter(o => {
+      if (o.processedAt) return false;           // hide processed from main list
+      if (q && !o.submittedBy.toLowerCase().includes(q)) return false;
+      if (o.submittedAt) {
+        const dateStr = o.submittedAt.toISOString().split('T')[0];
+        if (fromVal && dateStr < fromVal) return false;
+        if (toVal   && dateStr > toVal)   return false;
+      }
+      return true;
+    });
+
+    if (sort === 'asc') filtered = filtered.slice().reverse();
+
+    document.getElementById('filterCount').textContent =
+      `${filtered.length} order${filtered.length !== 1 ? 's' : ''}`;
+
+    renderOrders(filtered);
+  };
+
+  // ── Render ────────────────────────────────────────────────
+  function renderOrders(orders) {
+    const wrap = document.getElementById('ordersWrap');
+    if (orders.length === 0) {
+      showState(allOrders.length === 0 ? '📭' : '🔍',
+                allOrders.length === 0 ? 'No orders have been submitted yet.' : 'No orders match your current filters.');
+      return;
+    }
+    wrap.innerHTML = orders.map(order => orderCard(order)).join('');
+  }
+
+  function orderCard(order) {
+    const initials = order.submittedBy.trim().split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const dateStr  = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
+    const timeStr  = order.submittedAt ? formatTime(order.submittedAt) : '';
+
+    const itemRows = order.items.map((item, idx) => `
+      <tr id="row-${order.id}-${idx}">
+        <td class="item-name-cell">${escHtml(item.name || '')}</td>
+        <td><span class="sku-mono">${escHtml(item.sku || '')}</span></td>
+        <td><span class="uom-pill">${escHtml(item.uom || '')}</span></td>
+        <td style="color:var(--text-muted);">£${(item.price || 0).toFixed(2)}</td>
+        <td class="qty-cell">
+          <span class="qty-display" title="Click to edit" onclick="startQtyEdit('${order.id}',${idx})">${item.qty ?? 1}</span>
+        </td>
+        <td id="linetotal-${order.id}-${idx}" style="font-weight:600; color:var(--accent2);">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
+        <td style="color:var(--text-muted);font-size:13px;">${getDateLastOrdered(item.sku, order.id, order.submittedAt, order.submittedBy)}</td>
+        <td style="text-align:center;">${item.requiresAuthorisation
+          ? '<span title="Requires Authorisation" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:13px;font-weight:700;">✓</span>'
+          : ''}</td>
+        <td>
+          <button class="btn-row-delete" title="Remove this line" onclick="deleteLineItem('${order.id}',${idx})">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+    
+    const orderTotal = order.items.reduce((sum, item) => sum + (item.price || 0) * (item.qty ?? 1), 0);
+
+    return `
+      <div class="order-card" id="card-${order.id}">
+        <div class="order-card-head" onclick="toggleCard('${order.id}')">
+          <div class="order-avatar">${initials || '?'}</div>
+          <div class="order-meta">
+            <div class="order-name">${escHtml(order.submittedBy)}</div>
+            <div class="order-date">${dateStr}${timeStr ? ' · ' + timeStr : ''}</div>
+          </div>
+          <div class="order-badges">
+            <span class="badge badge-items">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              ${order.itemCount} item${order.itemCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <svg class="chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+
+        <div class="order-items">
+          ${order.items.length > 0 ? `
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>SKU</th>
+                  <th>Unit</th>
+                  <th>Price</th>
+                  <th>Qty <span style="font-weight:400;opacity:0.6">(click to edit)</span></th>
+                  <th>Total</th>
+                  <th>Last Ordered</th>
+                  <th title="Requires Authorisation">RA</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-${order.id}">${itemRows}</tbody>
+            </table>
+            <div id="ordertotal-${order.id}" style="text-align:right; font-size:16px; font-weight:700; color:var(--text); margin-top:12px; margin-right:12px;">
+              Total Order Value: £${orderTotal.toFixed(2)}
+            </div>
+          ` : '<p style="color:var(--text-muted);font-size:14px;margin-top:14px;">No item details stored.</p>'}
+
+          <div class="order-actions">
+            <button class="btn-save" id="save-${order.id}" onclick="saveOrderChanges('${order.id}')" style="display:none">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Save Changes
+            </button>
+            <button class="btn-delete" onclick="confirmDelete('${order.id}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              Delete Order
+            </button>
+            <button class="btn-process" id="process-${order.id}" onclick="processOrder('${order.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Process Order
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function showState(icon, msg) {
+    document.getElementById('ordersWrap').innerHTML = `
+      <div class="state-box">
+        <div class="icon">${icon}</div>
+        <p>${escHtml(msg)}</p>
+      </div>`;
+  }
+
+  // ── Processed section ────────────────────────────────────
+  function renderProcessed() {
+    const processed = allOrders.filter(o => o.processedAt);
+    const section   = document.getElementById('processedSection');
+    const list      = document.getElementById('processedList');
+    const badge     = document.getElementById('processedCountBadge');
+
+    if (processed.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    badge.textContent = processed.length;
+
+    list.innerHTML = processed
+      .sort((a, b) => (b.processedAt - a.processedAt))
+      .map(order => {
+        const initials = order.submittedBy.trim().split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+        const submittedStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
+        const processedStr = formatDate(order.processedAt) + ' at ' + formatTime(order.processedAt);
+        return `
+          <div class="processed-card">
+            <div class="processed-avatar">${initials || '?'}</div>
+            <div class="processed-meta">
+              <div class="processed-name">${escHtml(order.submittedBy)}</div>
+              <div class="processed-dates">Submitted ${submittedStr} &nbsp;&middot;&nbsp; Processed ${processedStr}</div>
+            </div>
+            <div class="processed-badge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              ${order.itemCount} item${order.itemCount !== 1 ? 's' : ''}
+            </div>
+          </div>`;
+      }).join('');
+  }
+
+  window.toggleProcessedSection = function() {
+    document.getElementById('processedSection').classList.toggle('open');
+  };
+
+
+  // ── Toggle card ───────────────────────────────────────────
+  window.toggleCard = function(id) {
+    const card = document.getElementById('card-' + id);
+    if (!card) return;
+    document.querySelectorAll('.order-card.expanded').forEach(c => { if (c !== card) c.classList.remove('expanded'); });
+    card.classList.toggle('expanded');
+  };
+
+  // ── Inline qty edit ───────────────────────────────────────
+  window.startQtyEdit = function(orderId, idx) {
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+    const cell = document.querySelector(`#row-${orderId}-${idx} .qty-cell`);
+    if (!cell) return;
+
+    const currentQty = order.items[idx]?.qty ?? 1;
+    cell.innerHTML = `<input class="qty-edit-input" type="number" min="1" max="9999" value="${currentQty}"
+      onblur="commitQtyEdit('${orderId}',${idx},this)"
+      onkeydown="if(event.key==='Enter')this.blur(); if(event.key==='Escape'){this.value='${currentQty}';this.blur();}"
+      autofocus>`;
+  };
+
+  window.commitQtyEdit = async function(orderId, idx, input) {
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+    const newQty = Math.max(1, parseInt(input.value) || 1);
+    order.items[idx].qty = newQty;
+    // Rebuild the qty cell
+    const cell = input.closest('td');
+    cell.innerHTML = `<span class="qty-display" title="Click to edit" onclick="startQtyEdit('${orderId}',${idx})">${newQty}</span>`;
+    
+    // Update line total on screen
+    const lineTotalTd = document.getElementById(`linetotal-${orderId}-${idx}`);
+    if (lineTotalTd) {
+      lineTotalTd.textContent = '£' + ((order.items[idx].price || 0) * newQty).toFixed(2);
+    }
+    
+    // Update order total on screen
+    const orderTotal = order.items.reduce((sum, item) => sum + (item.price || 0) * (item.qty ?? 1), 0);
+    const orderTotalDiv = document.getElementById(`ordertotal-${orderId}`);
+    if (orderTotalDiv) {
+      orderTotalDiv.textContent = `Total Order Value: £${orderTotal.toFixed(2)}`;
+    }
+    
+    // Auto-save
+    try {
+      await updateDoc(doc(db, "Energise Orders Pudo", orderId), {
+        items:     order.items,
+        itemCount: order.items.length
+      });
+      showToast('✓ Quantity updated and saved.', false);
+      updateStats();
+    } catch (err) {
+      console.error(err);
+      showToast('Auto-save failed: ' + err.message, true);
+    }
+  };
+
+  // ── Delete single line item ───────────────────────────────
+  window.deleteLineItem = async function(orderId, idx) {
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+    order.items.splice(idx, 1);
+    order.itemCount = order.items.length;
+
+    // Rebuild table rows
+    const tbody = document.getElementById('tbody-' + orderId);
+    if (tbody) {
+      tbody.innerHTML = order.items.map((item, i) => `
+        <tr id="row-${orderId}-${i}">
+          <td class="item-name-cell">${escHtml(item.name || '')}</td>
+          <td><span class="sku-mono">${escHtml(item.sku || '')}</span></td>
+          <td><span class="uom-pill">${escHtml(item.uom || '')}</span></td>
+          <td style="color:var(--text-muted);">£${(item.price || 0).toFixed(2)}</td>
+          <td class="qty-cell">
+            <span class="qty-display" title="Click to edit" onclick="startQtyEdit('${orderId}',${i})">${item.qty ?? 1}</span>
+          </td>
+          <td id="linetotal-${orderId}-${i}" style="font-weight:600; color:var(--accent2);">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
+          <td style="color:var(--text-muted);font-size:13px;">${getDateLastOrdered(item.sku, orderId, order.submittedAt, order.submittedBy)}</td>
+          <td style="text-align:center;">${item.requiresAuthorisation
+            ? '<span title="Requires Authorisation" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#dc2626;font-size:13px;font-weight:700;">✓</span>'
+            : ''}</td>
+          <td>
+            <button class="btn-row-delete" title="Remove this line" onclick="deleteLineItem('${orderId}',${i})">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Update order total on screen
+    const orderTotal = order.items.reduce((sum, item) => sum + (item.price || 0) * (item.qty ?? 1), 0);
+    const orderTotalDiv = document.getElementById(`ordertotal-${orderId}`);
+    if (orderTotalDiv) {
+      orderTotalDiv.textContent = `Total Order Value: £${orderTotal.toFixed(2)}`;
+    }
+
+    // Update badge
+    const badge = document.querySelector(`#card-${orderId} .badge-items`);
+    if (badge) badge.innerHTML = `
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      ${order.itemCount} item${order.itemCount !== 1 ? 's' : ''}`;
+
+    // Auto-save
+    try {
+      await updateDoc(doc(db, "Energise Orders Pudo", orderId), {
+        items:     order.items,
+        itemCount: order.items.length
+      });
+      showToast('✓ Item removed and saved.', false);
+      updateStats();
+      
+      // If order is empty, reload page to hide or remove
+      if (order.items.length === 0) {
+        setTimeout(() => loadOrders(), 1500);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Auto-save failed: ' + err.message, true);
+    }
+  };
+
+  // ── Save changes to Firestore ────────────────────────────
+  window.saveOrderChanges = async function(orderId) {
+    const order  = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+    const saveBtn = document.getElementById('save-' + orderId);
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+    try {
+      await updateDoc(doc(db, "Energise Orders Pudo", orderId), {
+        items:     order.items,
+        itemCount: order.items.length
+      });
+      showToast('✓ Changes saved.', false);
+      if (saveBtn) saveBtn.style.display = 'none';
+      updateStats();
+    } catch (err) {
+      console.error(err);
+      showToast('Save failed: ' + err.message, true);
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save Changes'; }
+    }
+  };
+
+  // ── Process Order (send email via EmailJS) ───────────────
+  window.processOrder = async function(orderId) {
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const btn = document.getElementById('process-' + orderId);
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           style="animation:spin 0.8s linear infinite">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      Sending…`;
+
+    const dateStr = order.submittedAt ? formatDate(order.submittedAt) : 'Unknown date';
+    const timeStr = order.submittedAt ? formatTime(order.submittedAt) : '';
+
+    // ── Split items by category ───────────────────────────────────────────
+    const consumablesNoRA = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable' && !i.requiresAuthorisation);
+    const consumablesRA   = order.items.filter(i => (i.category || '').toLowerCase() === 'consumable' &&  i.requiresAuthorisation);
+    const meters          = order.items.filter(i => (i.category || '').toLowerCase() === 'meter');
+
+    // Build a styled HTML table for a given item list
+    function buildItemsHtml(items) {
+      const rows = items.map((item, i) => `
+        <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+          <td style="padding:10px 14px;font-size:13px;color:#6b7280;font-family:'Courier New',monospace;border-bottom:1px solid #e5e7eb;">${i + 1}</td>
+          <td style="padding:10px 14px;font-size:14px;font-weight:500;color:#111827;border-bottom:1px solid #e5e7eb;">${item.name || ''}</td>
+          <td style="padding:10px 14px;font-size:13px;font-family:'Courier New',monospace;color:#6b7280;border-bottom:1px solid #e5e7eb;">${item.sku || ''}</td>
+          <td style="padding:10px 14px;font-size:13px;border-bottom:1px solid #e5e7eb;">
+            <span style="background:#eff4ff;border:1px solid rgba(26,86,219,0.2);color:#1a56db;padding:2px 8px;border-radius:4px;font-family:'Courier New',monospace;font-size:12px;">${item.uom || ''}</span>
+          </td>
+          <td style="padding:10px 14px;font-size:13px;font-family:'Courier New',monospace;color:#6b7280;border-bottom:1px solid #e5e7eb;">£${(item.price || 0).toFixed(2)}</td>
+          <td style="padding:10px 14px;font-size:15px;font-weight:700;color:#1a56db;text-align:center;border-bottom:1px solid #e5e7eb;">${item.qty ?? 1}</td>
+          <td style="padding:10px 14px;font-size:14px;font-weight:700;color:#111827;text-align:right;border-bottom:1px solid #e5e7eb;">£${((item.price || 0) * (item.qty ?? 1)).toFixed(2)}</td>
+        </tr>`).join('');
+
+      const total = items.reduce((sum, item) => sum + (item.price || 0) * (item.qty ?? 1), 0);
+
+      return `
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #d8dde6;border-radius:8px;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif;">
+          <thead>
+            <tr style="background:#1a56db;">
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:40px;">#</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);">Product Name</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">SKU</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">Unit</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">Price</th>
+              <th style="padding:10px 14px;text-align:center;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:60px;">Qty</th>
+              <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.75);width:80px;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr>
+              <td colspan="6" style="padding:12px 14px;text-align:right;font-size:14px;font-weight:600;color:#6b7280;border-top:2px solid #d8dde6;">Total Value:</td>
+              <td style="padding:12px 14px;text-align:right;font-size:16px;font-weight:700;color:#1a56db;border-top:2px solid #d8dde6;">£${total.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>`;
+    }
+
+    try {
+      const sends = [];
+      const link = `https://oes-performance.vercel.app/energise-order-view.html?order=${orderId}`;
+
+      // Helper for large order notice
+      function buildLargeOrderNoticeHtml(orderType, count, linkUrl) {
+        return `
+          <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:15px;color:#374151;line-height:1.6;background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:22px;text-align:center;margin-top:10px;">
+            <p style="margin:0 0 10px 0;font-weight:700;color:#d97706;font-size:17px;">⚠️ Large Order: ${orderType}</p>
+            <p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;">This order contains a large number of items (${count}) and cannot be embedded directly in this email. You can view and print the complete details using the secure receipt link below:</p>
+            <a href="${linkUrl}" target="_blank" style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:6px;font-size:14px;">View Complete Order Details</a>
+          </div>
+        `;
+      }
+      // ── Consumables (No Authorisation Required) ───────────────────────
+      if (consumablesNoRA.length > 0) {
+        if (consumablesNoRA.length <= 10) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesNoRA.length,
+              order_type:   'Consumables — No Authorisation Required',
+              header_color: '#1a56db',
+              items_html:   buildItemsHtml(consumablesNoRA),
+              order_id:     orderId,
+            })
+          );
+        } else {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesNoRA.length,
+              order_type:   'Consumables — No Authorisation Required',
+              header_color: '#1a56db',
+              items_html:   buildLargeOrderNoticeHtml('Consumables (No RA)', consumablesNoRA.length, link),
+              order_id:     orderId,
+            })
+          );
+        }
+      }
+
+      // ── Consumables (Requires Authorisation) ──────────────────────────
+      if (consumablesRA.length > 0) {
+        if (consumablesRA.length <= 10) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesRA.length,
+              order_type:   'Consumables — Requires Authorisation',
+              header_color: '#d97706',
+              items_html:   buildItemsHtml(consumablesRA),
+              order_id:     orderId,
+            })
+          );
+        } else {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_e9n1jcm', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   consumablesRA.length,
+              order_type:   'Consumables — Requires Authorisation',
+              header_color: '#d97706',
+              items_html:   buildLargeOrderNoticeHtml('Consumables (RA)', consumablesRA.length, link),
+              order_id:     orderId,
+            })
+          );
+        }
+      }
+
+
+      if (meters.length > 0) {
+        if (meters.length <= 10) {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_6vvisvn', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   meters.length,
+              order_type:   'Meters',
+              header_color: '#dc2626',
+              items_html:   buildItemsHtml(meters),
+              order_id:     orderId,
+            })
+          );
+        } else {
+          sends.push(
+            emailjs.send('service_ushej2v', 'template_6vvisvn', {
+              submitted_by: order.submittedBy,
+              submitted_at: `${dateStr}${timeStr ? ' at ' + timeStr : ''}`,
+              item_count:   meters.length,
+              order_type:   'Meters',
+              header_color: '#dc2626',
+              items_html:   buildLargeOrderNoticeHtml('Meters', meters.length, link),
+              order_id:     orderId,
+            })
+          );
+        }
+      }
+
+      if (sends.length === 0) {
+        showToast('No items to send — order has no consumables or meters.', true);
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Process Order`;
+        return;
+      }
+
+      await Promise.all(sends);
+
+      // Save processedAt to Firestore
+      const now = new Date();
+      await updateDoc(doc(db, 'Energise Orders Pudo', orderId), { processedAt: now.toISOString() });
+
+      // Mark in memory
+      order.processedAt = now;
+
+      // Animate card out then re-render
+      const card = document.getElementById('card-' + orderId);
+      if (card) {
+        card.classList.add('processing-out');
+        setTimeout(() => {
+          applyFilters();
+          renderProcessed();
+          document.getElementById('processedSection').classList.add('open');
+        }, 420);
+      } else {
+        applyFilters();
+        renderProcessed();
+      }
+
+      const sentParts = [
+        consumablesNoRA.length > 0 ? `consumables no-auth (${consumablesNoRA.length})` : null,
+        consumablesRA.length   > 0 ? `consumables RA (${consumablesRA.length})`         : null,
+        meters.length          > 0 ? `meters (${meters.length})`                        : null
+      ].filter(Boolean).join(', ');
+      showToast(`✓ Order processed — ${sentParts} email${sends.length > 1 ? 's' : ''} sent!`, false);
+
+    } catch (err) {
+      console.error('EmailJS error:', err);
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        Process Order`;
+      showToast('Email failed: ' + (err.text || err.message || JSON.stringify(err)), true);
+    }
+  };
+
+  // ── Delete whole order ────────────────────────────────────
+
+  window.confirmDelete = function(id) {
+    pendingDeleteId = id;
+    document.getElementById('confirmOverlay').classList.add('open');
+  };
+  window.closeConfirm = function() {
+    pendingDeleteId = null;
+    document.getElementById('confirmOverlay').classList.remove('open');
+  };
+  window.doDelete = async function() {
+    if (!pendingDeleteId) return;
+    const id  = pendingDeleteId;
+    const btn = document.getElementById('confirmDeleteBtn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      await deleteDoc(doc(db, "Energise Orders Pudo", id));
+      allOrders = allOrders.filter(o => o.id !== id);
+      updateStats();
+      applyFilters();
+      showToast('Order deleted.', false);
+    } catch (err) {
+      showToast('Error deleting: ' + err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Delete Order';
+      closeConfirm();
+    }
+  };
+
+  // ── Helpers ───────────────────────────────────────────────
+  function getDateLastOrdered(sku, currentOrderId, currentOrderSubmittedAt, submitterName) {
+    if (!sku) return 'Never';
+    const cleanSku = String(sku).toUpperCase().trim();
+    const cleanName = String(submitterName || '').trim().toLowerCase();
+    const currentEpoch = currentOrderSubmittedAt ? new Date(currentOrderSubmittedAt).getTime() : new Date().getTime();
+    
+    let lastDate = null;
+    let lastEpoch = 0;
+    
+    allOrders.forEach(o => {
+      if (o.id === currentOrderId) return;
+      if (!o.processedAt) return; // Only match historically processed orders
+      if (String(o.submittedBy || '').trim().toLowerCase() !== cleanName) return;
+      
+      const hasItem = (o.items || []).some(item => String(item.sku).toUpperCase().trim() === cleanSku);
+      if (hasItem) {
+        const pDate = new Date(o.processedAt);
+        if (!isNaN(pDate.getTime())) {
+          const epoch = pDate.getTime();
+          // Must be strictly prior to the current order's submission/reference time
+          if (epoch < currentEpoch && epoch > lastEpoch) {
+            lastEpoch = epoch;
+            lastDate = pDate;
+          }
+        }
+      }
+    });
+    
+    if (lastDate) {
+      return formatDate(lastDate);
+    }
+    return 'Never';
+  }
+
+  function formatDate(d) { return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+  function formatTime(d) { return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  window.showToast = function(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (isError ? ' error' : '');
+    void t.offsetWidth;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3200);
+  };
+
+  // Close confirm on backdrop click
+  document.getElementById('confirmOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeConfirm();
+  });
+
+  // ── 2:00 PM Weekday Reminder ──
+  let reminderSentDate = localStorage.getItem('energise_reminder_date') || '';
+  
+  setInterval(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const dateStr = now.toDateString();
+
+    // Check if weekday (1=Mon ... 5=Fri)
+    if (day >= 1 && day <= 5) {
+      // Check if it's 2:00 PM (14:00)
+      if (hours === 14 && minutes === 0) {
+        // Only send once per day
+        if (reminderSentDate !== dateStr) {
+          const pendingOrders = allOrders.filter(o => !o.processedAt);
+          if (pendingOrders.length > 0) {
+            emailjs.send('service_ushej2v', 'template_2mihgrj', {
+              pending_count: pendingOrders.length,
+              review_link: 'https://oes-performance.vercel.app/energise-order-review-pudo.html'
+            }).then(() => {
+              console.log('2 PM Reminder sent successfully.');
+              localStorage.setItem('energise_reminder_date', dateStr);
+              reminderSentDate = dateStr;
+            }).catch(err => {
+              console.error('Failed to send 2 PM Reminder:', err);
+            });
+          } else {
+            // No pending orders, just record it as checked so it doesn't try again today
+            localStorage.setItem('energise_reminder_date', dateStr);
+            reminderSentDate = dateStr;
+          }
+        }
+      }
+    }
+  }, 60000); // check every 60 seconds
+
+  loadOrders();
+</script>
+</body>
+</html>
+
+
