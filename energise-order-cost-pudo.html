@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pudo - Order Costs</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:         #f4f6f9;
+      --surface:    #ffffff;
+      --surface2:   #f0f2f5;
+      --border:     #d8dde6;
+      --border2:    #c4cad4;
+      --accent:     #1a56db;
+      --accent-lt:  #eff4ff;
+      --accent-h:   #1e40af;
+      --text:       #111827;
+      --text-muted: #6b7280;
+      --text-dim:   #9ca3af;
+      --danger:     #dc2626;
+      --danger-bg:  #fef2f2;
+      --success:    #059669;
+      --success-bg: #ecfdf5;
+      --radius:     12px;
+      --radius-sm:  8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0; 
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .brand {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .brand span { color: #84cc16; }
+
+    .header-actions { display: flex; gap: 12px; }
+
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+    .btn:hover { background: var(--surface2); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent-h); }
+
+    .layout-wrapper {
+      display: flex;
+      max-width: 98vw;
+      margin: 24px auto;
+      padding: 0 16px;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    /* Sidebar styles */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      position: sticky;
+      top: 100px;
+      max-height: calc(100vh - 132px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+    }
+    .sidebar-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+    }
+    .sidebar-list li {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border2);
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-list li:hover { background: #f8fafc; }
+    .sidebar-list li:last-child { border-bottom: none; }
+    .sb-name { font-weight: 500; font-size: 14px; }
+    .sb-icon { color: var(--accent); opacity: 0; transition: opacity 0.2s; }
+    .sidebar-list li:hover .sb-icon { opacity: 1; }
+
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .filters-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 16px;
+      align-items: end;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+
+    .input-group { display: flex; flex-direction: column; gap: 6px; }
+    .input-group label {
+      font-size: 13px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .input-group input {
+      padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif;
+      font-size: 15px; outline: none; transition: border-color 0.2s;
+    }
+    .input-group input:focus { border-color: var(--accent); }
+
+    .table-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: var(--surface2); padding: 16px 24px; font-size: 13px;
+      font-weight: 600; color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 0.5px; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    td { padding: 16px 24px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    
+    .expandable-row { cursor: pointer; transition: background 0.15s; }
+    .expandable-row:hover { background: #f8fafc; }
+
+    .submitter-name { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .date-badge {
+      display: inline-block; background: var(--surface2); padding: 4px 8px;
+      border-radius: 4px; font-family: 'DM Mono', monospace; font-size: 13px;
+      color: var(--text-muted); white-space: nowrap;
+    }
+    .cost-total { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 600; color: var(--accent); }
+
+    .items-row { display: none; background: #f8fafc; }
+    .items-row.open { display: table-row; }
+    .items-container { padding: 16px 16px 24px 16px; border-top: 1px dashed var(--border); }
+    .items-table { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+    .items-table th, .items-table td { padding: 12px 16px; border-bottom: 1px solid var(--border2); font-size: 14px; }
+    .items-table th { background: #f1f5f9; text-transform: none; font-weight: 500; }
+    .item-cost { font-family: 'DM Mono', monospace; }
+
+    .summary-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .summary-stat { font-size: 14px; color: var(--text-muted); }
+    .summary-stat strong { color: var(--text); font-size: 18px; margin-left: 6px; }
+
+    .chevron { transition: transform 0.2s; }
+    .open .chevron { transform: rotate(180deg); }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(17, 24, 39, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: auto; }
+    .modal-content {
+      background: var(--surface); border-radius: var(--radius);
+      width: 90%; max-width: 800px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      transform: translateY(20px); transition: transform 0.2s;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-overlay.show .modal-content { transform: translateY(0); }
+    .modal-header {
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: var(--text); }
+    .modal-close {
+      background: transparent; border: none; font-size: 24px;
+      color: var(--text-muted); cursor: pointer; line-height: 1; padding: 0;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-filters {
+      padding: 16px 24px; background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 16px; align-items: flex-end;
+    }
+    .modal-body {
+      padding: 24px; position: relative; height: 400px;
+    }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; background: var(--text);
+      color: #fff; padding: 12px 20px; border-radius: 8px; font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(100px);
+      opacity: 0; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); z-index: 9999;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.error { background: var(--danger); }
+    .empty-state { padding: 64px 24px; text-align: center; color: var(--text-muted); }
+    .empty-state svg { color: var(--border2); margin-bottom: 16px; }
+
+    /* Manual Order Modal Styles */
+    .manual-modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(17, 24, 39, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+      z-index: 2000; backdrop-filter: blur(4px);
+    }
+    .manual-modal-overlay.show { opacity: 1; pointer-events: auto; }
+    .manual-modal-content {
+      background: var(--surface); border-radius: var(--radius);
+      width: 90%; max-width: 650px; box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      transform: translateY(20px); transition: transform 0.2s;
+      display: flex; flex-direction: column; overflow: hidden;
+      max-height: 90vh;
+    }
+    .manual-modal-overlay.show .manual-modal-content { transform: translateY(0); }
+    .manual-form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+    }
+    .manual-items-table {
+      width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;
+    }
+    .manual-items-table th {
+      background: var(--surface2); padding: 8px 12px; font-weight: 600; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); text-align: left;
+    }
+    .manual-items-table td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle;
+    }
+    .manual-input-text {
+      width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      outline: none; font-size: 13px; background: var(--surface); color: var(--text);
+    }
+    .manual-input-text:focus { border-color: var(--accent); }
+    .btn-add-row {
+      background: var(--accent-lt); border: 1px dashed var(--accent); color: var(--accent);
+      padding: 8px 16px; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;
+      font-size: 13px; text-align: center; width: 100%; margin-top: 12px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-add-row:hover { background: var(--accent); color: #fff; border-style: solid; }
+    .item-detail-text {
+      font-size: 12px; color: var(--text-muted); line-height: 1.3;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <a href="#" class="brand">pudo<span>.</span></a>
+    <div class="header-actions">
+      <button class="btn" onclick="window.location.href='energise-order-review-pudo.html'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        Back to Pending Orders
+      </button>
+      <button class="btn btn-primary" onclick="openManualOrderModal()" style="background:#10b981; border-color:#10b981;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        + Add Manual Order
+      </button>
+      <button class="btn btn-primary" onclick="exportCSV()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CSV
+      </button>
+    </div>
+  </header>
+
+  <div class="layout-wrapper">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Submitters
+      </div>
+      <ul class="sidebar-list" id="sidebarList">
+        <li style="color:var(--text-muted); font-size:14px; justify-content:center;">Loading...</li>
+      </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="filters-card">
+        <div class="input-group">
+          <label>Search Submitter</label>
+          <input type="text" id="searchName" placeholder="e.g. John Doe" oninput="applyFilters()">
+        </div>
+        <div class="input-group">
+          <label>Start Date (Processed)</label>
+          <input type="date" id="startDate" onchange="applyFilters()">
+        </div>
+        <div class="input-group">
+          <label>End Date (Processed)</label>
+          <input type="date" id="endDate" onchange="applyFilters()">
+        </div>
+        <div>
+          <button class="btn" onclick="resetFilters()">Clear Filters</button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="summary-bar">
+          <div class="summary-stat" id="resultCount">Loading orders...</div>
+          <div class="summary-stat">Total Filtered Cost: <strong id="totalCostSpan">£0.00</strong></div>
+        </div>
+        <div class="table-wrap">
+          <table id="ordersTable">
+            <thead>
+              <tr>
+                <th width="40"></th>
+                <th>Submitter</th>
+                <th>Date Processed</th>
+                <th>Total Items</th>
+                <th style="text-align:right;">Total Cost</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody">
+              <tr>
+                <td colspan="5" class="empty-state">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  <div>Loading data...</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart Modal -->
+  <div class="modal-overlay" id="chartModal" onclick="closeChartModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Spend Analysis</div>
+        <button class="modal-close" onclick="closeChartModal()">×</button>
+      </div>
+      <div class="modal-filters">
+        <div class="input-group">
+          <label>Start Date</label>
+          <input type="date" id="modalStartDate" onchange="updateChart()">
+        </div>
+        <div class="input-group">
+          <label>End Date</label>
+          <input type="date" id="modalEndDate" onchange="updateChart()">
+        </div>
+        <button class="btn" onclick="resetModalFilters()" style="margin-left:auto;">Reset Dates</button>
+      </div>
+      <div class="modal-body">
+        <canvas id="spendChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Firebase Integration -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, addDoc, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+      authDomain: "oesperformance-a54c0.firebaseapp.com",
+      projectId: "oesperformance-a54c0",
+      storageBucket: "oesperformance-a54c0.firebasestorage.app",
+      messagingSenderId: "484894102454",
+      appId: "1:484894102454:web:17535ee497eac2d90d6717",
+      measurementId: "G-R56BGZYV8N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    let allOrders = [];
+    let filteredOrders = [];
+    let uniqueSubmitters = [];
+    let currentChartSubmitter = '';
+    let chartInstance = null;
+
+    window.showToast = function(msg, isError = false) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (isError ? ' error' : '');
+      void t.offsetWidth;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    };
+
+    function formatDate(isoString) {
+      const d = new Date(isoString);
+      if(isNaN(d.getTime())) return isoString;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    
+    function formatChartDate(isoString) {
+      const d = new Date(isoString);
+      if(isNaN(d.getTime())) return isoString;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    }
+
+    function getDateLastOrdered(sku, currentOrderId, currentOrderDate, submitterName) {
+      if (!sku) return 'Never';
+      const cleanSku = String(sku).toUpperCase().trim();
+      const cleanName = String(submitterName || '').trim().toLowerCase();
+      const currentEpoch = currentOrderDate ? new Date(currentOrderDate).getTime() : 0;
+      if (!currentEpoch) return 'Never';
+      
+      let lastDate = null;
+      let lastEpoch = 0;
+      
+      allOrders.forEach(o => {
+        if (o.id === currentOrderId) return;
+        if (String(o.submittedBy || '').trim().toLowerCase() !== cleanName) return;
+        
+        const hasItem = (o.items || []).some(item => String(item.sku).toUpperCase().trim() === cleanSku);
+        if (hasItem) {
+          const pDate = new Date(o.processedAt);
+          if (!isNaN(pDate.getTime())) {
+            const epoch = pDate.getTime();
+            if (epoch < currentEpoch && epoch > lastEpoch) {
+              lastEpoch = epoch;
+              lastDate = pDate;
+            }
+          }
+        }
+      });
+      
+      if (lastDate) {
+        return formatDate(lastDate.toISOString());
+      }
+      
+      return 'Never';
+    }
+
+    // Global catalogues for manual entry
+    window.inventoryCatalogue = {};
+    window.engineerNames = [];
+
+    async function loadData() {
+      try {
+        // Load orders
+        const snap = await getDocs(collection(db, 'Energise Orders Pudo'));
+        allOrders = [];
+        const submittersSet = new Set();
+
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.processedAt) {
+            const cost = (data.items || []).reduce((sum, item) => {
+              if (item.notDelivered) return sum;
+              return sum + ((item.price || 0) * (item.qty || 1));
+            }, 0);
+            const name = data.submittedBy || 'Unknown';
+            submittersSet.add(name);
+            
+            allOrders.push({
+              id: docSnap.id,
+              ...data,
+              submittedBy: name,
+              orderTotalCost: cost
+            });
+          }
+        });
+
+        allOrders.sort((a, b) => new Date(b.processedAt) - new Date(a.processedAt));
+        uniqueSubmitters = Array.from(submittersSet).sort();
+        
+        renderSidebar();
+        applyFilters();
+
+        // Also fetch selections for dropdown
+        try {
+          const selSnap = await getDocs(collection(db, 'Energise Selection Pudo'));
+          window.engineerNames = [];
+          selSnap.forEach(d => {
+            const name = d.data().name;
+            if (name) window.engineerNames.push(name);
+          });
+          window.engineerNames.sort();
+          
+          // Re-populate dropdown if open
+          const dropdown = document.getElementById('manualEngineerSelect');
+          if (dropdown) {
+            dropdown.innerHTML = '<option value="">-- Choose Engineer --</option>' +
+              window.engineerNames.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+          }
+        } catch(e) {
+          console.warn('Could not load engineer list:', e);
+        }
+
+        // Also fetch inventory catalogue for SKU autocompletion
+        try {
+          const invSnap = await getDocs(collection(db, 'Energise Inventory Pudo'));
+          window.inventoryCatalogue = {};
+          invSnap.forEach(d => {
+            const data = d.data();
+            if (data.sku) {
+              window.inventoryCatalogue[String(data.sku).toUpperCase().trim()] = {
+                name: data.name || '',
+                price: parseFloat(data.price) || 0,
+                uom: data.uom || 'each',
+                category: data.category || 'consumable'
+              };
+            }
+          });
+        } catch(e) {
+          console.warn('Could not load inventory catalogue:', e);
+        }
+
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to load orders: ' + err.message, true);
+        document.getElementById('ordersBody').innerHTML = `<tr><td colspan="5" class="empty-state">Error loading data.</td></tr>`;
+      }
+    }
+
+    function renderSidebar() {
+      const list = document.getElementById('sidebarList');
+      if (uniqueSubmitters.length === 0) {
+        list.innerHTML = `<li style="color:var(--text-muted); font-size:14px; justify-content:center;">No submitters found</li>`;
+        return;
+      }
+
+      list.innerHTML = uniqueSubmitters.map(name => `
+        <li onclick="openChartModal('${name.replace(/'/g, "\\'")}')">
+          <span class="sb-name">${name}</span>
+          <svg class="sb-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </li>
+      `).join('');
+    }
+
+    window.applyFilters = function() {
+      const search = document.getElementById('searchName').value.toLowerCase().trim();
+      const start  = document.getElementById('startDate').value;
+      const end    = document.getElementById('endDate').value;
+
+      filteredOrders = allOrders.filter(o => {
+        if (search && !(o.submittedBy || '').toLowerCase().includes(search)) return false;
+        
+        if (start || end) {
+          const pDate = new Date(o.processedAt);
+          if (isNaN(pDate.getTime())) return false;
+          pDate.setHours(0,0,0,0);
+          
+          if (start) {
+            const sDate = new Date(start);
+            sDate.setHours(0,0,0,0);
+            if (pDate < sDate) return false;
+          }
+          if (end) {
+            const eDate = new Date(end);
+            eDate.setHours(0,0,0,0);
+            if (pDate > eDate) return false;
+          }
+        }
+        return true;
+      });
+
+      renderTable();
+    };
+
+    window.resetFilters = function() {
+      document.getElementById('searchName').value = '';
+      document.getElementById('startDate').value = '';
+      document.getElementById('endDate').value = '';
+      applyFilters();
+    };
+
+    function renderTable() {
+      const tbody = document.getElementById('ordersBody');
+      const countLabel = document.getElementById('resultCount');
+      const totalSpan = document.getElementById('totalCostSpan');
+
+      countLabel.textContent = `${filteredOrders.length} processed order${filteredOrders.length !== 1 ? 's' : ''}`;
+      const overallCost = filteredOrders.reduce((sum, o) => sum + o.orderTotalCost, 0);
+      totalSpan.textContent = `£${overallCost.toFixed(2)}`;
+
+      if (filteredOrders.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No processed orders match your filters.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filteredOrders.map(o => {
+        const itemRows = (o.items || []).map((i, idx) => {
+          const isNotDelivered = !!i.notDelivered;
+          const lineCost = isNotDelivered ? 0 : (i.price || 0) * (i.qty || 1);
+          
+          const statusBadge = isNotDelivered
+            ? `<span style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:#dc2626; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700;">Not Delivered</span>`
+            : `<span style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:#059669; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700;">Delivered</span>`;
+
+          const toggleButton = `
+            <button class="btn" style="padding:4px 8px; font-size:11px; font-weight:600; min-width:130px; text-align:center;" onclick="event.stopPropagation(); toggleItemDelivery('${o.id}', ${idx})">
+              ${isNotDelivered ? 'Mark Delivered' : 'Mark Undelivered'}
+            </button>
+          `;
+
+          const rowStyle = isNotDelivered ? 'text-decoration: line-through; opacity: 0.55;' : '';
+          const lastOrderedDate = getDateLastOrdered(i.sku, o.id, o.processedAt, o.submittedBy);
+
+          return `
+            <tr style="${rowStyle}">
+              <td>${i.sku}</td>
+              <td>${i.name}</td>
+              <td>${i.category || 'N/A'}</td>
+              <td><span class="date-badge">${lastOrderedDate}</span></td>
+              <td>${i.qty} ${i.uom}</td>
+              <td class="item-cost">£${(i.price || 0).toFixed(2)}</td>
+              <td class="item-cost">£${lineCost.toFixed(2)}</td>
+              <td style="text-align:center; vertical-align:middle;">${statusBadge}</td>
+              <td style="text-align:right; vertical-align:middle;">${toggleButton}</td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <tr class="expandable-row" onclick="toggleRow('${o.id}')">
+            <td><svg class="chevron" id="icon-${o.id}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></td>
+            <td><div class="submitter-name"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${o.submittedBy}</div></td>
+            <td><span class="date-badge">${formatDate(o.processedAt)}</span></td>
+            <td>${o.itemCount || (o.items ? o.items.length : 0)}</td>
+            <td class="cost-total" style="text-align:right;">£${o.orderTotalCost.toFixed(2)}</td>
+          </tr>
+          <tr class="items-row" id="details-${o.id}">
+            <td colspan="5" style="padding:0;">
+              <div class="items-container">
+                <table class="items-table">
+                  <thead>
+                    <tr>
+                      <th width="80">SKU</th>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Last Ordered</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Line Total</th>
+                      <th style="text-align:center;" width="110">Delivery Status</th>
+                      <th style="text-align:right;" width="145">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>${itemRows}</tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Check for target order in URL after table render
+      setTimeout(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetOrderId = urlParams.get('order');
+        if (targetOrderId) {
+          const icon = document.getElementById('icon-' + targetOrderId);
+          const details = document.getElementById('details-' + targetOrderId);
+          if (details && icon) {
+            details.classList.add('open');
+            icon.style.transform = 'rotate(180deg)';
+            const cardRow = icon.closest('tr');
+            if (cardRow) {
+              cardRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              cardRow.style.background = 'rgba(26, 86, 219, 0.08)';
+            }
+          }
+        }
+      }, 100);
+    }
+
+    window.toggleRow = function(id) {
+      const tr = document.getElementById('details-' + id);
+      const icon = document.getElementById('icon-' + id);
+      if (tr.classList.contains('open')) { tr.classList.remove('open'); icon.style.transform = 'rotate(0deg)'; }
+      else { tr.classList.add('open'); icon.style.transform = 'rotate(180deg)'; }
+    };
+
+    // --- Chart Modal Logic ---
+    window.openChartModal = function(submitterName) {
+      currentChartSubmitter = submitterName;
+      document.getElementById('modalTitle').textContent = `Spend Analysis: ${submitterName}`;
+      // Reset modal dates
+      document.getElementById('modalStartDate').value = '';
+      document.getElementById('modalEndDate').value = '';
+      
+      document.getElementById('chartModal').classList.add('show');
+      updateChart();
+    };
+
+    window.closeChartModal = function() {
+      document.getElementById('chartModal').classList.remove('show');
+    };
+
+    window.resetModalFilters = function() {
+      document.getElementById('modalStartDate').value = '';
+      document.getElementById('modalEndDate').value = '';
+      updateChart();
+    };
+
+    window.updateChart = function() {
+      const start = document.getElementById('modalStartDate').value;
+      const end = document.getElementById('modalEndDate').value;
+
+      // Filter to just this user and date range
+      const userOrders = allOrders.filter(o => {
+        if (o.submittedBy !== currentChartSubmitter) return false;
+        
+        if (start || end) {
+          const pDate = new Date(o.processedAt);
+          if (isNaN(pDate.getTime())) return false;
+          pDate.setHours(0,0,0,0);
+          
+          if (start) {
+            const sDate = new Date(start); sDate.setHours(0,0,0,0);
+            if (pDate < sDate) return false;
+          }
+          if (end) {
+            const eDate = new Date(end); eDate.setHours(0,0,0,0);
+            if (pDate > eDate) return false;
+          }
+        }
+        return true;
+      });
+
+      // Group spend by Date (YYYY-MM-DD string)
+      const spendByDate = {};
+      userOrders.forEach(o => {
+        const d = new Date(o.processedAt);
+        if (isNaN(d.getTime())) return;
+        const key = d.toISOString().split('T')[0];
+        if (!spendByDate[key]) spendByDate[key] = 0;
+        spendByDate[key] += o.orderTotalCost;
+      });
+
+      // Sort dates chronologically
+      const sortedDates = Object.keys(spendByDate).sort((a,b) => new Date(a) - new Date(b));
+      
+      const labels = sortedDates.map(d => formatChartDate(d));
+      const dataPoints = sortedDates.map(d => spendByDate[d]);
+
+      renderChart(labels, dataPoints);
+    };
+
+    function renderChart(labels, dataPoints) {
+      const ctx = document.getElementById('spendChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Daily Spend (£)',
+            data: dataPoints,
+            backgroundColor: '#1a56db',
+            borderRadius: 6,
+            hoverBackgroundColor: '#1e40af'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return '£' + context.parsed.y.toFixed(2);
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { callback: function(val) { return '£' + val; } }
+            }
+          }
+        }
+      });
+    }
+
+    window.exportCSV = function() {
+      if (filteredOrders.length === 0) { showToast('No orders to export.', true); return; }
+      const rows = [];
+      rows.push(['Order ID', 'Submitter', 'Processed Date', 'SKU', 'Item Name', 'Category', 'Quantity', 'UOM', 'Unit Price (£)', 'Line Total (£)', 'Order Total (£)', 'Delivery Status']);
+      
+      filteredOrders.forEach(o => {
+        const orderDate = o.processedAt ? new Date(o.processedAt).toISOString() : '';
+        if (o.items && o.items.length > 0) {
+          o.items.forEach((i, idx) => {
+            const unitPrice = (i.price || 0).toFixed(2);
+            const isNotDelivered = !!i.notDelivered;
+            const lineTotal = isNotDelivered ? '0.00' : ((i.price || 0) * (i.qty || 1)).toFixed(2);
+            const ordTotal  = idx === 0 ? o.orderTotalCost.toFixed(2) : '';
+            rows.push([ o.id, `"${o.submittedBy}"`, orderDate, i.sku, `"${i.name}"`, i.category || '', i.qty || 1, i.uom || '', unitPrice, lineTotal, ordTotal, isNotDelivered ? 'Not Delivered' : 'Delivered' ]);
+          });
+        } else {
+          rows.push([o.id, `"${o.submittedBy}"`, orderDate, '', '', '', '', '', '', '', o.orderTotalCost.toFixed(2), 'Delivered']);
+        }
+      });
+
+      const csvContent = rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `energise_costs_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      showToast('✓ CSV Downloaded');
+    };
+
+    // ── Manual Order Form Logic ───────────────────────────────
+    window.openManualOrderModal = function() {
+      // Set date to today
+      document.getElementById('manualProcessedDate').value = new Date().toISOString().split('T')[0];
+      
+      // Populate engineers dropdown
+      const dropdown = document.getElementById('manualEngineerSelect');
+      if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Choose Engineer --</option>' +
+          window.engineerNames.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+      }
+      
+      // Clear rows and add first row
+      const body = document.getElementById('manualItemsBody');
+      body.innerHTML = '';
+      addManualItemRow();
+      
+      // Open modal
+      document.getElementById('manualOrderModal').classList.add('show');
+    };
+    
+    window.closeManualOrderModal = function() {
+      document.getElementById('manualOrderModal').classList.remove('show');
+    };
+    
+    let manualRowCounter = 0;
+    window.addManualItemRow = function() {
+      const body = document.getElementById('manualItemsBody');
+      const rowId = 'manual-row-' + (++manualRowCounter);
+      
+      const tr = document.createElement('tr');
+      tr.id = rowId;
+      tr.innerHTML = `
+        <td>
+          <input type="text" class="manual-input-text manual-sku-input" placeholder="e.g. 28002" oninput="updateManualRowDetails('${rowId}')">
+        </td>
+        <td>
+          <span class="item-detail-text" id="details-text-${rowId}">Type a SKU to lookup...</span>
+        </td>
+        <td>
+          <input type="number" class="manual-input-text manual-qty-input" min="1" max="9999" value="1">
+        </td>
+        <td style="text-align:center;">
+          <button class="btn-row-delete" onclick="deleteManualRow('${rowId}')" title="Delete Row" style="margin:0 auto;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </td>
+      `;
+      body.appendChild(tr);
+    };
+    
+    window.deleteManualRow = function(rowId) {
+      const row = document.getElementById(rowId);
+      if (row) row.remove();
+      
+      // Ensure at least one row remains
+      const body = document.getElementById('manualItemsBody');
+      if (body.children.length === 0) {
+        addManualItemRow();
+      }
+    };
+    
+    window.updateManualRowDetails = function(rowId) {
+      const row = document.getElementById(rowId);
+      if (!row) return;
+      
+      const skuInput = row.querySelector('.manual-sku-input');
+      const sku = skuInput.value.toUpperCase().trim();
+      const detailsSpan = document.getElementById('details-text-' + rowId);
+      
+      if (!sku) {
+        detailsSpan.innerHTML = 'Type a SKU to lookup...';
+        return;
+      }
+      
+      const match = window.inventoryCatalogue[sku];
+      if (match) {
+        detailsSpan.innerHTML = `<strong style="color:var(--accent)">${match.name}</strong><br>Unit: ${match.uom} &middot; Price: £${match.price.toFixed(2)} &middot; Cat: ${match.category}`;
+      } else {
+        detailsSpan.innerHTML = `<span style="color:var(--text-muted)">SKU not in inventory database.<br>Will save with fallback details.</span>`;
+      }
+    };
+    
+    window.submitManualOrder = async function() {
+      const engineer = document.getElementById('manualEngineerSelect').value;
+      const dateVal = document.getElementById('manualProcessedDate').value;
+      const btn = document.getElementById('manualSubmitBtn');
+      
+      if (!engineer) {
+        showToast('Please select an engineer.', true);
+        return;
+      }
+      if (!dateVal) {
+        showToast('Please select a processed date.', true);
+        return;
+      }
+      
+      const rows = document.querySelectorAll('#manualItemsBody tr');
+      const itemsArray = [];
+      let totalQty = 0;
+      
+      for (const row of rows) {
+        const skuInput = row.querySelector('.manual-sku-input');
+        const qtyInput = row.querySelector('.manual-qty-input');
+        
+        const sku = skuInput.value.toUpperCase().trim();
+        const qty = parseInt(qtyInput.value) || 1;
+        
+        if (!sku) continue; // skip empty SKUs
+        
+        const match = window.inventoryCatalogue[sku];
+        const itemObj = {
+          sku: sku,
+          qty: qty,
+          name: match ? match.name : `Manual SKU (${sku})`,
+          price: match ? match.price : 0.00,
+          uom: match ? match.uom : 'each',
+          category: match ? match.category : 'consumable'
+        };
+        
+        itemsArray.push(itemObj);
+        totalQty += qty;
+      }
+      
+      if (itemsArray.length === 0) {
+        showToast('Please add at least one item with a valid SKU.', true);
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      
+      try {
+        const processedDateObj = new Date(dateVal);
+        const now = new Date();
+        processedDateObj.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        
+        const orderData = {
+          submittedBy: engineer,
+          submittedAt: processedDateObj,
+          processedAt: processedDateObj.toISOString(),
+          itemCount: itemsArray.length,
+          items: itemsArray
+        };
+        
+        await addDoc(collection(db, "Energise Orders Pudo"), orderData);
+        
+        showToast('✓ Manual processed order saved successfully.', false);
+        closeManualOrderModal();
+        loadData(); // reload dashboard
+      } catch (e) {
+        console.error(e);
+        showToast('Failed to save manual order: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Processed Order';
+      }
+    };
+
+    window.toggleItemDelivery = async function(orderId, itemIndex) {
+      const order = allOrders.find(o => o.id === orderId);
+      if (!order || !order.items || !order.items[itemIndex]) return;
+      
+      const item = order.items[itemIndex];
+      item.notDelivered = !item.notDelivered;
+      
+      try {
+        const docRef = doc(db, "Energise Orders Pudo", orderId);
+        await updateDoc(docRef, {
+          items: order.items
+        });
+        
+        order.orderTotalCost = order.items.reduce((sum, it) => {
+          if (it.notDelivered) return sum;
+          return sum + ((it.price || 0) * (it.qty || 1));
+        }, 0);
+        
+        showToast(item.notDelivered ? '✓ Marked item as Not Delivered.' : '✓ Marked item as Delivered.', false);
+        
+        renderTable();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to update status: ' + err.message, true);
+        item.notDelivered = !item.notDelivered;
+      }
+    };
+
+    loadData();
+  </script>
+
+  <!-- Manual Order Modal -->
+  <div class="manual-modal-overlay" id="manualOrderModal" onclick="closeManualOrderModal()">
+    <div class="manual-modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Add Manual Processed Order</div>
+        <button class="modal-close" onclick="closeManualOrderModal()">×</button>
+      </div>
+      <div style="padding: 24px; overflow-y: auto; flex: 1;">
+        <div class="manual-form-grid">
+          <div class="input-group">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Engineer</label>
+            <select id="manualEngineerSelect" class="manual-input-text" style="height: 38px; padding-left: 10px;">
+              <option value="">-- Choose Engineer --</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Processed Date</label>
+            <input type="date" id="manualProcessedDate" class="manual-input-text" style="height: 38px;">
+          </div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+          <h4 style="font-family:'Syne',sans-serif; font-size:14px; font-weight:700; color:var(--text); margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:6px;">Order Items</h4>
+          <div style="max-height: 250px; overflow-y: auto;">
+            <table class="manual-items-table">
+              <thead>
+                <tr>
+                  <th width="140">SKU</th>
+                  <th>Product Details</th>
+                  <th width="80">Qty</th>
+                  <th width="40"></th>
+                </tr>
+              </thead>
+              <tbody id="manualItemsBody">
+                <!-- dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+          <button class="btn-add-row" onclick="addManualItemRow()">+ Add Item Row</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeManualOrderModal()">Cancel</button>
+        <button class="btn btn-primary" id="manualSubmitBtn" onclick="submitManualOrder()" style="background:#10b981; border-color:#10b981;">Save Processed Order</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+
+
