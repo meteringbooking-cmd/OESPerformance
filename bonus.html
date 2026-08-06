@@ -138,6 +138,21 @@
             color: #0c5460;
         }
 
+        .overwrite-info {
+            margin-bottom: 20px;
+            padding: 12px 15px;
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 5px;
+            font-size: 0.85em;
+            color: #856404;
+            display: none;
+        }
+
+        .overwrite-info.show {
+            display: block;
+        }
+
         .bonus-table {
             width: 100%;
             border-collapse: collapse;
@@ -308,6 +323,10 @@
             <strong>Bonus Rules:</strong> 6 meters or less = £0 | Above 6: Comms = £25, Single = £50, Dual = £80 (except 7th meter dual = £50)
         </div>
 
+        <div id="overwriteInfo" class="overwrite-info">
+            ⚠️ Saving will overwrite any previously saved bonus data for this engineer and week starting <span id="overwriteWeek"></span>.
+        </div>
+
         <div id="loadingDiv" class="loading" style="display: none;">Processing bonus calculations...</div>
 
         <div id="tableContainer" style="display: none;">
@@ -335,7 +354,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs';
 
         const firebaseConfig = {
@@ -361,6 +380,29 @@
         const diff = today.getDate() - day + (day === 0 ? -6 : 1);
         const lastMonday = new Date(today.setDate(diff));
         document.getElementById('startDate').valueAsDate = lastMonday;
+
+        // Show/update the overwrite warning whenever the date changes
+        function updateOverwriteInfo() {
+            const startDate = document.getElementById('startDate').value;
+            const infoDiv = document.getElementById('overwriteInfo');
+            if (startDate) {
+                document.getElementById('overwriteWeek').textContent = startDate;
+                infoDiv.classList.add('show');
+            } else {
+                infoDiv.classList.remove('show');
+            }
+        }
+        document.getElementById('startDate').addEventListener('change', updateOverwriteInfo);
+        updateOverwriteInfo();
+
+        // Turn a string into a safe Firestore document-ID fragment
+        function sanitizeForId(str) {
+            return String(str)
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+        }
 
         // Load engineers
         async function loadEngineers() {
@@ -564,7 +606,7 @@
                 }
 
                 displayBonusTable();
-                showMessage('Bonus calculations complete!', 'success');
+                showMessage('Bonus calculations complete! Saving will overwrite any existing data for this week.', 'success');
 
                 event.target.value = '';
 
@@ -613,27 +655,32 @@
             document.getElementById('tableContainer').style.display = 'block';
         }
 
-        window.saveData = async function() {
+        // Save (upsert): each engineer's record for a given week always lands on the
+        // SAME Firestore document ID, so re-saving the same week overwrites the
+        // previous data instead of creating a duplicate entry.
+        window.saveData = async function(evt) {
             if (Object.keys(bonusData).length === 0) {
                 showMessage('No bonus data to save. Please upload a file first.', 'error');
                 return;
             }
 
-            const quickBtn = document.getElementById('quickSaveBtn');
-            const bottomBtn = document.querySelector('.btn');
-            const clickedBtn = event.target;
-            
-            clickedBtn.disabled = true;
-            const originalText = clickedBtn.textContent;
-            clickedBtn.textContent = 'Saving...';
+            const startDate = document.getElementById('startDate').value;
+            if (!startDate) {
+                showMessage('Please select a start date.', 'error');
+                return;
+            }
+
+            // Disable both save buttons while saving
+            const buttons = [document.getElementById('quickSaveBtn'), document.querySelector('.btn')].filter(Boolean);
+            const originalTexts = buttons.map(b => b.textContent);
+            buttons.forEach(b => { b.disabled = true; b.textContent = 'Saving...'; });
 
             try {
-                const batch = [];
-                const startDate = document.getElementById('startDate').value;
+                const writes = [];
 
                 Object.keys(bonusData).forEach(engineerName => {
                     const engineer = engineers.find(e => e.engineerName.toLowerCase() === engineerName.toLowerCase());
-                    
+
                     let weekTotal = 0;
                     const dailyBonuses = {};
 
@@ -643,7 +690,14 @@
                         dailyBonuses[date] = dayData.bonus;
                     });
 
-                    batch.push(addDoc(collection(db, "bonuses"), {
+                    // Deterministic doc ID = engineer identifier + week start date.
+                    // Using the same ID every time this engineer/week combo is saved
+                    // means setDoc will REPLACE the existing document rather than
+                    // creating a new one.
+                    const engineerKey = engineer?.id || sanitizeForId(engineerName);
+                    const docId = `${engineerKey}_${startDate}`;
+
+                    writes.push(setDoc(doc(db, "bonuses", docId), {
                         engineerId: engineer?.id || null,
                         engineerName: engineerName,
                         teamLeader: engineer?.teamLeader || 'Unknown',
@@ -654,9 +708,9 @@
                     }));
                 });
 
-                await Promise.all(batch);
-                
-                showMessage('Bonuses saved successfully!', 'success');
+                await Promise.all(writes);
+
+                showMessage('Bonuses saved successfully! Any previous data for this week was overwritten.', 'success');
                 bonusData = {};
                 document.getElementById('tableContainer').style.display = 'none';
 
@@ -664,8 +718,7 @@
                 console.error("Error saving bonuses:", error);
                 showMessage('Error saving bonuses. Please try again.', 'error');
             } finally {
-                clickedBtn.disabled = false;
-                clickedBtn.textContent = originalText;
+                buttons.forEach((b, i) => { b.disabled = false; b.textContent = originalTexts[i]; });
             }
         }
 
