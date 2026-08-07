@@ -729,9 +729,27 @@
   // ── Load inventory ────────────────────────────────────────────────
   async function loadInventory() {
     try {
+      // 1. Fetch Bybox inventory to get the master prices
+      const masterPrices = {};
+      const byboxSnap = await getDocs(collection(db, 'Energise Inventory'));
+      byboxSnap.forEach(d => {
+        const data = d.data();
+        if (data.sku) {
+          masterPrices[data.sku] = data.price;
+        }
+      });
+
+      // 2. Fetch Pudo inventory and apply synced prices
       const snap = await getDocs(collection(db, 'Energise Inventory Pudo'));
       snap.forEach(d => {
         const data = d.data();
+        
+        // Auto-sync price from Bybox master if it exists (strip the -C from the Pudo SKU)
+        const baseSku = (data.sku || '').replace('-C', '');
+        if (masterPrices[baseSku] !== undefined) {
+            data.price = masterPrices[baseSku];
+        }
+        
         window.ITEMS[data.sku] = { ...data };
       });
       window.markClean();
