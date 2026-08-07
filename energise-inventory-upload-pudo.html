@@ -730,13 +730,11 @@
   async function loadInventory() {
     try {
       // 1. Fetch Bybox inventory to get the master prices
-      const masterPrices = {};
+      window.MASTER_PRICES = {};
       const byboxSnap = await getDocs(collection(db, 'Energise Inventory'));
       byboxSnap.forEach(d => {
         const data = d.data();
-        if (data.sku) {
-          masterPrices[data.sku] = data.price;
-        }
+        window.MASTER_PRICES[d.id] = data.price;
       });
 
       // 2. Fetch Pudo inventory and apply synced prices
@@ -744,13 +742,13 @@
       snap.forEach(d => {
         const data = d.data();
         
-        // Auto-sync price from Bybox master if it exists (strip the -C from the Pudo SKU)
-        const baseSku = (data.sku || '').replace('-C', '');
-        if (masterPrices[baseSku] !== undefined) {
-            data.price = masterPrices[baseSku];
+        // Auto-sync price from Bybox master if it exists (strip the -C from the Pudo SKU robustly)
+        const baseSku = (d.id || '').replace(/[- ]*c$/i, '');
+        if (window.MASTER_PRICES[baseSku] !== undefined) {
+            data.price = window.MASTER_PRICES[baseSku];
         }
         
-        window.ITEMS[data.sku] = { ...data };
+        window.ITEMS[d.id] = { ...data, sku: d.id };
       });
       window.markClean();
       window.renderTable();
@@ -967,13 +965,20 @@ window.addSingleItem = function() {
     delete window.ITEMS[editingSku];
   }
 
+  // Auto-fetch master price if possible
+  const baseSku = skuVal.replace(/[- ]*c$/i, '');
+  let finalPrice = price.value !== '' ? Number(price.value) : '';
+  if (finalPrice === '' && window.MASTER_PRICES && window.MASTER_PRICES[baseSku] !== undefined) {
+      finalPrice = window.MASTER_PRICES[baseSku];
+  }
+
   window.ITEMS[skuVal] = {
     category:   cat.value,
     sku:        skuVal,
     name:       name.value.trim(),
     dailyLimit: limit.value !== '' ? Number(limit.value) : '',
     uom:        uom.value.trim(),
-    price:      price.value !== '' ? Number(price.value) : '',
+    price:      finalPrice,
   };
 
   // Reset form
@@ -1103,7 +1108,13 @@ function parseUploadedRows(rows, filename) {
     if (!['consumable','meter'].includes(cat)) { skipped.push(`Row ${i+2}: category must be 'consumable' or 'meter'`); return; }
 
     const limitVal = colMap.dailyLimit !== -1 ? row[colMap.dailyLimit] : '';
-    const priceVal = colMap.price      !== -1 ? row[colMap.price]      : '';
+    let priceVal = colMap.price      !== -1 ? row[colMap.price]      : '';
+
+    // Auto-fetch master price if possible
+    const baseSku = sku.replace(/[- ]*c$/i, '');
+    if (priceVal === '' && window.MASTER_PRICES && window.MASTER_PRICES[baseSku] !== undefined) {
+        priceVal = window.MASTER_PRICES[baseSku];
+    }
 
     parsed.push({
       category:   cat,
