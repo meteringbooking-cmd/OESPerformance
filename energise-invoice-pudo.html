@@ -1,1351 +1,1202 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Official Invoice Spend Tracker - Energise</title>
-  
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&family=DM+Mono:ital,wght@0,300..500;1,300..500&display=swap" rel="stylesheet">
-  
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pudo — Inventory Upload</title>
+<meta name="description" content="Manage and upload the Energise stock inventory. Add individual items or bulk upload via CSV or XLSX.">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- SheetJS for XLSX parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #141820;
+    --surface: #1e2530;
+    --surface2: #252d3a;
+    --border: #2e3a4e;
+    --accent: #d4f53c;
+    --accent2: #47c8ff;
+    --text: #f0f4ff;
+    --text-muted: #8899aa;
+    --in-stock: #4ade80;
+    --out: #f87171;
+    --warning: #fbbf24;
+    --radius: 6px;
+  }
 
-  <style>
-    :root {
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --surface2: #f1f5f9;
-      --border: #cbd5e1;
-      --border2: #e2e8f0;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --accent: #1e40af;
-      --accent-h: #1e3a8a;
-      --accent-lt: #eff6ff;
-      --accent2: #059669;
-      --accent2-lt: #ecfdf5;
-      --danger: #ef4444;
-      --radius: 12px;
-      --radius-sm: 8px;
-    }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; min-height: 100vh; }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* ── HEADER ──────────────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .header-badge {
+    background: rgba(212,245,60,0.12);
+    border: 1px solid rgba(212,245,60,0.25);
+    color: var(--accent);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+  }
+  .header-right { display: flex; align-items: center; gap: 14px; }
 
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      line-height: 1.5;
-    }
+  /* ── SAVE BAR ────────────────────────────────────────────────────── */
+  .save-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .save-bar-left { display: flex; align-items: center; gap: 16px; }
+  .item-counter {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .item-counter strong { color: var(--text); }
+  .unsaved-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--warning);
+    display: none;
+    animation: pulse-dot 1.5s infinite;
+  }
+  .unsaved-dot.show { display: inline-block; }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .btn-save {
+    background: var(--accent); color: #000; border: none;
+    padding: 9px 22px; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-save:hover { background: #d4eb30; transform: translateY(-1px); }
+  .btn-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; transform: none; }
+  .btn-export {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; gap: 7px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
 
-    .app-header {
-      background: #0f172a;
-      color: #fff;
-      padding: 16px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
+  /* ── PAGE LAYOUT ─────────────────────────────────────────────────── */
+  .page { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
 
-    .brand {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 24px;
-      color: #fff;
-      text-decoration: none;
-    }
-    .brand span { color: var(--accent2); }
+  /* ── SECTION TITLE ───────────────────────────────────────────────── */
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 14px;
+  }
 
-    .header-actions {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
+  /* ── ADD ITEM CARD ───────────────────────────────────────────────── */
+  .add-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .add-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+  .add-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .add-card-title svg { color: var(--accent); }
 
-    .btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 16px;
-      border-radius: var(--radius-sm);
-      font-weight: 500;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
-      font-size: 14px;
-    }
-    .btn:hover { background: var(--surface2); }
-    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn-primary:hover { background: var(--accent-h); }
-    .btn-success { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-    .btn-success:hover { background: #047857; }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr 1.4fr 130px 110px 130px 60px;
+    gap: 12px;
+    align-items: end;
+  }
+  @media (max-width: 1100px) {
+    .form-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .form-grid .form-submit { grid-column: span 3; }
+  }
+  @media (max-width: 680px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid .form-submit { grid-column: 1; }
+  }
 
-    .layout-wrapper {
-      display: flex;
-      max-width: 98vw;
-      margin: 24px auto;
-      padding: 0 16px;
-      gap: 24px;
-      align-items: flex-start;
-    }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-label {
+    font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+  }
+  .form-label .req { color: var(--out); }
+  .form-input, .form-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-input::placeholder { color: var(--text-muted); }
+  .form-input:focus, .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(212,245,60,0.12);
+  }
+  .form-input.err, .form-select.err { border-color: var(--out); }
+  .form-select { cursor: pointer; }
+  .form-select option { background: var(--surface); }
 
-    /* Sidebar list */
-    .sidebar {
-      width: 320px;
-      flex-shrink: 0;
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      position: sticky;
-      top: 100px;
-      max-height: calc(100vh - 132px);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .sidebar-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border2);
-      font-weight: 700;
-      font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-muted);
-      background: var(--bg);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .sidebar-list {
-      list-style: none;
-      overflow-y: auto;
-    }
-    .sidebar-list li {
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border2);
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: background 0.15s;
-    }
-    .sidebar-list li:hover, .sidebar-list li.active {
-      background: var(--accent-lt);
-    }
-    .sidebar-list li.active .eng-name {
-      color: var(--accent);
-      font-weight: 700;
-    }
-    .eng-name { font-size: 14px; font-weight: 600; }
-    .eng-spend { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--accent2); font-weight: 600; }
+  .btn-add-item {
+    background: var(--accent); color: #000; border: none;
+    padding: 10px 0; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; width: 100%;
+    transition: background 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-add-item:hover { background: #d4eb30; transform: translateY(-1px); }
 
-    /* Main Dashboard */
-    .main-content {
-      flex: 1;
-      min-width: 0;
-    }
+  /* ── BULK UPLOAD CARD ────────────────────────────────────────────── */
+  .bulk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bulk-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent2), #a78bfa);
+  }
+  .bulk-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px; font-weight: 700;
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .bulk-card-title svg { color: var(--accent2); }
+  .bulk-inner { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+  .drop-zone {
+    flex: 1; min-width: 260px;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(71,200,255,0.05);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { color: var(--accent2); margin-bottom: 10px; }
+  .drop-text { font-size: 13px; color: var(--text-muted); }
+  .drop-text strong { color: var(--text); }
+  .drop-types {
+    margin-top: 6px; font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .bulk-info {
+    flex: 1; min-width: 240px;
+  }
+  .bulk-info-title {
+    font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 10px;
+  }
+  .bulk-headers {
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .bulk-header-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: 'DM Mono', monospace; font-size: 12px;
+  }
+  .bulk-header-row .col-badge {
+    background: rgba(71,200,255,0.12); color: var(--accent2);
+    border-radius: 4px; padding: 2px 7px;
+    font-size: 10px; font-weight: 500;
+  }
+  .col-desc { color: var(--text-muted); font-size: 11px; }
+  .btn-template {
+    margin-top: 14px;
+    background: none; border: 1px solid var(--border);
+    color: var(--text-muted); padding: 7px 14px;
+    border-radius: var(--radius); font-family: 'DM Sans', sans-serif;
+    font-size: 12px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-template:hover { border-color: var(--accent2); color: var(--accent2); }
 
-    /* Metrics Row */
-    .metrics-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .metric-card label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-muted);
-      display: block;
-      margin-bottom: 6px;
-    }
-    .metric-card .value {
-      font-family: 'DM Mono', monospace;
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .metric-card .value.spend { color: var(--accent); }
+  /* ── PREVIEW BANNER ──────────────────────────────────────────────── */
+  .preview-banner {
+    display: none;
+    background: rgba(71,200,255,0.07);
+    border: 1px solid rgba(71,200,255,0.25);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .preview-banner.show { display: flex; }
+  .preview-banner-left { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .preview-banner-left svg { color: var(--accent2); flex-shrink: 0; }
+  .preview-banner strong { color: var(--accent2); }
+  .preview-banner-actions { display: flex; gap: 8px; }
+  .btn-sm {
+    padding: 6px 14px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-sm-accept {
+    background: var(--accent2); color: #000; border: none;
+  }
+  .btn-sm-accept:hover { background: #6fd8ff; }
+  .btn-sm-cancel {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .btn-sm-cancel:hover { border-color: var(--out); color: var(--out); }
 
-    /* Filter Card */
-    .filters-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 24px;
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr auto;
-      gap: 16px;
-      align-items: end;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .input-group { display: flex; flex-direction: column; gap: 6px; }
-    .input-group label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-    .input-group input, .input-group select {
-      padding: 8px 12px;
-      border: 1px solid var(--border2);
-      border-radius: var(--radius-sm);
-      outline: none;
-      font-size: 14px;
-      font-family: inherit;
-    }
-    .input-group input:focus, .input-group select:focus { border-color: var(--accent); }
+  /* ── SEARCH / FILTER TOOLBAR ─────────────────────────────────────── */
+  .toolbar {
+    display: flex; gap: 12px; align-items: center;
+    flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .search-wrap { position: relative; flex: 1; min-width: 200px; }
+  .search-wrap svg {
+    position: absolute; left: 11px; top: 50%;
+    transform: translateY(-50%); color: var(--text-muted); pointer-events: none;
+  }
+  .search-input {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius);
+    padding: 9px 12px 9px 34px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    width: 100%; outline: none; transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-muted); }
+  .filter-select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius);
+    padding: 9px 12px; font-family: 'DM Sans', sans-serif;
+    font-size: 13px; min-width: 160px; outline: none;
+    cursor: pointer; transition: border-color 0.2s;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+  .filter-select option { background: var(--surface); }
+  .results-count {
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--text-muted); white-space: nowrap;
+  }
 
-    /* Charts Container */
-    .charts-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .charts-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-    }
-    .chart-container {
-      height: 250px;
-      position: relative;
-    }
+  /* ── INVENTORY TABLE ─────────────────────────────────────────────── */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { border-bottom: 2px solid var(--accent); }
+  th {
+    font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+    padding: 12px 16px; text-align: left; white-space: nowrap;
+    background: var(--surface);
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text); }
+  th.sort-asc::after { content: ' ↑'; color: var(--accent); }
+  th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+  th.no-sort { cursor: default; }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.04); }
+  tbody tr.preview-row { background: rgba(71,200,255,0.06); }
+  td { padding: 11px 16px; vertical-align: middle; }
 
-    /* Table styles */
-    .table-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-      overflow: hidden;
-    }
-    .table-header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border2);
-    }
-    .table-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; text-align: left; }
-    th {
-      background: var(--bg);
-      padding: 12px 16px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid var(--border2);
-      white-space: nowrap;
-    }
-    td { padding: 12px 16px; border-bottom: 1px solid var(--border2); font-size: 13px; }
-    tr:hover td { background: #f8fafc; }
-    .price-mono { font-family: 'DM Mono', monospace; font-weight: 600; }
+  .cat-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    font-weight: 500; white-space: nowrap;
+    text-transform: capitalize;
+  }
+  .cat-consumable { background: rgba(251,191,36,0.12); color: var(--warning); }
+  .cat-meter      { background: rgba(71,200,255,0.12); color: var(--accent2); }
 
-    /* Pagination */
-    .pagination-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 20px;
-      background: var(--bg);
-      border-top: 1px solid var(--border2);
-    }
+  .sku-mono {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted);
+  }
+  .uom-badge {
+    display: inline-block; background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 8px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent2);
+  }
+  .price-cell {
+    font-family: 'DM Mono', monospace; font-size: 13px; color: var(--in-stock);
+  }
+  .limit-cell {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted);
+  }
+  .btn-delete {
+    background: none; border: 1px solid transparent; color: var(--text-muted);
+    padding: 5px 10px; border-radius: var(--radius); cursor: pointer;
+    font-size: 12px; transition: background 0.15s, border-color 0.15s, color 0.15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-delete:hover {
+    background: rgba(248,113,113,0.1); border-color: var(--out);
+    color: var(--out);
+  }
+  .preview-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px;
+    background: rgba(71,200,255,0.12); color: var(--accent2);
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    margin-left: 6px;
+  }
 
-    /* Modal styles */
-    .modal-overlay {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(15, 23, 42, 0.6);
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0; pointer-events: none; transition: opacity 0.2s;
-      z-index: 1000; backdrop-filter: blur(4px);
-    }
-    .modal-overlay.show { opacity: 1; pointer-events: auto; }
-    .modal-content {
-      background: var(--surface); border-radius: var(--radius);
-      width: 90%; max-width: 900px; box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-      transform: translateY(20px); transition: transform 0.2s;
-      display: flex; flex-direction: column; overflow: hidden;
-      max-height: 90vh;
-    }
-    .modal-overlay.show .modal-content { transform: translateY(0); }
-    .modal-header {
-      padding: 18px 24px; border-bottom: 1px solid var(--border2);
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .modal-title-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; }
-    .modal-close {
-      background: transparent; border: none; font-size: 24px;
-      color: var(--text-muted); cursor: pointer; line-height: 1;
-    }
-    .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
-    .modal-footer {
-      padding: 16px 24px; background: var(--bg); border-top: 1px solid var(--border2);
-      display: flex; justify-content: flex-end; gap: 12px;
-    }
+  /* ── EMPTY STATE ─────────────────────────────────────────────────── */
+  .empty-state {
+    text-align: center;
+    padding: 56px 20px;
+    color: var(--text-muted);
+  }
+  .empty-icon { margin-bottom: 14px; opacity: 0.25; }
+  .empty-state h3 {
+    font-family: 'Syne', sans-serif; font-size: 16px;
+    color: var(--text); margin-bottom: 8px;
+  }
+  .empty-state p { font-size: 13px; }
 
-    /* Paste Box */
-    .paste-box {
-      width: 100%; height: 200px; padding: 12px; border: 2px dashed var(--border);
-      border-radius: var(--radius-sm); outline: none; font-family: 'DM Mono', monospace;
-      font-size: 12px; background: var(--bg); resize: none; margin-bottom: 16px;
-    }
-    .paste-box:focus { border-color: var(--accent); background: var(--surface); }
+  /* ── TOAST ───────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1e3a1e; border: 1px solid var(--in-stock); color: var(--in-stock);
+    padding: 12px 24px; border-radius: 8px; font-family: 'DM Sans', sans-serif;
+    font-size: 14px; font-weight: 500; z-index: 9999; opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease; white-space: nowrap;
+  }
+  .toast.error { background: #3a1e1e; border-color: var(--out); color: var(--out); }
+  .toast.warn  { background: #3a2e10; border-color: var(--warning); color: var(--warning); }
+  .toast.show  { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-    /* Toast */
-    .toast {
-      position: fixed; bottom: 24px; right: 24px; background: #0f172a;
-      color: #fff; padding: 12px 24px; border-radius: var(--radius-sm);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 2000;
-      transform: translateY(100px); opacity: 0; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      font-weight: 500; font-size: 14px;
-    }
-    .toast.show { transform: translateY(0); opacity: 1; }
-    .toast.error { background: var(--danger); }
+  /* ── CONFIRM MODAL ───────────────────────────────────────────────── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; width: 420px; max-width: 95vw;
+    padding: 28px;
+  }
+  .modal h3 {
+    font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn-modal-cancel {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .btn-modal-cancel:hover { border-color: var(--accent); }
+  .btn-modal-confirm {
+    background: var(--out); border: none; color: #fff;
+    padding: 9px 18px; border-radius: var(--radius);
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn-modal-confirm:hover { background: #f95f5f; }
 
-    /* Insights & Outliers CSS */
-    .insights-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 24px;
-    }
-    .insight-card {
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .insight-list {
-      list-style: none;
-      margin-top: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .insight-list-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      padding: 8px 12px;
-      background: var(--surface2);
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border2);
-    }
-    .insight-badge {
-      background: rgba(239, 68, 68, 0.1);
-      color: var(--danger);
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-    }
-    .outliers-box {
-      max-height: 220px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 12px;
-      padding-right: 4px;
-    }
-  </style>
+  /* ── RESPONSIVE ──────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    header, .save-bar, .page { padding-left: 16px; padding-right: 16px; }
+    .add-card, .bulk-card { padding: 18px 16px; }
+  }
+
+  /* NAVIGATION */
+  .nav-container {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .nav-links {
+    display: flex;
+    gap: 16px;
+    margin-left: 12px;
+  }
+  .nav-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: color 0.15s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .nav-link:hover, .nav-link.active {
+    color: var(--accent);
+  }
+</style>
 </head>
 <body>
 
-  <header class="app-header">
-    <a href="#" class="brand">pudo<span>.</span> invoices</a>
-    <div class="header-actions">
-      <button class="btn btn-primary" onclick="openImportModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Copy &amp; Paste Excel Invoice
-      </button>
-      <button class="btn" onclick="window.location.href='energise-order-cost-pudo.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
-        Back to Costs Dashboard
-      </button>
+<!-- ── HEADER ──────────────────────────────────────────────────────── -->
+<header>
+  <div class="nav-container">
+    <div class="logo">energise<span>.</span></div>
+    <nav class="nav-links">
+      <a href="energise-order-form-pudo.html" class="nav-link">Order Form</a>
+      <a href="energise-inventory-upload-pudo.html" class="nav-link active">Inventory Upload</a>
+      <a href="energise-order-form-images.html" class="nav-link">Image Upload</a>
+      <a href="order-selection.html" class="nav-link">Engineer Selections</a>
+    </nav>
+  </div>
+  <div class="header-right">
+    <span class="header-badge">Inventory Management</span>
+  </div>
+</header>
+
+<!-- ── SAVE BAR ────────────────────────────────────────────────────── -->
+<div class="save-bar">
+  <div class="save-bar-left">
+    <span class="item-counter">
+      <strong id="totalCount">0</strong> items in inventory
+    </span>
+    <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes"></span>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button class="btn-export" id="exportBtn" onclick="exportCSV()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export CSV
+    </button>
+    <button class="btn-save" id="saveBtn" onclick="saveToFirebase()" disabled>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Save to Firebase
+    </button>
+  </div>
+</div>
+
+<!-- ── PAGE ────────────────────────────────────────────────────────── -->
+<div class="page">
+
+  <!-- ADD SINGLE ITEM -->
+  <div class="add-card">
+    <div class="add-card-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Add Single Item
     </div>
-  </header>
-
-  <div class="layout-wrapper">
-    <!-- Sidebar / Top Spenders -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <span>Spends By Engineer</span>
-        <button class="btn" onclick="clearSelectedEngineer()" style="padding: 2px 6px; font-size: 11px;">Clear</button>
+    <div class="form-grid" id="addForm">
+      <div class="form-group">
+        <label class="form-label" for="f-cat">Category <span class="req">*</span></label>
+        <select class="form-select" id="f-cat">
+          <option value="">Select…</option>
+          <option value="consumable">Consumable</option>
+          <option value="meter">Meter</option>
+        </select>
       </div>
-      <ul class="sidebar-list" id="engineerList">
-        <!-- populated dynamically -->
-        <li style="color:var(--text-muted); font-size:13px; text-align:center;">No data loaded.</li>
-      </ul>
-    </aside>
+      <div class="form-group">
+        <label class="form-label" for="f-sku">SKU Code <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-sku" placeholder="e.g. 36515">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-name">Product Name <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-name" placeholder="e.g. 1¼″ BS746 Sealing Cap Washer">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-limit">Daily Limit</label>
+        <input class="form-input" type="number" id="f-limit" placeholder="e.g. 10" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-uom">UOM <span class="req">*</span></label>
+        <input class="form-input" type="text" id="f-uom" placeholder="e.g. EA">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-price">Price / Unit (£)</label>
+        <input class="form-input" type="number" id="f-price" placeholder="e.g. 1.25" min="0" step="0.01">
+      </div>
+      <div class="form-group form-submit">
+        <label class="form-label" style="visibility:hidden">Add</label>
+        <button class="btn-add-item" id="addItemBtn" onclick="addSingleItem()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add
+        </button>
+      </div>
+    </div>
+  </div>
 
-    <!-- Main Content Panel -->
-    <main class="main-content">
-      <!-- Metrics row -->
-      <div class="metrics-row" style="grid-template-columns: repeat(5, 1fr);">
-        <div class="metric-card">
-          <label>Total Spend</label>
-          <div class="value spend" id="statTotalSpend">£0.00</div>
+  <!-- BULK UPLOAD -->
+  <div class="bulk-card">
+    <div class="bulk-card-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+      Bulk Upload
+    </div>
+    <div class="bulk-inner">
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="bulkFileInput" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this.files[0])">
+        <div class="drop-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
         </div>
-        <div class="metric-card">
-          <label>Active Engineers</label>
-          <div class="value" id="statActiveEngineers">0</div>
+        <div class="drop-text">
+          <strong>Drop your file here</strong> or click to browse
         </div>
-        <div class="metric-card">
-          <label>Spend per Head</label>
-          <div class="value" style="color:var(--accent);" id="statSpendPerHead">£0.00</div>
-        </div>
-        <div class="metric-card">
-          <label>Avg Line Value</label>
-          <div class="value" id="statAvgLine">£0.00</div>
-        </div>
-        <div class="metric-card">
-          <label>Avg Daily Spend</label>
-          <div class="value" id="statAvgDailySpend">£0.00</div>
-        </div>
+        <div class="drop-types">Accepts .csv · .xlsx · .xls</div>
       </div>
 
-      <!-- Spend Charts Panel -->
-      <div class="charts-card">
-        <div class="charts-grid" style="grid-template-columns: repeat(3, 1fr);">
-          <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Monthly Spend Breakdown</h4>
-            <div class="chart-container">
-              <canvas id="trendChart"></canvas>
-            </div>
+      <div class="bulk-info">
+        <div class="bulk-info-title">Required Column Headers</div>
+        <div class="bulk-headers">
+          <div class="bulk-header-row">
+            <span class="col-badge">A</span>
+            <span style="color:var(--text);font-weight:500">Category</span>
+            <span class="col-desc">consumable or meter</span>
           </div>
-          <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Weekly Spend Breakdown</h4>
-            <div class="chart-container" style="height:250px;">
-              <canvas id="weeklyChart"></canvas>
-            </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">B</span>
+            <span style="color:var(--text);font-weight:500">SKU</span>
+            <span class="col-desc">unique product code</span>
           </div>
-          <div>
-            <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Top Spenders Spends</h4>
-            <div class="chart-container">
-              <canvas id="topSpendersChart"></canvas>
-            </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">C</span>
+            <span style="color:var(--text);font-weight:500">Product Name</span>
+            <span class="col-desc">full item description</span>
           </div>
-        </div>
-      </div>
-
-      <!-- Insights Panel -->
-      <div class="insights-grid">
-        <div class="insight-card">
-          <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border2); padding-bottom:6px;">Top Cost Drivers (Top 5 SKUs)</h4>
-          <ul class="insight-list" id="topCostDriversList">
-            <!-- populated dynamically -->
-          </ul>
-        </div>
-        
-        <div class="insight-card">
-          <h4 style="font-family:'Syne',sans-serif; font-size:13px; font-weight:700; text-transform:uppercase; color:var(--danger); border-bottom:1px solid var(--border2); padding-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-            <span>High-Value Outliers (Lines > £50)</span>
-            <span class="insight-badge" id="outliersCountBadge" style="background:var(--danger); color:#fff; font-size:12px; padding:2px 8px; border-radius:10px;">0</span>
-          </h4>
-          <div class="outliers-box" id="outliersList">
-            <!-- populated dynamically -->
+          <div class="bulk-header-row">
+            <span class="col-badge">D</span>
+            <span style="color:var(--text);font-weight:500">Daily Limit</span>
+            <span class="col-desc">numeric or blank</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">E</span>
+            <span style="color:var(--text);font-weight:500">UOM</span>
+            <span class="col-desc">unit of measure</span>
+          </div>
+          <div class="bulk-header-row">
+            <span class="col-badge">F</span>
+            <span style="color:var(--text);font-weight:500">Price Per Unit</span>
+            <span class="col-desc">numeric £ or blank</span>
           </div>
         </div>
+        <button class="btn-template" onclick="downloadTemplate()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download CSV Template
+        </button>
       </div>
+    </div>
+  </div>
 
-      <!-- Filters Row -->
-      <div class="filters-card">
-        <div class="input-group">
-          <label>Search Parts / Descriptions</label>
-          <input type="text" id="filterSearch" placeholder="Type Part ID, Name, or CHH Order ID..." oninput="applyFilters()">
-        </div>
-        <div class="input-group">
-          <label>Chargeable Status</label>
-          <select id="filterChargeable" onchange="applyFilters()">
-            <option value="">All Lines</option>
-            <option value="Yes">Chargeable Only</option>
-            <option value="No">Non-Chargeable Only</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label>Engineer Name</label>
-          <select id="filterEngineer" onchange="applyFilters()">
-            <option value="">All Engineers</option>
-            <!-- Populated dynamically -->
-          </select>
-        </div>
-        <button class="btn" onclick="resetFilters()">Reset Filters</button>
-      </div>
+  <!-- PREVIEW BANNER -->
+  <div class="preview-banner" id="previewBanner">
+    <div class="preview-banner-left">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="previewMsg">0 items ready to import — review below then click <strong>Accept Import</strong>.</span>
+    </div>
+    <div class="preview-banner-actions">
+      <button class="btn-sm btn-sm-cancel" onclick="cancelPreview()">Cancel</button>
+      <button class="btn-sm btn-sm-accept" onclick="acceptPreview()">Accept Import</button>
+    </div>
+  </div>
 
-      <!-- Table Card -->
-      <div class="table-card">
-        <div class="table-header-row">
-          <div class="table-title" id="tableTitle">All Official Invoice Lines</div>
-          <button class="btn" onclick="exportFilteredCSV()" style="padding: 6px 12px; font-size: 13px;">
-            Export Filtered CSV
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <input class="search-input" type="search" id="searchInput" placeholder="Search by name or SKU…" oninput="renderTable()">
+    </div>
+    <select class="filter-select" id="catFilter" onchange="renderTable()">
+      <option value="">All Categories</option>
+      <option value="consumable">Consumable</option>
+      <option value="meter">Meter</option>
+    </select>
+    <span class="results-count" id="resultsCount"></span>
+  </div>
+
+  <!-- INVENTORY TABLE -->
+  <div class="table-card">
+    <table id="inventoryTable">
+      <thead>
+        <tr>
+          <th onclick="sortBy('category')" id="th-category">Category</th>
+          <th onclick="sortBy('sku')" id="th-sku">SKU</th>
+          <th onclick="sortBy('name')" id="th-name">Product Name</th>
+          <th onclick="sortBy('dailyLimit')" id="th-dailyLimit">Daily Limit</th>
+          <th onclick="sortBy('uom')" id="th-uom">UOM</th>
+          <th onclick="sortBy('price')" id="th-price">Price / Unit</th>
+          <th onclick="sortBy('stock')" id="th-stock">Stock</th>
+          <th class="no-sort" style="width:80px;text-align:center;">Action</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+</div><!-- end .page -->
+
+<!-- ── CONFIRM DELETE MODAL ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Delete Item</h3>
+    <p id="deleteModalMsg">Are you sure you want to delete this item? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-modal-confirm" id="confirmDeleteBtn" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ── FIREBASE ──────────────────────────────────────────────────────── -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── Load inventory ────────────────────────────────────────────────
+  async function loadInventory() {
+    try {
+      const snap = await getDocs(collection(db, 'Energise Inventory Pudo'));
+      snap.forEach(d => {
+        const data = d.data();
+        window.ITEMS[data.sku] = { ...data };
+      });
+      window.markClean();
+      window.renderTable();
+    } catch (e) {
+      console.warn('Could not load inventory from Firebase:', e);
+      window.showToast('Could not load inventory. Working offline.', 'warn');
+    }
+  }
+
+  // ── Save all items ────────────────────────────────────────────────
+  window.saveToFirebase = async function() {
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving…';
+
+    try {
+      // Get current remote SKUs to detect deletions
+      const snap = await getDocs(collection(db, 'Energise Inventory Pudo'));
+      const remoteSKUs = new Set(snap.docs.map(d => d.id));
+      const localSKUs  = new Set(Object.keys(window.ITEMS));
+
+      // Delete items removed locally
+      for (const sku of remoteSKUs) {
+        if (!localSKUs.has(sku)) {
+          await deleteDoc(doc(db, 'Energise Inventory Pudo', sku));
+        }
+      }
+
+      // Upsert all local items
+      for (const item of Object.values(window.ITEMS)) {
+        await setDoc(doc(db, 'Energise Inventory Pudo', item.sku), {
+          ...item,
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      window.markClean();
+      window.showToast(`✓ ${localSKUs.size} items saved to Firebase`, 'ok');
+    } catch (err) {
+      console.error(err);
+      window.showToast('Error saving: ' + err.message, 'error');
+    } finally {
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Save to Firebase';
+      window.updateSaveBtn();
+    }
+  };
+
+  window.addEventListener('load', loadInventory);
+</script>
+
+<!-- ── APP LOGIC ─────────────────────────────────────────────────────── -->
+<script>
+// ── State ─────────────────────────────────────────────────────────────
+window.ITEMS = {};        // keyed by sku
+let previewItems = [];    // pending bulk import rows
+let isDirty = false;
+let sortCol = 'name';
+let sortDir = 'asc';
+let deleteTarget = null;
+let editingSku = null;
+
+// ── Dirty tracking ────────────────────────────────────────────────────
+window.markDirty = function() {
+  isDirty = true;
+  document.getElementById('unsavedDot').classList.add('show');
+  updateSaveBtn();
+};
+window.markClean = function() {
+  isDirty = false;
+  document.getElementById('unsavedDot').classList.remove('show');
+  updateSaveBtn();
+};
+window.updateSaveBtn = function() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = !isDirty;
+};
+
+// ── Render table ──────────────────────────────────────────────────────
+window.renderTable = function() {
+  const q    = document.getElementById('searchInput').value.toLowerCase().trim();
+  const catF = document.getElementById('catFilter').value;
+
+  let rows = Object.values(window.ITEMS);
+
+  // Filter
+  rows = rows.filter(item => {
+    const matchQ   = !q || item.name.toLowerCase().includes(q) || item.sku.includes(q);
+    const matchCat = !catF || item.category === catF;
+    return matchQ && matchCat;
+  });
+
+  // Preview rows merged
+  let previewRows = previewItems.map(p => ({ ...p, _preview: true }));
+
+  // Sort
+  const allRows = [...rows, ...previewRows];
+  allRows.sort((a, b) => {
+    let av = a[sortCol] ?? '';
+    let bv = b[sortCol] ?? '';
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('tableBody');
+
+  if (allRows.length === 0) {
+    tbody.innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M9 21V9"/>
+            </svg>
+          </div>
+          <h3>${Object.keys(window.ITEMS).length === 0 ? 'No items yet' : 'No results found'}</h3>
+          <p>${Object.keys(window.ITEMS).length === 0 ? 'Add your first item using the form above, or bulk upload a spreadsheet.' : 'Try a different search or filter.'}</p>
+        </div>
+      </td></tr>`;
+  } else {
+    tbody.innerHTML = allRows.map(item => rowHTML(item)).join('');
+  }
+
+  document.getElementById('totalCount').textContent = Object.keys(window.ITEMS).length;
+  document.getElementById('resultsCount').textContent = `${rows.length} item${rows.length !== 1 ? 's' : ''}` + (previewItems.length ? ` + ${previewItems.length} pending` : '');
+};
+
+function rowHTML(item) {
+  const catClass = item.category === 'consumable' ? 'cat-consumable' : 'cat-meter';
+  const catLabel = item.category || '—';
+  const limitStr = (item.dailyLimit !== undefined && item.dailyLimit !== '') ? item.dailyLimit : '—';
+  const priceStr = (item.price !== undefined && item.price !== '') ? `£${parseFloat(item.price).toFixed(2)}` : '—';
+  const stockStr = (item.stock !== undefined && item.stock !== null && item.stock !== -1) ? `${item.stock}` : '—';
+  const previewTag = item._preview ? `<span class="preview-tag">preview</span>` : '';
+
+  return `<tr${item._preview ? ' class="preview-row"' : ''}>
+    <td><span class="cat-badge ${catClass}">${catLabel}</span></td>
+    <td><span class="sku-mono">${escHtml(item.sku)}</span></td>
+    <td>${escHtml(item.name)}${previewTag}</td>
+    <td><span class="limit-cell">${limitStr}</span></td>
+    <td><span class="uom-badge">${escHtml(item.uom || '—')}</span></td>
+    <td><span class="price-cell">${priceStr}</span></td>
+    <td><span style="font-family:'DM Mono',monospace;color:var(--accent2);">${stockStr}</span></td>
+    <td style="text-align:center;">
+      ${item._preview
+        ? ''
+        : `<button class="btn-edit" style="background:none; border:none; cursor:pointer; color:var(--accent2); margin-right:8px; opacity:0.8; transition:opacity 0.15s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'" title="Edit Item" onclick="editItem('${escAttr(item.sku)}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>CHH Order ID</th>
-                <th>CREATE_DATE</th>
-                <th>Date Shipped</th>
-                <th>LN</th>
-                <th>Packlist</th>
-                <th>Part ID</th>
-                <th>Description</th>
-                <th style="text-align:right;">Unit Price</th>
-                <th style="text-align:right;">Line Value</th>
-                <th style="text-align:center;">Qty Shipped</th>
-                <th>Engineer's Details</th>
-                <th>Ship To</th>
-                <th>Email</th>
-                <th>Company</th>
-                <th>Chargeable</th>
-                <th>Labour Status</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="invoiceTableBody">
-              <tr>
-                <td colspan="12" style="text-align:center; padding:32px; color:var(--text-muted);">Loading database...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <!-- Pagination -->
-        <div class="pagination-bar">
-          <div style="font-size:13px; color:var(--text-muted);" id="pageStats">Showing 0-0 of 0 lines</div>
-          <div style="display:flex; gap:8px;">
-            <button class="btn" id="prevPageBtn" onclick="changePage(-1)" style="padding:6px 12px; font-size:13px;" disabled>Prev</button>
-            <button class="btn" id="nextPageBtn" onclick="changePage(1)" style="padding:6px 12px; font-size:13px;" disabled>Next</button>
-          </div>
-        </div>
-      </div>
-    </main>
-  </div>
-
-  <!-- Import Modal -->
-  <div class="modal-overlay" id="importModal" onclick="closeImportModal()">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <div class="modal-header">
-        <div class="modal-title-text">Import Official Invoice Data</div>
-        <button class="modal-close" onclick="closeImportModal()">×</button>
-      </div>
-      <div class="modal-body">
-        <p style="font-size:14px; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">
-          Open your invoice spreadsheet in Excel, copy the data (including headers), and paste it into the box below. The headers should include: 
-          <strong>CHH Order ID</strong>, <strong>CREATE_DATE</strong>, <strong>Date Shipped</strong>, <strong>LN</strong>, <strong>Packlist</strong>, <strong>Part ID</strong>, <strong>Description</strong>, <strong>Unit Price</strong>, <strong>line Value</strong>, <strong>Qty Shipped</strong>, <strong>Engineer's Details</strong>, <strong>Ship To</strong>, <strong>Email</strong>, <strong>Company</strong>, <strong>Chargeable</strong>, <strong>Labour Status</strong>, <strong>Status</strong>.
-        </p>
-        <textarea class="paste-box" id="pasteInput" placeholder="Paste copy from Excel spreadsheet here..."></textarea>
-        
-        <div id="previewWrap" style="display:none; margin-top:20px;">
-          <h4 style="font-family:'Syne',sans-serif; font-size:14px; font-weight:700; margin-bottom:8px; color:var(--text);" id="previewCount">Parsed Records Preview</h4>
-          <div class="table-wrap" style="max-height:200px; overflow-y:auto; border:1px solid var(--border2); border-radius:6px;">
-            <table>
-              <thead>
-                <tr>
-                  <th>CHH Order ID</th>
-                  <th>CREATE_DATE</th>
-                  <th>Date Shipped</th>
-                  <th>LN</th>
-                  <th>Packlist</th>
-                  <th>Part ID</th>
-                  <th>Description</th>
-                  <th style="text-align:right;">Unit Price</th>
-                  <th style="text-align:right;">Line Value</th>
-                  <th style="text-align:center;">Qty Shipped</th>
-                  <th>Engineer's Details</th>
-                  <th>Ship To</th>
-                  <th>Email</th>
-                  <th>Company</th>
-                  <th>Chargeable</th>
-                  <th>Labour Status</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="previewTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary btn" onclick="closeImportModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="parsePastedData()">Parse Data</button>
-        <button class="btn btn-success" id="saveInvoiceBtn" onclick="saveParsedDataToDatabase()" style="display:none;">Save to Database</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <!-- Firebase Integration -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
-      authDomain: "oesperformance-a54c0.firebaseapp.com",
-      projectId: "oesperformance-a54c0",
-      storageBucket: "oesperformance-a54c0.firebasestorage.app",
-      messagingSenderId: "484894102454",
-      appId: "1:484894102454:web:17535ee497eac2d90d6717",
-      measurementId: "G-R56BGZYV8N"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
-
-    // Global arrays
-    let allInvoiceLines = [];
-    let filteredLines = [];
-    let parsedLines = [];
-    
-    // Filters & Pagination state
-    let selectedEngineerName = '';
-    let currentPage = 1;
-    const recordsPerPage = 50;
-
-    // Charts objects
-    let trendChartInstance = null;
-    let weeklyChartInstance = null;
-    let topSpendersChartInstance = null;
-
-    window.showToast = function(msg, isError = false) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = 'toast' + (isError ? ' error' : '');
-      void t.offsetWidth;
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 3500);
-    };
-
-    // Open/Close Modals
-    window.openImportModal = function() {
-      document.getElementById('pasteInput').value = '';
-      document.getElementById('previewWrap').style.display = 'none';
-      document.getElementById('saveInvoiceBtn').style.display = 'none';
-      document.getElementById('importModal').classList.add('show');
-    };
-    window.closeImportModal = function() {
-      document.getElementById('importModal').classList.remove('show');
-    };
-
-    // ── Parse Paste Box Data ───────────────────────────────────────────────────
-    window.parsePastedData = function() {
-      const input = document.getElementById('pasteInput').value.trim();
-      if (!input) {
-        showToast('Please paste Excel data first.', true);
-        return;
+          <button class="btn-delete" title="Delete Item" onclick="promptDelete('${escAttr(item.sku)}')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+            Delete
+          </button>`
       }
+    </td>
+  </tr>`;
+}
 
-      const rows = input.split('\n');
-      if (rows.length < 2) {
-        showToast('Pasted text does not contain enough rows (header + data needed).', true);
-        return;
-      }
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/'/g, "\\'");
+}
 
-      // Read header row
-      const headers = rows[0].split('\t').map(h => h.trim().toLowerCase());
-      
-      // Map columns
-      const colMap = {
-        engineerId: headers.indexOf('engineer id'),
-        chhOrderId: headers.indexOf('chh order id'),
-        createDate: headers.indexOf('create_date') !== -1 ? headers.indexOf('create_date') : headers.indexOf('create date'),
-        dateShipped: headers.indexOf('date shipped'),
-        ln: headers.indexOf('ln'),
-        packlist: headers.indexOf('packlist'),
-        partId: headers.indexOf('part id'),
-        description: headers.indexOf('description'),
-        unitPrice: headers.indexOf('unit price'),
-        lineValue: headers.indexOf('line value'),
-        qtyShipped: headers.indexOf('qty shipped'),
-        engineerDetails: headers.indexOf("engineer's details") !== -1 ? headers.indexOf("engineer's details") : headers.indexOf("engineer details"),
-        projectName: headers.indexOf('project name'),
-        name: headers.indexOf('name'),
-        company: headers.indexOf('company'),
-        shipTo: headers.indexOf('ship to'),
-        email: headers.indexOf('email'),
-        chargeable: headers.indexOf('chargeable'),
-        labourStatus: headers.indexOf('labour status'),
-        status: headers.indexOf('status')
-      };
+// ── Sort ──────────────────────────────────────────────────────────────
+window.sortBy = function(col) {
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortCol = col;
+    sortDir = 'asc';
+  }
+  const thEl = document.getElementById('th-' + col);
+  if (thEl) thEl.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  renderTable();
+};
 
-      // Validation check for key columns
-      if (colMap.chhOrderId === -1 || colMap.partId === -1 || colMap.lineValue === -1) {
-        // Log column names
-        console.warn('Headers parsed:', headers);
-        showToast('Could not find mandatory headers: "CHH Order ID", "Part ID", "line Value".', true);
-        return;
-      }
+// ── Add / Edit single item ───────────────────────────────────────────────────
+window.addSingleItem = function() {
+  const cat   = document.getElementById('f-cat');
+  const sku   = document.getElementById('f-sku');
+  const name  = document.getElementById('f-name');
+  const limit = document.getElementById('f-limit');
+  const uom   = document.getElementById('f-uom');
+  const price = document.getElementById('f-price');
 
-      parsedLines = [];
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i].trim()) continue;
-        const cols = rows[i].split('\t');
+  [cat, sku, name, uom].forEach(el => el.classList.remove('err'));
+  let valid = true;
 
-        // Helper to get column value safely
-        const val = (idx) => (idx !== -1 && idx < cols.length) ? cols[idx].trim() : '';
+  if (!cat.value) { cat.classList.add('err'); valid = false; }
+  if (!sku.value.trim()) { sku.classList.add('err'); valid = false; }
+  if (!name.value.trim()) { name.classList.add('err'); valid = false; }
+  if (!uom.value.trim()) { uom.classList.add('err'); valid = false; }
 
-        // Parsing numbers
-        const cleanNumber = (str) => parseFloat(str.replace(/[^\d\.\-]/g, '')) || 0;
+  if (!valid) { showToast('Please fill in all required fields.', 'error'); return; }
 
-        const record = {
-          chhOrderId: val(colMap.chhOrderId),
-          createDate: val(colMap.createDate),
-          dateShipped: val(colMap.dateShipped),
-          ln: val(colMap.ln) || '1',
-          packlist: val(colMap.packlist),
-          partId: val(colMap.partId),
-          description: val(colMap.description),
-          unitPrice: cleanNumber(val(colMap.unitPrice)),
-          lineValue: cleanNumber(val(colMap.lineValue)),
-          qtyShipped: parseInt(val(colMap.qtyShipped).replace(/[^\d]/g, '')) || 0,
-          name: val(colMap.engineerDetails) || 'Unknown Engineer',
-          shipTo: val(colMap.shipTo),
-          email: val(colMap.email),
-          company: val(colMap.company),
-          chargeable: val(colMap.chargeable) || 'No',
-          labourStatus: val(colMap.labourStatus),
-          status: val(colMap.status) || 'Closed'
-        };
+  const skuVal = sku.value.trim();
+  if (window.ITEMS[skuVal] && editingSku !== skuVal) {
+    sku.classList.add('err');
+    showToast(`SKU ${skuVal} already exists in inventory.`, 'error');
+    return;
+  }
 
-        // Validate basic record info
-        if (record.chhOrderId && record.partId) {
-          parsedLines.push(record);
-        }
-      }
+  // If SKU changed while editing, delete the old one
+  if (editingSku && editingSku !== skuVal) {
+    delete window.ITEMS[editingSku];
+  }
 
-      if (parsedLines.length === 0) {
-        showToast('Parsed 0 records. Check column delimiter (tab-separated is required).', true);
-        return;
-      }
+  window.ITEMS[skuVal] = {
+    category:   cat.value,
+    sku:        skuVal,
+    name:       name.value.trim(),
+    dailyLimit: limit.value !== '' ? Number(limit.value) : '',
+    uom:        uom.value.trim(),
+    price:      price.value !== '' ? Number(price.value) : '',
+  };
 
-      // Show preview
-      document.getElementById('previewCount').textContent = `Parsed ${parsedLines.length} Invoice Lines (Previewing First 5)`;
-      const tbody = document.getElementById('previewTableBody');
-      tbody.innerHTML = parsedLines.slice(0, 5).map(r => `
-        <tr>
-          <td>${r.chhOrderId}</td>
-          <td>${r.createDate}</td>
-          <td>${r.dateShipped || ''}</td>
-          <td>${r.ln || ''}</td>
-          <td>${r.packlist || ''}</td>
-          <td><span class="sku-mono">${r.partId}</span></td>
-          <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.description}">${r.description}</td>
-          <td style="text-align:right;">£${r.unitPrice.toFixed(2)}</td>
-          <td style="text-align:right; font-weight:600;">£${r.lineValue.toFixed(2)}</td>
-          <td style="text-align:center;">${r.qtyShipped}</td>
-          <td><strong>${r.name}</strong></td>
-          <td>${r.shipTo || ''}</td>
-          <td>${r.email || ''}</td>
-          <td>${r.company || ''}</td>
-          <td>${r.chargeable}</td>
-          <td>${r.labourStatus || ''}</td>
-          <td>${r.status}</td>
-        </tr>
-      `).join('');
+  // Reset form
+  [cat, sku, name, limit, uom, price].forEach(el => { el.value = ''; el.classList.remove('err'); });
 
-      document.getElementById('previewWrap').style.display = 'block';
-      document.getElementById('saveInvoiceBtn').style.display = 'inline-flex';
-      showToast(`✓ Parsed ${parsedLines.length} records successfully!`);
-    };
+  const wasEditing = editingSku;
+  editingSku = null;
+  document.getElementById('addItemBtn').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add`;
+  document.querySelector('.add-card-title').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Add Single Item`;
 
-    // ── Save Parsed Data to Firebase in Batches ─────────────────────────────────
-    window.saveParsedDataToDatabase = async function() {
-      if (parsedLines.length === 0) return;
-      const btn = document.getElementById('saveInvoiceBtn');
-      btn.disabled = true;
-      btn.textContent = 'Saving to Cloud…';
+  markDirty();
+  renderTable();
+  showToast(`✓ "${window.ITEMS[skuVal].name}" ${wasEditing ? 'updated' : 'added'}.`, 'ok');
+};
 
-      try {
-        let batch = writeBatch(db);
-        let batchCount = 0;
-        let totalSaved = 0;
+window.editItem = function(sku) {
+  const item = window.ITEMS[sku];
+  if (!item) return;
 
-        for (let i = 0; i < parsedLines.length; i++) {
-          const item = parsedLines[i];
-          // Construct deterministic document ID based on order, line, and part to prevent duplicates
-          const docId = `${item.chhOrderId}_${item.ln}_${item.partId}`.replace(/[\/\.\#\$\[\]]/g, '_');
-          const docRef = doc(db, 'Energise Invoices Pudo', docId);
-          
-          batch.set(docRef, item);
-          batchCount++;
-          totalSaved++;
+  document.getElementById('f-cat').value = item.category || '';
+  document.getElementById('f-sku').value = item.sku || '';
+  document.getElementById('f-name').value = item.name || '';
+  document.getElementById('f-limit').value = item.dailyLimit !== undefined ? item.dailyLimit : '';
+  document.getElementById('f-uom').value = item.uom || '';
+  document.getElementById('f-price').value = item.price !== undefined ? item.price : '';
 
-          // Firestore batch limits is 500 writes
-          if (batchCount === 450) {
-            await batch.commit();
-            batch = writeBatch(db);
-            batchCount = 0;
-          }
-        }
+  editingSku = sku;
+  
+  document.getElementById('addItemBtn').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Update`;
+  document.querySelector('.add-card-title').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Edit Item: ${escHtml(sku)}`;
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
-        if (batchCount > 0) {
-          await batch.commit();
-        }
+// ── Delete ────────────────────────────────────────────────────────────
+window.promptDelete = function(sku) {
+  deleteTarget = sku;
+  const item = window.ITEMS[sku];
+  document.getElementById('deleteModalMsg').textContent =
+    `Delete "${item?.name || sku}" (SKU: ${sku})? This will be removed from the inventory.`;
+  document.getElementById('deleteModal').classList.add('open');
+};
+window.closeDeleteModal = function() {
+  document.getElementById('deleteModal').classList.remove('open');
+  deleteTarget = null;
+};
+window.confirmDelete = function() {
+  if (!deleteTarget) return;
+  const name = window.ITEMS[deleteTarget]?.name || deleteTarget;
+  delete window.ITEMS[deleteTarget];
+  markDirty();
+  renderTable();
+  closeDeleteModal();
+  showToast(`Deleted "${name}".`, 'ok');
+};
 
-        showToast(`✓ Successfully imported ${totalSaved} official invoice lines!`, false);
-        closeImportModal();
-        loadDatabase(); // Refresh dashboard
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to save to database: ' + err.message, true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Save to Database';
-      }
-    };
+// ── Bulk upload ───────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
 
-    // ── Load Invoice Database ──────────────────────────────────────────────────
-    async function loadDatabase() {
-      try {
-        const snap = await getDocs(collection(db, 'Energise Invoices Pudo'));
-        allInvoiceLines = [];
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFileSelect(e.dataTransfer.files[0]);
+});
 
-        snap.forEach(d => {
-          allInvoiceLines.push({
-            id: d.id,
-            ...d.data()
-          });
-        });
-
-        // Sort descending by Create Date or Date Shipped
-        allInvoiceLines.sort((a, b) => new Date(b.createDate || b.dateShipped) - new Date(a.createDate || a.dateShipped));
-
-        // Populate Engineer Name Filter Select Dropdown dynamically
-        const engNamesSet = new Set();
-        allInvoiceLines.forEach(line => {
-          if (line.name) engNamesSet.add(line.name);
-        });
-        const sortedEngNames = Array.from(engNamesSet).sort((a, b) => a.localeCompare(b));
-        const engSelect = document.getElementById('filterEngineer');
-        if (engSelect) {
-          engSelect.innerHTML = '<option value="">All Engineers</option>' + 
-            sortedEngNames.map(name => `<option value="${name}">${name}</option>`).join('');
-        }
-
-        applyFilters();
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to load database: ' + err.message, true);
-        document.getElementById('invoiceTableBody').innerHTML = `
-          <tr><td colspan="17" style="text-align:center; padding:32px; color:var(--danger);">Error loading data.</td></tr>
-        `;
-      }
+window.handleFileSelect = function(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xlsx','xls'].includes(ext)) {
+    showToast('Unsupported file type. Please use .csv or .xlsx', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      parseUploadedRows(rows, file.name);
+    } catch (err) {
+      showToast('Could not parse file: ' + err.message, 'error');
     }
+  };
+  reader.readAsArrayBuffer(file);
+  // reset input so same file can be re-selected
+  document.getElementById('bulkFileInput').value = '';
+};
 
-    // ── Apply Filters, Sidebars, and Charts ────────────────────────────────────
-    window.applyFilters = function() {
-      const search = document.getElementById('filterSearch').value.toLowerCase().trim();
-      const chargeable = document.getElementById('filterChargeable').value;
-      const engDropdownVal = document.getElementById('filterEngineer').value;
+function normaliseHeader(h) {
+  return String(h).toLowerCase().replace(/\s+/g,'').replace(/[^a-z]/g,'');
+}
 
-      // Keep sidebar selection and dropdown in sync
-      if (selectedEngineerName && selectedEngineerName !== engDropdownVal && !engDropdownVal) {
-        document.getElementById('filterEngineer').value = selectedEngineerName;
-      } else if (engDropdownVal !== selectedEngineerName) {
-        selectedEngineerName = engDropdownVal;
-      }
+function parseUploadedRows(rows, filename) {
+  if (rows.length < 2) { showToast('File appears to be empty.', 'error'); return; }
 
-      filteredLines = allInvoiceLines.filter(line => {
-        // Selected Engineer Filter (synced between sidebar & dropdown)
-        if (selectedEngineerName && line.name !== selectedEngineerName) return false;
+  const headerRow = rows[0].map(normaliseHeader);
+  const colMap = {
+    category:   findCol(headerRow, ['category']),
+    sku:        findCol(headerRow, ['sku','skucode','code']),
+    name:       findCol(headerRow, ['productname','name','description','product']),
+    dailyLimit: findCol(headerRow, ['dailylimit','limit','daily']),
+    uom:        findCol(headerRow, ['uom','unit','unitofmeasure']),
+    price:      findCol(headerRow, ['priceperunit','price','cost','unitprice']),
+  };
 
-        // Search inputs
-        if (search) {
-          const matchSearch = 
-            (line.partId || '').toLowerCase().includes(search) ||
-            (line.description || '').toLowerCase().includes(search) ||
-            (line.chhOrderId || '').toLowerCase().includes(search) ||
-            (line.name || '').toLowerCase().includes(search);
-          if (!matchSearch) return false;
-        }
+  const missing = Object.entries(colMap).filter(([k,v]) => v === -1 && ['category','sku','name','uom'].includes(k)).map(([k]) => k);
+  if (missing.length) {
+    showToast(`Missing required columns: ${missing.join(', ')}`, 'error');
+    return;
+  }
 
-        // Chargeable
-        if (chargeable) {
-          const cVal = (line.chargeable || '').toLowerCase().trim();
-          const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
-          if (chargeable === 'Yes' && !isChg) return false;
-          if (chargeable === 'No' && isChg) return false;
-        }
+  const parsed = [];
+  const skipped = [];
 
-        return true;
-      });
+  rows.slice(1).forEach((row, i) => {
+    const sku  = String(row[colMap.sku] ?? '').trim();
+    const name = String(row[colMap.name] ?? '').trim();
+    const cat  = String(row[colMap.category] ?? '').trim().toLowerCase();
+    const uom  = String(row[colMap.uom] ?? '').trim();
 
-      currentPage = 1;
-      updateSidebar();
-      updateMetrics();
-      renderCharts();
-      updateInsights();
-      renderTable();
-    };
+    if (!sku && !name) return; // blank row
 
-    window.resetFilters = function() {
-      document.getElementById('filterSearch').value = '';
-      document.getElementById('filterChargeable').value = '';
-      document.getElementById('filterEngineer').value = '';
-      selectedEngineerName = '';
-      applyFilters();
-    };
+    if (!sku || !name || !cat || !uom) { skipped.push(`Row ${i+2}: missing required field`); return; }
+    if (!['consumable','meter'].includes(cat)) { skipped.push(`Row ${i+2}: category must be 'consumable' or 'meter'`); return; }
 
-    window.clearSelectedEngineer = function() {
-      selectedEngineerName = '';
-      document.getElementById('filterEngineer').value = '';
-      applyFilters();
-    };
+    const limitVal = colMap.dailyLimit !== -1 ? row[colMap.dailyLimit] : '';
+    const priceVal = colMap.price      !== -1 ? row[colMap.price]      : '';
 
-    window.selectEngineer = function(name) {
-      selectedEngineerName = name;
-      document.getElementById('filterEngineer').value = name;
-      applyFilters();
-    };
+    parsed.push({
+      category:   cat,
+      sku,
+      name,
+      dailyLimit: limitVal !== '' ? Number(limitVal) : '',
+      uom,
+      price:      priceVal !== '' ? Number(priceVal) : '',
+    });
+  });
 
-    // ── Update Sidebar ─────────────────────────────────────────────────────────
-    function updateSidebar() {
-      // Calculate spends per engineer based on CURRENT filters (except engineer selection itself)
-      const engineerSpends = {};
-      
-      allInvoiceLines.forEach(line => {
-        const name = line.name || 'Unknown Engineer';
-        const val = line.lineValue || 0;
-        engineerSpends[name] = (engineerSpends[name] || 0) + val;
-      });
+  if (skipped.length) console.warn('Skipped rows:', skipped);
 
-      // Sort engineers descending
-      const sortedEngs = Object.entries(engineerSpends).sort((a, b) => b[1] - a[1]);
+  // Filter out existing SKUs
+  const newItems = parsed.filter(p => !window.ITEMS[p.sku]);
+  const dupes    = parsed.length - newItems.length;
 
-      const list = document.getElementById('engineerList');
-      if (sortedEngs.length === 0) {
-        list.innerHTML = `<li style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">No records.</li>`;
-        return;
-      }
-
-      list.innerHTML = sortedEngs.map(([name, spend]) => {
-        const activeClass = (selectedEngineerName === name) ? 'active' : '';
-        return `
-          <li class="${activeClass}" onclick="selectEngineer('${name.replace(/'/g, "\\'")}')">
-            <span class="eng-name">${name}</span>
-            <span class="eng-spend">£${spend.toFixed(2)}</span>
-          </li>
-        `;
-      }).join('');
+  if (newItems.length === 0) {
+    if (skipped.length > 0) {
+      showToast(`0 items imported. ${skipped.length} rows were skipped due to missing/invalid fields. Check console for details.`, 'error');
+    } else {
+      showToast('No new items to import. All SKUs already exist.', 'warn');
     }
+    return;
+  }
 
-    // ── Update Metrics ─────────────────────────────────────────────────────────
-    function updateMetrics() {
-      const totalSpend = filteredLines.reduce((sum, r) => sum + (r.lineValue || 0), 0);
-      const totalLines = filteredLines.length;
-      
-      const chargeableSpend = filteredLines.reduce((sum, r) => {
-        const cVal = (r.chargeable || '').toLowerCase().trim();
-        const isChg = (cVal === 'chargeable' || cVal === 'adhoc charge');
-        return isChg ? sum + (r.lineValue || 0) : sum;
-      }, 0);
-      
-      const avgLineVal = totalLines > 0 ? (totalSpend / totalLines) : 0;
+  previewItems = newItems;
+  const msg = `${newItems.length} new item${newItems.length !== 1 ? 's' : ''} ready to import from <strong>${filename}</strong>` +
+    (dupes ? ` — <strong>${dupes} duplicate SKU${dupes !== 1 ? 's' : ''} skipped</strong>` : '') +
+    (skipped.length ? `, ${skipped.length} row${skipped.length !== 1 ? 's' : ''} had errors` : '');
+  document.getElementById('previewMsg').innerHTML = msg + ` — review below then click <strong>Accept Import</strong>.`;
+  document.getElementById('previewBanner').classList.add('show');
+  renderTable();
+}
 
-      // Unique active engineers count
-      const activeEngsSet = new Set();
-      filteredLines.forEach(line => {
-        if (line.name) activeEngsSet.add(line.name);
-      });
-      const activeEngsCount = activeEngsSet.size;
-      const spendPerHead = activeEngsCount > 0 ? (totalSpend / activeEngsCount) : 0;
+function findCol(headers, candidates) {
+  for (const c of candidates) {
+    const idx = headers.indexOf(c);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
 
-      // Calculate Average Daily Cost
-      const dates = filteredLines.map(line => {
-        const dStr = line.createDate || line.dateShipped || '';
-        let date;
-        const isoMatch = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (isoMatch) {
-          date = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
-        } else {
-          const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-          if (ukMatch) {
-            date = new Date(parseInt(ukMatch[3]), parseInt(ukMatch[2]) - 1, parseInt(ukMatch[1]));
-          } else {
-            date = new Date(dStr);
-          }
-        }
-        return date;
-      }).filter(d => !isNaN(d.getTime()));
+window.acceptPreview = function() {
+  previewItems.forEach(item => { window.ITEMS[item.sku] = item; });
+  const count = previewItems.length;
+  previewItems = [];
+  document.getElementById('previewBanner').classList.remove('show');
+  markDirty();
+  renderTable();
+  showToast(`✓ ${count} item${count !== 1 ? 's' : ''} imported successfully.`, 'ok');
+};
 
-      let avgDailyCost = 0;
-      if (dates.length > 0) {
-        const minDate = new Date(Math.min(...dates));
-        const maxDate = new Date(Math.max(...dates));
-        const diffTime = Math.abs(maxDate - minDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive of start day
-        avgDailyCost = totalSpend / diffDays;
-      }
+window.cancelPreview = function() {
+  previewItems = [];
+  document.getElementById('previewBanner').classList.remove('show');
+  renderTable();
+  showToast('Import cancelled.', 'warn');
+};
 
-      document.getElementById('statTotalSpend').textContent = `£${totalSpend.toFixed(2)}`;
-      document.getElementById('statActiveEngineers').textContent = activeEngsCount.toLocaleString();
-      document.getElementById('statSpendPerHead').textContent = `£${spendPerHead.toFixed(2)}`;
-      document.getElementById('statAvgLine').textContent = `£${avgLineVal.toFixed(2)}`;
-      document.getElementById('statAvgDailySpend').textContent = `£${avgDailyCost.toFixed(2)}`;
-    }
+// ── Template download ─────────────────────────────────────────────────
+window.downloadTemplate = function() {
+  const csv = [
+    'Category,SKU,Product Name,Daily Limit,UOM,Price Per Unit',
+    'consumable,36001,Example Consumable Item,10,EA,1.25',
+    'meter,36002,Example Meter Item,,PK-10,4.50',
+  ].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'energise-inventory-template.csv';
+  a.click();
+};
 
-    // Date parser helper to group items by Month (YYYY-MM)
-    function getYearMonth(dStr) {
-      if (!dStr) return 'Unknown';
-      
-      // Try parsing direct ISO style YYYY-MM-DD
-      const isoMatch = dStr.match(/^(\d{4})-(\d{2})-\d{2}/);
-      if (isoMatch) {
-        return `${isoMatch[1]}-${isoMatch[2]}`;
-      }
+// ── Export CSV ────────────────────────────────────────────────────────
+window.exportCSV = function() {
+  const items = Object.values(window.ITEMS);
+  if (items.length === 0) { showToast('No items to export.', 'warn'); return; }
+  const rows = [
+    'Category,SKU,Product Name,Daily Limit,UOM,Price Per Unit',
+    ...items.map(i =>
+      `"${i.category}","${i.sku}","${i.name}","${i.dailyLimit ?? ''}","${i.uom}","${i.price ?? ''}"`
+    )
+  ].join('\r\n');
+  const blob = new Blob([rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `energise-inventory-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast('✓ CSV exported.', 'ok');
+};
 
-      // Try parsing UK format DD/MM/YYYY
-      const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (ukMatch) {
-        return `${ukMatch[3]}-${ukMatch[2].padStart(2, '0')}`;
-      }
+// ── Toast ─────────────────────────────────────────────────────────────
+window.showToast = function(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.innerHTML = msg;
+  t.className = 'toast' + (type === 'error' ? ' error' : type === 'warn' ? ' warn' : '');
+  void t.offsetWidth;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+};
 
-      // Fallback standard Date parser
-      const date = new Date(dStr);
-      if (!isNaN(date.getTime())) {
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, '0');
-        return `${y}-${m}`;
-      }
-      return 'Unknown';
-    }
+// ── Close modal on backdrop click ─────────────────────────────────────
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+  if (e.target === this) closeDeleteModal();
+});
 
-    // Date parser helper to group items by Week Starting (YYYY-MM-DD)
-    function getYearWeek(dStr) {
-      if (!dStr) return 'Unknown';
-      let date;
-      
-      const isoMatch = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (isoMatch) {
-        date = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
-      } else {
-        const ukMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (ukMatch) {
-          date = new Date(parseInt(ukMatch[3]), parseInt(ukMatch[2]) - 1, parseInt(ukMatch[1]));
-        } else {
-          date = new Date(dStr);
-        }
-      }
+// ── Initial render ────────────────────────────────────────────────────
+renderTable();
+</script>
 
-      if (isNaN(date.getTime())) return 'Unknown';
-
-      // Get Monday start of week
-      const day = date.getDay();
-      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-      const startOfWeek = new Date(date.setDate(diff));
-      const y = startOfWeek.getFullYear();
-      const m = String(startOfWeek.getMonth() + 1).padStart(2, '0');
-      const d = String(startOfWeek.getDate()).padStart(2, '0');
-      return `W/C ${y}-${m}-${d}`;
-    }
-
-    // ── Render Charts ──────────────────────────────────────────────────────────
-    function renderCharts() {
-      // 1. Monthly Spend Breakdown (Clean MoM columns)
-      const monthlySpends = {};
-      filteredLines.forEach(line => {
-        const dStr = line.createDate || line.dateShipped || '';
-        const ym = getYearMonth(dStr);
-        monthlySpends[ym] = (monthlySpends[ym] || 0) + (line.lineValue || 0);
-      });
-
-      // Sort keys chronologically
-      const sortedMonths = Object.entries(monthlySpends)
-        .filter(([m]) => m !== 'Unknown')
-        .sort((a, b) => a[0].localeCompare(b[0]));
-
-      if (trendChartInstance) trendChartInstance.destroy();
-      
-      const ctx1 = document.getElementById('trendChart').getContext('2d');
-      trendChartInstance = new Chart(ctx1, {
-        type: 'bar',
-        data: {
-          labels: sortedMonths.map(d => d[0]),
-          datasets: [{
-            label: 'Monthly Spend (£)',
-            data: sortedMonths.map(d => d[1]),
-            backgroundColor: 'rgba(30, 64, 175, 0.85)',
-            borderRadius: 6,
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { ticks: { callback: (v) => '£' + v } }
-          }
-        }
-      });
-
-      // 2. Weekly Spend Breakdown (MoW columns)
-      const weeklySpends = {};
-      filteredLines.forEach(line => {
-        const dStr = line.createDate || line.dateShipped || '';
-        const yw = getYearWeek(dStr);
-        weeklySpends[yw] = (weeklySpends[yw] || 0) + (line.lineValue || 0);
-      });
-
-      // Sort keys chronologically and get last 10 weeks
-      const sortedWeeks = Object.entries(weeklySpends)
-        .filter(([w]) => w !== 'Unknown')
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .slice(-10);
-
-      if (weeklyChartInstance) weeklyChartInstance.destroy();
-      
-      const ctx3 = document.getElementById('weeklyChart').getContext('2d');
-      weeklyChartInstance = new Chart(ctx3, {
-        type: 'bar',
-        data: {
-          labels: sortedWeeks.map(d => d[0]),
-          datasets: [{
-            label: 'Weekly Spend (£)',
-            data: sortedWeeks.map(d => d[1]),
-            backgroundColor: 'rgba(5, 150, 105, 0.85)',
-            borderRadius: 6,
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { ticks: { callback: (v) => '£' + v } }
-          }
-        }
-      });
-
-
-      // 3. Top Spenders Chart
-      const spendsMap = {};
-      filteredLines.forEach(line => {
-        const name = line.name || 'Unknown';
-        spendsMap[name] = (spendsMap[name] || 0) + (line.lineValue || 0);
-      });
-      const topSpenders = Object.entries(spendsMap).sort((a, b) => b[1] - a[1]).slice(0, 7);
-
-      if (topSpendersChartInstance) topSpendersChartInstance.destroy();
-
-      const ctx2 = document.getElementById('topSpendersChart').getContext('2d');
-      topSpendersChartInstance = new Chart(ctx2, {
-        type: 'bar',
-        data: {
-          labels: topSpenders.map(d => d[0]),
-          datasets: [{
-            data: topSpenders.map(d => d[1]),
-            backgroundColor: '#059669',
-            borderRadius: 4
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { ticks: { callback: (v) => '£' + v } }
-          }
-        }
-      });
-    }
-
-    // ── Update Insights Panel ──────────────────────────────────────────────────
-    function updateInsights() {
-      // 1. Top Cost Drivers (SKUs)
-      const skuSpends = {};
-      const skuNames = {};
-      filteredLines.forEach(line => {
-        const sku = line.partId || 'Unknown SKU';
-        skuSpends[sku] = (skuSpends[sku] || 0) + (line.lineValue || 0);
-        skuNames[sku] = line.description || '';
-      });
-
-      const sortedSKUs = Object.entries(skuSpends).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      const totalSpend = filteredLines.reduce((sum, r) => sum + (r.lineValue || 0), 0);
-
-      const driversList = document.getElementById('topCostDriversList');
-      if (sortedSKUs.length === 0) {
-        driversList.innerHTML = `<li class="insight-list-item" style="color:var(--text-muted);">No records found.</li>`;
-      } else {
-        driversList.innerHTML = sortedSKUs.map(([sku, spend]) => {
-          const pct = totalSpend > 0 ? Math.round((spend / totalSpend) * 100) : 0;
-          return `
-            <li class="insight-list-item">
-              <div style="min-width:0; flex:1; padding-right:12px;">
-                <span class="sku-mono" style="font-size:11px; padding:1px 5px;">${sku}</span>
-                <span style="font-weight:600; font-size:12px; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;" title="${skuNames[sku]}">${skuNames[sku]}</span>
-              </div>
-              <div style="text-align:right; flex-shrink:0;">
-                <span style="font-weight:600; color:var(--accent); font-size:13px; font-family:'DM Mono', monospace;">£${spend.toFixed(2)}</span>
-                <span style="font-size:10px; color:var(--text-muted); display:block;">(${pct}% share)</span>
-              </div>
-            </li>
-          `;
-        }).join('');
-      }
-
-      // 2. High-Value Outliers (> £50)
-      const outliers = filteredLines.filter(line => (line.lineValue || 0) > 50)
-        .sort((a, b) => (b.lineValue || 0) - (a.lineValue || 0));
-
-      document.getElementById('outliersCountBadge').textContent = outliers.length;
-
-      const outliersList = document.getElementById('outliersList');
-      if (outliers.length === 0) {
-        outliersList.innerHTML = `<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13px;">No high-value outlier lines found (> £50).</div>`;
-      } else {
-        outliersList.innerHTML = outliers.map(line => `
-          <div class="insight-list-item" style="border-left: 3px solid var(--danger); margin-bottom: 2px;">
-            <div style="min-width:0; flex:1; padding-right:12px;">
-              <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:12px;">
-                <span style="font-weight:700; color:var(--text);">${line.name}</span>
-                <span class="sku-mono" style="font-size:9px; padding:0 3px;">ID: ${line.chhOrderId}</span>
-              </div>
-              <span style="font-size:11px; color:var(--text-muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">SKU: ${line.partId} &middot; ${line.description}</span>
-            </div>
-            <div style="text-align:right; font-weight:700; color:var(--danger); font-size:13px; font-family:'DM Mono', monospace; flex-shrink:0;">
-              £${(line.lineValue || 0).toFixed(2)}
-            </div>
-          </div>
-        `).join('');
-      }
-    }
-
-    // ── Render Details Table ───────────────────────────────────────────────────
-    function renderTable() {
-      const tbody = document.getElementById('invoiceTableBody');
-      const startIdx = (currentPage - 1) * recordsPerPage;
-      const endIdx = startIdx + recordsPerPage;
-      const pageData = filteredLines.slice(startIdx, endIdx);
-
-      const totalRecords = filteredLines.length;
-      document.getElementById('pageStats').textContent = totalRecords > 0
-        ? `Showing ${startIdx + 1}-${Math.min(endIdx, totalRecords)} of ${totalRecords} lines`
-        : `Showing 0-0 of 0 lines`;
-
-      document.getElementById('prevPageBtn').disabled = currentPage === 1;
-      document.getElementById('nextPageBtn').disabled = endIdx >= totalRecords;
-
-      if (pageData.length === 0) {
-        tbody.innerHTML = `
-          <tr><td colspan="17" style="text-align:center; padding:32px; color:var(--text-muted);">No invoice lines match your active filters.</td></tr>
-        `;
-        return;
-      }
-
-      tbody.innerHTML = pageData.map(line => `
-        <tr>
-          <td>${line.chhOrderId}</td>
-          <td>${line.createDate || 'N/A'}</td>
-          <td>${line.dateShipped || ''}</td>
-          <td>${line.ln || ''}</td>
-          <td>${line.packlist || ''}</td>
-          <td><span class="sku-mono">${line.partId}</span></td>
-          <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${line.description}">${line.description || 'N/A'}</td>
-          <td class="price-mono" style="text-align:right;">£${(line.unitPrice || 0).toFixed(2)}</td>
-          <td class="price-mono" style="text-align:right; color:var(--accent2);">£${(line.lineValue || 0).toFixed(2)}</td>
-          <td style="text-align:center; font-weight:600;">${line.qtyShipped}</td>
-          <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${line.name}</strong></td>
-          <td style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${line.shipTo || ''}</td>
-          <td>${line.email || ''}</td>
-          <td>${line.company || ''}</td>
-          <td><span style="font-weight:600; color:${(line.chargeable || '').toLowerCase() === 'yes' ? 'var(--accent2)' : 'var(--text-muted)'};">${line.chargeable || 'No'}</span></td>
-          <td>${line.labourStatus || ''}</td>
-          <td><span style="background:${line.status === 'Closed' ? '#f1f5f9' : 'var(--accent-lt)'}; color:${line.status === 'Closed' ? 'var(--text-muted)' : 'var(--accent)'}; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600;">${line.status}</span></td>
-        </tr>
-      `).join('');
-
-      document.getElementById('tableTitle').textContent = selectedEngineerName
-        ? `Invoice details for: ${selectedEngineerName}`
-        : `All Official Invoice Lines`;
-    }
-
-    window.changePage = function(direction) {
-      currentPage += direction;
-      renderTable();
-    };
-
-    // ── Export Filtered CSV ────────────────────────────────────────────────────
-    window.exportFilteredCSV = function() {
-      if (filteredLines.length === 0) {
-        showToast('No data to export.', true);
-        return;
-      }
-
-      const rows = [];
-      // Headers
-      rows.push(['CHH Order ID', 'CREATE_DATE', 'Date Shipped', 'LN', 'Packlist', 'Part ID', 'Description', 'Unit Price', 'line Value', 'Qty Shipped', "Engineer's Details", 'Ship To', 'Email', 'Company', 'Chargeable', 'Labour Status', 'Status']);
-
-      filteredLines.forEach(line => {
-        rows.push([
-          line.createDate || '',
-          line.dateShipped || '',
-          line.engineerId || '',
-          `"${line.name}"`,
-          line.chhOrderId || '',
-          line.ln || '',
-          line.packlist || '',
-          line.partId || '',
-          `"${line.description || ''}"`,
-          (line.unitPrice || 0).toFixed(2),
-          line.qtyShipped || 0,
-          (line.lineValue || 0).toFixed(2),
-          `"${line.projectName || ''}"`,
-          `"${line.company || ''}"`,
-          `"${line.shipTo || ''}"`,
-          line.chargeable || 'No',
-          line.labourStatus || '',
-          line.status || ''
-        ]);
-      });
-
-      const csvContent = rows.map(e => e.join(",")).join("\n");
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `official_invoice_spend_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast('✓ CSV Downloaded');
-    };
-
-    // Initial Load
-    loadDatabase();
-  </script>
 </body>
 </html>
 
