@@ -239,8 +239,13 @@
         </header>
 
         <form id="exportForm">
-            <div class="month-picker-container">
-                <input type="month" id="reportMonth" required>
+            <div class="month-picker-container" style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
+                <input type="month" id="reportMonth" required style="flex:1; min-width:200px;">
+                <select id="clientSelect" style="flex:1; min-width:200px; padding:0.875rem 1rem; border-radius:12px; font-family:'Outfit',sans-serif; font-size:1rem; border:1px solid var(--primary); background:#1e1b4b; color:white; font-weight:600; cursor:pointer; outline:none;">
+                    <option value="Sureserve OES">Sureserve - OES</option>
+                    <option value="Energise OES">Energise - OES</option>
+                    <option value="Sureserve SP">Sureserve - SP</option>
+                </select>
             </div>
 
             <div class="grid-layout">
@@ -276,6 +281,11 @@
                             <input type="checkbox" name="exportField" value="Revenue per job" checked>
                             <span class="checkmark"></span>
                             Revenue per job
+                        </label>
+                        <label class="checkbox-container">
+                            <input type="checkbox" name="exportField" value="Warrant days" checked>
+                            <span class="checkmark"></span>
+                            Warrant days (SP Only)
                         </label>
                     </div>
                 </div>
@@ -411,6 +421,9 @@
                 
                 const selectedFields = Array.from(document.querySelectorAll('input[name="exportField"]:checked')).map(cb => cb.value);
                 const monthStr = document.getElementById('reportMonth').value;
+                const selectedClient = document.getElementById('clientSelect').value;
+                const perfCollectionName = selectedClient === 'Energise OES' ? 'performance - Energise' : 
+                                           selectedClient === 'Sureserve SP' ? 'SP Submitted Data' : 'performance';
 
                 if (selectedFields.length === 0) {
                     alert('Please select at least one field to export.');
@@ -441,6 +454,7 @@
                     let totalValue = 0;
                     let totalMeters = 0;
                     let totalAbortsPerf = 0;
+                    let totalWarrantDays = 0;
                     let uniqueEngineers = new Set();
                     let totalSickness = 0;
                     let totalHoliday = 0;
@@ -451,50 +465,106 @@
                     let totalKrakenHeadcount = 0;
                     let krakenHeadcountDays = 0;
 
-                    // 0. Fetch Sureserve Engineers
+                    // 0. Fetch Client Engineers
                     const staffQuery = query(collection(db, "Establishment Report"), where("_type", "==", "staff"));
                     const staffSnap = await getDocs(staffQuery);
-                    const sureserveEngineers = new Set();
+                    const clientEngineers = new Set();
                     staffSnap.forEach(doc => {
                         const data = doc.data();
-                        if (data.contract === 'Sureserve OES') {
-                            if (data.name) sureserveEngineers.add(data.name.trim().toLowerCase());
+                        if (data.contract === selectedClient) {
+                            if (data.name) clientEngineers.add(data.name.trim().toLowerCase());
                         }
                     });
 
-                    // Helper to check if engineer is Sureserve
-                    const isSureserve = (name) => {
-                        return name && sureserveEngineers.has(name.trim().toLowerCase());
+                    // Helper to check if engineer belongs to the selected client
+                    const isClientEngineer = (name) => {
+                        if (!name) return false;
+                        const lowerName = name.trim().toLowerCase();
+                        
+                        // Explicitly handle Sureserve SP aliases as requested
+                        if (selectedClient === 'Sureserve SP') {
+                            const spNames = [
+                                'ali cavan', 'alistair cavan', 'alistair cavan1', 
+                                'allan grant', 
+                                'kris armstrong', 
+                                'muhammad zafar', 'muhammed zafar', 
+                                'ryan clark'
+                            ];
+                            if (spNames.includes(lowerName)) return true;
+                        }
+                        
+                        return clientEngineers.has(lowerName);
                     };
 
                     // 1. Fetch Performance Data
-                    if (selectedFields.includes('Total jobs') || selectedFields.includes('Jobs completed') || selectedFields.includes('Total meters') || selectedFields.includes('Total aborts') || selectedFields.includes('Revenue per job') || selectedFields.includes('Engineer headcount') || selectedFields.includes('Number of engineers available')) {
+                    if (selectedFields.includes('Total jobs') || selectedFields.includes('Jobs completed') || selectedFields.includes('Total meters') || selectedFields.includes('Total aborts') || selectedFields.includes('Revenue per job') || selectedFields.includes('Engineer headcount') || selectedFields.includes('Number of engineers available') || selectedFields.includes('Warrant days')) {
+                        let warrantDaysByEngineer = {};
+                        const dateField = selectedClient === 'Sureserve SP' ? 'submissionDate' : 'date';
                         const perfQuery = query(
-                            collection(db, "performance"),
-                            where("date", ">=", startDate),
-                            where("date", "<=", endDate)
+                            collection(db, perfCollectionName),
+                            where(dateField, ">=", startDate),
+                            where(dateField, "<=", endDate)
                         );
                         const perfSnap = await getDocs(perfQuery);
                         perfSnap.forEach(doc => {
                             const data = doc.data();
-                            // Calculate these totals for ALL engineers to match display.html
-                            totalJobs += Number(data.jobs || 0);
-                            totalJobsCompleted += Number(data.completed || 0);
-                            totalMeters += Number(data.meters || 0);
-                            totalAbortsPerf += Number(data.aborted || 0);
-                            totalValue += Number(data.value || 0);
-                            
-                            // Only count Sureserve engineers for the Headcount
-                            if (isSureserve(data.engineerName) && data.engineerName) {
-                                uniqueEngineers.add(data.engineerName.trim().toLowerCase());
+
+                            if (selectedClient === 'Sureserve SP') {
+                                const engName = data.outcomeResource;
+                                if (!isClientEngineer(engName)) return;
+
+                                totalJobs += 1;
+                                
+                                const status = (data.jobStatus || "").toLowerCase();
+                                const jobType = (data.jobType || "").toLowerCase();
+                                
+                                if (status === 'completed') {
+                                    totalJobsCompleted += 1;
+                                    if (jobType.includes('site visit')) {
+                                        totalMeters += 2;
+                                    } else {
+                                        totalMeters += 1;
+                                    }
+                                } else if (status.includes('abort') || status === 'cancelled') {
+                                    totalAbortsPerf += 1;
+                                }
+
+                                if (jobType.includes('warrant')) {
+                                    const key = engName.trim().toLowerCase();
+                                    if (!warrantDaysByEngineer[key]) warrantDaysByEngineer[key] = new Set();
+                                    warrantDaysByEngineer[key].add(data.submissionDate || data.jobDate || "");
+                                }
+
+                                if (engName) {
+                                    uniqueEngineers.add(engName.trim().toLowerCase());
+                                }
+                            } else {
+                                // Calculate these totals for ALL engineers in this collection
+                                totalJobs += Number(data.jobs || 0);
+                                totalJobsCompleted += Number(data.completed || 0);
+                                totalMeters += Number(data.meters || 0);
+                                totalAbortsPerf += Number(data.aborted || 0);
+                                totalValue += Number(data.value || 0);
+                                
+                                // Only count selected client engineers for the Headcount
+                                if (isClientEngineer(data.engineerName) && data.engineerName) {
+                                    uniqueEngineers.add(data.engineerName.trim().toLowerCase());
+                                }
                             }
                         });
+
+                        if (selectedClient === 'Sureserve SP') {
+                            for (const key in warrantDaysByEngineer) {
+                                totalWarrantDays += warrantDaysByEngineer[key].size;
+                            }
+                        }
                     }
 
                     // 2. Fetch Attendance Data
                     if (selectedFields.includes('Sickness') || selectedFields.includes('Annual leave') || selectedFields.includes('Unpaid leave') || selectedFields.includes('Number of engineers available')) {
+                        const attCollectionName = selectedClient === 'Sureserve SP' ? 'SP Attendance' : 'attendance';
                         const attQuery = query(
-                            collection(db, "attendance"),
+                            collection(db, attCollectionName),
                             where("date", ">=", startDate),
                             where("date", "<=", endDate)
                         );
@@ -503,7 +573,7 @@
 
                         attSnap.forEach(doc => {
                             const data = doc.data();
-                            if (!isSureserve(data.engineerName)) return;
+                            if (!isClientEngineer(data.engineerName)) return;
                             uniqueDates.add(data.date);
                             const att = data.attendance;
                             if (att === 'Sick') totalSickness++;
@@ -524,26 +594,13 @@
                         const workSnap = await getDocs(workQuery);
                         workSnap.forEach(doc => {
                             const data = doc.data();
-                            if (!isSureserve(data.engineerName)) return;
+                            if (!isClientEngineer(data.engineerName)) return;
                             totalWorkingMinutes += data.durationMins || 0;
                         });
                     }
 
 
-                    // 5. Fetch Kraken Headcount Data
-                    if (selectedFields.includes('Number of engineers available')) {
-                        const hcQuery = query(
-                            collection(db, "KrakenAM Headcount"),
-                            where("date", ">=", startDate),
-                            where("date", "<=", endDate)
-                        );
-                        const hcSnap = await getDocs(hcQuery);
-                        hcSnap.forEach(doc => {
-                            const data = doc.data();
-                            totalKrakenHeadcount += (data.headcount || 0);
-                            krakenHeadcountDays++;
-                        });
-                    }
+
 
                     // Build Excel Rows
                     const excelData = [];
@@ -562,14 +619,35 @@
                         excelData.push(["Total Aborts", totalAbortsPerf]);
                     }
                     if (selectedFields.includes('Revenue per job')) {
-                        const revPerJob = totalJobsCompleted > 0 ? (totalValue / totalJobsCompleted) : 0;
-                        excelData.push(["Revenue per Job", `£${revPerJob.toFixed(2)}`]);
+                        if (selectedClient !== 'Sureserve SP') {
+                            const revPerJob = totalJobsCompleted > 0 ? (totalValue / totalJobsCompleted) : 0;
+                            excelData.push(["Revenue per Job", `£${revPerJob.toFixed(2)}`]);
+                        } else {
+                            excelData.push(["Revenue per Job", "N/A (Sureserve SP)"]);
+                        }
+                    }
+                    if (selectedFields.includes('Warrant days') && selectedClient === 'Sureserve SP') {
+                        excelData.push(["Total Warrant Days", totalWarrantDays]);
                     }
                     if (selectedFields.includes('Engineer headcount')) {
                         excelData.push(["Engineer Headcount", uniqueEngineers.size]);
                     }
                     if (selectedFields.includes('Number of engineers available')) {
-                        const avgAvailable = krakenHeadcountDays > 0 ? (totalKrakenHeadcount / krakenHeadcountDays) : 0;
+                        // Calculate working days in the selected month
+                        const [yyyy, mm] = monthStr.split('-');
+                        const year = parseInt(yyyy, 10);
+                        const monthIndex = parseInt(mm, 10) - 1;
+                        let workingDaysInMonth = 0;
+                        const dateCursor = new Date(year, monthIndex, 1);
+                        while (dateCursor.getMonth() === monthIndex) {
+                            if (dateCursor.getDay() !== 0 && dateCursor.getDay() !== 6) {
+                                workingDaysInMonth++;
+                            }
+                            dateCursor.setDate(dateCursor.getDate() + 1);
+                        }
+
+                        // Avg = Total Days Worked / Working Days in Month
+                        const avgAvailable = workingDaysInMonth > 0 ? (totalDaysWorked / workingDaysInMonth) : 0;
                         excelData.push(["Avg. Daily Engineers Available", avgAvailable.toFixed(1)]);
                     }
                     if (selectedFields.includes('Sickness')) {
@@ -602,7 +680,8 @@
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Finance_Report");
 
-                    const filename = `Finance_Report_${monthStr}.xlsx`;
+                    const clientPrefix = selectedClient === 'Energise OES' ? 'Energise' : 'Sureserve';
+                    const filename = `Finance_Report_${clientPrefix}_${monthStr}.xlsx`;
                     XLSX.writeFile(wb, filename);
 
                     feedback.textContent = 'Export successful!';
