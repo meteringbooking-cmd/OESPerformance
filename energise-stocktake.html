@@ -448,8 +448,7 @@
 
   // State
   let items       = [];   // filtered inventory items
-  let photoFiles  = {};   // { sku: File }
-  let photoPreviews = {}; // { sku: dataURL }
+  let photoUrls = {};  // { sku: downloadURL } — populated as soon as photo is selected
 
   // ── Load inventory ──────────────────────────────────────────────────────
   async function loadInventory() {
@@ -586,24 +585,38 @@
     document.getElementById('btnSubmit').disabled = counted === 0;
   }
 
-  // ── Photo handling ────────────────────────────────────────────────────────
-  window.handlePhoto = function(sku, input) {
+  // ── Photo handling — upload immediately on selection ─────────────────────
+  window.handlePhoto = async function(sku, input) {
     if (!input.files || !input.files[0]) return;
-    const file = input.files[0];
-    photoFiles[sku] = file;
+    const file    = input.files[0];
+    const label   = document.getElementById(`photolabel-${sku}`);
+    const spanLbl = document.getElementById(`photospanlabel-${sku}`);
+    const preview = document.getElementById(`preview-${sku}`);
 
+    // Show local preview immediately
     const reader = new FileReader();
     reader.onload = e => {
-      photoPreviews[sku] = e.target.result;
-      const label   = document.getElementById(`photolabel-${sku}`);
-      const spanLbl = document.getElementById(`photospanlabel-${sku}`);
-      const preview = document.getElementById(`preview-${sku}`);
-      label.classList.add('has-photo');
-      spanLbl.textContent = 'Photo Added';
       preview.src = e.target.result;
       preview.style.display = 'block';
     };
     reader.readAsDataURL(file);
+
+    // Show uploading state
+    label.classList.add('has-photo');
+    spanLbl.textContent = 'Uploading...';
+    delete photoUrls[sku];
+
+    try {
+      const storageRef = ref(storage, `stocktake/${Date.now()}_${sku}`);
+      const snap       = await uploadBytes(storageRef, file);
+      const url        = await getDownloadURL(snap.ref);
+      photoUrls[sku]   = url;
+      spanLbl.textContent = 'Photo Uploaded';
+    } catch (err) {
+      console.warn(`Photo upload failed for ${sku}:`, err);
+      spanLbl.textContent = 'Upload Failed';
+      label.classList.remove('has-photo');
+    }
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -628,17 +641,8 @@
       const qty = parseInt(input.value);
       if (isNaN(qty) || qty < 0) continue;
 
-      // Upload photo if provided
-      let photoUrl = null;
-      if (photoFiles[sku]) {
-        try {
-          const storageRef = ref(storage, `stocktake/${Date.now()}_${sku}`);
-          const snap = await uploadBytes(storageRef, photoFiles[sku]);
-          photoUrl = await getDownloadURL(snap.ref);
-        } catch (uploadErr) {
-          console.warn(`Photo upload failed for ${sku}:`, uploadErr);
-        }
-      }
+      // Photo was already uploaded on selection — just read the stored URL
+      const photoUrl = photoUrls[sku] || null;
 
       lines.push({
         sku,
@@ -680,7 +684,7 @@
   // ── Reset ──────────────────────────────────────────────────────────────────
   window.resetForm = function() {
     document.getElementById('staffName').value = '';
-    photoFiles   = {};
+    photoUrls = {};
     photoPreviews = {};
     document.getElementById('submittedOverlay').classList.remove('show');
     document.getElementById('mainContent').style.display = 'block';
