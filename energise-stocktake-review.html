@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Take Review — Energise</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg:       #f4f6fb;
+      --card:     #ffffff;
+      --border:   #e2e8f0;
+      --accent:   #1d4ed8;
+      --accent-lt:#eff6ff;
+      --text:     #0f172a;
+      --muted:    #64748b;
+      --muted2:   #94a3b8;
+      --success:  #059669;
+      --success-lt:#ecfdf5;
+      --danger:   #dc2626;
+      --warn:     #d97706;
+      --radius:   12px;
+      --shadow:   0 1px 3px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+      --sidebar:  260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Layout ── */
+    .layout { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar);
+      background: #fff;
+      border-right: 1px solid var(--border);
+      padding: 0;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .sidebar-header {
+      padding: 22px 20px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sidebar-header p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .sidebar-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .sidebar-section label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .sidebar-section input[type="text"],
+    .sidebar-section input[type="date"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+      margin-bottom: 8px;
+      transition: border-color 0.18s;
+    }
+    .sidebar-section input:focus { border-color: var(--accent); background: #fff; }
+    .sidebar-section input:last-child { margin-bottom: 0; }
+
+    .btn-filter {
+      width: 100%;
+      padding: 10px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background 0.18s;
+    }
+    .btn-filter:hover { background: #1e40af; }
+    .btn-clear {
+      width: 100%;
+      padding: 9px;
+      background: transparent;
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: border-color 0.18s, color 0.18s;
+    }
+    .btn-clear:hover { border-color: var(--accent); color: var(--accent); }
+
+    .stats-grid { padding: 16px 20px; }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    .btn-export {
+      margin: 0 20px 20px;
+      padding: 11px;
+      background: var(--success);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.18s;
+    }
+    .btn-export:hover { background: #047857; }
+    .sidebar-spacer { flex: 1; }
+
+    /* ── Main content ── */
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .main-header {
+      background: var(--accent);
+      color: #fff;
+      padding: 20px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .main-header h1 { font-size: 20px; font-weight: 700; }
+    .main-header p  { font-size: 13px; opacity: 0.75; margin-top: 2px; }
+    .results-count {
+      background: rgba(255,255,255,0.15);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .main-body { padding: 24px 28px; flex: 1; }
+
+    /* ── Submission Cards ── */
+    .submission-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .submission-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      cursor: pointer;
+      transition: background 0.15s;
+      gap: 12px;
+    }
+    .submission-header:hover { background: var(--bg); }
+
+    .sub-name { font-size: 16px; font-weight: 700; color: var(--text); }
+    .sub-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .sub-date { font-size: 12px; color: var(--muted); }
+    .sub-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--accent-lt);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    .sub-chevron {
+      color: var(--muted2);
+      flex-shrink: 0;
+      transition: transform 0.2s;
+    }
+    .submission-card.open .sub-chevron { transform: rotate(180deg); }
+
+    /* ── Items Table inside card ── */
+    .items-body {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+    .submission-card.open .items-body { display: block; }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .items-table th {
+      background: var(--bg);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 10px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .items-table td {
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      color: var(--text);
+    }
+    .items-table tr:last-child td { border-bottom: none; }
+    .items-table tr:hover td { background: var(--bg); }
+
+    .qty-pill {
+      display: inline-block;
+      background: var(--accent-lt);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+      padding: 3px 12px;
+      border-radius: 20px;
+      min-width: 40px;
+      text-align: center;
+    }
+    .price-text { color: var(--muted); font-size: 12px; }
+    .sku-text { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; color: var(--muted2); }
+
+    .photo-thumb {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .photo-thumb:hover { transform: scale(1.08); }
+    .no-photo { color: var(--muted2); font-size: 12px; }
+
+    /* ── Lightbox ── */
+    .lightbox {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .lightbox.show { display: flex; }
+    .lightbox img {
+      max-width: 92vw;
+      max-height: 88vh;
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .lightbox-close {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      color: #fff;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Empty / Loading ── */
+    .empty-state {
+      text-align: center;
+      padding: 64px 20px;
+      color: var(--muted);
+    }
+    .empty-state svg { margin-bottom: 16px; opacity: 0.35; }
+    .empty-state h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+    .empty-state p  { font-size: 14px; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive collapse sidebar on mobile ── */
+    @media (max-width: 768px) {
+      .layout { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .main-body { padding: 16px; }
+      .items-table thead { display: none; }
+      .items-table td { display: block; padding: 6px 16px; border-bottom: none; }
+      .items-table td:first-child { padding-top: 14px; }
+      .items-table td:last-child  { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+      .items-table tr:last-child td:last-child { border-bottom: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">&#x2715;</button>
+  <img id="lightboxImg" src="" alt="Photo" />
+</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Stock Take Review</h2>
+      <p>Energise Inventory System</p>
+    </div>
+
+    <div class="sidebar-section">
+      <label>Search by Name</label>
+      <input type="text" id="filterName" placeholder="e.g. Barry Dixon" oninput="applyFilters()" />
+    </div>
+
+    <div class="sidebar-section">
+      <label>Date Range</label>
+      <input type="date" id="filterFrom" onchange="applyFilters()" />
+      <input type="date" id="filterTo"   onchange="applyFilters()" />
+      <button class="btn-filter" onclick="applyFilters()">Apply Filters</button>
+      <button class="btn-clear"  onclick="clearFilters()">Clear</button>
+    </div>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-row">
+        <span class="stat-label">Total Submissions</span>
+        <span class="stat-val" id="statTotal">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Showing</span>
+        <span class="stat-val" id="statShowing">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Unique Staff</span>
+        <span class="stat-val" id="statStaff">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Total Items Counted</span>
+        <span class="stat-val" id="statItems">—</span>
+      </div>
+    </div>
+
+    <div class="sidebar-spacer"></div>
+
+    <button class="btn-export" onclick="exportXLSX()">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Export to Excel (.xlsx)
+    </button>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <div class="main-header">
+      <div>
+        <h1>Submissions</h1>
+        <p>All Energise Stock Take records</p>
+      </div>
+      <div class="results-count" id="resultsCount">Loading...</div>
+    </div>
+
+    <div class="main-body" id="mainBody">
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <p>Loading submissions...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+  import { getFirestore, collection, getDocs, orderBy, query }
+    from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey:            'AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g',
+    authDomain:        'oesperformance-a54c0.firebaseapp.com',
+    projectId:         'oesperformance-a54c0',
+    storageBucket:     'oesperformance-a54c0.firebasestorage.app',
+    messagingSenderId: '123456789',
+    appId:             '1:123456789:web:abc123'
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  let allSubmissions  = [];
+  let visibleSubs     = [];
+
+  // ── Load ─────────────────────────────────────────────────────────────────
+  async function load() {
+    try {
+      const q    = query(collection(db, 'Energise Stock Take'), orderBy('submittedAt', 'desc'));
+      const snap = await getDocs(q);
+      allSubmissions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      applyFilters();
+    } catch (e) {
+      document.getElementById('mainBody').innerHTML =
+        `<div class="empty-state"><p style="color:var(--danger);font-weight:600;">Failed to load. Please refresh.<br><small>${e.message}</small></p></div>`;
+      console.error(e);
+    }
+  }
+
+  // ── Filters ───────────────────────────────────────────────────────────────
+  window.applyFilters = function() {
+    const nameQ = document.getElementById('filterName').value.trim().toLowerCase();
+    const from  = document.getElementById('filterFrom').value;
+    const to    = document.getElementById('filterTo').value;
+
+    visibleSubs = allSubmissions.filter(sub => {
+      if (nameQ && !sub.staffName?.toLowerCase().includes(nameQ)) return false;
+      const subDate = sub.submittedAtISO ? sub.submittedAtISO.substring(0, 10) : '';
+      if (from && subDate < from) return false;
+      if (to   && subDate > to)   return false;
+      return true;
+    });
+
+    renderResults();
+    updateStats();
+  };
+
+  window.clearFilters = function() {
+    document.getElementById('filterName').value = '';
+    document.getElementById('filterFrom').value = '';
+    document.getElementById('filterTo').value   = '';
+    applyFilters();
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderResults() {
+    const body = document.getElementById('mainBody');
+    document.getElementById('resultsCount').textContent = `${visibleSubs.length} result${visibleSubs.length !== 1 ? 's' : ''}`;
+
+    if (visibleSubs.length === 0) {
+      body.innerHTML = `
+        <div class="empty-state">
+          <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+            <rect x="9" y="3" width="6" height="4" rx="1"/>
+          </svg>
+          <h3>No submissions found</h3>
+          <p>Try adjusting your filters or check back later.</p>
+        </div>`;
+      return;
+    }
+
+    body.innerHTML = '';
+    visibleSubs.forEach(sub => {
+      body.appendChild(buildCard(sub));
+    });
+  }
+
+  function buildCard(sub) {
+    const card = document.createElement('div');
+    card.className = 'submission-card';
+    card.dataset.id = sub.id;
+
+    const items      = Array.isArray(sub.items) ? sub.items : [];
+    const totalItems = items.length;
+    const totalQty   = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
+    const dateStr    = formatDate(sub.submittedAtISO || sub.submittedAt);
+
+    card.innerHTML = `
+      <div class="submission-header" onclick="toggleCard('${sub.id}')">
+        <div style="flex:1;min-width:0">
+          <div class="sub-name">${escHtml(sub.staffName || 'Unknown')}</div>
+          <div class="sub-meta">
+            <span class="sub-date">${dateStr}</span>
+            <span class="sub-badge">
+              <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              ${totalItems} item${totalItems !== 1 ? 's' : ''} &bull; ${totalQty} counted
+            </span>
+          </div>
+        </div>
+        <svg class="sub-chevron" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </div>
+
+      <div class="items-body">
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>SKU</th>
+              <th>Category</th>
+              <th>Unit Price</th>
+              <th>Qty Counted</th>
+              <th>Photo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td>${escHtml(item.name || item.sku)}</td>
+                <td><span class="sku-text">${escHtml(item.sku || '')}</span></td>
+                <td style="text-transform:capitalize">${escHtml(item.category || '-')}</td>
+                <td><span class="price-text">£${parseFloat(item.price || 0).toFixed(2)}</span></td>
+                <td><span class="qty-pill">${item.qty ?? '—'}</span></td>
+                <td>
+                  ${item.photoUrl
+                    ? `<img class="photo-thumb" src="${escHtml(item.photoUrl)}" alt="Photo" onclick="openLightbox('${escHtml(item.photoUrl)}')" />`
+                    : `<span class="no-photo">—</span>`}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    return card;
+  }
+
+  window.toggleCard = function(id) {
+    const card = document.querySelector(`.submission-card[data-id="${id}"]`);
+    if (card) card.classList.toggle('open');
+  };
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  function updateStats() {
+    const uniqueStaff = new Set(visibleSubs.map(s => s.staffName)).size;
+    const totalItems  = visibleSubs.reduce((s, sub) =>
+      s + (Array.isArray(sub.items) ? sub.items.reduce((a, i) => a + (parseInt(i.qty) || 0), 0) : 0), 0);
+
+    document.getElementById('statTotal').textContent   = allSubmissions.length;
+    document.getElementById('statShowing').textContent = visibleSubs.length;
+    document.getElementById('statStaff').textContent   = uniqueStaff;
+    document.getElementById('statItems').textContent   = totalItems;
+  }
+
+  // ── Export XLSX ───────────────────────────────────────────────────────────
+  window.exportXLSX = function() {
+    if (visibleSubs.length === 0) { alert('No data to export.'); return; }
+
+    const rows = [];
+    visibleSubs.forEach(sub => {
+      const items = Array.isArray(sub.items) ? sub.items : [];
+      items.forEach(item => {
+        rows.push({
+          'Staff Name':      sub.staffName || '',
+          'Submitted Date':  formatDate(sub.submittedAtISO || ''),
+          'Submitted Time':  formatTime(sub.submittedAtISO || ''),
+          'Submission ID':   sub.id,
+          'Item Name':       item.name || '',
+          'SKU':             item.sku  || '',
+          'Category':        item.category || '',
+          'Unit Price (£)':  parseFloat(item.price || 0).toFixed(2),
+          'UOM':             item.uom || '',
+          'Qty Counted':     item.qty ?? '',
+          'Photo URL':       item.photoUrl || ''
+        });
+      });
+    });
+
+    const ws  = XLSX.utils.json_to_sheet(rows);
+    const wb  = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Stock Take');
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 24 },
+      { wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 14 },
+      { wch: 10 }, { wch: 14 }, { wch: 50 }
+    ];
+
+    const dateTag = new Date().toISOString().substring(0, 10);
+    XLSX.writeFile(wb, `Energise-StockTake-${dateTag}.xlsx`);
+  };
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+  window.openLightbox = function(url) {
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightbox').classList.add('show');
+  };
+  window.closeLightbox = function() {
+    document.getElementById('lightbox').classList.remove('show');
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function formatDate(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return iso.substring(0, 10); }
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  load();
+</script>
+</body>
+</html>
