@@ -1381,46 +1381,44 @@
     if (e.target === this) closeConfirm();
   });
 
-  // ── 1:30 PM Weekday Reminder ──
+  // -- 1:30 PM Weekday Reminder --
+  // Fires anytime the page is open after 1:30 PM on a weekday, not sent today yet
   let reminderSentDate = localStorage.getItem('energise_reminder_date') || '';
-  
-  setInterval(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const dateStr = now.toDateString();
 
-    // Check if weekday (1=Mon ... 5=Fri)
-    if (day >= 1 && day <= 5) {
-      // Check if it's 1:30 PM (13:30)
-      if (hours === 13 && minutes === 30) {
-        // Only send once per day
-        if (reminderSentDate !== dateStr) {
-          const pendingOrders = allOrders.filter(o => !o.processedAt);
-          if (pendingOrders.length > 0) {
-            emailjs.send('service_ushej2v', 'template_2mihgrj', {
-              pending_count: pendingOrders.length,
-              system_name:   'Pudo',
-              review_link: 'https://oes-performance.vercel.app/energise-order-review-pudo.html'
-            }).then(() => {
-              console.log('1:30 PM Reminder sent successfully.');
-              localStorage.setItem('energise_reminder_date', dateStr);
-              reminderSentDate = dateStr;
-            }).catch(err => {
-              console.error('Failed to send 1:30 PM Reminder:', err);
-            });
-          } else {
-            // No pending orders, just record it as checked so it doesn't try again today
-            localStorage.setItem('energise_reminder_date', dateStr);
-            reminderSentDate = dateStr;
-          }
-        }
+  function checkAndSendReminder() {
+    const now      = new Date();
+    const day      = now.getDay();
+    const dateStr  = now.toDateString();
+    const totalMin = now.getHours() * 60 + now.getMinutes();
+
+    // Weekday only (Mon-Fri), at or after 1:30 PM (810 min), not yet sent today
+    if (day >= 1 && day <= 5 && totalMin >= 810 && reminderSentDate !== dateStr) {
+      const pendingOrders = allOrders.filter(o => !o.processedAt);
+      if (pendingOrders.length > 0) {
+        emailjs.send('service_ushej2v', 'template_2mihgrj', {
+          pending_count: pendingOrders.length,
+          system_name:   'Pudo',
+          review_link: 'https://oes-performance.vercel.app/energise-order-review-pudo.html'
+        }).then(() => {
+          console.log('1:30 PM Reminder sent successfully.');
+          localStorage.setItem('energise_reminder_date', dateStr);
+          reminderSentDate = dateStr;
+        }).catch(err => {
+          console.error('Failed to send 1:30 PM Reminder:', err);
+        });
+      } else {
+        // No pending orders - mark as done for today so it doesn't keep checking
+        localStorage.setItem('energise_reminder_date', dateStr);
+        reminderSentDate = dateStr;
       }
     }
-  }, 60000); // check every 60 seconds
+  }
 
-  loadOrders();
+  // Check every 30 seconds (more resilient to browser timer throttling)
+  setInterval(checkAndSendReminder, 30000);
+
+  // Run check after orders finish loading
+  loadOrders().then(() => checkAndSendReminder()).catch(() => checkAndSendReminder());
 </script>
 
 <!-- Processor Selection Modal -->
@@ -1446,6 +1444,7 @@
 
 </body>
 </html>
+
 
 
 
