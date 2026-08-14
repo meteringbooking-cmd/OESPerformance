@@ -216,9 +216,67 @@
   // ---------- helpers ----------
   const JOB_REGEX = /J-[A-Za-z0-9]{8}/g;
 
+  const JOB_TYPES = [
+    "DualFuelMeterCommission",
+    "DualFuelMeterExchange",
+    "DualFuelNewConnection",
+    "ElectricityMeterExchange",
+    "ElectricityMeterNewConnection",
+    "ElectricityMeterRemoval",
+    "ElectricityMeterCommission",
+    "GasMeterCommission",
+    "GasMeterExchange",
+    "GasMeterNewConnection",
+    "GasMeterRemoval",
+    "InstallConsumerDevice",
+    "CommunicationsHubExchange",
+    "InstallIsolatorSwitch",
+    "MeteringAccuracyTest",
+    "SiteInvestigation",
+    "TraceandLabel",
+    "FusePull"
+  ].sort((a,b) => b.length - a.length);
+
+  function escapeRegex(s){
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // matches: <JobType> ... Clicktocopy <JobNumber>  (non-greedy gap covers period/duration/engineer code)
+  const JOB_WITH_TYPE_REGEX = new RegExp(
+    `(${JOB_TYPES.map(escapeRegex).join('|')})[\\s\\S]*?Clicktocopy(J-[A-Za-z0-9]{8})`,
+    'g'
+  );
+
+  function humanizeType(type){
+    if (!type) return 'Unknown';
+    return type.replace(/(?<=[a-z0-9])(?=[A-Z])/g, ' ').replace(/^./, c => c.toUpperCase());
+  }
+
   function extractJobNumbers(text){
     const matches = (text || "").toUpperCase().match(JOB_REGEX) || [];
     return [...new Set(matches)];
+  }
+
+  // Returns ordered array of { jobNumber, jobType } deduped by jobNumber (first occurrence wins).
+  // Falls back to jobType "Unknown" for any job number the type-pairing regex didn't catch.
+  function extractJobsWithType(text){
+    const source = text || "";
+    const results = new Map(); // jobNumber -> jobType
+
+    let m;
+    JOB_WITH_TYPE_REGEX.lastIndex = 0;
+    while ((m = JOB_WITH_TYPE_REGEX.exec(source)) !== null){
+      const jobType = m[1];
+      const jobNumber = m[2].toUpperCase();
+      if (!results.has(jobNumber)) results.set(jobNumber, jobType);
+    }
+
+    // catch any job numbers the type-paired regex missed
+    extractJobNumbers(source).forEach(jn => {
+      if (!results.has(jn)) results.set(jn, 'Unknown');
+    });
+
+    return [...results.entries()].map(([jobNumber, jobType]) => ({ jobNumber, jobType }));
   }
 
   function toISODate(d){
@@ -274,17 +332,21 @@
 
   importDate.value = previousWorkingDay();
 
-  let currentExtracted = [];
+  let currentExtracted = []; // [{ jobNumber, jobType }]
 
   btnExtract.addEventListener('click', () => {
-    currentExtracted = extractJobNumbers(importText.value);
+    currentExtracted = extractJobsWithType(importText.value);
     updateOdometer(currentExtracted.length);
-    importChips.innerHTML = currentExtracted.map(j => `<span class="chip">${j}</span>`).join('');
+    importChips.innerHTML = currentExtracted.map(({jobNumber, jobType}) =>
+      `<span class="chip">${jobNumber} <span style="color:var(--muted);">— ${humanizeType(jobType)}</span></span>`
+    ).join('');
     if (currentExtracted.length === 0){
       setStatus(importStatus, 'No job numbers found in the pasted text.', 'err');
       btnSave.disabled = true;
     } else {
-      setStatus(importStatus, `Found ${currentExtracted.length} job number${currentExtracted.length===1?'':'s'}. Review, then save.`, 'info');
+      const unknownCount = currentExtracted.filter(j => j.jobType === 'Unknown').length;
+      const note = unknownCount ? ` (${unknownCount} with type not identified)` : '';
+      setStatus(importStatus, `Found ${currentExtracted.length} job number${currentExtracted.length===1?'':'s'}${note}. Review, then save.`, 'info');
       btnSave.disabled = false;
     }
   });
@@ -300,11 +362,12 @@
     setStatus(importStatus, `Saving ${currentExtracted.length} job number(s) to Firebase…`, 'info');
     try {
       const batch = writeBatch(db);
-      currentExtracted.forEach(jobNumber => {
+      currentExtracted.forEach(({jobNumber, jobType}) => {
         const id = `${dateVal}_${jobNumber}`;
         const ref = doc(db, COLLECTION_NAME, id);
         batch.set(ref, {
           jobNumber,
+          jobType,
           date: dateVal,
           createdAt: serverTimestamp()
         });
@@ -365,10 +428,12 @@
       );
       const snap = await getDocs(q);
 
-      const storedMap = new Map(); // jobNumber -> date (first seen)
+      const storedMap = new Map(); // jobNumber -> { date, jobType } (first seen)
       snap.forEach(d => {
         const data = d.data();
-        if (!storedMap.has(data.jobNumber)) storedMap.set(data.jobNumber, data.date);
+        if (!storedMap.has(data.jobNumber)){
+          storedMap.set(data.jobNumber, { date: data.date, jobType: data.jobType || 'Unknown' });
+        }
       });
 
       const storedJobs = [...storedMap.keys()];
@@ -382,7 +447,7 @@
       compareStats.classList.remove('hidden');
 
       compareChips.innerHTML =
-        missing.map(j => `<span class="chip missing">${j}</span>`).join('') +
+        missing.map(j => `<span class="chip missing">${j} <span style="color:var(--muted);">— ${humanizeType(storedMap.get(j).jobType)}</span></span>`).join('') +
         matched.map(j => `<span class="chip matched">${j}</span>`).join('');
 
       if (storedJobs.length === 0){
@@ -392,9 +457,13 @@
       }
 
       // build & download xlsx
-      const rows = missing.map(j => ({ 'Job Number': j, 'Date': storedMap.get(j) }));
-      const ws = XLSX.utils.json_to_sheet(rows, { header: ['Job Number', 'Date'] });
-      ws['!cols'] = [{ wch: 16 }, { wch: 12 }];
+      const rows = missing.map(j => ({
+        'Job Number': j,
+        'Job Type': humanizeType(storedMap.get(j).jobType),
+        'Date': storedMap.get(j).date
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows, { header: ['Job Number', 'Job Type', 'Date'] });
+      ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 12 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Missing Jobs');
       const fname = `missing-jobs_${start}_to_${end}.xlsx`;
