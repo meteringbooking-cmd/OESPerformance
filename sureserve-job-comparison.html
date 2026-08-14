@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sureserve Job Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#12161d;
+    --panel:#1b212b;
+    --panel-raised:#212836;
+    --line:#2c3441;
+    --text:#e7eaee;
+    --muted:#8b93a1;
+    --amber:#f2a93b;
+    --amber-dim:#7a5a24;
+    --blue:#4fb6e8;
+    --green:#5fd3a0;
+    --red:#e8646f;
+    --mono:'IBM Plex Mono', monospace;
+    --sans:'IBM Plex Sans', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(79,182,232,0.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(242,169,59,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:36px 20px 80px;}
+
+  header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:28px;border-bottom:1px solid var(--line);padding-bottom:20px;}
+  header.top h1{font-size:22px;margin:0 0 4px;letter-spacing:0.02em;font-weight:600;}
+  header.top .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.14em;color:var(--amber);text-transform:uppercase;margin-bottom:6px;}
+  header.top p{margin:0;color:var(--muted);font-size:13px;}
+
+  .odometer{display:flex;gap:4px;flex-shrink:0;}
+  .odometer .digit{
+    width:26px;height:36px;background:#0c0f14;border:1px solid var(--line);border-radius:3px;
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:19px;font-weight:600;color:var(--amber);
+    box-shadow:inset 0 2px 4px rgba(0,0,0,0.5);
+  }
+  .odometer-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-top:6px;text-align:center;}
+
+  .tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px;}
+  .tab{flex:1;text-align:center;padding:10px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);transition:all .15s ease;user-select:none;}
+  .tab.active{background:var(--panel-raised);color:var(--text);box-shadow:0 0 0 1px var(--line);}
+  .tab:not(.active):hover{color:var(--text);}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;margin-bottom:18px;}
+  .panel h2{font-size:15px;margin:0 0 4px;font-weight:600;}
+  .panel .sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;}
+
+  label{display:block;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;font-weight:600;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+  .field{flex:1;min-width:160px;}
+
+  input[type=date], input[type=text]{
+    width:100%;background:#0f131a;border:1px solid var(--line);color:var(--text);
+    padding:10px 12px;border-radius:6px;font-family:var(--mono);font-size:13.5px;
+  }
+  input[type=date]:focus, input[type=text]:focus, textarea:focus{outline:none;border-color:var(--blue);}
+
+  textarea{
+    width:100%;min-height:180px;background:#0f131a;border:1px solid var(--line);color:var(--text);
+    padding:12px;border-radius:6px;font-family:var(--mono);font-size:12.5px;line-height:1.5;resize:vertical;
+  }
+
+  .btn{
+    appearance:none;border:none;cursor:pointer;font-family:var(--sans);font-weight:600;font-size:13.5px;
+    padding:11px 18px;border-radius:6px;transition:transform .08s ease, filter .15s ease;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-amber{background:var(--amber);color:#1a1305;}
+  .btn-amber:hover{filter:brightness(1.08);}
+  .btn-blue{background:var(--blue);color:#071a22;}
+  .btn-blue:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text);}
+  .btn-ghost:hover{border-color:var(--muted);}
+  .btn:disabled{opacity:0.45;cursor:not-allowed;filter:none;}
+  .btn-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;}
+
+  .status{font-family:var(--mono);font-size:12px;margin-top:12px;padding:10px 12px;border-radius:6px;border:1px solid var(--line);background:#0f131a;display:none;}
+  .status.show{display:block;}
+  .status.ok{color:var(--green);border-color:#2b4a3d;}
+  .status.err{color:var(--red);border-color:#4a2b2f;}
+  .status.info{color:var(--blue);border-color:#25445a;}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;max-height:220px;overflow-y:auto;padding-right:4px;}
+  .chip{font-family:var(--mono);font-size:11.5px;background:#0f131a;border:1px solid var(--line);color:var(--blue);padding:5px 9px;border-radius:5px;}
+  .chip.missing{color:var(--red);border-color:#4a2b2f;}
+  .chip.matched{color:var(--green);border-color:#2b4a3d;}
+
+  .stat-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;}
+  .stat{flex:1;min-width:110px;background:#0f131a;border:1px solid var(--line);border-radius:8px;padding:12px 14px;}
+  .stat .n{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--text);}
+  .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;}
+
+  .hidden{display:none !important;}
+  footer{text-align:center;color:var(--muted);font-size:11.5px;margin-top:10px;font-family:var(--mono);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <div class="eyebrow">Field Ops · Job Register</div>
+      <h1>Sureserve Job Comparison</h1>
+      <p>Log daily job numbers, then reconcile against a date range to find what's missing.</p>
+    </div>
+    <div>
+      <div class="odometer" id="odometer">
+        <div class="digit">0</div><div class="digit">0</div><div class="digit">0</div>
+      </div>
+      <div class="odometer-label">jobs found</div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="import">Import Jobs</div>
+    <div class="tab" data-tab="compare">Compare &amp; Export</div>
+  </div>
+
+  <!-- IMPORT TAB -->
+  <section id="tab-import">
+    <div class="panel">
+      <h2>1. Paste the day's schedule</h2>
+      <p class="sub">Select the date, paste the raw schedule text, then extract and save. Job numbers are matched as <b>J-</b> followed by 8 characters.</p>
+
+      <div class="row">
+        <div class="field" style="max-width:220px;">
+          <label for="importDate">Date</label>
+          <input type="date" id="importDate">
+        </div>
+      </div>
+
+      <label for="importText">Pasted schedule data</label>
+      <textarea id="importText" placeholder="Paste the schedule text here…"></textarea>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnExtract">Extract job numbers</button>
+        <button class="btn btn-amber" id="btnSave" disabled>Save to Firebase</button>
+        <span id="importStatus" class="status"></span>
+      </div>
+
+      <div id="importChips" class="chips"></div>
+    </div>
+  </section>
+
+  <!-- COMPARE TAB -->
+  <section id="tab-compare" class="hidden">
+    <div class="panel">
+      <h2>2. Compare a date range against a pasted list</h2>
+      <p class="sub">Everything stored in Firebase within this range gets checked against your pasted job numbers. Anything stored but not pasted is exported as "missing".</p>
+
+      <div class="row">
+        <div class="field">
+          <label for="rangeStart">From</label>
+          <input type="date" id="rangeStart">
+        </div>
+        <div class="field">
+          <label for="rangeEnd">To</label>
+          <input type="date" id="rangeEnd">
+        </div>
+      </div>
+
+      <label for="compareText">Pasted job numbers (any format)</label>
+      <textarea id="compareText" placeholder="Paste job numbers, or any text containing them…"></textarea>
+
+      <div class="btn-row">
+        <button class="btn btn-blue" id="btnCompare">Compare &amp; export missing</button>
+        <span id="compareStatus" class="status"></span>
+      </div>
+
+      <div class="stat-row hidden" id="compareStats">
+        <div class="stat"><div class="n" id="statStored">0</div><div class="l">Stored in range</div></div>
+        <div class="stat"><div class="n" id="statPasted">0</div><div class="l">Pasted</div></div>
+        <div class="stat"><div class="n" id="statMatched">0</div><div class="l">Matched</div></div>
+        <div class="stat"><div class="n" id="statMissing">0</div><div class="l">Missing</div></div>
+      </div>
+
+      <div id="compareChips" class="chips"></div>
+    </div>
+  </section>
+
+  <footer>Sureserve Job Numbers · Firestore</footer>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getFirestore, collection, doc, setDoc, getDocs, query, where, serverTimestamp, writeBatch
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  const _cfg = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717"
+  };
+
+  const app = initializeApp(_cfg);
+  const db = getFirestore(app);
+  const COLLECTION_NAME = "Sureserve Job Numbers";
+
+  // ---------- helpers ----------
+  const JOB_REGEX = /J-[A-Za-z0-9]{8}/g;
+
+  function extractJobNumbers(text){
+    const matches = (text || "").toUpperCase().match(JOB_REGEX) || [];
+    return [...new Set(matches)];
+  }
+
+  function toISODate(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function previousWorkingDay(){
+    const d = new Date();
+    const day = d.getDay(); // 0 = Sun, 6 = Sat
+    let back = 1;
+    if (day === 1) back = 3;      // Monday -> Friday
+    else if (day === 0) back = 2; // Sunday -> Friday
+    else if (day === 6) back = 1; // Saturday -> Friday
+    d.setDate(d.getDate() - back);
+    return toISODate(d);
+  }
+
+  function setStatus(el, msg, type){
+    el.textContent = msg;
+    el.className = 'status show ' + (type || 'info');
+  }
+  function clearStatus(el){
+    el.className = 'status';
+    el.textContent = '';
+  }
+
+  function updateOdometer(count){
+    const box = document.getElementById('odometer');
+    const digits = String(Math.max(0, count)).padStart(3,'0').slice(-3).split('');
+    box.innerHTML = digits.map(d => `<div class="digit">${d}</div>`).join('');
+  }
+
+  // ---------- tabs ----------
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-import').classList.toggle('hidden', tab.dataset.tab !== 'import');
+      document.getElementById('tab-compare').classList.toggle('hidden', tab.dataset.tab !== 'compare');
+    });
+  });
+
+  // ---------- import tab ----------
+  const importDate = document.getElementById('importDate');
+  const importText = document.getElementById('importText');
+  const importChips = document.getElementById('importChips');
+  const importStatus = document.getElementById('importStatus');
+  const btnExtract = document.getElementById('btnExtract');
+  const btnSave = document.getElementById('btnSave');
+
+  importDate.value = previousWorkingDay();
+
+  let currentExtracted = [];
+
+  btnExtract.addEventListener('click', () => {
+    currentExtracted = extractJobNumbers(importText.value);
+    updateOdometer(currentExtracted.length);
+    importChips.innerHTML = currentExtracted.map(j => `<span class="chip">${j}</span>`).join('');
+    if (currentExtracted.length === 0){
+      setStatus(importStatus, 'No job numbers found in the pasted text.', 'err');
+      btnSave.disabled = true;
+    } else {
+      setStatus(importStatus, `Found ${currentExtracted.length} job number${currentExtracted.length===1?'':'s'}. Review, then save.`, 'info');
+      btnSave.disabled = false;
+    }
+  });
+
+  btnSave.addEventListener('click', async () => {
+    if (currentExtracted.length === 0) return;
+    const dateVal = importDate.value;
+    if (!dateVal){
+      setStatus(importStatus, 'Please choose a date first.', 'err');
+      return;
+    }
+    btnSave.disabled = true;
+    setStatus(importStatus, `Saving ${currentExtracted.length} job number(s) to Firebase…`, 'info');
+    try {
+      const batch = writeBatch(db);
+      currentExtracted.forEach(jobNumber => {
+        const id = `${dateVal}_${jobNumber}`;
+        const ref = doc(db, COLLECTION_NAME, id);
+        batch.set(ref, {
+          jobNumber,
+          date: dateVal,
+          createdAt: serverTimestamp()
+        });
+      });
+      await batch.commit();
+      setStatus(importStatus, `Saved ${currentExtracted.length} job number(s) for ${dateVal}.`, 'ok');
+    } catch (err){
+      console.error(err);
+      setStatus(importStatus, `Error saving to Firebase: ${err.message}`, 'err');
+    } finally {
+      btnSave.disabled = false;
+    }
+  });
+
+  // ---------- compare tab ----------
+  const rangeStart = document.getElementById('rangeStart');
+  const rangeEnd = document.getElementById('rangeEnd');
+  const compareText = document.getElementById('compareText');
+  const compareStatus = document.getElementById('compareStatus');
+  const compareChips = document.getElementById('compareChips');
+  const compareStats = document.getElementById('compareStats');
+  const btnCompare = document.getElementById('btnCompare');
+
+  // sensible default range: last 7 days up to previous working day
+  (function initRange(){
+    const end = previousWorkingDay();
+    const endDate = new Date(end + 'T00:00:00');
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 6);
+    rangeEnd.value = end;
+    rangeStart.value = toISODate(startDate);
+  })();
+
+  btnCompare.addEventListener('click', async () => {
+    const start = rangeStart.value;
+    const end = rangeEnd.value;
+    if (!start || !end){
+      setStatus(compareStatus, 'Please choose a start and end date.', 'err');
+      return;
+    }
+    if (start > end){
+      setStatus(compareStatus, 'Start date must be before end date.', 'err');
+      return;
+    }
+
+    const pastedSet = new Set(extractJobNumbers(compareText.value));
+
+    btnCompare.disabled = true;
+    compareStats.classList.add('hidden');
+    compareChips.innerHTML = '';
+    setStatus(compareStatus, `Querying Firebase for ${start} → ${end}…`, 'info');
+
+    try {
+      const q = query(
+        collection(db, COLLECTION_NAME),
+        where('date', '>=', start),
+        where('date', '<=', end)
+      );
+      const snap = await getDocs(q);
+
+      const storedMap = new Map(); // jobNumber -> date (first seen)
+      snap.forEach(d => {
+        const data = d.data();
+        if (!storedMap.has(data.jobNumber)) storedMap.set(data.jobNumber, data.date);
+      });
+
+      const storedJobs = [...storedMap.keys()];
+      const missing = storedJobs.filter(j => !pastedSet.has(j)).sort();
+      const matched = storedJobs.filter(j => pastedSet.has(j)).sort();
+
+      document.getElementById('statStored').textContent = storedJobs.length;
+      document.getElementById('statPasted').textContent = pastedSet.size;
+      document.getElementById('statMatched').textContent = matched.length;
+      document.getElementById('statMissing').textContent = missing.length;
+      compareStats.classList.remove('hidden');
+
+      compareChips.innerHTML =
+        missing.map(j => `<span class="chip missing">${j}</span>`).join('') +
+        matched.map(j => `<span class="chip matched">${j}</span>`).join('');
+
+      if (storedJobs.length === 0){
+        setStatus(compareStatus, 'No job numbers stored in Firebase for that date range.', 'err');
+        btnCompare.disabled = false;
+        return;
+      }
+
+      // build & download xlsx
+      const rows = missing.map(j => ({ 'Job Number': j, 'Date': storedMap.get(j) }));
+      const ws = XLSX.utils.json_to_sheet(rows, { header: ['Job Number', 'Date'] });
+      ws['!cols'] = [{ wch: 16 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Missing Jobs');
+      const fname = `missing-jobs_${start}_to_${end}.xlsx`;
+      XLSX.writeFile(wb, fname);
+
+      setStatus(compareStatus, `Done. ${missing.length} missing job(s) exported to ${fname}.`, 'ok');
+    } catch (err){
+      console.error(err);
+      setStatus(compareStatus, `Error comparing: ${err.message}`, 'err');
+    } finally {
+      btnCompare.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
