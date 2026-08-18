@@ -283,6 +283,29 @@
         <div class="section-divider"></div>
 
         <div class="form-section">
+            <h2 class="section-title">📥 Export Miles per Meter</h2>
+            <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
+                <h3 style="color: #2e7d32;">Export to Excel</h3>
+                <p>Select a date range to download a matrix of engineer miles per meter (names down the left, dates across the top).</p>
+            </div>
+            <form id="exportMilesForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="exportMilesStartDate">Start Date</label>
+                        <input type="date" id="exportMilesStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="exportMilesEndDate">End Date</label>
+                        <input type="date" id="exportMilesEndDate" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">Export to Excel (.xlsx)</button>
+            </form>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="form-section">
             <h2 class="section-title">💰 Engineer Daily Profit Upload</h2>
             <div class="info-box">
                 <h3>Upload Engineer Profit Data</h3>
@@ -387,11 +410,13 @@
         document.getElementById('milesDate').valueAsDate = yesterday;
         document.getElementById('profitDate').valueAsDate = yesterday;
 
-        // Set default dates for the export section
+        // Set default dates for the export sections
         const aWeekAgo = new Date();
         aWeekAgo.setDate(aWeekAgo.getDate() - 7);
         document.getElementById('exportStartDate').valueAsDate = aWeekAgo;
         document.getElementById('exportEndDate').valueAsDate = new Date();
+        document.getElementById('exportMilesStartDate').valueAsDate = aWeekAgo;
+        document.getElementById('exportMilesEndDate').valueAsDate = new Date();
 
         // ── Attendance ──────────────────────────────────────────────────────
         function updateAtWorkPercent() {
@@ -582,6 +607,80 @@
                 showMessage(`Successfully saved ${milesData.length} miles per meter records!`, 'success');
                 document.getElementById('milesPreview').style.display = 'none'; document.getElementById('milesForm').reset(); document.getElementById('milesFileInfo').classList.remove('show'); document.getElementById('milesDate').valueAsDate = yesterday; milesData = [];
             } catch (err) { showMessage('Error saving miles data: ' + err.message, 'error'); } finally { btn.disabled = false; }
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ── Export Miles per Meter to Excel ─────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        document.getElementById('exportMilesForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const start = document.getElementById('exportMilesStartDate').value;
+            const end = document.getElementById('exportMilesEndDate').value;
+            const btn = e.target.querySelector('button');
+
+            btn.disabled = true;
+            btn.textContent = 'Fetching and Exporting...';
+
+            try {
+                const milesRef = collection(db, "Miles to Meter energise");
+                const q = query(milesRef, where("date", ">=", start), where("date", "<=", end));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showMessage('No miles per meter data found for the selected date range.', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Export to Excel (.xlsx)';
+                    return;
+                }
+
+                const rawData = [];
+                const datesSet = new Set();
+                const engineersSet = new Set();
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    rawData.push(data);
+                    datesSet.add(data.date);
+                    engineersSet.add(data.engineer);
+                });
+
+                // Sort dates chronologically
+                const sortedDates = Array.from(datesSet).sort();
+                // Sort engineers alphabetically
+                const sortedEngineers = Array.from(engineersSet).sort((a, b) => a.localeCompare(b));
+
+                // Prepare the matrix (Array of Arrays for SheetJS)
+                const exportMatrix = [];
+
+                // Top header row
+                exportMatrix.push(["Engineer Name", ...sortedDates]);
+
+                // Construct data rows mapped against their corresponding date
+                sortedEngineers.forEach(eng => {
+                    const row = [eng];
+                    sortedDates.forEach(d => {
+                        const record = rawData.find(r => r.engineer === eng && r.date === d);
+                        row.push(record ? record.milesPerMeter : '');
+                    });
+                    exportMatrix.push(row);
+                });
+
+                // Generate and download the workbook
+                const ws = XLSX.utils.aoa_to_sheet(exportMatrix);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Miles per Meter Export");
+
+                const fileName = `Miles_Per_Meter_${start}_to_${end}.xlsx`;
+                XLSX.writeFile(wb, fileName);
+
+                showMessage('Export generated successfully!', 'success');
+            } catch (err) {
+                console.error('Export error:', err);
+                showMessage('Error exporting data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Export to Excel (.xlsx)';
+            }
         });
 
         // ════════════════════════════════════════════════════════════════════
