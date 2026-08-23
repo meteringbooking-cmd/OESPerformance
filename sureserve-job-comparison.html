@@ -133,7 +133,7 @@
   <section id="tab-import">
     <div class="panel">
       <h2>1. Paste the day's schedule</h2>
-      <p class="sub">Select the date, paste the raw schedule text, then extract and save. Job numbers are matched as <b>J-</b> followed by 8 characters.</p>
+      <p class="sub">Select the date, paste the raw schedule text, then extract and save. Job numbers are matched as <b>J-</b> followed by 8 characters. Saving for a date that already has entries will <b>replace</b> them.</p>
 
       <div class="row">
         <div class="field" style="max-width:220px;">
@@ -359,9 +359,16 @@
       return;
     }
     btnSave.disabled = true;
-    setStatus(importStatus, `Saving ${currentExtracted.length} job number(s) to Firebase…`, 'info');
+    setStatus(importStatus, `Checking for existing entries on ${dateVal}…`, 'info');
     try {
+      // Full replace: find every doc already stored for this date and delete it,
+      // then write the freshly extracted set in the same batch.
+      const existingQ = query(collection(db, COLLECTION_NAME), where('date', '==', dateVal));
+      const existingSnap = await getDocs(existingQ);
+
       const batch = writeBatch(db);
+      existingSnap.forEach(d => batch.delete(d.ref));
+
       currentExtracted.forEach(({jobNumber, jobType}) => {
         const id = `${dateVal}_${jobNumber}`;
         const ref = doc(db, COLLECTION_NAME, id);
@@ -372,8 +379,14 @@
           createdAt: serverTimestamp()
         });
       });
+
+      setStatus(importStatus, `Saving ${currentExtracted.length} job number(s) to Firebase…`, 'info');
       await batch.commit();
-      setStatus(importStatus, `Saved ${currentExtracted.length} job number(s) for ${dateVal}.`, 'ok');
+
+      const replacedNote = existingSnap.size
+        ? ` (replaced ${existingSnap.size} existing entr${existingSnap.size===1?'y':'ies'} for this date)`
+        : '';
+      setStatus(importStatus, `Saved ${currentExtracted.length} job number(s) for ${dateVal}${replacedNote}.`, 'ok');
     } catch (err){
       console.error(err);
       setStatus(importStatus, `Error saving to Firebase: ${err.message}`, 'err');
