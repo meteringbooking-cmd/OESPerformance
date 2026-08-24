@@ -357,7 +357,6 @@
   <button class="team-btn active" data-team="all">All Teams <span class="headcount-badge" id="hc_all">…</span></button>
   <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
   <button class="team-btn" data-team="Scott Carson">Scott Carson <span class="headcount-badge" id="hc_scott">…</span></button>
-  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot <span class="headcount-badge" id="hc_scottscot">…</span></button>
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
   <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
 
@@ -425,7 +424,12 @@
   const perfApp = existingApps.find(a=>a.name==='perf-graph') || initializeApp(perfConfig, 'perf-graph');
   const db      = getFirestore(perfApp);
 
-  const normTeam = val => /^ftl\s*4$/i.test((val || '').trim()) ? 'Tom Green' : (val || '');
+  const normTeam = val => {
+    const v = (val || '').trim();
+    if (/^ftl\s*4$/i.test(v)) return 'Tom Green';
+    if (/^scott carson\b/i.test(v)) return 'Scott Carson';
+    return v;
+  };
 
   const ctx = document.createElement('canvas');
   document.querySelector('#chartContainer').appendChild(ctx);
@@ -444,9 +448,6 @@
   let currentPeriod = "5days";
   let currentTeam   = "all";
   let currentMonth  = null;
-
-  // ── Scott Carson - Scot sub-team members ─────────────────────────────────────
-  const SCOT_TEAM_MEMBERS = new Set(['Bilal Amin', 'Daniel Nally', 'James Mclean', 'Richard Lang']);
 
   // Cache for headcount data fetched per date range
   let _hcBadgeLoaded = false;
@@ -495,12 +496,9 @@
       if (latestKrDate) {
         const dtm = dateTeamEngs[latestKrDate];
         const countTeam = (tName) => dtm[tName] ? dtm[tName].size : 0;
-        const scotEngs     = dtm['Scott Carson'] ? [...dtm['Scott Carson']].filter(e => SCOT_TEAM_MEMBERS.has(e)).length : 0;
-        const scottMainEngs = dtm['Scott Carson'] ? [...dtm['Scott Carson']].filter(e => !SCOT_TEAM_MEMBERS.has(e)).length : 0;
 
         document.getElementById('hc_richard').textContent   = countTeam('Richard Wiecko') || '—';
-        document.getElementById('hc_scott').textContent     = scottMainEngs || '—';
-        document.getElementById('hc_scottscot').textContent = scotEngs || '—';
+        document.getElementById('hc_scott').textContent     = countTeam('Scott Carson') || '—';
         document.getElementById('hc_stuart').textContent    = countTeam('Stuart Whyte') || '—';
         document.getElementById('hc_tom').textContent       = countTeam('Tom Green') || '—';
       }
@@ -528,21 +526,7 @@
         if (rec.attendance !== 'Sick' && rec.attendance !== 'AAUP') return;
         const tl = normTeam((rec.teamLeader || '').trim());
         // Filter by team
-        const eng = (rec.engineerName || '').trim();
-        // Normalise attendance teamLeader: treat 'Scott Carson - Scot' variants as belonging to the Scot sub-team
-        const isScotSubMember = SCOT_TEAM_MEMBERS.has(eng) && tl === 'Scott Carson' ||
-                                tl === 'Scott Carson - Scot';
-        if (team !== 'all') {
-          if (team === 'Scott Carson - Scot') {
-            // Only absent Scot sub-team members count
-            if (!isScotSubMember) return;
-          } else if (team === 'Scott Carson') {
-            // Only absent main Scott Carson engineers (exclude Scot sub-team)
-            if (tl !== 'Scott Carson' || isScotSubMember) return;
-          } else if (tl !== team) {
-            return;
-          }
-        }
+        if (team !== 'all' && tl !== team) return;
         const dt = rec.date;
         absences[dt] = (absences[dt] || 0) + 1;
       });
@@ -555,7 +539,6 @@
 
   // ── Compute per-date START headcount from KrakenAM records ──────────────────
   // For individual teams: count distinct engineers with ≥1 job on that date.
-  // For Scott Carson - Scot: count only the 4 named Scot sub-team members.
   // Returns: { [date]: startHeadcount }
   function computeStartHeadcounts(krakenRawRecords, team, krakenHcByDate) {
     if (team === 'all') {
@@ -570,16 +553,7 @@
       const dt  = rec.date || '';
       if (!eng || !dt || Number(rec.totalJobs || 0) < 1) return; // only engineers with ≥1 job
 
-      let belongs = false;
-      if (team === 'Scott Carson - Scot') {
-        // Scot sub-team: only the 4 named engineers under Scott Carson
-        belongs = (t === 'Scott Carson') && SCOT_TEAM_MEMBERS.has(eng);
-      } else if (team === 'Scott Carson') {
-        // Main Scott Carson team: exclude the Scot sub-team members
-        belongs = (t === 'Scott Carson') && !SCOT_TEAM_MEMBERS.has(eng);
-      } else {
-        belongs = (t === team);
-      }
+      const belongs = (t === team);
       if (!belongs) return;
       if (!dateEngs[dt]) dateEngs[dt] = new Set();
       dateEngs[dt].add(eng);
@@ -634,32 +608,11 @@
         const rawTeam = d.team || d.teamLeader || '';
         const t = normTeam(rawTeam);
         krakenRawRecs.push({ ...d, _normTeam: t });
-        // Accumulate meters — Scott Carson split is handled below
-        if (team === "all" || t === team ||
-            (team === 'Scott Carson - Scot' && t === 'Scott Carson') ||
-            (team === 'Scott Carson' && t === 'Scott Carson')) {
+        // Accumulate meters
+        if (team === "all" || t === team) {
           krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
         }
       });
-
-      // Recalculate Scott Carson meters with correct sub-team split
-      if (team === 'Scott Carson - Scot') {
-        // Only meters from the 4 Scot sub-team members
-        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
-        krakenRawRecs.forEach(d => {
-          if (d._normTeam === 'Scott Carson' && SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
-            krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
-          }
-        });
-      } else if (team === 'Scott Carson') {
-        // Only meters from main Scott Carson (exclude Scot sub-team members)
-        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
-        krakenRawRecs.forEach(d => {
-          if (d._normTeam === 'Scott Carson' && !SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
-            krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
-          }
-        });
-      }
 
       // Fetch official all-team headcount from KrakenAM Headcount collection
       const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
