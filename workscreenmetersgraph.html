@@ -357,7 +357,7 @@
   <button class="team-btn active" data-team="all">All Teams <span class="headcount-badge" id="hc_all">…</span></button>
   <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
   <button class="team-btn" data-team="Scott Carson">Scott Carson <span class="headcount-badge" id="hc_scott">…</span></button>
-  <button class="team-btn" data-team="Scott Carson - Scot">Scott Carson - Scot <span class="headcount-badge" id="hc_scottscot">…</span></button>
+  
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
   <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
 
@@ -445,8 +445,7 @@
   let currentTeam   = "all";
   let currentMonth  = null;
 
-  // ── Scott Carson - Scot sub-team members ─────────────────────────────────────
-  const SCOT_TEAM_MEMBERS = new Set(['Bilal Amin', 'Daniel Nally', 'James Mclean', 'Richard Lang']);
+    const SCOT_TEAM_MEMBERS = new Set(['Bilal Amin', 'Daniel Nally', 'James Mclean', 'Richard Lang']);
 
   // Cache for headcount data fetched per date range
   let _hcBadgeLoaded = false;
@@ -500,7 +499,7 @@
 
         document.getElementById('hc_richard').textContent   = countTeam('Richard Wiecko') || '—';
         document.getElementById('hc_scott').textContent     = scottMainEngs || '—';
-        document.getElementById('hc_scottscot').textContent = scotEngs || '—';
+        
         document.getElementById('hc_stuart').textContent    = countTeam('Stuart Whyte') || '—';
         document.getElementById('hc_tom').textContent       = countTeam('Tom Green') || '—';
       }
@@ -529,182 +528,9 @@
         const tl = normTeam((rec.teamLeader || '').trim());
         // Filter by team
         const eng = (rec.engineerName || '').trim();
-        // Normalise attendance teamLeader: treat 'Scott Carson - Scot' variants as belonging to the Scot sub-team
-        const isScotSubMember = SCOT_TEAM_MEMBERS.has(eng) && tl === 'Scott Carson' ||
-                                tl === 'Scott Carson - Scot';
+                
         if (team !== 'all') {
-          if (team === 'Scott Carson - Scot') {
-            // Only absent Scot sub-team members count
-            if (!isScotSubMember) return;
-          } else if (team === 'Scott Carson') {
-            // Only absent main Scott Carson engineers (exclude Scot sub-team)
-            if (tl !== 'Scott Carson' || isScotSubMember) return;
-          } else if (tl !== team) {
-            return;
-          }
-        }
-        const dt = rec.date;
-        absences[dt] = (absences[dt] || 0) + 1;
-      });
-      return absences;
-    } catch (err) {
-      console.warn('Could not fetch attendance absences:', err);
-      return {};
-    }
-  }
-
-  // ── Compute per-date START headcount from KrakenAM records ──────────────────
-  // For individual teams: count distinct engineers with ≥1 job on that date.
-  // For Scott Carson - Scot: count only the 4 named Scot sub-team members.
-  // Returns: { [date]: startHeadcount }
-  function computeStartHeadcounts(krakenRawRecords, team, krakenHcByDate) {
-    if (team === 'all') {
-      // Use the official KrakenAM Headcount collection value
-      return krakenHcByDate; // already keyed by date
-    }
-    // Build date -> set of engineers
-    const dateEngs = {};
-    krakenRawRecords.forEach(rec => {
-      const t   = normTeam(rec.team || rec.teamLeader || '');
-      const eng = (rec.engineer || '').trim();
-      const dt  = rec.date || '';
-      if (!eng || !dt || Number(rec.totalJobs || 0) < 1) return; // only engineers with ≥1 job
-
-      let belongs = false;
-      if (team === 'Scott Carson - Scot') {
-        // Scot sub-team: only the 4 named engineers under Scott Carson
-        belongs = (t === 'Scott Carson') && SCOT_TEAM_MEMBERS.has(eng);
-      } else if (team === 'Scott Carson') {
-        // Main Scott Carson team: exclude the Scot sub-team members
-        belongs = (t === 'Scott Carson') && !SCOT_TEAM_MEMBERS.has(eng);
-      } else {
-        belongs = (t === team);
-      }
-      if (!belongs) return;
-      if (!dateEngs[dt]) dateEngs[dt] = new Set();
-      dateEngs[dt].add(eng);
-    });
-    const result = {};
-    Object.entries(dateEngs).forEach(([dt, s]) => { result[dt] = s.size; });
-    return result;
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────────
-
-  // HELPER: Convert date to YYYY-MM-DD in LOCAL time (ignores UTC shift)
-  function toLocalIsoString(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  let abortChart = null;
-  const today = new Date();
-  const sevenAgo = new Date(today); sevenAgo.setDate(today.getDate() - 7);
-  document.getElementById('abortFrom').value = toLocalIsoString(sevenAgo);
-  document.getElementById('abortTo').value   = toLocalIsoString(today);
-
-  async function fetchRecordsForRange(startDate, endDate, team) {
-    const q = query(
-      collection(db, "performance"),
-      where("date", ">=", startDate),
-      where("date", "<=", endDate),
-      orderBy("date", "asc")
-    );
-    const snap = await getDocs(q);
-    const recs = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      const normalisedTeam = normTeam(d.teamLeader);
-      if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
-    });
-    return recs;
-  }
-
-  async function fetchKrakenMphData(startDate, endDate, team) {
-    try {
-      const qMeters = query(collection(db, "KrakenAM"), where("date", ">=", startDate), where("date", "<=", endDate));
-      const snapMeters = await getDocs(qMeters);
-      const krakenMeters  = {};
-      const krakenRawRecs = []; // all raw records for headcount computation
-
-      snapMeters.forEach(doc => {
-        const d = doc.data();
-        const rawTeam = d.team || d.teamLeader || '';
-        const t = normTeam(rawTeam);
-        krakenRawRecs.push({ ...d, _normTeam: t });
-        // Accumulate meters — Scott Carson split is handled below
-        if (team === "all" || t === team ||
-            (team === 'Scott Carson - Scot' && t === 'Scott Carson') ||
-            (team === 'Scott Carson' && t === 'Scott Carson')) {
-          krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
-        }
-      });
-
-      // Recalculate Scott Carson meters with correct sub-team split
-      if (team === 'Scott Carson - Scot') {
-        // Only meters from the 4 Scot sub-team members
-        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
-        krakenRawRecs.forEach(d => {
-          if (d._normTeam === 'Scott Carson' && SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
-            krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
-          }
-        });
-      } else if (team === 'Scott Carson') {
-        // Only meters from main Scott Carson (exclude Scot sub-team members)
-        Object.keys(krakenMeters).forEach(dt => { krakenMeters[dt] = 0; });
-        krakenRawRecs.forEach(d => {
-          if (d._normTeam === 'Scott Carson' && !SCOT_TEAM_MEMBERS.has((d.engineer || '').trim())) {
-            krakenMeters[d.date] = (krakenMeters[d.date] || 0) + Number(d.totalMeters || 0);
-          }
-        });
-      }
-
-      // Fetch official all-team headcount from KrakenAM Headcount collection
-      const qHc = query(collection(db, "KrakenAM Headcount"), where("date", ">=", startDate), where("date", "<=", endDate));
-      const snapHc = await getDocs(qHc);
-      const krakenHcOfficial = {}; // date -> total headcount (from krakenam.html entry)
-      snapHc.forEach(doc => {
-        const d = doc.data();
-        krakenHcOfficial[d.date] = Number(d.headcount || 0);
-      });
-
-      // Compute per-date start headcount per team from KrakenAM records
-      const startHcByDate = computeStartHeadcounts(krakenRawRecs, team, krakenHcOfficial);
-
-      // Fetch attendance absences (Sick + AAUP) for the same date range and team
-      const absencesByDate = await fetchAttendanceAbsences(startDate, endDate, team);
-
-      // Compute end headcount = start - absences
-      const endHcByDate = {};
-      const allDates = new Set([
-        ...Object.keys(startHcByDate),
-        ...Object.keys(absencesByDate)
-      ]);
-      allDates.forEach(dt => {
-        const start = startHcByDate[dt] || 0;
-        const absent = absencesByDate[dt] || 0;
-        endHcByDate[dt] = Math.max(0, start - absent);
-      });
-
-      return { krakenMeters, krakenHc: krakenHcOfficial, startHcByDate, endHcByDate };
-    } catch (err) {
-      console.warn("Could not fetch KrakenAM specific data:", err);
-      return { krakenMeters: {}, krakenHc: {}, startHcByDate: {}, endHcByDate: {} };
-    }
-  }
-
-  // Calculate Start MPH: meters / startHcByDate[date] (or krakenHc for all-teams)
-  function computeStartMphForDate(meters, date, krakenHc, startHcByDate, team) {
-    const m = meters || 0;
-    if (m <= 0) return null;
-    let hc;
-    if (team === 'all') {
-      hc = (krakenHc[date] && krakenHc[date] > 0) ? krakenHc[date] : 0;
-    } else {
-      hc = (startHcByDate[date] && startHcByDate[date] > 0) ? startHcByDate[date] : 0;
-    }
+          
     return hc > 0 ? Number((m / hc).toFixed(1)) : null;
   }
 
