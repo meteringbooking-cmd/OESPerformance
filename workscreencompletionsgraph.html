@@ -56,6 +56,7 @@
   <button class="period-btn" data-period="year">Year to date (line)</button>
   <button class="period-btn" data-period="specificMonth">Specific Month…</button>
 
+  <!-- Month picker (shown when specificMonth is active) -->
   <div class="month-picker" id="monthPicker">
     <div class="year-nav">
       <button class="year-btn" id="yearPrev">‹</button>
@@ -124,18 +125,12 @@
   let currentPeriod = "7days";
   let currentTeam   = "all";
 
+  // Month picker state
   const today = new Date();
   let pickerYear  = today.getFullYear();
-  let pickerMonth = null; 
+  let pickerMonth = null; // 0-indexed
 
-  // HELPER: Convert date object to YYYY-MM-DD reliably using local time
-  const toLocalISODate = (dateObj) => {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
+  // ── Month Picker UI ─────────────────────────────────────────────────────
   function renderMonthGrid() {
     const grid = document.getElementById('monthGrid');
     grid.innerHTML = MONTH_NAMES.map((name, i) => {
@@ -176,14 +171,15 @@
 
   renderMonthGrid();
 
+  // ── Data fetch ─────────────────────────────────────────────────────────
   async function fetchAndAggregateCompletion(periodKey, team) {
     let startDate, endDate, chartType, color, titleLabel, groupBy;
 
     if (periodKey === 'specificMonth' && pickerMonth !== null) {
       const firstDay = new Date(pickerYear, pickerMonth, 1);
       const lastDay  = new Date(pickerYear, pickerMonth + 1, 0);
-      startDate  = toLocalISODate(firstDay);
-      endDate    = toLocalISODate(lastDay);
+      startDate  = firstDay.toISOString().split('T')[0];
+      endDate    = lastDay.toISOString().split('T')[0];
       chartType  = 'bar';
       color      = '#10b981';
       groupBy    = 'day';
@@ -193,8 +189,8 @@
       const now   = new Date();
       const start = new Date(now);
       start.setDate(start.getDate() - cfg.daysBack);
-      startDate  = toLocalISODate(start);
-      endDate    = toLocalISODate(now);
+      startDate  = start.toISOString().split('T')[0];
+      endDate    = now.toISOString().split('T')[0];
       chartType  = cfg.type;
       color      = cfg.color;
       groupBy    = cfg.groupBy;
@@ -217,6 +213,7 @@
       if (team === "all" || recTL === team) records.push(d);
     });
 
+    // Monthly grouping
     if (groupBy === "month") {
       const now = new Date();
       const monthsMap = {};
@@ -239,14 +236,15 @@
       };
     }
 
+    // Daily grouping (weekdays for rolling periods, all days for specific month)
     const allDates = [];
     const cur = new Date(startDate + 'T00:00:00');
     const end = new Date(endDate + 'T00:00:00');
     while (cur <= end) {
       const day = cur.getDay();
+      // For specific month show all weekdays; for other periods skip weekends
       if (periodKey === 'specificMonth' || (day !== 0 && day !== 6)) {
-        // FIXED: Using local time formatting to avoid the previous day timezone shift
-        allDates.push(toLocalISODate(cur)); 
+        allDates.push(cur.toISOString().split('T')[0]);
       }
       cur.setDate(cur.getDate() + 1);
     }
@@ -265,8 +263,7 @@
       return jobs > 0 ? Number(((completed / jobs) * 100).toFixed(1)) : 0;
     });
     const labels = allDates.map(dateStr => {
-      // ADDED 'T00:00:00' to guarantee we read back the date in local timezone
-      const dateObj = new Date(dateStr + 'T00:00:00');
+      const dateObj = new Date(dateStr);
       const ddmm    = `${String(dateObj.getDate()).padStart(2,'0')}/${String(dateObj.getMonth()+1).padStart(2,'0')}`;
       const weekday = dateObj.toLocaleDateString('en-GB', { weekday: 'short' });
       return chartType === 'bar' ? [ddmm, weekday] : ddmm;
@@ -339,6 +336,7 @@
     }
   }
 
+  // ── Period buttons ────────────────────────────────────────────────────
   document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
@@ -348,6 +346,7 @@
       const picker = document.getElementById('monthPicker');
       if (currentPeriod === 'specificMonth') {
         picker.classList.add('visible');
+        // Default to current month if none selected
         if (pickerMonth === null) {
           pickerYear  = today.getFullYear();
           pickerMonth = today.getMonth();
