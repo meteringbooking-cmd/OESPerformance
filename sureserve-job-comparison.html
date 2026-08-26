@@ -82,6 +82,8 @@
   .btn-amber:hover{filter:brightness(1.08);}
   .btn-blue{background:var(--blue);color:#071a22;}
   .btn-blue:hover{filter:brightness(1.08);}
+  .btn-green{background:var(--green);color:#07281b;}
+  .btn-green:hover{filter:brightness(1.08);}
   .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text);}
   .btn-ghost:hover{border-color:var(--muted);}
   .btn:disabled{opacity:0.45;cursor:not-allowed;filter:none;}
@@ -114,7 +116,7 @@
     <div>
       <div class="eyebrow">Field Ops · Job Register</div>
       <h1>Sureserve Job Comparison</h1>
-      <p>Log daily job numbers, then reconcile against a date range to find what's missing.</p>
+      <p>Log daily job numbers, then reconcile or export against a date range.</p>
     </div>
     <div>
       <div class="odometer" id="odometer">
@@ -127,6 +129,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="import">Import Jobs</div>
     <div class="tab" data-tab="compare">Compare &amp; Export</div>
+    <div class="tab" data-tab="exportall">Export All</div>
   </div>
 
   <!-- IMPORT TAB -->
@@ -188,6 +191,37 @@
       </div>
 
       <div id="compareChips" class="chips"></div>
+    </div>
+  </section>
+
+  <!-- EXPORT ALL TAB -->
+  <section id="tab-exportall" class="hidden">
+    <div class="panel">
+      <h2>3. Export every job number in a date range</h2>
+      <p class="sub">No pasted list needed — pick a range and every job number stored in Firebase for those dates gets exported straight to xlsx.</p>
+
+      <div class="row">
+        <div class="field">
+          <label for="exportStart">From</label>
+          <input type="date" id="exportStart">
+        </div>
+        <div class="field">
+          <label for="exportEnd">To</label>
+          <input type="date" id="exportEnd">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-green" id="btnExportAll">Export all to xlsx</button>
+        <span id="exportAllStatus" class="status"></span>
+      </div>
+
+      <div class="stat-row hidden" id="exportAllStats">
+        <div class="stat"><div class="n" id="statExportTotal">0</div><div class="l">Job numbers</div></div>
+        <div class="stat"><div class="n" id="statExportDays">0</div><div class="l">Days with data</div></div>
+      </div>
+
+      <div id="exportAllChips" class="chips"></div>
     </div>
   </section>
 
@@ -319,6 +353,7 @@
       tab.classList.add('active');
       document.getElementById('tab-import').classList.toggle('hidden', tab.dataset.tab !== 'import');
       document.getElementById('tab-compare').classList.toggle('hidden', tab.dataset.tab !== 'compare');
+      document.getElementById('tab-exportall').classList.toggle('hidden', tab.dataset.tab !== 'exportall');
     });
   });
 
@@ -488,6 +523,100 @@
       setStatus(compareStatus, `Error comparing: ${err.message}`, 'err');
     } finally {
       btnCompare.disabled = false;
+    }
+  });
+
+  // ---------- export all tab ----------
+  const exportStart = document.getElementById('exportStart');
+  const exportEnd = document.getElementById('exportEnd');
+  const exportAllStatus = document.getElementById('exportAllStatus');
+  const exportAllChips = document.getElementById('exportAllChips');
+  const exportAllStats = document.getElementById('exportAllStats');
+  const btnExportAll = document.getElementById('btnExportAll');
+
+  // sensible default range: last 7 days up to previous working day
+  (function initExportRange(){
+    const end = previousWorkingDay();
+    const endDate = new Date(end + 'T00:00:00');
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 6);
+    exportEnd.value = end;
+    exportStart.value = toISODate(startDate);
+  })();
+
+  btnExportAll.addEventListener('click', async () => {
+    const start = exportStart.value;
+    const end = exportEnd.value;
+    if (!start || !end){
+      setStatus(exportAllStatus, 'Please choose a start and end date.', 'err');
+      return;
+    }
+    if (start > end){
+      setStatus(exportAllStatus, 'Start date must be before end date.', 'err');
+      return;
+    }
+
+    btnExportAll.disabled = true;
+    exportAllStats.classList.add('hidden');
+    exportAllChips.innerHTML = '';
+    setStatus(exportAllStatus, `Querying Firebase for ${start} → ${end}…`, 'info');
+
+    try {
+      const q = query(
+        collection(db, COLLECTION_NAME),
+        where('date', '>=', start),
+        where('date', '<=', end)
+      );
+      const snap = await getDocs(q);
+
+      // rows: one per stored doc, sorted by date then job number
+      const rows = [];
+      const daysSeen = new Set();
+      snap.forEach(d => {
+        const data = d.data();
+        daysSeen.add(data.date);
+        rows.push({
+          jobNumber: data.jobNumber,
+          jobType: data.jobType || 'Unknown',
+          date: data.date
+        });
+      });
+      rows.sort((a, b) => a.date === b.date ? a.jobNumber.localeCompare(b.jobNumber) : a.date.localeCompare(b.date));
+
+      document.getElementById('statExportTotal').textContent = rows.length;
+      document.getElementById('statExportDays').textContent = daysSeen.size;
+      exportAllStats.classList.remove('hidden');
+
+      exportAllChips.innerHTML = rows.map(r =>
+        `<span class="chip">${r.jobNumber} <span style="color:var(--muted);">— ${humanizeType(r.jobType)} · ${r.date}</span></span>`
+      ).join('');
+
+      updateOdometer(rows.length);
+
+      if (rows.length === 0){
+        setStatus(exportAllStatus, 'No job numbers stored in Firebase for that date range.', 'err');
+        btnExportAll.disabled = false;
+        return;
+      }
+
+      const sheetRows = rows.map(r => ({
+        'Job Number': r.jobNumber,
+        'Job Type': humanizeType(r.jobType),
+        'Date': r.date
+      }));
+      const ws = XLSX.utils.json_to_sheet(sheetRows, { header: ['Job Number', 'Job Type', 'Date'] });
+      ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'All Jobs');
+      const fname = `all-jobs_${start}_to_${end}.xlsx`;
+      XLSX.writeFile(wb, fname);
+
+      setStatus(exportAllStatus, `Done. ${rows.length} job(s) across ${daysSeen.size} day(s) exported to ${fname}.`, 'ok');
+    } catch (err){
+      console.error(err);
+      setStatus(exportAllStatus, `Error exporting: ${err.message}`, 'err');
+    } finally {
+      btnExportAll.disabled = false;
     }
   });
 </script>
