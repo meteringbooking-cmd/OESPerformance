@@ -431,6 +431,29 @@
             </form>
         </div>
 
+        <div class="section-divider"></div>
+
+        <div class="form-section">
+            <h2 class="section-title">📥 Export Aborts</h2>
+            <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
+                <h3 style="color: #2e7d32;">Export to Excel</h3>
+                <p>Select a date range to download a summary of abort reasons and their total quantity across that range (summed from the "Reason" and "Total" columns of each upload).</p>
+            </div>
+            <form id="exportAbortsForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="exportAbortsStartDate">Start Date</label>
+                        <input type="date" id="exportAbortsStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="exportAbortsEndDate">End Date</label>
+                        <input type="date" id="exportAbortsEndDate" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">Export to Excel (.xlsx)</button>
+            </form>
+        </div>
+
         <a href="index.html" class="back-link">← Back to Home</a>
     </div>
 
@@ -473,11 +496,13 @@
         // Check for existing records on page load
         setTimeout(checkExistingVanChecks, 500);
 
-        // Set default dates for the export section
+        // Set default dates for the export sections
         const aWeekAgo = new Date();
         aWeekAgo.setDate(aWeekAgo.getDate() - 7);
         document.getElementById('exportStartDate').valueAsDate = aWeekAgo;
         document.getElementById('exportEndDate').valueAsDate = new Date();
+        document.getElementById('exportAbortsStartDate').valueAsDate = aWeekAgo;
+        document.getElementById('exportAbortsEndDate').valueAsDate = new Date();
 
         // ── Attendance ──────────────────────────────────────────────────────
         function updateAtWorkPercent() {
@@ -1074,6 +1099,67 @@
                 XLSX.utils.book_append_sheet(wb, ws, "Profit Export");
 
                 const fileName = `Engineer_Profit_${start}_to_${end}.xlsx`;
+                XLSX.writeFile(wb, fileName);
+
+                showMessage('Export generated successfully!', 'success');
+            } catch (err) {
+                console.error('Export error:', err);
+                showMessage('Error exporting data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Export to Excel (.xlsx)';
+            }
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ── Export Aborts (Reason + Quantity) to Excel ───────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        document.getElementById('exportAbortsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const start = document.getElementById('exportAbortsStartDate').value;
+            const end = document.getElementById('exportAbortsEndDate').value;
+            const btn = e.target.querySelector('button');
+
+            btn.disabled = true;
+            btn.textContent = 'Fetching and Exporting...';
+
+            try {
+                const abortsRef = collection(db, "aborts");
+                const q = query(abortsRef, where("date", ">=", start), where("date", "<=", end));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showMessage('No aborts data found for the selected date range.', 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Export to Excel (.xlsx)';
+                    return;
+                }
+
+                // Sum "total" grouped by the primary "reason" field across every
+                // record in the date range (Reason 1 / Reason 2 are sub-breakdowns
+                // on the individual abort record, not separate reason categories,
+                // so they are not included in this summary).
+                const reasonTotals = {};
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const reason = (data.reason && data.reason.trim()) || 'Unspecified';
+                    const total = typeof data.total === 'number' ? data.total : (parseInt(data.total) || 0);
+                    reasonTotals[reason] = (reasonTotals[reason] || 0) + total;
+                });
+
+                // Sort by quantity, highest first
+                const sortedReasons = Object.entries(reasonTotals).sort((a, b) => b[1] - a[1]);
+
+                const exportMatrix = [["Reason", "Quantity"]];
+                sortedReasons.forEach(([reason, qty]) => exportMatrix.push([reason, qty]));
+                const grandTotal = sortedReasons.reduce((s, [, qty]) => s + qty, 0);
+                exportMatrix.push(["Total", grandTotal]);
+
+                const ws = XLSX.utils.aoa_to_sheet(exportMatrix);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Aborts Export");
+
+                const fileName = `Aborts_${start}_to_${end}.xlsx`;
                 XLSX.writeFile(wb, fileName);
 
                 showMessage('Export generated successfully!', 'success');
