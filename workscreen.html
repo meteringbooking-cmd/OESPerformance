@@ -487,20 +487,44 @@
         let engineerTeamMap = null;
         let enEngineerTeamMap = null;
 
+        // --- UK bank holiday awareness ---------------------------------
+        // Fetched once from the official gov.uk API and cached as a Set of
+        // 'YYYY-MM-DD' strings so it never needs to be hardcoded/updated.
+        let bankHolidaySet = null;
+        async function loadBankHolidays() {
+            if (bankHolidaySet) return bankHolidaySet;
+            bankHolidaySet = new Set();
+            try {
+                const resp = await fetch('https://www.gov.uk/bank-holidays.json');
+                const data = await resp.json();
+                const events = (data['england-and-wales'] && data['england-and-wales'].events) || [];
+                events.forEach(e => bankHolidaySet.add(e.date));
+            } catch (err) {
+                console.error('Bank holiday fetch failed, falling back to weekends-only:', err);
+            }
+            return bankHolidaySet;
+        }
+        // -----------------------------------------------------------------
+
         const TEAM_KEY_MAP = {
             'Richard Wiecko':'richard','Scott Carson':'scott',
             'Scott Carson - Scot':'scottScot','Stuart Whyte':'stuart',
             'FTL 4':'ftl4','Tom Green':'ftl4',
         };
 
-        function isWorkingDay(d) { const day = d.getDay(); return day !== 0 && day !== 6; }
+        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false;
+            if (bankHolidaySet && bankHolidaySet.has(formatDateForQuery(d))) return false;
+            return true;
+        }
         function getPreviousWorkingDay() {
             let d = new Date(); d.setDate(d.getDate() - 1);
             while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
             return d;
         }
         function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
-        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
         function normaliseName(n) { return (n || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
         
         function lookupTeamLeader(rawName) {
@@ -775,6 +799,10 @@
 
         async function loadDashboard() {
             try {
+                // Load the current UK bank holiday list first so isWorkingDay()
+                // correctly skips holidays as well as weekends.
+                await loadBankHolidays();
+
                 const prevDay=getPreviousWorkingDay(),dateStr=formatDateForQuery(prevDay);
                 document.getElementById('statsDate').textContent=`Stats for ${formatDate(prevDay)}`;
                 
