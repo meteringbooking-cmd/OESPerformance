@@ -602,7 +602,7 @@
 
 <header>
   <div class="header-left">
-    <div class="logo">energise - Pudo<span>.</span></div>
+    <div class="logo">energise<span>.</span></div>
     <span class="page-tag">Order Submissions</span>
   </div>
   <button class="refresh-btn" id="refreshBtn" onclick="loadOrders()">
@@ -1394,6 +1394,9 @@
     // Weekday only (Mon-Fri), at or after 1:30 PM (810 min), not yet sent today
     if (day >= 1 && day <= 5 && totalMin >= 810 && reminderSentDate !== dateStr) {
       const pendingOrders = allOrders.filter(o => !o.processedAt);
+      // Lock BEFORE the async send — prevents duplicate sends across interval ticks
+      reminderSentDate = dateStr;
+      localStorage.setItem('energise_reminder_date', dateStr);
       if (pendingOrders.length > 0) {
         emailjs.send('service_ushej2v', 'template_2mihgrj', {
           pending_count: pendingOrders.length,
@@ -1401,15 +1404,12 @@
           review_link: 'https://oes-performance.vercel.app/energise-order-review-pudo.html'
         }).then(() => {
           console.log('1:30 PM Reminder sent successfully.');
-          localStorage.setItem('energise_reminder_date', dateStr);
-          reminderSentDate = dateStr;
         }).catch(err => {
           console.error('Failed to send 1:30 PM Reminder:', err);
+          // Reset lock on failure so it can retry next interval
+          reminderSentDate = '';
+          localStorage.removeItem('energise_reminder_date');
         });
-      } else {
-        // No pending orders - mark as done for today so it doesn't keep checking
-        localStorage.setItem('energise_reminder_date', dateStr);
-        reminderSentDate = dateStr;
       }
     }
   }
