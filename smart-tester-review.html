@@ -104,6 +104,25 @@
   .badge.warn{ color:var(--amber); background:var(--amber-bg); }
   .badge.bad{ color:var(--bad); background:var(--bad-bg); }
 
+  .sub-block{
+    margin-top:10px;
+    padding-top:10px;
+    border-top:1px dashed var(--line);
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .sub-block .sub-body{ flex:1; min-width:0; }
+  .sub-block .thumb{ width:56px; height:56px; }
+  .sub-label{
+    font-size:11.5px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:4px;
+  }
+
   .empty, .loading{
     text-align:center; color:var(--ink-soft); padding:50px 20px; font-size:14px;
   }
@@ -194,7 +213,7 @@
         return;
       }
 
-      let total = 0, haveTester = 0, noTester = 0, overdue = 0;
+      let total = 0, haveTester = 0, noTester = 0, overdue = 0, secondTesters = 0;
       const cards = [];
 
       snap.forEach(doc => {
@@ -202,12 +221,17 @@
         total++;
         if (d.hasTester) haveTester++; else noTester++;
 
-        let isOverdue = false;
         if (d.hasTester && d.calibrationDue) {
           const due = new Date(d.calibrationDue + 'T00:00:00');
           const today = new Date(); today.setHours(0,0,0,0);
-          if (due < today) { isOverdue = true; overdue++; }
+          if (due < today) overdue++;
         }
+        if (d.hasTester && d.hasSecondTester && d.calibrationDue2) {
+          const due2 = new Date(d.calibrationDue2 + 'T00:00:00');
+          const today = new Date(); today.setHours(0,0,0,0);
+          if (due2 < today) overdue++;
+        }
+        if (d.hasTester && d.hasSecondTester) secondTesters++;
 
         const thumb = d.imageUrl
           ? `<img class="thumb" src="${d.imageUrl}" onclick="openLightbox('${d.imageUrl}')" alt="Smart tester photo">`
@@ -215,14 +239,32 @@
 
         let meta;
         if (d.hasTester) {
+          const secondThumb = d.imageUrl2
+            ? `<img class="thumb" src="${d.imageUrl2}" onclick="openLightbox('${d.imageUrl2}')" alt="Second smart tester photo">`
+            : `<div class="thumb placeholder">No photo</div>`;
+
           meta = `
             <div class="meta"><b>Serial number:</b> ${d.serialNumber || '—'}</div>
             ${calibrationBadge(d.calibrationDue)}
+            ${d.hasSecondTester ? `
+              <div class="sub-block">
+                ${secondThumb}
+                <div class="sub-body">
+                  <div class="sub-label">Second tester</div>
+                  <div class="meta"><b>Serial number:</b> ${d.serialNumber2 || '—'}</div>
+                  ${calibrationBadge(d.calibrationDue2)}
+                </div>
+              </div>
+            ` : ''}
           `;
         } else {
+          const jiffyLine = d.noReason === 'Calibration'
+            ? `<div class="meta"><b>Jiffy requested:</b> ${d.jiffyRequested ? 'Yes' + (d.jiffyRequestedDate ? ' — ' + fmtDate(d.jiffyRequestedDate) : '') : 'No'}</div>`
+            : '';
           meta = `
             <div class="meta"><b>Reason:</b> ${d.noReason || '—'}</div>
             ${d.noReasonDetail ? `<div class="meta"><b>Details:</b> ${d.noReasonDetail}</div>` : ''}
+            ${jiffyLine}
             <div class="meta"><b>Returned to SESM:</b> ${fmtDate(d.returnedDate)}</div>
             <span class="badge bad">No tester</span>
           `;
@@ -246,6 +288,7 @@
         <div class="stat"><div class="n">${total}</div><div class="l">Total declarations</div></div>
         <div class="stat"><div class="n">${haveTester}</div><div class="l">Have a tester</div></div>
         <div class="stat"><div class="n">${noTester}</div><div class="l">No tester</div></div>
+        <div class="stat"><div class="n">${secondTesters}</div><div class="l">With a second tester</div></div>
         <div class="stat"><div class="n">${overdue}</div><div class="l">Overdue calibration</div></div>
       `;
       listEl.innerHTML = cards.join('');
