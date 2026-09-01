@@ -450,22 +450,32 @@
   let items       = [];   // filtered inventory items
   let photoUrls = {};  // { sku: downloadURL } — populated as soon as photo is selected
 
+  // Parse pack quantity from UOM string (e.g. "pk-10" → 10, "pk10" → 10, "pack of 5" → 5, else 1)
+  function packQty(uom) {
+    if (!uom) return 1;
+    const m = String(uom).match(/(\d+)/);
+    return m ? Math.max(1, parseInt(m[1])) : 1;
+  }
+
+  // Individual price per single unit
+  function unitPrice(item) {
+    const raw = parseFloat(item.price);
+    if (isNaN(raw)) return 0;
+    return raw / packQty(item.uom);
+  }
+
   // ── Load inventory ──────────────────────────────────────────────────────
   async function loadInventory() {
     try {
       const snap = await getDocs(collection(db, 'Energise Inventory'));
       const all  = [];
       snap.forEach(d => {
-        const item = { id: d.id, ...d.data() };
-        const price = parseFloat(item.price);
-        if (!isNaN(price) && price >= MIN_PRICE) all.push(item);
-      });
-
-      // Sort by category then name
-      all.sort((a, b) => {
-        const catCompare = (a.category || '').localeCompare(b.category || '');
-        if (catCompare !== 0) return catCompare;
-        return (a.name || '').localeCompare(b.name || '');
+        const item      = { id: d.id, ...d.data() };
+        const perUnit   = unitPrice(item);
+        if (perUnit > MIN_PRICE) {
+          item._unitPrice = perUnit;
+          all.push(item);
+        }
       });
 
       items = all;
@@ -483,24 +493,36 @@
     const container = document.getElementById('itemsContainer');
     container.innerHTML = '';
 
-    // Group by category
-    const groups = {};
-    items.forEach(item => {
-      const cat = (item.category || 'Other').charAt(0).toUpperCase() + (item.category || 'Other').slice(1);
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(item);
-    });
+    if (items.length === 0) {
+      container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:32px">No items found.</p>';
+      return;
+    }
 
-    Object.entries(groups).forEach(([cat, catItems]) => {
-      const label = document.createElement('div');
-      label.className = 'section-label';
-      label.textContent = `${cat} — ${catItems.length} item${catItems.length !== 1 ? 's' : ''}`;
-      container.appendChild(label);
+    // Top 10: highest individual unit price
+    const sorted    = [...items].sort((a, b) => b._unitPrice - a._unitPrice);
+    const top10     = sorted.slice(0, 10);
+    const top10SKUs = new Set(top10.map(i => i.sku || i.id));
 
-      catItems.forEach(item => {
-        container.appendChild(buildCard(item));
-      });
-    });
+    // Remaining: alphabetical by name
+    const remaining = items
+      .filter(i => !top10SKUs.has(i.sku || i.id))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    // ── Top 10 section ──
+    const topLabel = document.createElement('div');
+    topLabel.className = 'section-label';
+    topLabel.textContent = 'TOP 10 — Highest Value Items';
+    container.appendChild(topLabel);
+    top10.forEach(item => container.appendChild(buildCard(item)));
+
+    // ── Remaining section ──
+    if (remaining.length > 0) {
+      const remLabel = document.createElement('div');
+      remLabel.className = 'section-label';
+      remLabel.textContent = `ALL OTHER ITEMS — ${remaining.length} item${remaining.length !== 1 ? 's' : ''} (A–Z)`;
+      container.appendChild(remLabel);
+      remaining.forEach(item => container.appendChild(buildCard(item)));
+    }
   }
 
   function buildCard(item) {
