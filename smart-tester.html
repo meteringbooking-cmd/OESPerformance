@@ -159,6 +159,10 @@
   }
   #hasTesterYes:checked + label{ background:var(--good); }
   #hasTesterNo:checked + label{ background:var(--bad); }
+  #jiffyYes:checked + label{ background:var(--good); }
+  #jiffyNo:checked + label{ background:var(--bad); }
+  #secondTesterYes:checked + label{ background:var(--good); }
+  #secondTesterNo:checked + label{ background:var(--bad); }
 
   .branch{
     display:none;
@@ -180,8 +184,8 @@
   .file-drop:hover{ border-color:var(--amber); }
   .file-drop span{ display:block; font-size:13px; color:var(--ink-soft); }
   .file-drop strong{ color:var(--ink); }
-  #fileInput{ display:none; }
-  #preview{
+  input[type="file"]{ display:none; }
+  .preview-img{
     margin-top:12px;
     max-width:100%;
     max-height:220px;
@@ -264,8 +268,28 @@
           <label class="q" for="noReasonDetail">Additional details <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></label>
           <textarea id="noReasonDetail" name="noReasonDetail"></textarea>
         </div>
+
+        <!-- Jiffy sub-branch, only shown when reason = Calibration -->
+        <div class="branch" id="branchJiffy">
+          <div class="field">
+            <label class="q">Have you requested a jiffy?</label>
+            <div class="toggle-row">
+              <input type="radio" name="jiffyRequested" id="jiffyYes" value="yes">
+              <label for="jiffyYes">Yes</label>
+              <input type="radio" name="jiffyRequested" id="jiffyNo" value="no">
+              <label for="jiffyNo">No</label>
+            </div>
+          </div>
+          <div class="branch" id="branchJiffyDate">
+            <div class="field">
+              <label class="q" for="jiffyRequestedDate">Date jiffy was requested</label>
+              <input type="date" id="jiffyRequestedDate" name="jiffyRequestedDate">
+            </div>
+          </div>
+        </div>
+
         <div class="field">
-          <label class="q" for="returnedDate">Approx. date returned to SESM/EES</label>
+          <label class="q" for="returnedDate">Approx. date returned to SESM</label>
           <p class="hint">Leave blank if it has not been returned.</p>
           <input type="date" id="returnedDate" name="returnedDate">
         </div>
@@ -284,11 +308,42 @@
             <span id="fileName" style="margin-top:6px;"></span>
           </div>
           <input type="file" id="fileInput" name="file" accept="image/*">
-          <img id="preview" alt="Selected image preview">
+          <img id="preview" class="preview-img" alt="Selected image preview">
         </div>
         <div class="field">
           <label class="q" for="calibrationDue">Calibration due date</label>
           <input type="date" id="calibrationDue" name="calibrationDue">
+        </div>
+
+        <div class="field">
+          <label class="q">Do you have a second tester?</label>
+          <div class="toggle-row">
+            <input type="radio" name="secondTester" id="secondTesterYes" value="yes">
+            <label for="secondTesterYes">Yes</label>
+            <input type="radio" name="secondTester" id="secondTesterNo" value="no">
+            <label for="secondTesterNo">No</label>
+          </div>
+        </div>
+
+        <!-- SECOND TESTER sub-branch, same questions repeated -->
+        <div class="branch" id="branchSecondTester">
+          <div class="field">
+            <label class="q" for="serialNumber2">Serial number (second tester)</label>
+            <input type="text" id="serialNumber2" name="serialNumber2">
+          </div>
+          <div class="field">
+            <label class="q">Photo of second smart tester showing serial number</label>
+            <div class="file-drop" id="fileDrop2">
+              <span><strong>Click to upload</strong> or drag an image here</span>
+              <span id="fileName2" style="margin-top:6px;"></span>
+            </div>
+            <input type="file" id="fileInput2" name="file2" accept="image/*">
+            <img id="preview2" class="preview-img" alt="Selected image preview">
+          </div>
+          <div class="field">
+            <label class="q" for="calibrationDue2">Calibration due date (second tester)</label>
+            <input type="date" id="calibrationDue2" name="calibrationDue2">
+          </div>
         </div>
       </div>
     </div>
@@ -321,7 +376,7 @@
   const storage = firebase.storage();
   const COLLECTION = "Smart Tester";
 
-  // Toggle branches
+  // Toggle branches: has tester
   const branchYes = document.getElementById('branchYes');
   const branchNo = document.getElementById('branchNo');
   document.getElementById('hasTesterYes').addEventListener('change', () => {
@@ -333,20 +388,59 @@
     branchYes.classList.remove('active');
   });
 
-  // File picker
-  const fileDrop = document.getElementById('fileDrop');
-  const fileInput = document.getElementById('fileInput');
-  const fileName = document.getElementById('fileName');
-  const preview = document.getElementById('preview');
-  fileDrop.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => {
-    const f = fileInput.files[0];
-    if (!f) return;
-    fileName.textContent = f.name;
-    const reader = new FileReader();
-    reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
-    reader.readAsDataURL(f);
+  // Toggle branch: jiffy question only appears when reason = Calibration
+  const branchJiffy = document.getElementById('branchJiffy');
+  const branchJiffyDate = document.getElementById('branchJiffyDate');
+  document.getElementById('noReason').addEventListener('change', (e) => {
+    if (e.target.value === 'Calibration') {
+      branchJiffy.classList.add('active');
+    } else {
+      branchJiffy.classList.remove('active');
+      branchJiffyDate.classList.remove('active');
+    }
   });
+  document.getElementById('jiffyYes').addEventListener('change', () => {
+    branchJiffyDate.classList.add('active');
+  });
+  document.getElementById('jiffyNo').addEventListener('change', () => {
+    branchJiffyDate.classList.remove('active');
+  });
+
+  // Toggle branch: second tester
+  const branchSecondTester = document.getElementById('branchSecondTester');
+  document.getElementById('secondTesterYes').addEventListener('change', () => {
+    branchSecondTester.classList.add('active');
+  });
+  document.getElementById('secondTesterNo').addEventListener('change', () => {
+    branchSecondTester.classList.remove('active');
+  });
+
+  // File picker helper (first tester)
+  function wireFilePicker(dropId, inputId, nameId, previewId) {
+    const drop = document.getElementById(dropId);
+    const input = document.getElementById(inputId);
+    const nameEl = document.getElementById(nameId);
+    const preview = document.getElementById(previewId);
+    drop.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      const f = input.files[0];
+      if (!f) return;
+      nameEl.textContent = f.name;
+      const reader = new FileReader();
+      reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
+      reader.readAsDataURL(f);
+    });
+    return { drop, input, nameEl, preview };
+  }
+  wireFilePicker('fileDrop', 'fileInput', 'fileName', 'preview');
+  wireFilePicker('fileDrop2', 'fileInput2', 'fileName2', 'preview2');
+
+  const fileInput = document.getElementById('fileInput');
+  const fileInput2 = document.getElementById('fileInput2');
+  const preview = document.getElementById('preview');
+  const preview2 = document.getElementById('preview2');
+  const fileName = document.getElementById('fileName');
+  const fileName2 = document.getElementById('fileName2');
 
   // Submit
   const form = document.getElementById('testerForm');
@@ -388,6 +482,15 @@
         }
         record.noReason = reasonSelect;
         record.noReasonDetail = document.getElementById('noReasonDetail').value.trim();
+
+        if (reasonSelect === 'Calibration') {
+          const jiffyRequested = document.querySelector('input[name="jiffyRequested"]:checked')?.value;
+          record.jiffyRequested = jiffyRequested === 'yes';
+          if (jiffyRequested === 'yes') {
+            record.jiffyRequestedDate = document.getElementById('jiffyRequestedDate').value || null;
+          }
+        }
+
         record.returnedDate = document.getElementById('returnedDate').value || null;
       } else {
         record.serialNumber = document.getElementById('serialNumber').value.trim();
@@ -401,6 +504,22 @@
           record.imageUrl = await ref.getDownloadURL();
           record.imagePath = path;
         }
+
+        const secondTester = document.querySelector('input[name="secondTester"]:checked')?.value;
+        record.hasSecondTester = secondTester === 'yes';
+        if (secondTester === 'yes') {
+          record.serialNumber2 = document.getElementById('serialNumber2').value.trim();
+          record.calibrationDue2 = document.getElementById('calibrationDue2').value || null;
+
+          const file2 = fileInput2.files[0];
+          if (file2) {
+            const path2 = `smart-tester/${Date.now()}_2_${file2.name}`;
+            const ref2 = storage.ref().child(path2);
+            await ref2.put(file2);
+            record.imageUrl2 = await ref2.getDownloadURL();
+            record.imagePath2 = path2;
+          }
+        }
       }
 
       await db.collection(COLLECTION).add(record);
@@ -410,8 +529,13 @@
       form.reset();
       branchYes.classList.remove('active');
       branchNo.classList.remove('active');
+      branchJiffy.classList.remove('active');
+      branchJiffyDate.classList.remove('active');
+      branchSecondTester.classList.remove('active');
       preview.style.display = 'none';
+      preview2.style.display = 'none';
       fileName.textContent = '';
+      fileName2.textContent = '';
     } catch (err) {
       console.error(err);
       statusBox.className = 'status err';
