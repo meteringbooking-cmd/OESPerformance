@@ -416,6 +416,24 @@
                 updateToggleBtnState();
             });
 
+            // Alias map: variant names (lowercased) -> canonical name (lowercased)
+            // Used only for Sureserve SP so that Ali Cavan / Alistair Cavan / Alistair Cavan1
+            // are all treated as a single engineer everywhere (headcount, availability, warrant days).
+            const SP_NAME_ALIASES = {
+                'ali cavan': 'alistair cavan',
+                'alistair cavan1': 'alistair cavan',
+                'alistair cavan': 'alistair cavan'
+            };
+
+            const normalizeEngineerName = (name, client) => {
+                if (!name) return '';
+                const lower = name.trim().toLowerCase();
+                if (client === 'Sureserve SP' && SP_NAME_ALIASES[lower]) {
+                    return SP_NAME_ALIASES[lower];
+                }
+                return lower;
+            };
+
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
@@ -533,14 +551,16 @@
                                     totalAbortsPerf += 1;
                                 }
 
+                                const normEngName = normalizeEngineerName(engName, selectedClient);
+
                                 if (jobType.includes('warrant')) {
-                                    const key = engName.trim().toLowerCase();
+                                    const key = normEngName;
                                     if (!warrantDaysByEngineer[key]) warrantDaysByEngineer[key] = new Set();
                                     warrantDaysByEngineer[key].add(data.submissionDate || data.jobDate || "");
                                 }
 
                                 if (engName) {
-                                    const lowerName = engName.trim().toLowerCase();
+                                    const lowerName = normEngName;
                                     uniqueEngineers.add(lowerName);
                                     
                                     const recordDate = data.submissionDate || data.jobDate || data.date || "";
@@ -572,7 +592,7 @@
                                 
                                 // Only count selected client engineers for the Headcount
                                 if (isClientEngineer(data.engineerName) && data.engineerName) {
-                                    const lowerName = data.engineerName.trim().toLowerCase();
+                                    const lowerName = normalizeEngineerName(data.engineerName, selectedClient);
                                     uniqueEngineers.add(lowerName);
                                     
                                     const recordDate = data.date || "";
@@ -619,9 +639,11 @@
                         attSnap.forEach(doc => {
                             const data = doc.data();
                             if (!isClientEngineer(data.engineerName)) return;
+
+                            const normEngName = normalizeEngineerName(data.engineerName, selectedClient);
                             
-                            // Deduplicate
-                            const dedupKey = `${data.engineerName}_${data.date}`.toLowerCase();
+                            // Deduplicate (use normalized name so alias variants on the same date also dedupe)
+                            const dedupKey = `${normEngName}_${data.date}`;
                             if (processedAtt.has(dedupKey)) return;
                             processedAtt.add(dedupKey);
 
@@ -633,7 +655,7 @@
                             if (att === 'X') totalDaysWorked++;
                             
                             // Headcount Tracking from Attendance
-                            const lowerName = data.engineerName.trim().toLowerCase();
+                            const lowerName = normEngName;
                             uniqueEngineers.add(lowerName);
                             const recordDate = data.date || "";
                             let day = 0;
