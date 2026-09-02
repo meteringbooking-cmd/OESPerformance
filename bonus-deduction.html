@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bonus Deductions - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #080C14;
+            --surface:   #0E1520;
+            --border:    #1C2A3A;
+            --border-hi: #2A3F55;
+            --amber:     #F5A623;
+            --cyan:      #2BE4C3;
+            --purple:    #A855F7;
+            --text:      #E8EDF4;
+            --text-mid:  #7A8FA6;
+            --text-dim:  #3D5168;
+            --danger:    #FF5757;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(168,85,247,0.07) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.9); backdrop-filter: blur(12px);
+            animation: fadeDown 0.6s ease both;
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--purple);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.25rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--purple); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.72rem;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--text-mid); text-decoration: none;
+            border: 1px solid var(--border); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--purple); border-color: var(--purple); }
+
+        .hero {
+            position: relative; z-index: 10;
+            padding: 48px 48px 32px;
+            animation: fadeUp 0.7s ease 0.1s both;
+        }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.7rem;
+            letter-spacing: 0.18em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--purple); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--purple); }
+        .hero-sub { font-size: 0.95rem; font-weight: 300; color: var(--text-mid); }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 48px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.2s both;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.65rem;
+            letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim);
+        }
+        .ctrl-input {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus { outline: none; border-color: var(--purple); }
+        .ctrl-actions { display: flex; gap: 10px; align-items: flex-end; margin-left: auto; }
+
+        .btn-save {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--purple); border: none; color: #080C14;
+            padding: 0.6rem 1.4rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-save:hover { background: #c084fc; transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ── CATEGORY LEGEND ── */
+        .codes-panel {
+            background: rgba(168,85,247,0.06);
+            border: 1px solid rgba(168,85,247,0.18);
+            border-radius: 10px; padding: 16px 20px;
+            margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.25s both;
+        }
+        .codes-title {
+            font-family: 'DM Mono', monospace; font-size: 0.68rem;
+            letter-spacing: 0.15em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 12px;
+        }
+        .codes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 10px 24px;
+        }
+        .code-item {
+            display: flex; align-items: flex-start; gap: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--text-mid); line-height: 1.5;
+        }
+        .code-badge {
+            background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.3);
+            color: var(--purple); padding: 0.1rem 0.5rem; border-radius: 4px;
+            font-size: 0.68rem; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+        }
+        .code-item .pct { color: var(--amber); font-weight: 600; }
+
+        /* ── DUPLICATE WARNING BANNER ── */
+        .duplicate-banner {
+            display: none;
+            align-items: center; gap: 12px;
+            background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.35);
+            border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;
+            animation: fadeUp 0.4s ease both;
+        }
+        .duplicate-banner.show { display: flex; }
+        .dup-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .dup-text {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            color: var(--amber); line-height: 1.5; flex: 1;
+        }
+        .dup-text strong { font-weight: 600; }
+        .dup-badge {
+            background: var(--amber); color: #080C14;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; padding: 0.25rem 0.7rem; border-radius: 4px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.8rem;
+            margin-bottom: 16px; display: none;
+        }
+        .message.show { display: block; }
+        .message.success { background: rgba(43,228,195,0.1); color: var(--cyan); border: 1px solid rgba(43,228,195,0.3); }
+        .message.error   { background: rgba(255,87,87,0.1); color: var(--danger); border: 1px solid rgba(255,87,87,0.3); }
+        .message.warning { background: rgba(245,166,35,0.1); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+
+        .table-wrap {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; overflow: hidden; overflow-x: auto;
+            animation: fadeUp 0.6s ease 0.3s both;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        thead th {
+            background: var(--bg); padding: 12px 16px;
+            text-align: center;
+            font-family: 'DM Mono', monospace; font-size: 0.62rem;
+            letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+        }
+        thead th:first-child { text-align: left; }
+        thead th.col-deduct { color: var(--purple); }
+
+        tbody tr { border-bottom: 1px solid rgba(28,42,58,0.6); transition: background 0.15s; }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: rgba(168,85,247,0.04); }
+        tbody tr.row-flagged { border-left: 3px solid var(--amber); }
+
+        td { padding: 12px 16px; vertical-align: middle; text-align: center; }
+        td:first-child { text-align: left; }
+        .eng-name { font-weight: 600; color: var(--text); font-size: 0.88rem; }
+        .eng-leader { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: var(--text-dim); margin-top: 3px; }
+
+        .chk {
+            width: 18px; height: 18px; cursor: pointer; accent-color: var(--purple);
+        }
+        .compliance-group {
+            display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+            font-family: 'DM Mono', monospace; font-size: 0.66rem; color: var(--text-mid);
+        }
+        .compliance-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        .compliance-group input { width: 15px; height: 15px; accent-color: var(--purple); cursor: pointer; }
+
+        .deduct-pill {
+            display: inline-block; min-width: 46px;
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1em;
+            padding: 4px 10px; border-radius: 4px;
+            background: rgba(122,143,166,0.1); border: 1px solid var(--border-hi); color: var(--text-mid);
+        }
+        .deduct-pill.active {
+            background: rgba(245,87,87,0.12); border-color: rgba(255,87,87,0.4); color: var(--danger);
+        }
+
+        .save-footer {
+            background: var(--surface); border-top: 1px solid var(--border);
+            padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+            gap: 12px;
+        }
+        .footer-note {
+            font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--text-dim);
+        }
+        .footer-note span { color: var(--purple); }
+
+        .loading-state {
+            padding: 60px; text-align: center;
+            color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 0.82rem;
+        }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--purple);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeUp   { from { opacity: 0; transform: translateY(16px); }  to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 768px) {
+            .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
+            .hero { padding-top: 32px; }
+            .ctrl-actions { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Monthly Record</div>
+        <h1 class="hero-title">Bonus <em>Deductions</em></h1>
+        <p class="hero-sub">Flag Customer Service, Fleet, Housekeeping and Compliance issues per engineer, per month — feeds the New Structure bonus example.</p>
+    </section>
+
+    <main class="content">
+
+        <div class="controls-bar">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Month</span>
+                <input type="month" id="dataMonth" class="ctrl-input" required>
+            </div>
+            <div class="ctrl-actions">
+                <button class="btn-save" onclick="saveData(event)" id="quickSaveBtn">💾 Save Deductions</button>
+            </div>
+        </div>
+
+        <!-- Duplicate month warning banner -->
+        <div class="duplicate-banner" id="duplicateBanner">
+            <div class="dup-icon">⚠️</div>
+            <div class="dup-text">
+                <strong>Existing records found for this month.</strong><br>
+                Saving will <strong>replace</strong> all <span id="dupCount">0</span> existing entries for <span id="dupMonth">—</span> with the ticked boxes below.
+            </div>
+            <div class="dup-badge">Will Overwrite</div>
+        </div>
+
+        <div class="codes-panel">
+            <div class="codes-title">Deduction Categories</div>
+            <div class="codes-grid">
+                <div class="code-item"><span class="code-badge">Customer Service</span> Persistent failure to make D-1 calls, and/or any upheld customer complaint. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Fleet</span> Failure to complete Daily Vehicle Checks before starting work, and/or any unreasonable recorded speeding incident. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Housekeeping</span> Starting work after 8am on a working day, and/or refusing work in day. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 1</span> Any Cat 1 failure in the month. <span class="pct">−20%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 2</span> Two or more Cat 2 failures in the month. <span class="pct">−10%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 3</span> Five or more Cat 3 failures in the month. <span class="pct">−10%</span></div>
+            </div>
+            <div style="margin-top:10px;font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--text-dim);line-height:1.6;">
+                Cat 2 + Cat 3 together still deduct 20% (10%+10%) — Compliance is capped at a maximum of <span style="color:var(--purple);">20%</span> deduction regardless of how many Compliance boxes are ticked.
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="table-wrap">
+            <div id="loadingDiv" class="loading-state">
+                <span class="spinner"></span>Loading engineers…
+            </div>
+            <div id="tableContainer" style="display:none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Engineer</th>
+                            <th>Customer Service<br><span style="color:var(--text-dim);">(−5%)</span></th>
+                            <th>Fleet<br><span style="color:var(--text-dim);">(−5%)</span></th>
+                            <th>Housekeeping<br><span style="color:var(--text-dim);">(−5%)</span></th>
+                            <th>Compliance<br><span style="color:var(--text-dim);">(up to −20%)</span></th>
+                            <th class="col-deduct">This Month's<br>Deduction</th>
+                        </tr>
+                    </thead>
+                    <tbody id="engineersBody"></tbody>
+                </table>
+                <div class="save-footer">
+                    <div class="footer-note" id="footerNote"></div>
+                    <button class="btn-save" onclick="saveData(event)">💾 Save Deductions</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore, collection, getDocs, addDoc,
+            query, where, deleteDoc, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const COLLECTION = "Bonus Deductions";
+
+        // ── Default month = current month ──
+        const now = new Date();
+        const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        document.getElementById('dataMonth').value = defaultMonth;
+
+        let engineers = [];
+        let duplicateDocIds = []; // IDs of existing docs for the selected month
+
+        // ── Deduction math (kept in sync with engineers2.html's New Structure example) ──
+        function complianceDeductPct(cat1, cat2, cat3) {
+            let pct = 0;
+            if (cat1) pct += 20;
+            if (cat2) pct += 10;
+            if (cat3) pct += 10;
+            return Math.min(pct, 20);
+        }
+        function totalDeductPct(state) {
+            let pct = 0;
+            if (state.customerService) pct += 5;
+            if (state.fleet) pct += 5;
+            if (state.housekeeping) pct += 5;
+            pct += complianceDeductPct(state.complianceCat1, state.complianceCat2, state.complianceCat3);
+            return pct;
+        }
+        function fmtPct(n) {
+            const r = Math.round(n * 10) / 10;
+            return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
+        }
+
+        function rowState(i) {
+            return {
+                customerService: document.getElementById(`cs_${i}`)?.checked || false,
+                fleet: document.getElementById(`fl_${i}`)?.checked || false,
+                housekeeping: document.getElementById(`hk_${i}`)?.checked || false,
+                complianceCat1: document.getElementById(`c1_${i}`)?.checked || false,
+                complianceCat2: document.getElementById(`c2_${i}`)?.checked || false,
+                complianceCat3: document.getElementById(`c3_${i}`)?.checked || false,
+            };
+        }
+
+        function updateRowDeduction(i) {
+            const state = rowState(i);
+            const pct = totalDeductPct(state);
+            const pill = document.getElementById(`deduct_${i}`);
+            if (pill) {
+                pill.textContent = pct > 0 ? `-${fmtPct(pct)}%` : '0%';
+                pill.classList.toggle('active', pct > 0);
+            }
+            const row = document.querySelector(`tr[data-index="${i}"]`);
+            if (row) row.classList.toggle('row-flagged', pct > 0);
+        }
+
+        // ── Load engineers from Firestore ──
+        async function loadEngineers() {
+            try {
+                const querySnapshot = await getDocs(collection(db, "engineers"));
+                engineers = [];
+                querySnapshot.forEach(doc => engineers.push({ id: doc.id, ...doc.data() }));
+                engineers.sort((a, b) => {
+                    const l = a.teamLeader.localeCompare(b.teamLeader);
+                    return l !== 0 ? l : a.engineerName.localeCompare(b.engineerName);
+                });
+                displayEngineers();
+                await checkForExisting(document.getElementById('dataMonth').value);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('loadingDiv').innerHTML = 'Error loading engineers.';
+            }
+        }
+
+        function displayEngineers() {
+            const tbody = document.getElementById('engineersBody');
+            tbody.innerHTML = '';
+
+            if (!engineers.length) {
+                document.getElementById('loadingDiv').innerHTML = 'No engineers found.';
+                return;
+            }
+
+            engineers.forEach((engineer, index) => {
+                const row = tbody.insertRow();
+                row.setAttribute('data-index', index);
+                row.innerHTML = `
+                    <td>
+                        <div class="eng-name">${engineer.engineerName}</div>
+                        <div class="eng-leader">${engineer.teamLeader}</div>
+                    </td>
+                    <td><input type="checkbox" class="chk" id="cs_${index}" data-row-index="${index}"></td>
+                    <td><input type="checkbox" class="chk" id="fl_${index}" data-row-index="${index}"></td>
+                    <td><input type="checkbox" class="chk" id="hk_${index}" data-row-index="${index}"></td>
+                    <td>
+                        <div class="compliance-group">
+                            <label><input type="checkbox" id="c1_${index}" data-row-index="${index}"> Cat 1</label>
+                            <label><input type="checkbox" id="c2_${index}" data-row-index="${index}"> Cat 2 (2+)</label>
+                            <label><input type="checkbox" id="c3_${index}" data-row-index="${index}"> Cat 3 (5+)</label>
+                        </div>
+                    </td>
+                    <td><span class="deduct-pill" id="deduct_${index}">0%</span></td>
+                `;
+            });
+
+            document.querySelectorAll('#engineersBody input[type="checkbox"]').forEach(chk => {
+                chk.addEventListener('change', function () { updateRowDeduction(this.getAttribute('data-row-index')); });
+            });
+
+            document.getElementById('loadingDiv').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'block';
+        }
+
+        // ── Check Firestore for existing records for a given month ──
+        async function checkForExisting(month) {
+            duplicateDocIds = [];
+            if (!month) return;
+
+            try {
+                const q = query(collection(db, COLLECTION), where("month", "==", month));
+                const snap = await getDocs(q);
+
+                duplicateDocIds = snap.docs.map(d => d.id);
+
+                const banner = document.getElementById('duplicateBanner');
+                if (duplicateDocIds.length > 0) {
+                    document.getElementById('dupCount').textContent = duplicateDocIds.length;
+                    document.getElementById('dupMonth').textContent = formatMonth(month);
+                    banner.classList.add('show');
+
+                    snap.docs.forEach(d => {
+                        const data = d.data();
+                        const idx = engineers.findIndex(e => e.id === data.engineerId);
+                        if (idx === -1) return;
+                        const set = (prefix, val) => { const el = document.getElementById(`${prefix}_${idx}`); if (el) el.checked = !!val; };
+                        set('cs', data.customerService);
+                        set('fl', data.fleet);
+                        set('hk', data.housekeeping);
+                        set('c1', data.complianceCat1);
+                        set('c2', data.complianceCat2);
+                        set('c3', data.complianceCat3);
+                        updateRowDeduction(idx);
+                    });
+
+                    const flagged = engineers.filter((_, i) => totalDeductPct(rowState(i)) > 0).length;
+                    document.getElementById('footerNote').innerHTML =
+                        `<span>${flagged}</span> of ${engineers.length} engineers flagged from existing records`;
+                } else {
+                    banner.classList.remove('show');
+                    document.getElementById('footerNote').innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Existing-record check failed:', error);
+            }
+        }
+
+        // ── Month change → re-check existing & reset checkboxes ──
+        document.getElementById('dataMonth').addEventListener('change', async function () {
+            engineers.forEach((_, i) => {
+                ['cs','fl','hk','c1','c2','c3'].forEach(p => { const el = document.getElementById(`${p}_${i}`); if (el) el.checked = false; });
+                updateRowDeduction(i);
+            });
+            await checkForExisting(this.value);
+        });
+
+        // ── SAVE (upsert: delete existing for month then add new) ──
+        window.saveData = async function (event) {
+            const month = document.getElementById('dataMonth').value;
+            if (!month) return showMessage('Please select a month', 'error');
+
+            const clickedBtn = event.target;
+            clickedBtn.disabled = true;
+            const orig = clickedBtn.innerHTML;
+            clickedBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
+
+            try {
+                // 1. Build new records from current checkbox state (only engineers with something ticked)
+                const newRecords = [];
+                for (let i = 0; i < engineers.length; i++) {
+                    const state = rowState(i);
+                    const pct = totalDeductPct(state);
+                    if (pct > 0) {
+                        newRecords.push({
+                            engineerId: engineers[i].id,
+                            engineerName: engineers[i].engineerName,
+                            teamLeader: engineers[i].teamLeader,
+                            month,
+                            ...state
+                        });
+                    }
+                }
+
+                // 2. Delete all existing records for this month (if any)
+                if (duplicateDocIds.length > 0) {
+                    const deletions = duplicateDocIds.map(id => deleteDoc(doc(db, COLLECTION, id)));
+                    await Promise.all(deletions);
+                }
+
+                // 3. Add the new records
+                if (newRecords.length) {
+                    const additions = newRecords.map(record =>
+                        addDoc(collection(db, COLLECTION), { ...record, submittedAt: serverTimestamp() })
+                    );
+                    await Promise.all(additions);
+                }
+
+                const wasOverwrite = duplicateDocIds.length > 0;
+                showMessage(
+                    newRecords.length
+                        ? (wasOverwrite
+                            ? `Replaced ${duplicateDocIds.length} existing record(s) with ${newRecords.length} flagged entries for ${formatMonth(month)}.`
+                            : `Saved! ${newRecords.length} engineer(s) flagged for ${formatMonth(month)}.`)
+                        : (wasOverwrite
+                            ? `Cleared all ${duplicateDocIds.length} existing record(s) for ${formatMonth(month)} — no boxes ticked.`
+                            : `Nothing ticked — no deductions saved for ${formatMonth(month)}.`),
+                    'success'
+                );
+
+                await checkForExisting(month);
+
+            } catch (error) {
+                console.error(error);
+                showMessage('Error saving deductions. Please try again.', 'error');
+            } finally {
+                clickedBtn.disabled = false; clickedBtn.innerHTML = orig;
+            }
+        };
+
+        function showMessage(text, type) {
+            const el = document.getElementById('message');
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            setTimeout(() => { el.className = 'message'; }, 6000);
+        }
+
+        function formatMonth(monthStr) {
+            if (!monthStr) return '—';
+            const [y, m] = monthStr.split('-');
+            const d = new Date(Number(y), Number(m) - 1, 1);
+            return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        }
+
+        loadEngineers();
+    </script>
+</body>
+</html>
