@@ -383,24 +383,36 @@
                         </div>
                     </div>
 
-                    <!-- Compliance Overall -->
+                    <!-- Job Changes -->
                     <div class="kpi-card">
                         <div class="kpi-header">
-                            <span class="kpi-title">Compliance Overall</span>
+                            <span class="kpi-title">Job Changes <span id="jobChangesDateLabel" style="font-size: 0.85em; opacity: 0.7; font-weight: normal; margin-left: 4px;"></span></span>
                         </div>
-                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.15);">
-                                <span class="kpi-target">Current Month Pass</span>
-                                <span class="kpi-value" style="font-size: 2.4em; margin: 0;"><span id="complianceOverallPass">—</span>%</span>
-                            </div>
-                            <div class="secondary-stats" style="margin-top: 0;">
-                                <div class="secondary-stat">
-                                    <div class="secondary-stat-label">WIP</div>
-                                    <div class="secondary-stat-value" id="wipPassRate">—</div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-around; min-height: 0; width: 100%;">
+                            <div>
+                                <div class="kpi-target" style="margin-bottom: 4px;">Yesterday</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value" id="jcSsTotal">0</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value" id="jcEnTotal">0</div>
+                                    </div>
                                 </div>
-                                <div class="secondary-stat">
-                                    <div class="secondary-stat-label">Post Comp</div>
-                                    <div class="secondary-stat-value" id="postCompPassRate">—</div>
+                            </div>
+                            <div style="border-top: 1px solid rgba(255,255,255,0.15); padding-top: 6px;">
+                                <div class="kpi-target" style="margin-bottom: 4px;">Month to Date</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value" id="jcSsMonthTotal">0</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value" id="jcEnMonthTotal">0</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -712,44 +724,46 @@
             return formatDateForQuery(target);
         }
 
-        async function loadComplianceData() {
+        function getFirstDayOfMonthStr() {
+            const now = new Date();
+            const first = new Date(now.getFullYear(), now.getMonth(), 1);
+            return formatDateForQuery(first);
+        }
+
+        async function loadJobChanges(dateStr) {
             try {
-                const now = new Date();
-                const histStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-                histStart.setHours(0, 0, 0, 0);
-                const histStartStr = `${histStart.getFullYear()}-${String(histStart.getMonth()+1).padStart(2,'0')}-01`;
+                const monthStartStr = getFirstDayOfMonthStr();
+                const todayStr = formatDateForQuery(new Date());
 
-                const snap = await getDocs(
-                    query(collection(performanceDb, 'Compliance Dashboard'),
-                          where('date', '>=', histStartStr))
-                );
-                const audits = snap.docs.map(d => d.data());
+                const [ssDaySnap, enDaySnap, ssMonthSnap, enMonthSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Job Changes"), where("date", "==", dateStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes - Energise"), where("date", "==", dateStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes"), where("date", ">=", monthStartStr), where("date", "<=", todayStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes - Energise"), where("date", ">=", monthStartStr), where("date", "<=", todayStr)))
+                ]);
 
-                const inRange = (a, start, end) => {
-                    if (!a.date) return false;
-                    const d = new Date(a.date + 'T00:00:00');
-                    return d >= start && d <= end;
-                };
-                const rate = (p, t) => t === 0 ? '0' : ((p / t) * 100).toFixed(1);
+                function sumTotal(snap) {
+                    let total = 0;
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        total += (d.dual||0) + (d.single||0) + (d.comms||0) + (d.removal||0);
+                    });
+                    return total;
+                }
 
-                const cmStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                cmStart.setHours(0, 0, 0, 0);
-                const cmEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-                const cmAudits  = audits.filter(a => inRange(a, cmStart, cmEnd));
-                const cmWip     = cmAudits.filter(a => a.auditType === 'WIP');
-                const cmPost    = cmAudits.filter(a => a.auditType === 'Post Complete');
-                const wipPass   = cmWip.filter(a => a.result === 'Pass').length;
-                const wipTotal  = cmWip.length;
-                const postPass  = cmPost.filter(a => a.result === 'Pass').length;
-                const postTotal = cmPost.length;
-                const allPass   = wipPass + postPass;
-                const allTotal  = wipTotal + postTotal;
-                const overallPct = allTotal === 0 ? 0 : (allPass / allTotal) * 100;
+                document.getElementById('jcSsTotal').textContent = sumTotal(ssDaySnap);
+                document.getElementById('jcEnTotal').textContent = sumTotal(enDaySnap);
+                document.getElementById('jcSsMonthTotal').textContent = sumTotal(ssMonthSnap).toLocaleString();
+                document.getElementById('jcEnMonthTotal').textContent = sumTotal(enMonthSnap).toLocaleString();
 
-                document.getElementById('complianceOverallPass').textContent = allTotal === 0 ? '—' : overallPct.toFixed(1);
-                document.getElementById('wipPassRate').textContent      = rate(wipPass, wipTotal) + '%';
-                document.getElementById('postCompPassRate').textContent  = rate(postPass, postTotal) + '%';
-            } catch(err) { console.error('Compliance error:', err); }
+                const dLabelEl = document.getElementById('jobChangesDateLabel');
+                if (dLabelEl) {
+                    const dObj = new Date(dateStr + 'T12:00:00');
+                    dLabelEl.textContent = `(${formatDate(dObj)})`;
+                }
+            } catch (err) {
+                console.error("Error loading job changes:", err);
+            }
         }
 
         async function loadVehicleChecks(dateStr) {
@@ -887,7 +901,7 @@
 
                 const spDate = getSPCompletionDate();
                 await loadSPCompletion(spDate);
-                await loadComplianceData();
+                await loadJobChanges(dateStr);
                 document.getElementById('lastUpdated').textContent=`Last updated: ${new Date().toLocaleTimeString()}`;
                 document.getElementById('loadingDiv').style.display='none';
                 document.getElementById('dashboardContent').style.display='flex';
