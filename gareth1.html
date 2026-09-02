@@ -169,8 +169,8 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            margin-top: 14px;
-            max-height: 380px;
+            margin-top: 10px;
+            max-height: 480px;
             overflow-y: auto;
             padding-right: 4px;
         }
@@ -218,19 +218,6 @@
         .profit-bar-fill.positive { background: linear-gradient(90deg, #10b981, #34d399); }
         .profit-bar-fill.negative { background: linear-gradient(90deg, #ef4444, #f87171); }
         .energise-grid .profit-bar-fill.positive { background: linear-gradient(90deg, #a78bfa, #c084fc); }
-
-        .show-all-btn {
-            width: 100%; padding: 8px 12px; margin-top: 10px;
-            background: rgba(0, 210, 255, 0.15); color: #00d2ff;
-            border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 8px;
-            font-size: 0.75em; font-weight: 700; cursor: pointer; transition: all 0.2s ease;
-            text-transform: uppercase; letter-spacing: 0.5px;
-        }
-        .show-all-btn:hover { background: rgba(0, 210, 255, 0.25); transform: translateY(-1px); }
-        .energise-grid .show-all-btn {
-            background: rgba(167, 139, 250, 0.15); color: #c084fc; border-color: rgba(167, 139, 250, 0.3);
-        }
-        .energise-grid .show-all-btn:hover { background: rgba(167, 139, 250, 0.25); }
     </style>
 </head>
 <body>
@@ -345,9 +332,6 @@
                     <div class="kpi-value" id="profitTotal">£0</div>
                     <div class="kpi-target">Total engineer profit today</div>
 
-                    <div class="profit-list" id="profitTopList"></div>
-                    <button class="show-all-btn" id="profitShowAllBtn" style="display:none;" onclick="event.stopPropagation(); toggleShowAllProfit()">Show all engineers</button>
-
                     <div class="historical-data">
                         <div class="historical-title">All Engineers — Ranked Best to Worst</div>
                         <div class="profit-list" id="profitAllList"></div>
@@ -453,9 +437,6 @@
                     </div>
                     <div class="kpi-value" id="enProfitTotal">£0</div>
                     <div class="kpi-target">Total engineer profit today</div>
-
-                    <div class="profit-list" id="enProfitTopList"></div>
-                    <button class="show-all-btn" id="enProfitShowAllBtn" style="display:none;" onclick="event.stopPropagation(); toggleShowAllEnProfit()">Show all engineers</button>
 
                     <div class="historical-data">
                         <div class="historical-title" style="color:#c084fc;">All Engineers — Ranked Best to Worst</div>
@@ -570,12 +551,6 @@
         // ════════════════════════════════════════════════════════════════════
         // ── Engineer Profit Functions (Sureserve & Energise) ────────────────
         // ════════════════════════════════════════════════════════════════════
-        let allEngineerProfits = [];
-        let showingAllProfit = false;
-
-        let allEnEngineerProfits = [];
-        let showingAllEnProfit = false;
-
         function renderProfitRow(eng, idx, maxAbsProfit, isEnergise = false) {
             const isPos = eng.profit >= 0;
             const barPct = maxAbsProfit > 0 ? Math.min(100, (Math.abs(eng.profit) / maxAbsProfit) * 100) : 0;
@@ -604,30 +579,6 @@
             container.innerHTML = list.map((e, i) => renderProfitRow(e, i, maxAbs, isEnergise)).join('');
         }
 
-        window.toggleShowAllProfit = function() {
-            showingAllProfit = !showingAllProfit;
-            const btn = document.getElementById('profitShowAllBtn');
-            if (showingAllProfit) {
-                renderProfitList(allEngineerProfits, 'profitTopList');
-                btn.textContent = 'Show top 10 only';
-            } else {
-                renderProfitList(allEngineerProfits.slice(0, 10), 'profitTopList');
-                btn.textContent = `Show all ${allEngineerProfits.length} engineers`;
-            }
-        };
-
-        window.toggleShowAllEnProfit = function() {
-            showingAllEnProfit = !showingAllEnProfit;
-            const btn = document.getElementById('enProfitShowAllBtn');
-            if (showingAllEnProfit) {
-                renderProfitList(allEnEngineerProfits, 'enProfitTopList', true);
-                btn.textContent = 'Show top 10 only';
-            } else {
-                renderProfitList(allEnEngineerProfits.slice(0, 10), 'enProfitTopList', true);
-                btn.textContent = `Show all ${allEnEngineerProfits.length} engineers`;
-            }
-        };
-
         async function loadEngineerProfits(dateString) {
             try {
                 const q = query(collection(performanceDb, "Engineer Daily Profit"), where("date", "==", dateString));
@@ -642,7 +593,6 @@
                 });
 
                 profits.sort((a, b) => b.profit - a.profit);
-                allEngineerProfits = profits;
 
                 const total = profits.reduce((sum, e) => sum + e.profit, 0);
                 const profitTotalEl = document.getElementById('profitTotal');
@@ -651,18 +601,6 @@
                     profitTotalEl.style.background = total >= 0 ? 'linear-gradient(135deg, #ffffff 0%, #00d2ff 100%)' : 'linear-gradient(135deg, #ff6b6b 0%, #ef4444 100%)';
                     profitTotalEl.style.webkitBackgroundClip = 'text';
                     profitTotalEl.style.webkitTextFillColor = 'transparent';
-                }
-
-                renderProfitList(profits.slice(0, 10), 'profitTopList');
-
-                const showAllBtn = document.getElementById('profitShowAllBtn');
-                if (showAllBtn) {
-                    if (profits.length > 10) {
-                        showAllBtn.style.display = 'block';
-                        showAllBtn.textContent = `Show all ${profits.length} engineers`;
-                    } else {
-                        showAllBtn.style.display = 'none';
-                    }
                 }
 
                 renderProfitList(profits, 'profitAllList');
@@ -685,7 +623,6 @@
                 });
 
                 profits.sort((a, b) => b.profit - a.profit);
-                allEnEngineerProfits = profits;
 
                 const total = profits.reduce((sum, e) => sum + e.profit, 0);
                 const enProfitTotalEl = document.getElementById('enProfitTotal');
@@ -694,18 +631,6 @@
                     enProfitTotalEl.style.background = total >= 0 ? 'linear-gradient(135deg, #ffffff 0%, #c084fc 100%)' : 'linear-gradient(135deg, #ff6b6b 0%, #ef4444 100%)';
                     enProfitTotalEl.style.webkitBackgroundClip = 'text';
                     enProfitTotalEl.style.webkitTextFillColor = 'transparent';
-                }
-
-                renderProfitList(profits.slice(0, 10), 'enProfitTopList', true);
-
-                const showAllBtn = document.getElementById('enProfitShowAllBtn');
-                if (showAllBtn) {
-                    if (profits.length > 10) {
-                        showAllBtn.style.display = 'block';
-                        showAllBtn.textContent = `Show all ${profits.length} engineers`;
-                    } else {
-                        showAllBtn.style.display = 'none';
-                    }
                 }
 
                 renderProfitList(profits, 'enProfitAllList', true);
