@@ -65,6 +65,7 @@
         .kpi-card.expandable .expand-indicator {
             position: absolute; top: 20px; right: 20px; font-size: 1.1em;
             opacity: 0.4; transition: all 0.3s ease; color: #00d2ff;
+            pointer-events: none;
         }
         .kpi-card.expandable:hover .expand-indicator { opacity: 1; }
         .kpi-card.expanded .expand-indicator { transform: rotate(180deg); opacity: 0.8; }
@@ -72,6 +73,7 @@
             content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
             background: linear-gradient(90deg, transparent, rgba(0,210,255,0.1), transparent);
             animation: shimmerSlide 3s infinite;
+            pointer-events: none;
         }
         @keyframes shimmerSlide { 0% { left: -100%; } 100% { left: 100%; } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
@@ -173,6 +175,8 @@
             max-height: 480px;
             overflow-y: auto;
             padding-right: 4px;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
         }
         .profit-list::-webkit-scrollbar { width: 6px; }
         .profit-list::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 3px; }
@@ -334,7 +338,7 @@
 
                     <div class="historical-data">
                         <div class="historical-title">All Engineers — Ranked Best to Worst</div>
-                        <div class="profit-list" id="profitAllList"></div>
+                        <div class="profit-list" id="profitAllList" onclick="event.stopPropagation()"></div>
                     </div>
                 </div>
             </div>
@@ -440,7 +444,7 @@
 
                     <div class="historical-data">
                         <div class="historical-title" style="color:#c084fc;">All Engineers — Ranked Best to Worst</div>
-                        <div class="profit-list" id="enProfitAllList"></div>
+                        <div class="profit-list" id="enProfitAllList" onclick="event.stopPropagation()"></div>
                     </div>
                 </div>
             </div>
@@ -577,6 +581,23 @@
             }
             const maxAbs = Math.max(...list.map(e => Math.abs(e.profit)), 1);
             container.innerHTML = list.map((e, i) => renderProfitRow(e, i, maxAbs, isEnergise)).join('');
+            
+            // Prevent scrolling on the list from scrolling the page
+            if (!container._scrollTrapped) {
+                container.addEventListener('wheel', (e) => {
+                    const delta = e.deltaY;
+                    const up = delta < 0;
+                    const down = delta > 0;
+                    const atTop = container.scrollTop <= 0;
+                    const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1;
+
+                    if ((up && atTop) || (down && atBottom)) {
+                        e.preventDefault();
+                    }
+                    e.stopPropagation();
+                }, { passive: false });
+                container._scrollTrapped = true;
+            }
         }
 
         async function loadEngineerProfits(dateString) {
