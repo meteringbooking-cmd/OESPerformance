@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Review - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #1A1610;
+            --surface:   #241D14;
+            --surface2:  #2C2318;
+            --border:    #3D3122;
+            --border-hi: #5C4A31;
+            --amber:     #F5A623;
+            --brand:     #F0B429;
+            --success:   #34D399;
+            --text:      #FBF7F1;
+            --text-mid:  #D9CDBB;
+            --text-dim:  #A99887;
+            --danger:    #FF7A7A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(240,180,41,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(240,180,41,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(240,180,41,0.08) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(12,10,6,0.9); backdrop-filter: blur(12px);
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--brand);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.25rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--brand); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text); text-decoration: none;
+            border: 1px solid var(--border-hi); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--brand); border-color: var(--brand); }
+
+        .hero {
+            position: relative; z-index: 10;
+            padding: 48px 48px 32px;
+        }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: var(--brand); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--brand); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--brand); }
+        .hero-sub { font-size: 1.02rem; font-weight: 400; color: var(--text-mid); max-width: 70ch; }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 64px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.75rem;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mid);
+        }
+        .ctrl-input, .ctrl-select {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus, .ctrl-select:focus { outline: none; border-color: var(--brand); }
+
+        .btn-save {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--brand); border: none; color: #1A1610;
+            padding: 0.6rem 1.3rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-save:hover { background: #FFC94D; transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.8rem;
+            margin-bottom: 16px; display: none;
+        }
+        .message.show { display: block; }
+        .message.success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+        .message.error   { background: rgba(255,122,122,0.1); color: var(--danger); border: 1px solid rgba(255,122,122,0.3); }
+
+        .loading-state {
+            padding: 60px; text-align: center;
+            color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 0.9rem;
+        }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--brand);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 48px; text-align: center;
+            color: var(--text-mid); font-size: 0.95rem;
+        }
+        .empty-state strong { color: var(--success); }
+
+        /* ── ENGINEER REVIEW CARD ── */
+        #cardsContainer { display: flex; flex-direction: column; gap: 16px; }
+        .review-card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; overflow: hidden;
+        }
+        .review-card.finalized { border-color: rgba(52,211,153,0.4); }
+        .rc-head {
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+            padding: 18px 22px; border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .rc-name { font-weight: 700; font-size: 1.08rem; color: var(--text); display: flex; align-items: center; gap: 10px; }
+        .rc-leader { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+        .rc-badge {
+            font-family: 'DM Mono', monospace; font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 10px; font-weight: 600;
+        }
+        .rc-badge.finalized { background: rgba(52,211,153,0.15); color: var(--success); border: 1px solid rgba(52,211,153,0.35); }
+        .rc-badge.stale { background: rgba(255,122,122,0.15); color: var(--danger); border: 1px solid rgba(255,122,122,0.35); }
+        .rc-meta-line { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--text-dim); margin-top: 4px; }
+
+        .rc-total-pill {
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.3rem;
+            padding: 6px 16px; border-radius: 6px;
+            background: rgba(217,205,187,0.1); border: 1px solid var(--border-hi); color: var(--text-mid);
+        }
+        .rc-total-pill.active { background: rgba(255,122,122,0.15); border-color: rgba(255,122,122,0.5); color: var(--danger); }
+        .rc-total-label { font-family: 'DM Mono', monospace; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); text-align: right; margin-bottom: 4px; }
+
+        .rc-context {
+            display: flex; gap: 28px; flex-wrap: wrap;
+            padding: 14px 22px; border-bottom: 1px solid var(--border);
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--text-mid);
+        }
+        .rc-context b { color: var(--text); font-weight: 600; }
+
+        .rc-rows { padding: 6px 22px; }
+        .rc-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            padding: 14px 0; border-bottom: 1px solid rgba(61,49,34,0.7);
+        }
+        .rc-row:last-child { border-bottom: none; }
+        .rc-row-info { flex: 1; min-width: 220px; }
+        .rc-row-label { font-weight: 600; font-size: 0.94rem; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .rc-row-pct { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--amber); font-weight: 600; }
+        .rc-row-detail { font-size: 0.82rem; color: var(--text-mid); margin-top: 3px; line-height: 1.4; }
+        .rc-row-detail .rc-original-label { color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+
+        .ftm-badge {
+            font-family: 'DM Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 10px; font-weight: 600;
+        }
+        .ftm-badge.accepted { background: rgba(91,156,255,0.15); color: #7CAEFF; border: 1px solid rgba(91,156,255,0.35); }
+        .ftm-badge.removed { background: rgba(255,122,122,0.12); color: var(--danger); border: 1px solid rgba(255,122,122,0.3); }
+
+        .amended-tag {
+            font-family: 'DM Mono', monospace; font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase;
+            color: var(--brand); font-weight: 700; margin-right: 8px; display: none;
+        }
+        .amended-tag.show { display: inline-block; }
+
+        .row-right { display: flex; align-items: center; flex-shrink: 0; }
+
+        .toggle-pair { display: flex; gap: 6px; flex-shrink: 0; }
+        .toggle-btn {
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.78rem;
+            letter-spacing: 0.05em; text-transform: uppercase;
+            padding: 0.4rem 0.9rem; border-radius: 5px; cursor: pointer;
+            border: 1px solid var(--border-hi); background: transparent; color: var(--text-dim);
+            transition: all 0.15s;
+        }
+        .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
+        .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
+
+        .rc-footer {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+            padding: 16px 22px; border-top: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .rc-status {
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--text-mid);
+        }
+        .rc-status.success { color: var(--success); }
+        .rc-status.error { color: var(--danger); }
+
+        @media (max-width: 768px) {
+            .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
+            .hero { padding-top: 32px; }
+            .rc-row { flex-direction: column; align-items: flex-start; }
+            .row-right { width: 100%; justify-content: flex-end; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Monthly Review — Stage 2 (Final)</div>
+        <h1 class="hero-title">Final <em>Review</em></h1>
+        <p class="hero-sub">The last check before deductions reach the engineer portal. Every item shows what was originally submitted and what the FTM decided — approve each engineer's figures individually, or override before finalizing.</p>
+    </section>
+
+    <main class="content">
+
+        <div class="controls-bar">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Month</span>
+                <input type="month" id="dataMonth" class="ctrl-input" required>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">Team</span>
+                <select id="teamFilter" class="ctrl-select">
+                    <option value="">All Teams</option>
+                </select>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">Finalized By</span>
+                <input type="text" id="finalizerName" class="ctrl-input" placeholder="Your name">
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div id="loadingDiv" class="loading-state">
+            <span class="spinner"></span>Loading month data…
+        </div>
+
+        <div id="emptyState" class="empty-state" style="display:none;">
+            <strong>Nothing to finalize.</strong><br>
+            No engineer has an FTM review submitted for this month yet — send them to Stage 1 (FTM Review) first.
+        </div>
+
+        <div id="cardsContainer" style="display:none;"></div>
+
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore, collection, getDocs, setDoc,
+            query, where, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const REVIEWED = "Bonus Deductions Reviewed";
+        const FINAL = "Bonus Deductions Final";
+        const ROW_KEYS = ['completion', 'attendance', 'customerService', 'fleet', 'housekeeping', 'complianceCat1', 'complianceCat2', 'complianceCat3'];
+
+        const now = new Date();
+        const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        document.getElementById('dataMonth').value = defaultMonth;
+
+        let engineers = [];
+        let engineerRows = [];   // one entry per engineer with an FTM review this month
+
+        function fmtPct(n) {
+            const r = Math.round(n * 10) / 10;
+            return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
+        }
+        function fmtDateList(dates) {
+            if (!Array.isArray(dates) || !dates.length) return '';
+            return dates.map(d => {
+                const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+                if (!m) return d;
+                return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            }).join(', ');
+        }
+        function fmtWhen(ts) {
+            if (!ts) return '';
+            try {
+                const d = ts.toDate ? ts.toDate() : new Date(ts);
+                return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch (e) { return ''; }
+        }
+
+        // ── Row definitions sourced from the FTM's stored (Reviewed) record, not live data —
+        // Carl reviews exactly what the FTM saw and decided. ──
+        function buildRowDefs(fd) {
+            const rows = [];
+            if (fd.completionFlagged) {
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: fd.completionNominalPct,
+                    detail: `${fd.completionRate === null || fd.completionRate === undefined ? 'n/a' : fmtPct(fd.completionRate) + '%'} this month (minimum is 85%)`,
+                    ftmAccepted: !!fd.completionAccepted });
+            }
+            if (fd.attendanceFlagged) {
+                let detail = `${fd.attendanceInstances} instance(s)`;
+                if (Array.isArray(fd.attendanceDetail) && fd.attendanceDetail.length) {
+                    const byCode = {};
+                    fd.attendanceDetail.forEach(a => { (byCode[a.code] = byCode[a.code] || []).push(a.date); });
+                    detail = Object.keys(byCode).map(code => `${byCode[code].length}× ${code} (${fmtDateList(byCode[code])})`).join(', ');
+                }
+                rows.push({ key: 'attendance', label: 'Attendance', pct: fd.attendanceNominalPct, detail, ftmAccepted: !!fd.attendanceAccepted });
+            }
+            if (fd.customerServiceFlagged) rows.push({ key: 'customerService', label: 'Customer Service', pct: 5,
+                detail: 'Persistent failure to make D-1 calls, and/or an upheld customer complaint.', ftmAccepted: !!fd.customerServiceAccepted });
+            if (fd.fleetFlagged) rows.push({ key: 'fleet', label: 'Fleet', pct: 5,
+                detail: `Failed vehicle check and/or speeding incident${fd.fleetDates?.length ? ' — ' + fmtDateList(fd.fleetDates) : ''}`, ftmAccepted: !!fd.fleetAccepted });
+            if (fd.housekeepingFlagged) rows.push({ key: 'housekeeping', label: 'Housekeeping', pct: 5,
+                detail: `Late start and/or refused work${fd.housekeepingDates?.length ? ' — ' + fmtDateList(fd.housekeepingDates) : ''}`, ftmAccepted: !!fd.housekeepingAccepted });
+            if (fd.complianceCat1Flagged) rows.push({ key: 'complianceCat1', label: 'Compliance — Cat 1', pct: 20,
+                detail: 'Any Cat 1 failure recorded this month.', ftmAccepted: !!fd.complianceCat1Accepted });
+            if (fd.complianceCat2Flagged) rows.push({ key: 'complianceCat2', label: 'Compliance — Cat 2 (2+)', pct: 10,
+                detail: '2 or more Cat 2 failures recorded this month.', ftmAccepted: !!fd.complianceCat2Accepted });
+            if (fd.complianceCat3Flagged) rows.push({ key: 'complianceCat3', label: 'Compliance — Cat 3 (5+)', pct: 10,
+                detail: '5 or more Cat 3 failures recorded this month.', ftmAccepted: !!fd.complianceCat3Accepted });
+            return rows;
+        }
+
+        function computeTotal(rowDefs, accepted) {
+            let compliancePct = 0, total = 0;
+            rowDefs.forEach(r => {
+                if (!accepted[r.key]) return;
+                if (r.key.startsWith('compliance')) compliancePct += r.pct;
+                else total += r.pct;
+            });
+            total += Math.min(compliancePct, 20);
+            return Math.min(total, 100);
+        }
+
+        async function loadEngineers() {
+            const snap = await getDocs(collection(db, "engineers"));
+            engineers = [];
+            snap.forEach(d => engineers.push({ id: d.id, ...d.data() }));
+            const teams = [...new Set(engineers.map(e => e.teamLeader).filter(Boolean))].sort();
+            const sel = document.getElementById('teamFilter');
+            teams.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                sel.appendChild(opt);
+            });
+        }
+
+        async function loadMonth(month) {
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('cardsContainer').style.display = 'none';
+            document.getElementById('cardsContainer').innerHTML = '';
+
+            try {
+                const revSnap = await getDocs(query(collection(db, REVIEWED), where("month", "==", month)));
+                const reviewedRows = [];
+                revSnap.forEach(d => reviewedRows.push(d.data()));
+
+                const finalSnap = await getDocs(query(collection(db, FINAL), where("month", "==", month)));
+                const finalByEngineer = {};
+                finalSnap.forEach(d => { const data = d.data(); finalByEngineer[data.engineerId] = data; });
+
+                const engById = {};
+                engineers.forEach(e => engById[e.id] = e);
+
+                const rows = reviewedRows
+                    .filter(fd => fd.engineerId && engById[fd.engineerId])
+                    .map(fd => ({ engineer: engById[fd.engineerId], reviewed: fd, final: finalByEngineer[fd.engineerId] || null }));
+
+                rows.sort((a, b) => a.engineer.engineerName.localeCompare(b.engineer.engineerName));
+                engineerRows = rows;
+                renderCards();
+            } catch (err) {
+                console.error(err);
+                showMessage('Error loading month data: ' + err.message, 'error');
+            } finally {
+                document.getElementById('loadingDiv').style.display = 'none';
+            }
+        }
+
+        function renderCards() {
+            const teamFilter = document.getElementById('teamFilter').value;
+            const container = document.getElementById('cardsContainer');
+            container.innerHTML = '';
+
+            const visible = engineerRows.filter(r => !teamFilter || r.engineer.teamLeader === teamFilter);
+
+            if (!visible.length) {
+                document.getElementById('emptyState').style.display = 'block';
+                document.getElementById('cardsContainer').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('cardsContainer').style.display = 'flex';
+
+            visible.forEach(r => {
+                const rowDefs = buildRowDefs(r.reviewed);
+                r._rowDefs = rowDefs;
+                r._accepted = {};
+                rowDefs.forEach(rd => {
+                    // Default to Carl's previous final decision if one exists, else the FTM's decision.
+                    const prevFinal = r.final ? r.final[rd.key + 'Accepted'] : undefined;
+                    r._accepted[rd.key] = prevFinal === undefined ? rd.ftmAccepted : !!prevFinal;
+                });
+
+                const isFinalized = !!r.final;
+                const isStale = isFinalized && r.final.ftmTotalDeductPct !== undefined && r.final.ftmTotalDeductPct !== r.reviewed.totalDeductPct;
+
+                const card = document.createElement('div');
+                card.className = 'review-card' + (isFinalized ? ' finalized' : '');
+                card.dataset.engineerId = r.engineer.id;
+
+                const contextBits = [];
+                contextBits.push(`<span>Completion: <b>${r.reviewed.completionRate === null || r.reviewed.completionRate === undefined ? 'no job data' : fmtPct(r.reviewed.completionRate) + '%'}</b></span>`);
+                contextBits.push(`<span>Attendance: <b>${r.reviewed.attendanceInstances ? r.reviewed.attendanceInstances + ' flagged instance(s)' : 'clear'}</b></span>`);
+
+                let badges = '';
+                if (isStale) badges += `<span class="rc-badge stale">FTM Updated Since</span>`;
+                else if (isFinalized) badges += `<span class="rc-badge finalized">Finalized</span>`;
+
+                const metaLine = `FTM: ${r.reviewed.reviewedBy || 'unknown'} · ${fmtWhen(r.reviewed.reviewedAt)}` +
+                    (isFinalized ? ` &nbsp;|&nbsp; Finalized: ${r.final.finalizedBy || 'unknown'} · ${fmtWhen(r.final.finalizedAt)}` : '');
+
+                card.innerHTML = `
+                    <div class="rc-head">
+                        <div>
+                            <div class="rc-name">${r.engineer.engineerName} ${badges}</div>
+                            <div class="rc-leader">${r.engineer.teamLeader || ''}</div>
+                            <div class="rc-meta-line">${metaLine}</div>
+                        </div>
+                        <div>
+                            <div class="rc-total-label">Final Deduction</div>
+                            <span class="rc-total-pill" id="total_${r.engineer.id}">0%</span>
+                        </div>
+                    </div>
+                    <div class="rc-context">${contextBits.join('')}</div>
+                    <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                    <div class="rc-footer">
+                        <span class="rc-status" id="status_${r.engineer.id}"></span>
+                        <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Finalize & Submit</button>
+                    </div>
+                `;
+                container.appendChild(card);
+
+                const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
+                rowDefs.forEach(rd => {
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'rc-row';
+                    rowEl.dataset.key = rd.key;
+                    rowEl.innerHTML = `
+                        <div class="rc-row-info">
+                            <div class="rc-row-label">
+                                ${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span>
+                                <span class="ftm-badge ${rd.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${rd.ftmAccepted ? 'Accepted' : 'Removed'}</span>
+                            </div>
+                            <div class="rc-row-detail"><span class="rc-original-label">Original</span>${rd.detail}</div>
+                        </div>
+                        <div class="row-right">
+                            <span class="amended-tag" data-tag="${rd.key}">Amended</span>
+                            <div class="toggle-pair">
+                                <button type="button" class="toggle-btn accept" data-eng="${r.engineer.id}" data-key="${rd.key}">Accept</button>
+                                <button type="button" class="toggle-btn remove" data-eng="${r.engineer.id}" data-key="${rd.key}">Remove</button>
+                            </div>
+                        </div>
+                    `;
+                    rowsEl.appendChild(rowEl);
+                });
+
+                card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerFinal(r.engineer.id, this); });
+
+                updateCardTotal(r);
+            });
+
+            container.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const engId = this.dataset.eng, key = this.dataset.key;
+                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    if (!r) return;
+                    r._accepted[key] = this.classList.contains('accept');
+                    updateCardTotal(r);
+                    const status = document.getElementById(`status_${engId}`);
+                    if (status) { status.textContent = ''; status.className = 'rc-status'; }
+                });
+            });
+        }
+
+        function updateCardTotal(r) {
+            const total = computeTotal(r._rowDefs, r._accepted);
+            const pill = document.getElementById(`total_${r.engineer.id}`);
+            if (pill) {
+                pill.textContent = total > 0 ? `-${fmtPct(total)}%` : '0%';
+                pill.classList.toggle('active', total > 0);
+            }
+            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            if (!card) return;
+            r._rowDefs.forEach(rd => {
+                const accepted = r._accepted[rd.key];
+                const acceptBtn = card.querySelector(`.toggle-btn.accept[data-key="${CSS.escape(rd.key)}"]`);
+                const removeBtn = card.querySelector(`.toggle-btn.remove[data-key="${CSS.escape(rd.key)}"]`);
+                if (acceptBtn) acceptBtn.classList.toggle('on', accepted);
+                if (removeBtn) removeBtn.classList.toggle('on', !accepted);
+                const tag = card.querySelector(`.amended-tag[data-tag="${CSS.escape(rd.key)}"]`);
+                if (tag) tag.classList.toggle('show', accepted !== rd.ftmAccepted);
+            });
+        }
+
+        document.getElementById('dataMonth').addEventListener('change', function () { loadMonth(this.value); });
+        document.getElementById('teamFilter').addEventListener('change', renderCards);
+
+        // Updates just a card's header badges/meta line after a submit — a full renderCards()
+        // would rebuild the DOM and wipe the success/error status message we just set.
+        function refreshCardHeader(r) {
+            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            if (!card) return;
+            const isFinalized = !!r.final;
+            const isStale = isFinalized && r.final.ftmTotalDeductPct !== undefined && r.final.ftmTotalDeductPct !== r.reviewed.totalDeductPct;
+            let badges = '';
+            if (isStale) badges += `<span class="rc-badge stale">FTM Updated Since</span>`;
+            else if (isFinalized) badges += `<span class="rc-badge finalized">Finalized</span>`;
+            const nameEl = card.querySelector('.rc-name');
+            if (nameEl) nameEl.innerHTML = `${r.engineer.engineerName} ${badges}`;
+            card.classList.toggle('finalized', isFinalized);
+            const metaLine = `FTM: ${r.reviewed.reviewedBy || 'unknown'} · ${fmtWhen(r.reviewed.reviewedAt)}` +
+                (isFinalized ? ` &nbsp;|&nbsp; Finalized: ${r.final.finalizedBy || 'unknown'} · ${fmtWhen(r.final.finalizedAt)}` : '');
+            const metaEl = card.querySelector('.rc-meta-line');
+            if (metaEl) metaEl.innerHTML = metaLine;
+        }
+
+        // ── SUBMIT: writes this ONE engineer's finalized doc (deterministic id) — this is what
+        // engineers2.html reads to apply the New Structure deduction on the engineer portal. ──
+        async function submitEngineerFinal(engineerId, btn) {
+            const r = engineerRows.find(x => x.engineer.id === engineerId);
+            if (!r) return;
+            const month = document.getElementById('dataMonth').value;
+            const finalizer = document.getElementById('finalizerName').value.trim();
+            const statusEl = document.getElementById(`status_${engineerId}`);
+
+            btn.disabled = true;
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
+
+            try {
+                const fd = r.reviewed;
+                const record = {
+                    engineerId: r.engineer.id,
+                    engineerName: r.engineer.engineerName,
+                    teamLeader: r.engineer.teamLeader || '',
+                    month,
+                    completionRate: fd.completionRate,
+                    completionNominalPct: fd.completionNominalPct,
+                    completionFlagged: !!fd.completionFlagged,
+                    completionAccepted: !!r._accepted.completion,
+                    attendanceInstances: fd.attendanceInstances,
+                    attendanceDetail: fd.attendanceDetail || [],
+                    attendanceNominalPct: fd.attendanceNominalPct,
+                    attendanceFlagged: !!fd.attendanceFlagged,
+                    attendanceAccepted: !!r._accepted.attendance,
+                    customerServiceFlagged: !!fd.customerServiceFlagged,
+                    customerServiceAccepted: !!r._accepted.customerService,
+                    fleetFlagged: !!fd.fleetFlagged,
+                    fleetDates: fd.fleetDates || [],
+                    fleetAccepted: !!r._accepted.fleet,
+                    housekeepingFlagged: !!fd.housekeepingFlagged,
+                    housekeepingDates: fd.housekeepingDates || [],
+                    housekeepingAccepted: !!r._accepted.housekeeping,
+                    complianceCat1Flagged: !!fd.complianceCat1Flagged,
+                    complianceCat1Accepted: !!r._accepted.complianceCat1,
+                    complianceCat2Flagged: !!fd.complianceCat2Flagged,
+                    complianceCat2Accepted: !!r._accepted.complianceCat2,
+                    complianceCat3Flagged: !!fd.complianceCat3Flagged,
+                    complianceCat3Accepted: !!r._accepted.complianceCat3,
+                    totalDeductPct: computeTotal(r._rowDefs, r._accepted),
+                    // Audit snapshot of the FTM decision this finalization was based on.
+                    ftmReviewedBy: fd.reviewedBy || null,
+                    ftmReviewedAt: fd.reviewedAt || null,
+                    ftmTotalDeductPct: fd.totalDeductPct,
+                    finalizedBy: finalizer || null,
+                    finalizedAt: serverTimestamp(),
+                };
+
+                await setDoc(doc(db, FINAL, `${r.engineer.id}_${month}`), record);
+
+                r.final = record;
+                if (statusEl) { statusEl.textContent = `✓ Finalized${finalizer ? ' by ' + finalizer : ''} — now live on the engineer portal`; statusEl.className = 'rc-status success'; }
+                refreshCardHeader(r);
+            } catch (err) {
+                console.error(err);
+                if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.className = 'rc-status error'; }
+            } finally {
+                btn.disabled = false; btn.innerHTML = orig;
+            }
+        }
+
+        function showMessage(text, type) {
+            const el = document.getElementById('message');
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            setTimeout(() => { el.className = 'message'; }, 7000);
+        }
+
+        (async function init() {
+            await loadEngineers();
+            await loadMonth(document.getElementById('dataMonth').value);
+        })();
+    </script>
+</body>
+</html>
