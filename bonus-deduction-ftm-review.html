@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTM Review - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #141A26;
+            --surface:   #1B2333;
+            --surface2:  #212B3F;
+            --border:    #2C3B4F;
+            --border-hi: #415771;
+            --amber:     #F5A623;
+            --cyan:      #2BE4C3;
+            --purple:    #BB8CFF;
+            --brand:     #5B9CFF;
+            --success:   #34D399;
+            --text:      #F7F9FC;
+            --text-mid:  #C3CEDE;
+            --text-dim:  #93A4BA;
+            --danger:    #FF7A7A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(91,156,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(91,156,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(91,156,255,0.08) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.9); backdrop-filter: blur(12px);
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--brand);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.25rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--brand); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text); text-decoration: none;
+            border: 1px solid var(--border-hi); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--brand); border-color: var(--brand); }
+
+        .hero {
+            position: relative; z-index: 10;
+            padding: 48px 48px 32px;
+        }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: var(--brand); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--brand); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--brand); }
+        .hero-sub { font-size: 1.02rem; font-weight: 400; color: var(--text-mid); max-width: 70ch; }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 64px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.75rem;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mid);
+        }
+        .ctrl-input, .ctrl-select {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus, .ctrl-select:focus { outline: none; border-color: var(--brand); }
+        .ctrl-actions { display: flex; gap: 10px; align-items: flex-end; margin-left: auto; }
+
+        .btn-save {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--brand); border: none; color: #0A1220;
+            padding: 0.65rem 1.5rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.9rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-save:hover { background: #7CAEFF; transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.8rem;
+            margin-bottom: 16px; display: none;
+        }
+        .message.show { display: block; }
+        .message.success { background: rgba(52,211,153,0.1); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+        .message.error   { background: rgba(255,122,122,0.1); color: var(--danger); border: 1px solid rgba(255,122,122,0.3); }
+        .message.warning { background: rgba(245,166,35,0.1); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+
+        .loading-state {
+            padding: 60px; text-align: center;
+            color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 0.9rem;
+        }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--brand);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 48px; text-align: center;
+            color: var(--text-mid); font-size: 0.95rem;
+        }
+        .empty-state strong { color: var(--success); }
+
+        /* ── ENGINEER REVIEW CARD ── */
+        #cardsContainer { display: flex; flex-direction: column; gap: 16px; }
+        .review-card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; overflow: hidden;
+        }
+        .rc-head {
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+            padding: 18px 22px; border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .rc-name { font-weight: 700; font-size: 1.08rem; color: var(--text); }
+        .rc-leader { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+        .rc-total-pill {
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.3rem;
+            padding: 6px 16px; border-radius: 6px;
+            background: rgba(195,206,222,0.1); border: 1px solid var(--border-hi); color: var(--text-mid);
+        }
+        .rc-total-pill.active { background: rgba(255,122,122,0.15); border-color: rgba(255,122,122,0.5); color: var(--danger); }
+        .rc-total-label { font-family: 'DM Mono', monospace; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); text-align: right; margin-bottom: 4px; }
+
+        .rc-context {
+            display: flex; gap: 28px; flex-wrap: wrap;
+            padding: 14px 22px; border-bottom: 1px solid var(--border);
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--text-mid);
+        }
+        .rc-context b { color: var(--text); font-weight: 600; }
+
+        .rc-rows { padding: 6px 22px; }
+        .rc-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            padding: 14px 0; border-bottom: 1px solid rgba(44,59,79,0.6);
+        }
+        .rc-row:last-child { border-bottom: none; }
+        .rc-row-info { flex: 1; min-width: 220px; }
+        .rc-row-label { font-weight: 600; font-size: 0.94rem; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .rc-row-pct { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--amber); font-weight: 600; }
+        .rc-row-detail { font-size: 0.82rem; color: var(--text-mid); margin-top: 3px; line-height: 1.4; }
+
+        .toggle-pair { display: flex; gap: 6px; flex-shrink: 0; }
+        .toggle-btn {
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.78rem;
+            letter-spacing: 0.05em; text-transform: uppercase;
+            padding: 0.4rem 0.9rem; border-radius: 5px; cursor: pointer;
+            border: 1px solid var(--border-hi); background: transparent; color: var(--text-dim);
+            transition: all 0.15s;
+        }
+        .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
+        .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
+
+        .save-footer {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            margin-top: 24px; padding: 18px 22px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+        }
+        .footer-note { font-family: 'Barlow', sans-serif; font-size: 0.85rem; color: var(--text-mid); }
+        .footer-note span { color: var(--brand); font-weight: 600; }
+
+        @media (max-width: 768px) {
+            .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
+            .hero { padding-top: 32px; }
+            .ctrl-actions { margin-left: 0; }
+            .rc-row { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Monthly Review</div>
+        <h1 class="hero-title">FTM <em>Review</em></h1>
+        <p class="hero-sub">Review completion rate, attendance and everything submitted on Bonus Deductions for the month. Accept or remove each item — only what's submitted here feeds the New Structure bonus figures on the engineer portal.</p>
+    </section>
+
+    <main class="content">
+
+        <div class="controls-bar">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Month</span>
+                <input type="month" id="dataMonth" class="ctrl-input" required>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">Team</span>
+                <select id="teamFilter" class="ctrl-select">
+                    <option value="">All Teams</option>
+                </select>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">Reviewed By</span>
+                <input type="text" id="reviewerName" class="ctrl-input" placeholder="Your name">
+            </div>
+            <div class="ctrl-actions">
+                <button class="btn-save" onclick="submitReview(event)" id="submitBtn">✓ Submit Review</button>
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div id="loadingDiv" class="loading-state">
+            <span class="spinner"></span>Loading month data…
+        </div>
+
+        <div id="emptyState" class="empty-state" style="display:none;">
+            <strong>Nothing to review.</strong><br>
+            No engineer has a completion-rate deduction, attendance instance, or Bonus Deductions submission for this month.
+        </div>
+
+        <div id="cardsContainer" style="display:none;"></div>
+
+        <div class="save-footer" id="saveFooter" style="display:none;">
+            <div class="footer-note"><span id="footerCount">0</span> engineer(s) shown — submitting will replace any previous review for this month.</div>
+            <button class="btn-save" onclick="submitReview(event)">✓ Submit Review</button>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore, collection, getDocs, addDoc,
+            query, where, deleteDoc, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const SUBMISSIONS = "Bonus Deductions";
+        const REVIEWED = "Bonus Deductions Reviewed";
+        const ATT_DEDUCT_CODES = ['Sick', 'AAUP', 'AWOL'];
+
+        const now = new Date();
+        const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        document.getElementById('dataMonth').value = defaultMonth;
+
+        let engineers = [];      // {id, engineerName, teamLeader}
+        let engineerRows = [];   // one entry per engineer *shown for review* — see buildEngineerRows()
+        let existingReviewIds = [];
+
+        // ── Deduction maths (kept in sync with engineers2.html / bonus-deduction.html) ──
+        function completionDeductPct(ratePct) {
+            if (ratePct === null || ratePct === undefined) return 0;
+            if (ratePct < 85) return 10;
+            if (ratePct <= 87.5) return 5;
+            if (ratePct <= 89.9) return 2.5;
+            return 0;
+        }
+        function fmtPct(n) {
+            const r = Math.round(n * 10) / 10;
+            return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
+        }
+        function fmtDateList(dates) {
+            if (!Array.isArray(dates) || !dates.length) return '';
+            return dates.map(d => {
+                const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+                if (!m) return d;
+                return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            }).join(', ');
+        }
+
+        // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission ──
+        function buildRowDefs(ctx, submission) {
+            const rows = [];
+            if (ctx.completionDeductPct > 0) {
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: ctx.completionDeductPct,
+                    detail: `${fmtPct(ctx.completionRate)}% this month (minimum is 85%)` });
+            }
+            if (ctx.attendanceInstances.length > 0) {
+                const byCode = {};
+                ctx.attendanceInstances.forEach(a => { (byCode[a.code] = byCode[a.code] || []).push(a.date); });
+                const parts = Object.keys(byCode).map(code => `${byCode[code].length}× ${code} (${fmtDateList(byCode[code])})`);
+                rows.push({ key: 'attendance', label: 'Attendance', pct: ctx.attendanceInstances.length * 5,
+                    detail: parts.join(', ') });
+            }
+            if (submission) {
+                if (submission.customerService) rows.push({ key: 'customerService', label: 'Customer Service', pct: 5,
+                    detail: 'Persistent failure to make D-1 calls, and/or an upheld customer complaint.' });
+                if (submission.fleet) rows.push({ key: 'fleet', label: 'Fleet', pct: 5,
+                    detail: `Failed vehicle check and/or speeding incident${submission.fleetDates?.length ? ' — ' + fmtDateList(submission.fleetDates) : ''}` });
+                if (submission.housekeeping) rows.push({ key: 'housekeeping', label: 'Housekeeping', pct: 5,
+                    detail: `Late start and/or refused work${submission.housekeepingDates?.length ? ' — ' + fmtDateList(submission.housekeepingDates) : ''}` });
+                if (submission.complianceCat1) rows.push({ key: 'complianceCat1', label: 'Compliance — Cat 1', pct: 20, detail: 'Any Cat 1 failure recorded this month.' });
+                if (submission.complianceCat2) rows.push({ key: 'complianceCat2', label: 'Compliance — Cat 2 (2+)', pct: 10, detail: '2 or more Cat 2 failures recorded this month.' });
+                if (submission.complianceCat3) rows.push({ key: 'complianceCat3', label: 'Compliance — Cat 3 (5+)', pct: 10, detail: '5 or more Cat 3 failures recorded this month.' });
+            }
+            return rows;
+        }
+
+        function computeTotal(rowDefs, accepted) {
+            let compliancePct = 0, total = 0;
+            rowDefs.forEach(r => {
+                if (!accepted[r.key]) return;
+                if (r.key.startsWith('compliance')) compliancePct += r.pct;
+                else total += r.pct;
+            });
+            total += Math.min(compliancePct, 20);
+            return Math.min(total, 100);
+        }
+
+        // ── Fetch + group attendance/performance for one engineer, filtered to the given month ──
+        async function fetchEngineerMonthContext(engineerName, month) {
+            const [attSnap, perfSnap, energiseSnap] = await Promise.all([
+                getDocs(query(collection(db, "attendance"), where("engineerName", "==", engineerName))),
+                getDocs(query(collection(db, "performance"), where("engineerName", "==", engineerName))),
+                getDocs(query(collection(db, "performance - Energise"), where("engineerName", "==", engineerName))),
+            ]);
+
+            const attendanceInstances = [];
+            attSnap.forEach(d => {
+                const data = d.data();
+                if ((data.date || '').startsWith(month) && ATT_DEDUCT_CODES.includes(data.attendance)) {
+                    attendanceInstances.push({ date: data.date, code: data.attendance });
+                }
+            });
+
+            let jobs = 0, completed = 0;
+            const sumPerf = d => {
+                const data = d.data();
+                if ((data.date || '').startsWith(month)) {
+                    jobs += Number(data.jobs) || 0;
+                    completed += Number(data.completed) || 0;
+                }
+            };
+            perfSnap.forEach(sumPerf);
+            energiseSnap.forEach(sumPerf);
+
+            const completionRate = jobs > 0 ? (completed / jobs) * 100 : null;
+            return {
+                jobs, completed, completionRate,
+                completionDeductPct: completionDeductPct(completionRate),
+                attendanceInstances,
+            };
+        }
+
+        // ── Load engineers + populate team filter ──
+        async function loadEngineers() {
+            const snap = await getDocs(collection(db, "engineers"));
+            engineers = [];
+            snap.forEach(d => engineers.push({ id: d.id, ...d.data() }));
+
+            const teams = [...new Set(engineers.map(e => e.teamLeader).filter(Boolean))].sort();
+            const sel = document.getElementById('teamFilter');
+            teams.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                sel.appendChild(opt);
+            });
+        }
+
+        // ── Build the list of engineers who have something to review this month ──
+        async function loadMonth(month) {
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('cardsContainer').style.display = 'none';
+            document.getElementById('saveFooter').style.display = 'none';
+            document.getElementById('cardsContainer').innerHTML = '';
+
+            try {
+                const subSnap = await getDocs(query(collection(db, SUBMISSIONS), where("month", "==", month)));
+                const submissionByEngineer = {};
+                subSnap.forEach(d => { const data = d.data(); submissionByEngineer[data.engineerId] = data; });
+
+                const revSnap = await getDocs(query(collection(db, REVIEWED), where("month", "==", month)));
+                const reviewedByEngineer = {};
+                existingReviewIds = [];
+                revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; existingReviewIds.push(d.id); });
+
+                const withDataEngineers = engineers.filter(e => submissionByEngineer[e.id]);
+                // Also check completion/attendance for every engineer, in case nothing was
+                // submitted on Bonus Deductions but a live deduction still applies.
+                const others = engineers.filter(e => !submissionByEngineer[e.id]);
+
+                const rows = [];
+                for (const eng of withDataEngineers) {
+                    const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
+                    rows.push({ engineer: eng, ctx, submission: submissionByEngineer[eng.id] || null, reviewed: reviewedByEngineer[eng.id] || null });
+                }
+                for (const eng of others) {
+                    const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
+                    if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0) {
+                        rows.push({ engineer: eng, ctx, submission: null, reviewed: reviewedByEngineer[eng.id] || null });
+                    }
+                }
+
+                rows.sort((a, b) => a.engineer.engineerName.localeCompare(b.engineer.engineerName));
+                engineerRows = rows;
+                renderCards();
+            } catch (err) {
+                console.error(err);
+                showMessage('Error loading month data: ' + err.message, 'error');
+            } finally {
+                document.getElementById('loadingDiv').style.display = 'none';
+            }
+        }
+
+        function renderCards() {
+            const teamFilter = document.getElementById('teamFilter').value;
+            const container = document.getElementById('cardsContainer');
+            container.innerHTML = '';
+
+            const visible = engineerRows.filter(r => !teamFilter || r.engineer.teamLeader === teamFilter);
+
+            if (!visible.length) {
+                document.getElementById('emptyState').style.display = 'block';
+                document.getElementById('cardsContainer').style.display = 'none';
+                document.getElementById('saveFooter').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('cardsContainer').style.display = 'flex';
+            document.getElementById('saveFooter').style.display = 'flex';
+            document.getElementById('footerCount').textContent = visible.length;
+
+            visible.forEach(r => {
+                const rowDefs = buildRowDefs(r.ctx, r.submission);
+                r._rowDefs = rowDefs;
+                r._accepted = {};
+                rowDefs.forEach(rd => {
+                    // Default: whatever the previous review said, else Accept.
+                    r._accepted[rd.key] = r.reviewed ? !!r.reviewed[rd.key + 'Accepted'] || (r.reviewed[rd.key + 'Accepted'] === undefined) : true;
+                });
+
+                const card = document.createElement('div');
+                card.className = 'review-card';
+                card.dataset.engineerId = r.engineer.id;
+
+                const contextBits = [];
+                contextBits.push(`<span>Completion: <b>${r.ctx.completionRate === null ? 'no job data' : fmtPct(r.ctx.completionRate) + '%'}</b></span>`);
+                contextBits.push(`<span>Attendance: <b>${r.ctx.attendanceInstances.length ? r.ctx.attendanceInstances.length + ' flagged instance(s)' : 'clear'}</b></span>`);
+
+                card.innerHTML = `
+                    <div class="rc-head">
+                        <div>
+                            <div class="rc-name">${r.engineer.engineerName}</div>
+                            <div class="rc-leader">${r.engineer.teamLeader || ''}</div>
+                        </div>
+                        <div>
+                            <div class="rc-total-label">Deduction After Review</div>
+                            <span class="rc-total-pill" id="total_${r.engineer.id}">0%</span>
+                        </div>
+                    </div>
+                    <div class="rc-context">${contextBits.join('')}</div>
+                    <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                `;
+                container.appendChild(card);
+
+                const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
+                rowDefs.forEach(rd => {
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'rc-row';
+                    rowEl.innerHTML = `
+                        <div class="rc-row-info">
+                            <div class="rc-row-label">${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span></div>
+                            <div class="rc-row-detail">${rd.detail}</div>
+                        </div>
+                        <div class="toggle-pair">
+                            <button type="button" class="toggle-btn accept" data-eng="${r.engineer.id}" data-key="${rd.key}">Accept</button>
+                            <button type="button" class="toggle-btn remove" data-eng="${r.engineer.id}" data-key="${rd.key}">Remove</button>
+                        </div>
+                    `;
+                    rowsEl.appendChild(rowEl);
+                });
+
+                updateCardTotal(r);
+            });
+
+            container.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const engId = this.dataset.eng, key = this.dataset.key;
+                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    if (!r) return;
+                    r._accepted[key] = this.classList.contains('accept');
+                    updateCardTotal(r);
+                });
+            });
+        }
+
+        function updateCardTotal(r) {
+            const total = computeTotal(r._rowDefs, r._accepted);
+            const pill = document.getElementById(`total_${r.engineer.id}`);
+            if (pill) {
+                pill.textContent = total > 0 ? `-${fmtPct(total)}%` : '0%';
+                pill.classList.toggle('active', total > 0);
+            }
+            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            if (!card) return;
+            r._rowDefs.forEach(rd => {
+                const accepted = r._accepted[rd.key];
+                const acceptBtn = card.querySelector(`.toggle-btn.accept[data-key="${CSS.escape(rd.key)}"]`);
+                const removeBtn = card.querySelector(`.toggle-btn.remove[data-key="${CSS.escape(rd.key)}"]`);
+                if (acceptBtn) acceptBtn.classList.toggle('on', accepted);
+                if (removeBtn) removeBtn.classList.toggle('on', !accepted);
+            });
+        }
+
+        document.getElementById('dataMonth').addEventListener('change', function () { loadMonth(this.value); });
+        document.getElementById('teamFilter').addEventListener('change', renderCards);
+
+        // ── SUBMIT: writes one finalized doc per visible engineer, replacing any prior review for the month ──
+        window.submitReview = async function (event) {
+            const month = document.getElementById('dataMonth').value;
+            const reviewer = document.getElementById('reviewerName').value.trim();
+            const teamFilter = document.getElementById('teamFilter').value;
+            const visible = engineerRows.filter(r => !teamFilter || r.engineer.teamLeader === teamFilter);
+            if (!visible.length) return;
+
+            const btn = event.target;
+            btn.disabled = true;
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
+
+            try {
+                // Delete only the reviewed docs for engineers actually being resubmitted (respects team filter).
+                const idsToDelete = existingReviewIds.length
+                    ? (await getDocs(query(collection(db, REVIEWED), where("month", "==", month)))).docs
+                        .filter(d => visible.some(r => r.engineer.id === d.data().engineerId))
+                        .map(d => d.id)
+                    : [];
+                await Promise.all(idsToDelete.map(id => deleteDoc(doc(db, REVIEWED, id))));
+
+                const writes = visible.map(r => {
+                    const record = {
+                        engineerId: r.engineer.id,
+                        engineerName: r.engineer.engineerName,
+                        teamLeader: r.engineer.teamLeader || '',
+                        month,
+                        completionRate: r.ctx.completionRate,
+                        completionDeductPct: r._accepted.completion ? r.ctx.completionDeductPct : 0,
+                        attendanceInstances: r.ctx.attendanceInstances.length,
+                        attendanceDeductPct: r._accepted.attendance ? r.ctx.attendanceInstances.length * 5 : 0,
+                        customerService: !!(r.submission?.customerService && r._accepted.customerService),
+                        fleet: !!(r.submission?.fleet && r._accepted.fleet),
+                        fleetDates: (r.submission?.fleet && r._accepted.fleet) ? (r.submission.fleetDates || []) : [],
+                        housekeeping: !!(r.submission?.housekeeping && r._accepted.housekeeping),
+                        housekeepingDates: (r.submission?.housekeeping && r._accepted.housekeeping) ? (r.submission.housekeepingDates || []) : [],
+                        complianceCat1: !!(r.submission?.complianceCat1 && r._accepted.complianceCat1),
+                        complianceCat2: !!(r.submission?.complianceCat2 && r._accepted.complianceCat2),
+                        complianceCat3: !!(r.submission?.complianceCat3 && r._accepted.complianceCat3),
+                        reviewedBy: reviewer || null,
+                        reviewedAt: serverTimestamp(),
+                    };
+                    // Store per-row accept decisions too, so re-opening this review pre-fills correctly.
+                    r._rowDefs.forEach(rd => { record[rd.key + 'Accepted'] = !!r._accepted[rd.key]; });
+                    record.complianceDeductPct = Math.min(
+                        (record.complianceCat1 ? 20 : 0) + (record.complianceCat2 ? 10 : 0) + (record.complianceCat3 ? 10 : 0), 20
+                    );
+                    record.totalDeductPct = computeTotal(r._rowDefs, r._accepted);
+                    return addDoc(collection(db, REVIEWED), record);
+                });
+                await Promise.all(writes);
+
+                showMessage(`Review submitted for ${visible.length} engineer(s) — ${formatMonth(month)}.`, 'success');
+                await loadMonth(month);
+            } catch (err) {
+                console.error(err);
+                showMessage('Error submitting review: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false; btn.innerHTML = orig;
+            }
+        };
+
+        function showMessage(text, type) {
+            const el = document.getElementById('message');
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            setTimeout(() => { el.className = 'message'; }, 7000);
+        }
+
+        function formatMonth(monthStr) {
+            if (!monthStr) return '—';
+            const [y, m] = monthStr.split('-');
+            const d = new Date(Number(y), Number(m) - 1, 1);
+            return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        }
+
+        (async function init() {
+            await loadEngineers();
+            await loadMonth(document.getElementById('dataMonth').value);
+        })();
+    </script>
+</body>
+</html>
