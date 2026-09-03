@@ -110,14 +110,13 @@
             font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
         }
         .ctrl-input:focus, .ctrl-select:focus { outline: none; border-color: var(--brand); }
-        .ctrl-actions { display: flex; gap: 10px; align-items: flex-end; margin-left: auto; }
 
         .btn-save {
             display: flex; align-items: center; gap: 8px;
             background: var(--brand); border: none; color: #0A1220;
-            padding: 0.65rem 1.5rem; border-radius: 6px;
+            padding: 0.6rem 1.3rem; border-radius: 6px;
             font-family: 'Barlow Condensed', sans-serif;
-            font-size: 0.9rem; font-weight: 700; letter-spacing: 0.06em;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
             text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
         }
         .btn-save:hover { background: #7CAEFF; transform: translateY(-1px); }
@@ -165,6 +164,7 @@
         }
         .rc-name { font-weight: 700; font-size: 1.08rem; color: var(--text); }
         .rc-leader { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+        .rc-prev-badge { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--amber); margin-top: 4px; }
         .rc-total-pill {
             font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.3rem;
             padding: 6px 16px; border-radius: 6px;
@@ -202,18 +202,20 @@
         .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
         .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
 
-        .save-footer {
-            display: flex; align-items: center; justify-content: space-between; gap: 12px;
-            margin-top: 24px; padding: 18px 22px;
-            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+        .rc-footer {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+            padding: 16px 22px; border-top: 1px solid var(--border);
+            background: var(--surface2);
         }
-        .footer-note { font-family: 'Barlow', sans-serif; font-size: 0.85rem; color: var(--text-mid); }
-        .footer-note span { color: var(--brand); font-weight: 600; }
+        .rc-status {
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--text-mid);
+        }
+        .rc-status.success { color: var(--success); }
+        .rc-status.error { color: var(--danger); }
 
         @media (max-width: 768px) {
             .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
             .hero { padding-top: 32px; }
-            .ctrl-actions { margin-left: 0; }
             .rc-row { flex-direction: column; align-items: flex-start; }
         }
     </style>
@@ -229,9 +231,9 @@
     </header>
 
     <section class="hero">
-        <div class="hero-label">Monthly Review</div>
+        <div class="hero-label">Monthly Review — Stage 1</div>
         <h1 class="hero-title">FTM <em>Review</em></h1>
-        <p class="hero-sub">Review completion rate, attendance and everything submitted on Bonus Deductions for the month. Accept or remove each item — only what's submitted here feeds the New Structure bonus figures on the engineer portal.</p>
+        <p class="hero-sub">Review completion rate, attendance and everything submitted on Bonus Deductions for the month. Accept or remove each item, then submit each engineer individually — your decisions go forward to the final review before anything reaches the engineer portal.</p>
     </section>
 
     <main class="content">
@@ -251,9 +253,6 @@
                 <span class="ctrl-label">Reviewed By</span>
                 <input type="text" id="reviewerName" class="ctrl-input" placeholder="Your name">
             </div>
-            <div class="ctrl-actions">
-                <button class="btn-save" onclick="submitReview(event)" id="submitBtn">✓ Submit Review</button>
-            </div>
         </div>
 
         <div id="message" class="message"></div>
@@ -269,18 +268,13 @@
 
         <div id="cardsContainer" style="display:none;"></div>
 
-        <div class="save-footer" id="saveFooter" style="display:none;">
-            <div class="footer-note"><span id="footerCount">0</span> engineer(s) shown — submitting will replace any previous review for this month.</div>
-            <button class="btn-save" onclick="submitReview(event)">✓ Submit Review</button>
-        </div>
-
     </main>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import {
-            getFirestore, collection, getDocs, addDoc,
-            query, where, deleteDoc, doc, serverTimestamp
+            getFirestore, collection, getDocs, setDoc,
+            query, where, doc, serverTimestamp
         } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -299,14 +293,14 @@
         const SUBMISSIONS = "Bonus Deductions";
         const REVIEWED = "Bonus Deductions Reviewed";
         const ATT_DEDUCT_CODES = ['Sick', 'AAUP', 'AWOL'];
+        const ROW_KEYS = ['completion', 'attendance', 'customerService', 'fleet', 'housekeeping', 'complianceCat1', 'complianceCat2', 'complianceCat3'];
 
         const now = new Date();
         const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
         document.getElementById('dataMonth').value = defaultMonth;
 
         let engineers = [];      // {id, engineerName, teamLeader}
-        let engineerRows = [];   // one entry per engineer *shown for review* — see buildEngineerRows()
-        let existingReviewIds = [];
+        let engineerRows = [];   // one entry per engineer *shown for review*
 
         // ── Deduction maths (kept in sync with engineers2.html / bonus-deduction.html) ──
         function completionDeductPct(ratePct) {
@@ -327,6 +321,13 @@
                 if (!m) return d;
                 return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
             }).join(', ');
+        }
+        function fmtWhen(ts) {
+            if (!ts) return '';
+            try {
+                const d = ts.toDate ? ts.toDate() : new Date(ts);
+                return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch (e) { return ''; }
         }
 
         // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission ──
@@ -423,7 +424,6 @@
             document.getElementById('loadingDiv').style.display = 'block';
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('cardsContainer').style.display = 'none';
-            document.getElementById('saveFooter').style.display = 'none';
             document.getElementById('cardsContainer').innerHTML = '';
 
             try {
@@ -433,8 +433,7 @@
 
                 const revSnap = await getDocs(query(collection(db, REVIEWED), where("month", "==", month)));
                 const reviewedByEngineer = {};
-                existingReviewIds = [];
-                revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; existingReviewIds.push(d.id); });
+                revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; });
 
                 const withDataEngineers = engineers.filter(e => submissionByEngineer[e.id]);
                 // Also check completion/attendance for every engineer, in case nothing was
@@ -474,14 +473,11 @@
             if (!visible.length) {
                 document.getElementById('emptyState').style.display = 'block';
                 document.getElementById('cardsContainer').style.display = 'none';
-                document.getElementById('saveFooter').style.display = 'none';
                 return;
             }
 
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('cardsContainer').style.display = 'flex';
-            document.getElementById('saveFooter').style.display = 'flex';
-            document.getElementById('footerCount').textContent = visible.length;
 
             visible.forEach(r => {
                 const rowDefs = buildRowDefs(r.ctx, r.submission);
@@ -489,7 +485,8 @@
                 r._accepted = {};
                 rowDefs.forEach(rd => {
                     // Default: whatever the previous review said, else Accept.
-                    r._accepted[rd.key] = r.reviewed ? !!r.reviewed[rd.key + 'Accepted'] || (r.reviewed[rd.key + 'Accepted'] === undefined) : true;
+                    const prev = r.reviewed ? r.reviewed[rd.key + 'Accepted'] : undefined;
+                    r._accepted[rd.key] = prev === undefined ? true : !!prev;
                 });
 
                 const card = document.createElement('div');
@@ -500,11 +497,16 @@
                 contextBits.push(`<span>Completion: <b>${r.ctx.completionRate === null ? 'no job data' : fmtPct(r.ctx.completionRate) + '%'}</b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.ctx.attendanceInstances.length ? r.ctx.attendanceInstances.length + ' flagged instance(s)' : 'clear'}</b></span>`);
 
+                const prevBadge = r.reviewed
+                    ? `<div class="rc-prev-badge">Previously reviewed${r.reviewed.reviewedBy ? ' by ' + r.reviewed.reviewedBy : ''}${r.reviewed.reviewedAt ? ' · ' + fmtWhen(r.reviewed.reviewedAt) : ''}</div>`
+                    : '';
+
                 card.innerHTML = `
                     <div class="rc-head">
                         <div>
                             <div class="rc-name">${r.engineer.engineerName}</div>
                             <div class="rc-leader">${r.engineer.teamLeader || ''}</div>
+                            ${prevBadge}
                         </div>
                         <div>
                             <div class="rc-total-label">Deduction After Review</div>
@@ -513,6 +515,10 @@
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
                     <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                    <div class="rc-footer">
+                        <span class="rc-status" id="status_${r.engineer.id}"></span>
+                        <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Submit Review</button>
+                    </div>
                 `;
                 container.appendChild(card);
 
@@ -533,6 +539,8 @@
                     rowsEl.appendChild(rowEl);
                 });
 
+                card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerReview(r.engineer.id, this); });
+
                 updateCardTotal(r);
             });
 
@@ -543,6 +551,8 @@
                     if (!r) return;
                     r._accepted[key] = this.classList.contains('accept');
                     updateCardTotal(r);
+                    const status = document.getElementById(`status_${engId}`);
+                    if (status) { status.textContent = ''; status.className = 'rc-status'; }
                 });
             });
         }
@@ -568,81 +578,72 @@
         document.getElementById('dataMonth').addEventListener('change', function () { loadMonth(this.value); });
         document.getElementById('teamFilter').addEventListener('change', renderCards);
 
-        // ── SUBMIT: writes one finalized doc per visible engineer, replacing any prior review for the month ──
-        window.submitReview = async function (event) {
+        // ── SUBMIT: writes this ONE engineer's finalized review doc (deterministic id, so
+        // resubmitting simply overwrites their own record for the month — nobody else's). ──
+        async function submitEngineerReview(engineerId, btn) {
+            const r = engineerRows.find(x => x.engineer.id === engineerId);
+            if (!r) return;
             const month = document.getElementById('dataMonth').value;
             const reviewer = document.getElementById('reviewerName').value.trim();
-            const teamFilter = document.getElementById('teamFilter').value;
-            const visible = engineerRows.filter(r => !teamFilter || r.engineer.teamLeader === teamFilter);
-            if (!visible.length) return;
+            const statusEl = document.getElementById(`status_${engineerId}`);
 
-            const btn = event.target;
             btn.disabled = true;
             const orig = btn.innerHTML;
             btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
 
             try {
-                // Delete only the reviewed docs for engineers actually being resubmitted (respects team filter).
-                const idsToDelete = existingReviewIds.length
-                    ? (await getDocs(query(collection(db, REVIEWED), where("month", "==", month)))).docs
-                        .filter(d => visible.some(r => r.engineer.id === d.data().engineerId))
-                        .map(d => d.id)
-                    : [];
-                await Promise.all(idsToDelete.map(id => deleteDoc(doc(db, REVIEWED, id))));
+                const record = {
+                    engineerId: r.engineer.id,
+                    engineerName: r.engineer.engineerName,
+                    teamLeader: r.engineer.teamLeader || '',
+                    month,
+                    // Completion / attendance — nominal values are always kept (even if removed)
+                    // so the final review stage can still see what the original figures were.
+                    completionRate: r.ctx.completionRate,
+                    completionNominalPct: r.ctx.completionDeductPct,
+                    completionFlagged: r.ctx.completionDeductPct > 0,
+                    completionAccepted: !!r._accepted.completion,
+                    attendanceInstances: r.ctx.attendanceInstances.length,
+                    attendanceDetail: r.ctx.attendanceInstances,
+                    attendanceNominalPct: r.ctx.attendanceInstances.length * 5,
+                    attendanceFlagged: r.ctx.attendanceInstances.length > 0,
+                    attendanceAccepted: !!r._accepted.attendance,
+                    customerServiceFlagged: !!r.submission?.customerService,
+                    customerServiceAccepted: !!(r.submission?.customerService && r._accepted.customerService),
+                    fleetFlagged: !!r.submission?.fleet,
+                    fleetDates: r.submission?.fleet ? (r.submission.fleetDates || []) : [],
+                    fleetAccepted: !!(r.submission?.fleet && r._accepted.fleet),
+                    housekeepingFlagged: !!r.submission?.housekeeping,
+                    housekeepingDates: r.submission?.housekeeping ? (r.submission.housekeepingDates || []) : [],
+                    housekeepingAccepted: !!(r.submission?.housekeeping && r._accepted.housekeeping),
+                    complianceCat1Flagged: !!r.submission?.complianceCat1,
+                    complianceCat1Accepted: !!(r.submission?.complianceCat1 && r._accepted.complianceCat1),
+                    complianceCat2Flagged: !!r.submission?.complianceCat2,
+                    complianceCat2Accepted: !!(r.submission?.complianceCat2 && r._accepted.complianceCat2),
+                    complianceCat3Flagged: !!r.submission?.complianceCat3,
+                    complianceCat3Accepted: !!(r.submission?.complianceCat3 && r._accepted.complianceCat3),
+                    totalDeductPct: computeTotal(r._rowDefs, r._accepted),
+                    reviewedBy: reviewer || null,
+                    reviewedAt: serverTimestamp(),
+                };
 
-                const writes = visible.map(r => {
-                    const record = {
-                        engineerId: r.engineer.id,
-                        engineerName: r.engineer.engineerName,
-                        teamLeader: r.engineer.teamLeader || '',
-                        month,
-                        completionRate: r.ctx.completionRate,
-                        completionDeductPct: r._accepted.completion ? r.ctx.completionDeductPct : 0,
-                        attendanceInstances: r.ctx.attendanceInstances.length,
-                        attendanceDeductPct: r._accepted.attendance ? r.ctx.attendanceInstances.length * 5 : 0,
-                        customerService: !!(r.submission?.customerService && r._accepted.customerService),
-                        fleet: !!(r.submission?.fleet && r._accepted.fleet),
-                        fleetDates: (r.submission?.fleet && r._accepted.fleet) ? (r.submission.fleetDates || []) : [],
-                        housekeeping: !!(r.submission?.housekeeping && r._accepted.housekeeping),
-                        housekeepingDates: (r.submission?.housekeeping && r._accepted.housekeeping) ? (r.submission.housekeepingDates || []) : [],
-                        complianceCat1: !!(r.submission?.complianceCat1 && r._accepted.complianceCat1),
-                        complianceCat2: !!(r.submission?.complianceCat2 && r._accepted.complianceCat2),
-                        complianceCat3: !!(r.submission?.complianceCat3 && r._accepted.complianceCat3),
-                        reviewedBy: reviewer || null,
-                        reviewedAt: serverTimestamp(),
-                    };
-                    // Store per-row accept decisions too, so re-opening this review pre-fills correctly.
-                    r._rowDefs.forEach(rd => { record[rd.key + 'Accepted'] = !!r._accepted[rd.key]; });
-                    record.complianceDeductPct = Math.min(
-                        (record.complianceCat1 ? 20 : 0) + (record.complianceCat2 ? 10 : 0) + (record.complianceCat3 ? 10 : 0), 20
-                    );
-                    record.totalDeductPct = computeTotal(r._rowDefs, r._accepted);
-                    return addDoc(collection(db, REVIEWED), record);
-                });
-                await Promise.all(writes);
+                await setDoc(doc(db, REVIEWED, `${r.engineer.id}_${month}`), record);
 
-                showMessage(`Review submitted for ${visible.length} engineer(s) — ${formatMonth(month)}.`, 'success');
-                await loadMonth(month);
+                r.reviewed = record;
+                if (statusEl) { statusEl.textContent = `✓ Submitted${reviewer ? ' by ' + reviewer : ''}`; statusEl.className = 'rc-status success'; }
             } catch (err) {
                 console.error(err);
-                showMessage('Error submitting review: ' + err.message, 'error');
+                if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.className = 'rc-status error'; }
             } finally {
                 btn.disabled = false; btn.innerHTML = orig;
             }
-        };
+        }
 
         function showMessage(text, type) {
             const el = document.getElementById('message');
             el.textContent = text;
             el.className = `message ${type} show`;
             setTimeout(() => { el.className = 'message'; }, 7000);
-        }
-
-        function formatMonth(monthStr) {
-            if (!monthStr) return '—';
-            const [y, m] = monthStr.split('-');
-            const d = new Date(Number(y), Number(m) - 1, 1);
-            return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
         }
 
         (async function init() {
