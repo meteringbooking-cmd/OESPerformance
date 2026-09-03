@@ -2743,11 +2743,16 @@ document.getElementById('cognitoLinksModal').addEventListener('click', e => {
     if (e.target === document.getElementById('cognitoLinksModal')) closeCognitoLinksModal(); 
 });
 
+// Formats a Date using its LOCAL date parts (not toISOString(), which converts to UTC and can
+// shift the date back a day in timezones ahead of UTC, e.g. British Summer Time).
+function toLocalDateStr(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 function normDate(val) {
     if (!val) return null;
     if (typeof val === 'string') return val.slice(0, 10);
-    if (typeof val.toDate === 'function') return val.toDate().toISOString().slice(0, 10);
-    if (val instanceof Date) return val.toISOString().slice(0, 10);
+    if (typeof val.toDate === 'function') return toLocalDateStr(val.toDate());
+    if (val instanceof Date) return toLocalDateStr(val);
     return String(val).slice(0, 10);
 }
 
@@ -3058,7 +3063,11 @@ window.loadDailyBreakdown = async function() {
 
         const allDatesSet = new Set();
         for (let d=new Date(startDate+'T00:00:00'); d<=new Date(endDate+'T00:00:00'); d.setDate(d.getDate()+1)) {
-            const ds=d.toISOString().split('T')[0], dow=d.getDay();
+            // Build the date string from LOCAL date parts, not toISOString() (which converts to
+            // UTC and can shift the date back a day in timezones ahead of UTC, e.g. British Summer
+            // Time) — that shift was turning Monday-Friday into Sunday-Thursday in the breakdown.
+            const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+            const dow=d.getDay();
             if(dow!==0&&dow!==6) allDatesSet.add(ds);
         }
         weekendWithPay.forEach(ds=>allDatesSet.add(ds));
