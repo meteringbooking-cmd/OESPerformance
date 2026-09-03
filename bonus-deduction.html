@@ -223,6 +223,21 @@
         .compliance-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
         .compliance-group input { width: 15px; height: 15px; accent-color: var(--purple); cursor: pointer; }
 
+        .flag-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .dates-field { width: 100%; max-width: 170px; }
+        .dates-field label {
+            display: block; font-family: 'DM Mono', monospace; font-size: 0.62rem;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+            margin-bottom: 4px; text-align: left;
+        }
+        .dates-input {
+            width: 100%; background: var(--bg); border: 1px solid var(--border-hi);
+            color: var(--text); padding: 0.4rem 0.6rem; border-radius: 5px;
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; text-align: left;
+        }
+        .dates-input:focus { outline: none; border-color: var(--purple); }
+        .dates-input::placeholder { color: var(--text-dim); }
+
         .deduct-pill {
             display: inline-block; min-width: 50px;
             font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.15em;
@@ -313,7 +328,8 @@
                 <div class="code-item"><span class="code-badge">Compliance — Cat 3</span> Five or more Cat 3 failures in the month. <span class="pct">−10%</span></div>
             </div>
             <div style="margin-top:12px;font-family:'Barlow',sans-serif;font-size:0.84rem;color:var(--text-mid);line-height:1.6;">
-                Cat 2 + Cat 3 together still deduct 20% (10%+10%) — Compliance is capped at a maximum of <span style="color:var(--purple);font-weight:600;">20%</span> deduction regardless of how many Compliance boxes are ticked.
+                Cat 2 + Cat 3 together still deduct 20% (10%+10%) — Compliance is capped at a maximum of <span style="color:var(--purple);font-weight:600;">20%</span> deduction regardless of how many Compliance boxes are ticked.<br>
+                Ticking <strong style="color:var(--text);">Fleet</strong> or <strong style="color:var(--text);">Housekeeping</strong> reveals a box for the incident date(s) — enter day numbers (e.g. <span style="color:var(--text);">3, 15, 22</span>) or full dates, comma-separated.
             </div>
         </div>
 
@@ -398,14 +414,53 @@
         }
 
         function rowState(i) {
+            const fleet = document.getElementById(`fl_${i}`)?.checked || false;
+            const housekeeping = document.getElementById(`hk_${i}`)?.checked || false;
+            const month = document.getElementById('dataMonth').value;
             return {
                 customerService: document.getElementById(`cs_${i}`)?.checked || false,
-                fleet: document.getElementById(`fl_${i}`)?.checked || false,
-                housekeeping: document.getElementById(`hk_${i}`)?.checked || false,
+                fleet,
+                fleetDates: fleet ? parseDatesInput(document.getElementById(`flDates_${i}`)?.value, month) : [],
+                housekeeping,
+                housekeepingDates: housekeeping ? parseDatesInput(document.getElementById(`hkDates_${i}`)?.value, month) : [],
                 complianceCat1: document.getElementById(`c1_${i}`)?.checked || false,
                 complianceCat2: document.getElementById(`c2_${i}`)?.checked || false,
                 complianceCat3: document.getElementById(`c3_${i}`)?.checked || false,
             };
+        }
+
+        // Shows/hides the incident-date box under Fleet/Housekeeping when ticked/unticked.
+        function toggleDatesField(prefix, i, checked) {
+            const wrap = document.getElementById(`${prefix}DatesWrap_${i}`);
+            if (wrap) wrap.hidden = !checked;
+            if (checked) document.getElementById(`${prefix}Dates_${i}`)?.focus();
+        }
+
+        // "3, 15, 22" + month "2026-09" -> ["2026-09-03","2026-09-15","2026-09-22"].
+        // A token that isn't a plain day number (e.g. an already-full date) is kept as typed.
+        function parseDatesInput(raw, month) {
+            if (!raw) return [];
+            const [y, m] = (month || '').split('-');
+            return raw.split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+                .map(tok => {
+                    if (/^\d{1,2}$/.test(tok) && y && m) {
+                        return `${y}-${m}-${tok.padStart(2, '0')}`;
+                    }
+                    return tok;
+                });
+        }
+
+        // Reverses parseDatesInput for re-populating the text box — shows just the day number
+        // when the stored date falls in the currently-selected month, else the full date.
+        function formatDatesForInput(dates, month) {
+            if (!Array.isArray(dates)) return '';
+            return dates.map(d => {
+                const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+                if (m && `${m[1]}-${m[2]}` === month) return String(Number(m[3]));
+                return d;
+            }).join(', ');
         }
 
         function updateRowDeduction(i) {
@@ -461,8 +516,24 @@
                         <div class="eng-leader">${engineer.teamLeader}</div>
                     </td>
                     <td><input type="checkbox" class="chk" id="cs_${index}" data-row-index="${index}"></td>
-                    <td><input type="checkbox" class="chk" id="fl_${index}" data-row-index="${index}"></td>
-                    <td><input type="checkbox" class="chk" id="hk_${index}" data-row-index="${index}"></td>
+                    <td>
+                        <div class="flag-cell">
+                            <input type="checkbox" class="chk" id="fl_${index}" data-row-index="${index}">
+                            <div class="dates-field" id="flDatesWrap_${index}" hidden>
+                                <label for="flDates_${index}">Incident date(s)</label>
+                                <input type="text" class="dates-input" id="flDates_${index}" placeholder="e.g. 3, 15, 22" data-row-index="${index}">
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="flag-cell">
+                            <input type="checkbox" class="chk" id="hk_${index}" data-row-index="${index}">
+                            <div class="dates-field" id="hkDatesWrap_${index}" hidden>
+                                <label for="hkDates_${index}">Incident date(s)</label>
+                                <input type="text" class="dates-input" id="hkDates_${index}" placeholder="e.g. 3, 15, 22" data-row-index="${index}">
+                            </div>
+                        </div>
+                    </td>
                     <td>
                         <div class="compliance-group">
                             <label><input type="checkbox" id="c1_${index}" data-row-index="${index}"> Cat 1</label>
@@ -476,6 +547,10 @@
 
             document.querySelectorAll('#engineersBody input[type="checkbox"]').forEach(chk => {
                 chk.addEventListener('change', function () { updateRowDeduction(this.getAttribute('data-row-index')); });
+            });
+            engineers.forEach((_, i) => {
+                document.getElementById(`fl_${i}`).addEventListener('change', function () { toggleDatesField('fl', i, this.checked); });
+                document.getElementById(`hk_${i}`).addEventListener('change', function () { toggleDatesField('hk', i, this.checked); });
             });
 
             document.getElementById('loadingDiv').style.display = 'none';
@@ -510,6 +585,12 @@
                         set('c1', data.complianceCat1);
                         set('c2', data.complianceCat2);
                         set('c3', data.complianceCat3);
+                        toggleDatesField('fl', idx, !!data.fleet);
+                        toggleDatesField('hk', idx, !!data.housekeeping);
+                        const flInput = document.getElementById(`flDates_${idx}`);
+                        if (flInput) flInput.value = formatDatesForInput(data.fleetDates, month);
+                        const hkInput = document.getElementById(`hkDates_${idx}`);
+                        if (hkInput) hkInput.value = formatDatesForInput(data.housekeepingDates, month);
                         updateRowDeduction(idx);
                     });
 
@@ -529,6 +610,10 @@
         document.getElementById('dataMonth').addEventListener('change', async function () {
             engineers.forEach((_, i) => {
                 ['cs','fl','hk','c1','c2','c3'].forEach(p => { const el = document.getElementById(`${p}_${i}`); if (el) el.checked = false; });
+                const flInput = document.getElementById(`flDates_${i}`); if (flInput) flInput.value = '';
+                const hkInput = document.getElementById(`hkDates_${i}`); if (hkInput) hkInput.value = '';
+                toggleDatesField('fl', i, false);
+                toggleDatesField('hk', i, false);
                 updateRowDeduction(i);
             });
             await checkForExisting(this.value);
