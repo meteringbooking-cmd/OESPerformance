@@ -1006,6 +1006,18 @@
             color: var(--text2);
             padding: 10px 2px;
         }
+        .nsw-month-card.nsw-pending {
+            background: color-mix(in srgb, var(--warn) 5%, transparent);
+            border: 1px solid color-mix(in srgb, var(--warn) 20%, transparent);
+            border-left: 3px solid var(--warn);
+        }
+        .nsw-pending-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68em;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--warn) !important;
+        }
 
         .jobs-table-wrap { overflow-x: auto; margin-top: 10px; }
         .jobs-tbl {
@@ -1957,7 +1969,7 @@
             <button class="back-btn" onclick="showHub()">← Back to Portal</button>
         </div>
 
-        <div class="screen-title">BONUS <span class="accent">BREAKDOWN</span><span class="example-badge"></span></div>
+        <div class="screen-title">BONUS <span class="accent">BREAKDOWN</span><span class="example-badge">New Structure — Example</span></div>
 
         <div class="filter-row">
             <div>
@@ -1982,13 +1994,14 @@
                 <div class="nsi-body">
                     Your original bonus figures below are unchanged. Alongside them we're showing what the figure would be under a proposed new structure, which applies these deductions on top of the original bonus:
                     <ul>
-                        <li>Monthly completion rate: below 85% → <b>10%</b> · 85.0–87.5% → <b>5%</b> · 87.6–89.9% → <b>2.5%</b> · 90%+ → <b>0%</b></li>
+                        <li>Monthly completion rate: below 85% → <b>10%</b> · 85.1–87.5% → <b>5%</b> · 87.6–89.9% → <b>2.5%</b> · 90%+ → <b>0%</b></li>
                         <li>Each instance of Sick, AAUP or AWOL in attendance → <b>5%</b></li>
                         <li>Customer Service — persistent failure to make D-1 calls and/or any upheld customer complaint → <b>5%</b></li>
                         <li>Fleet — failure to complete Daily Vehicle Checks before starting work and/or any unreasonable speeding incident → <b>5%</b></li>
                         <li>Housekeeping — starting work after 8am on a working day and/or refusing work in day → <b>5%</b></li>
                         <li>Compliance — any Cat 1 failure → <b>20%</b> · 2+ Cat 2 failures → <b>10%</b> · 5+ Cat 3 failures → <b>10%</b> (capped at <b>20%</b> overall)</li>
                     </ul>
+                    A Field Team Manager reviews and approves each month's deductions before they're applied — a month shown as "Pending review" below hasn't been approved yet, so no deduction is reflected for it until then.
                 </div>
             </details>
             <div class="new-struct-why">
@@ -2830,38 +2843,57 @@ function newStructFmtPct(n) {
     return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
 }
 
-// Builds a per-calendar-month deduction summary from the perf/attendance data already
-// loaded for the daily breakdown, plus the Customer Service / Fleet / Housekeeping / Compliance
-// flags entered on bonus-deduction.html (categoryDataByMonth, keyed the same way), so the
-// "new structure" figures can be shown alongside the original bonus figures.
-function buildNewStructMonthStats(dates, perfData, attData, categoryDataByMonth) {
-    categoryDataByMonth = categoryDataByMonth || {};
+// Formats an array of ISO "YYYY-MM-DD" incident dates (Fleet/Housekeeping) as "3 Sep, 15 Sep".
+function newStructFmtDates(dates) {
+    if (!Array.isArray(dates) || !dates.length) return '';
+    return dates.map(d => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+        if (!m) return d;
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    }).join(', ');
+}
+
+// Builds a per-calendar-month deduction summary purely from the Field Team Manager's reviewed
+// and approved figures ("Bonus Deductions Reviewed", keyed by month) — completion rate, attendance
+// and the Customer Service / Fleet / Housekeeping / Compliance flags are all only ever applied here
+// once an FTM has reviewed and submitted them on bonus-deduction-ftm-review.html. A month with no
+// reviewed record yet is marked `reviewed: false` and contributes no deduction until it is reviewed.
+function buildNewStructMonthStats(dates, reviewedDataByMonth) {
+    reviewedDataByMonth = reviewedDataByMonth || {};
     const monthStats = {};
     dates.forEach(date => {
         const dateObj = new Date(date + 'T00:00:00');
         const key = newStructMonthKey(dateObj);
         if (!monthStats[key]) {
-            monthStats[key] = {
-                label: dateObj.toLocaleString('en-GB', { month: 'long', year: 'numeric' }),
-                jobs: 0, completed: 0, deductInstances: 0
-            };
+            monthStats[key] = { label: dateObj.toLocaleString('en-GB', { month: 'long', year: 'numeric' }) };
         }
-        const perf = perfData[date] || {};
-        monthStats[key].jobs += Number(perf.jobs) || 0;
-        monthStats[key].completed += Number(perf.completed) || 0;
-        const attSt = (attData[date] || {}).attendance;
-        if (attSt && NEW_STRUCT_ATTENDANCE_DEDUCT_CODES.includes(attSt)) monthStats[key].deductInstances++;
     });
     Object.keys(monthStats).forEach(key => {
         const m = monthStats[key];
-        const cd = categoryDataByMonth[key];
-        m.completionRate = m.jobs > 0 ? (m.completed / m.jobs) * 100 : null;
-        m.completionDeductPct = newStructCompletionDeductionPct(m.completionRate);
-        m.attendanceDeductPct = m.deductInstances * 5;
-        m.complianceDeductPct = newStructComplianceDeductionPct(cd);
-        m.categoryDeductPct = newStructCategoryDeductionPct(cd);
-        m.categoryFlags = cd || null;
-        m.totalDeductPct = Math.min(m.completionDeductPct + m.attendanceDeductPct + m.categoryDeductPct, 100);
+        const rd = reviewedDataByMonth[key];
+        m.reviewed = !!rd;
+        if (rd) {
+            m.completionRate = (rd.completionRate === undefined) ? null : rd.completionRate;
+            m.completionDeductPct = Number(rd.completionDeductPct) || 0;
+            m.deductInstances = Number(rd.attendanceInstances) || 0;
+            m.attendanceDeductPct = Number(rd.attendanceDeductPct) || 0;
+            m.complianceDeductPct = Number(rd.complianceDeductPct) || newStructComplianceDeductionPct(rd);
+            m.categoryDeductPct = (rd.customerService ? 5 : 0) + (rd.fleet ? 5 : 0) + (rd.housekeeping ? 5 : 0) + m.complianceDeductPct;
+            m.categoryFlags = rd;
+            m.totalDeductPct = Math.min(
+                (rd.totalDeductPct !== undefined ? Number(rd.totalDeductPct) : (m.completionDeductPct + m.attendanceDeductPct + m.categoryDeductPct)),
+                100
+            );
+        } else {
+            m.completionRate = null;
+            m.completionDeductPct = 0;
+            m.deductInstances = 0;
+            m.attendanceDeductPct = 0;
+            m.complianceDeductPct = 0;
+            m.categoryDeductPct = 0;
+            m.categoryFlags = null;
+            m.totalDeductPct = 0;
+        }
         m.multiplier = (100 - m.totalDeductPct) / 100;
     });
     return monthStats;
@@ -2869,19 +2901,21 @@ function buildNewStructMonthStats(dates, perfData, attData, categoryDataByMonth)
 
 function newStructStatsForDate(monthStats, date) {
     const key = newStructMonthKey(new Date(date + 'T00:00:00'));
-    return monthStats[key] || { totalDeductPct: 0, multiplier: 1, completionRate: null, completionDeductPct: 0, attendanceDeductPct: 0, deductInstances: 0, complianceDeductPct: 0, categoryDeductPct: 0, categoryFlags: null };
+    return monthStats[key] || { reviewed: false, totalDeductPct: 0, multiplier: 1, completionRate: null, completionDeductPct: 0, attendanceDeductPct: 0, deductInstances: 0, complianceDeductPct: 0, categoryDeductPct: 0, categoryFlags: null };
 }
 
 // Human-readable list of what's driving a month's deduction, for the daily card note.
+// Only ever populated for a month an FTM has reviewed — see buildNewStructMonthStats.
 function newStructDeductionNote(mName, nsStats) {
+    if (!nsStats.reviewed) return '';
     const parts = [];
     if (nsStats.completionDeductPct > 0) parts.push(`${mName} completion ${nsStats.completionRate===null?'n/a':newStructFmtPct(nsStats.completionRate)+'%'} (-${newStructFmtPct(nsStats.completionDeductPct)}%)`);
     if (nsStats.deductInstances > 0) parts.push(`${nsStats.deductInstances} × Sick/AAUP/AWOL (-${newStructFmtPct(nsStats.attendanceDeductPct)}%)`);
     const cd = nsStats.categoryFlags;
     if (cd) {
         if (cd.customerService) parts.push('Customer Service (-5%)');
-        if (cd.fleet) parts.push('Fleet (-5%)');
-        if (cd.housekeeping) parts.push('Housekeeping (-5%)');
+        if (cd.fleet) parts.push(`Fleet (-5%${cd.fleetDates?.length ? ', ' + newStructFmtDates(cd.fleetDates) : ''})`);
+        if (cd.housekeeping) parts.push(`Housekeeping (-5%${cd.housekeepingDates?.length ? ', ' + newStructFmtDates(cd.housekeepingDates) : ''})`);
         if (nsStats.complianceDeductPct > 0) parts.push(`Compliance (-${newStructFmtPct(nsStats.complianceDeductPct)}%)`);
     }
     return parts.join(' · ');
@@ -2901,8 +2935,8 @@ function newStructWhyLines(nsStats) {
     const cd = nsStats.categoryFlags;
     if (cd) {
         if (cd.customerService) lines.push(`<strong>Customer Service</strong> — persistent failure to make D-1 calls and/or an upheld customer complaint → -5%`);
-        if (cd.fleet) lines.push(`<strong>Fleet</strong> — failure to complete Daily Vehicle Checks before starting work and/or an unreasonable speeding incident → -5%`);
-        if (cd.housekeeping) lines.push(`<strong>Housekeeping</strong> — started work after 8am on a working day and/or refused work in day → -5%`);
+        if (cd.fleet) lines.push(`<strong>Fleet</strong> — failure to complete Daily Vehicle Checks before starting work and/or an unreasonable speeding incident${cd.fleetDates?.length ? ` (${newStructFmtDates(cd.fleetDates)})` : ''} → -5%`);
+        if (cd.housekeeping) lines.push(`<strong>Housekeeping</strong> — started work after 8am on a working day and/or refused work in day${cd.housekeepingDates?.length ? ` (${newStructFmtDates(cd.housekeepingDates)})` : ''} → -5%`);
         if (cd.complianceCat1 || cd.complianceCat2 || cd.complianceCat3) {
             const bits = [];
             if (cd.complianceCat1) bits.push('a Cat 1 failure');
@@ -2917,19 +2951,21 @@ function newStructWhyLines(nsStats) {
 }
 
 // Renders the "Why — deductions applied this period" panel: one card per calendar month in the
-// selected range that actually has a deduction, listing every reason behind it.
+// selected range that has an FTM-approved deduction, listing every reason behind it, plus a
+// separate notice for any month in range that hasn't been reviewed by an FTM yet.
 function renderNewStructWhy(newStructMonthStats) {
     const el = document.getElementById('newStructWhy');
     if (!el) return;
     const months = Object.keys(newStructMonthStats).sort();
-    const withDeductions = months.filter(k => newStructMonthStats[k].totalDeductPct > 0);
+    const withDeductions = months.filter(k => newStructMonthStats[k].reviewed && newStructMonthStats[k].totalDeductPct > 0);
+    const pending = months.filter(k => !newStructMonthStats[k].reviewed);
 
-    if (!withDeductions.length) {
+    if (!withDeductions.length && !pending.length) {
         el.innerHTML = `<div class="nsw-none">✓ No deductions apply under the new structure for this period — completion, attendance and category flags are all clear.</div>`;
         return;
     }
 
-    el.innerHTML = withDeductions.map(key => {
+    let html = withDeductions.map(key => {
         const m = newStructMonthStats[key];
         const lines = newStructWhyLines(m);
         return `
@@ -2942,6 +2978,18 @@ function renderNewStructWhy(newStructMonthStats) {
             </div>
         `;
     }).join('');
+
+    html += pending.map(key => `
+        <div class="nsw-month-card nsw-pending">
+            <div class="nsw-month-head">
+                <span class="nsw-month-name">${newStructMonthStats[key].label}</span>
+                <span class="nsw-month-total nsw-pending-tag">Pending review</span>
+            </div>
+            <ul class="nsw-reasons"><li>Not yet reviewed by a Field Team Manager — the New Structure figure assumes 0% deduction for this month until it's reviewed and submitted.</li></ul>
+        </div>
+    `).join('');
+
+    el.innerHTML = html;
 }
 
 window.loadDailyBreakdown = async function() {
@@ -3011,11 +3059,13 @@ window.loadDailyBreakdown = async function() {
         try { const jSnap=await db.collection("jobsData").where("engineerName","==",currentEngineer).get(); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){}
         try { const avgSnap=await db.collection("Average Bonuses").where("name","==",currentEngineer).get(); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){}
 
-        // New structure (example) — Customer Service / Fleet / Housekeeping / Compliance flags, entered on bonus-deduction.html.
-        let categoryDataByMonth = {};
-        try { const cdSnap=await db.collection("Bonus Deductions").where("engineerName","==",currentEngineer).get(); cdSnap.forEach(doc=>{const d=doc.data();if(d.month)categoryDataByMonth[d.month]=d;}); } catch(e){}
+        // New structure (example) — completion rate, attendance and the Customer Service / Fleet /
+        // Housekeeping / Compliance flags, but only once a Field Team Manager has reviewed and
+        // submitted them on bonus-deduction-ftm-review.html (collection "Bonus Deductions Reviewed").
+        let reviewedDataByMonth = {};
+        try { const revSnap=await db.collection("Bonus Deductions Reviewed").where("engineerName","==",currentEngineer).get(); revSnap.forEach(doc=>{const d=doc.data();if(d.month)reviewedDataByMonth[d.month]=d;}); } catch(e){}
 
-        const newStructMonthStats = buildNewStructMonthStats(allDates,perfData,attData,categoryDataByMonth);
+        const newStructMonthStats = buildNewStructMonthStats(allDates,reviewedDataByMonth);
         displayBreakdown(allDates,perfData,attData,bonusData,jobsData,startDate,endDate,avgBonusByMonth,newStructMonthStats);
         document.getElementById('loadingDiv').style.display = 'none';
         document.getElementById('submitPayBtn').style.display = 'block';
