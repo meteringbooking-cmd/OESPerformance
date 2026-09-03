@@ -2001,7 +2001,7 @@
                         <li>Housekeeping — starting work after 8am on a working day and/or refusing work in day → <b>5%</b></li>
                         <li>Compliance — any Cat 1 failure → <b>20%</b> · 2+ Cat 2 failures → <b>10%</b> · 5+ Cat 3 failures → <b>10%</b> (capped at <b>20%</b> overall)</li>
                     </ul>
-                    A Field Team Manager reviews and approves each month's deductions before they're applied — a month shown as "Pending review" below hasn't been approved yet, so no deduction is reflected for it until then.
+                    Each month's deductions go through a Field Team Manager review and then a final review before they're applied — a month shown as "Pending review" below hasn't completed both stages yet, so no deduction is reflected for it until then.
                 </div>
             </details>
             <div class="new-struct-why">
@@ -2853,13 +2853,15 @@ function newStructFmtDates(dates) {
     }).join(', ');
 }
 
-// Builds a per-calendar-month deduction summary purely from the Field Team Manager's reviewed
-// and approved figures ("Bonus Deductions Reviewed", keyed by month) — completion rate, attendance
-// and the Customer Service / Fleet / Housekeeping / Compliance flags are all only ever applied here
-// once an FTM has reviewed and submitted them on bonus-deduction-ftm-review.html. A month with no
-// reviewed record yet is marked `reviewed: false` and contributes no deduction until it is reviewed.
-function buildNewStructMonthStats(dates, reviewedDataByMonth) {
-    reviewedDataByMonth = reviewedDataByMonth || {};
+// Builds a per-calendar-month deduction summary purely from the finalized figures in
+// "Bonus Deductions Final" (keyed by month) — the last stage of the review pipeline:
+// bonus-deduction.html (original submission) → bonus-deduction-ftm-review.html (FTM decision)
+// → bonus-deduction-carl-review.html (final decision, written here). Completion rate, attendance
+// and the Customer Service / Fleet / Housekeeping / Compliance flags are only ever applied once
+// a month has been through final review. A month with no final record yet is marked
+// `reviewed: false` (meaning "not yet finalized") and contributes no deduction until it is.
+function buildNewStructMonthStats(dates, finalDataByMonth) {
+    finalDataByMonth = finalDataByMonth || {};
     const monthStats = {};
     dates.forEach(date => {
         const dateObj = new Date(date + 'T00:00:00');
@@ -2870,18 +2872,29 @@ function buildNewStructMonthStats(dates, reviewedDataByMonth) {
     });
     Object.keys(monthStats).forEach(key => {
         const m = monthStats[key];
-        const rd = reviewedDataByMonth[key];
-        m.reviewed = !!rd;
-        if (rd) {
-            m.completionRate = (rd.completionRate === undefined) ? null : rd.completionRate;
-            m.completionDeductPct = Number(rd.completionDeductPct) || 0;
-            m.deductInstances = Number(rd.attendanceInstances) || 0;
-            m.attendanceDeductPct = Number(rd.attendanceDeductPct) || 0;
-            m.complianceDeductPct = Number(rd.complianceDeductPct) || newStructComplianceDeductionPct(rd);
-            m.categoryDeductPct = (rd.customerService ? 5 : 0) + (rd.fleet ? 5 : 0) + (rd.housekeeping ? 5 : 0) + m.complianceDeductPct;
-            m.categoryFlags = rd;
+        const fd = finalDataByMonth[key];
+        m.reviewed = !!fd;
+        if (fd) {
+            m.completionRate = (fd.completionRate === undefined) ? null : fd.completionRate;
+            m.completionDeductPct = fd.completionAccepted ? (Number(fd.completionNominalPct) || 0) : 0;
+            m.deductInstances = Number(fd.attendanceInstances) || 0;
+            m.attendanceDeductPct = fd.attendanceAccepted ? (Number(fd.attendanceNominalPct) || 0) : 0;
+            let compliancePct = 0;
+            if (fd.complianceCat1Accepted) compliancePct += 20;
+            if (fd.complianceCat2Accepted) compliancePct += 10;
+            if (fd.complianceCat3Accepted) compliancePct += 10;
+            m.complianceDeductPct = Math.min(compliancePct, 20);
+            m.categoryDeductPct = (fd.customerServiceAccepted ? 5 : 0) + (fd.fleetAccepted ? 5 : 0) + (fd.housekeepingAccepted ? 5 : 0) + m.complianceDeductPct;
+            m.categoryFlags = {
+                customerService: !!fd.customerServiceAccepted,
+                fleet: !!fd.fleetAccepted, fleetDates: fd.fleetDates || [],
+                housekeeping: !!fd.housekeepingAccepted, housekeepingDates: fd.housekeepingDates || [],
+                complianceCat1: !!fd.complianceCat1Accepted,
+                complianceCat2: !!fd.complianceCat2Accepted,
+                complianceCat3: !!fd.complianceCat3Accepted,
+            };
             m.totalDeductPct = Math.min(
-                (rd.totalDeductPct !== undefined ? Number(rd.totalDeductPct) : (m.completionDeductPct + m.attendanceDeductPct + m.categoryDeductPct)),
+                (fd.totalDeductPct !== undefined ? Number(fd.totalDeductPct) : (m.completionDeductPct + m.attendanceDeductPct + m.categoryDeductPct)),
                 100
             );
         } else {
@@ -2985,7 +2998,7 @@ function renderNewStructWhy(newStructMonthStats) {
                 <span class="nsw-month-name">${newStructMonthStats[key].label}</span>
                 <span class="nsw-month-total nsw-pending-tag">Pending review</span>
             </div>
-            <ul class="nsw-reasons"><li>Not yet reviewed by a Field Team Manager — the New Structure figure assumes 0% deduction for this month until it's reviewed and submitted.</li></ul>
+            <ul class="nsw-reasons"><li>Not yet through final review — the New Structure figure assumes 0% deduction for this month until the FTM and final review stages are both complete.</li></ul>
         </div>
     `).join('');
 
@@ -3060,12 +3073,13 @@ window.loadDailyBreakdown = async function() {
         try { const avgSnap=await db.collection("Average Bonuses").where("name","==",currentEngineer).get(); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){}
 
         // New structure (example) — completion rate, attendance and the Customer Service / Fleet /
-        // Housekeeping / Compliance flags, but only once a Field Team Manager has reviewed and
-        // submitted them on bonus-deduction-ftm-review.html (collection "Bonus Deductions Reviewed").
-        let reviewedDataByMonth = {};
-        try { const revSnap=await db.collection("Bonus Deductions Reviewed").where("engineerName","==",currentEngineer).get(); revSnap.forEach(doc=>{const d=doc.data();if(d.month)reviewedDataByMonth[d.month]=d;}); } catch(e){}
+        // Housekeeping / Compliance flags, but only once a month has been through both review stages:
+        // bonus-deduction-ftm-review.html, then bonus-deduction-carl-review.html (collection
+        // "Bonus Deductions Final" — the final, authoritative figures for the engineer portal).
+        let finalDataByMonth = {};
+        try { const finSnap=await db.collection("Bonus Deductions Final").where("engineerName","==",currentEngineer).get(); finSnap.forEach(doc=>{const d=doc.data();if(d.month)finalDataByMonth[d.month]=d;}); } catch(e){}
 
-        const newStructMonthStats = buildNewStructMonthStats(allDates,reviewedDataByMonth);
+        const newStructMonthStats = buildNewStructMonthStats(allDates,finalDataByMonth);
         displayBreakdown(allDates,perfData,attData,bonusData,jobsData,startDate,endDate,avgBonusByMonth,newStructMonthStats);
         document.getElementById('loadingDiv').style.display = 'none';
         document.getElementById('submitPayBtn').style.display = 'block';
