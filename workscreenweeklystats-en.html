@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OES Weekly Performance - Energise</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #6366f1;
+      --accent-cyan: #00d2ff;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #334155;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; line-height: 1.5; }
+    .container { max-width: 1440px; margin: 0 auto; }
+    h1 { font-size: 2.2rem; margin-bottom: 0.5rem; background: linear-gradient(90deg, var(--accent-cyan), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
+    .date-subtitle { text-align: center; color: var(--text-dim); font-size: 1.1rem; margin-bottom: 1.2rem; }
+    .week-nav { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2rem; }
+    .week-pill { padding: 8px 20px; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: var(--text-dim); font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; white-space: nowrap; }
+    .week-pill:hover { border-color: var(--accent-cyan); color: var(--text); background: rgba(0,210,255,0.15); }
+    .week-pill.active { background: linear-gradient(135deg, #00d2ff, #6366f1); border-color: #00d2ff; color: #fff; box-shadow: 0 0 15px rgba(0,210,255,0.4); }
+    
+    .summary-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1.2rem; margin-bottom: 2.5rem; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: all 0.3s ease; }
+    .stat-card:hover { transform: translateY(-4px); border-color: var(--accent-cyan); box-shadow: 0 8px 25px rgba(0,210,255,0.25); }
+    .stat-label { font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.4rem; font-weight: 600; }
+    .stat-value { font-size: 2.2rem; font-weight: 800; color: var(--accent-cyan); line-height: 1.1; }
+    .stat-value.highlight { color: var(--success); }
+    .stat-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+    /* Team Running Totals Overview */
+    .running-totals-section { background: var(--card); border-radius: 14px; border: 2px solid rgba(0,210,255,0.3); margin-bottom: 2.5rem; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+    .running-totals-header { background: linear-gradient(90deg, rgba(0,210,255,0.2), rgba(99,102,241,0.25)); padding: 1.2rem 1.8rem; font-size: 1.3rem; font-weight: 800; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; color: var(--accent-cyan); }
+    .running-totals-header span { font-size: 0.85rem; color: var(--text-dim); font-weight: 500; }
+
+    .team-section { background: var(--card); border-radius: 12px; border: 1px solid var(--border); margin-bottom: 2rem; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.4); }
+    .team-header { background: rgba(99,102,241,0.2); padding: 1.1rem 1.8rem; font-size: 1.3rem; font-weight: 700; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .team-header-stats { display: flex; gap: 20px; font-size: 0.85rem; font-weight: 600; }
+    .team-header-stat-pill { background: rgba(0,0,0,0.3); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+    .team-header-stat-pill strong { color: var(--accent-cyan); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: rgba(99,102,241,0.12); font-weight: 700; color: var(--text-dim); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.4px; }
+    tr:last-child td { border-bottom: none; }
+    .engineer-row:hover { background: rgba(0,210,255,0.06); }
+    .meters-col { background: rgba(251,191,36,0.1); font-weight: 700; color: #fbbf24; text-align: right; }
+    .mpd-col { background: rgba(0,210,255,0.1); font-weight: 800; color: var(--accent-cyan); text-align: right; }
+    .total-row { font-weight: bold; background: rgba(16,185,129,0.12); color: var(--success); }
+    .total-row td:first-child { font-weight: 800; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; }
+    .badge-green { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+    .badge-amber { background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
+    .badge-red   { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.4); }
+
+    .loading, .error-msg { text-align: center; padding: 4rem 2rem; color: var(--text-dim); font-size: 1.3rem; }
+    .error-msg { color: #f87171; font-weight: 500; }
+
+    @media (max-width: 900px) {
+      body { padding: 1rem; }
+      .team-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+      .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Weekly Performance — Energise</h1>
+    <div class="date-subtitle" id="dateDisplay">Loading weekly data...</div>
+    <div class="week-nav" id="weekNav"></div>
+    <div id="summaryStats"></div>
+    <div id="runningTotalsContainer"></div>
+    <div id="dataContainer"><div class="loading">Loading data…</div></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+      authDomain: "oesperformance-a54c0.firebaseapp.com",
+      projectId: "oesperformance-a54c0",
+      storageBucket: "oesperformance-a54c0.firebasestorage.app",
+      messagingSenderId: "484894102454",
+      appId: "1:484894102454:web:17535ee497eac2d90d6717",
+      measurementId: "G-R56BGZYV8N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const BANK_HOLIDAYS = [
+      "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
+      "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
+      "2026-01-01", "2026-04-03", "2026-04-06", "2026-05-04", "2026-05-25", "2026-08-31", "2026-12-25", "2026-12-28"
+    ];
+
+    function isWorkingDay(d) {
+      const day = d.getDay();
+      if (day === 0 || day === 6) return false;
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return !BANK_HOLIDAYS.includes(dateStr);
+    }
+
+    function getPreviousWorkingDay() {
+      let d = new Date(); d.setDate(d.getDate() - 1);
+      while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+      return d;
+    }
+
+    function formatISO(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+    function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+    function formatLong(d) {
+      const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    }
+
+    // Normalise team leader names: unify Scott Carson and Tom Green / FTL 4
+    function normTeam(val) {
+      const s = (val || '').trim();
+      if (/^scott carson/i.test(s)) return 'Scott Carson';
+      if (/^ftl\s*4$/i.test(s)) return 'Tom Green';
+      return s || 'Other';
+    }
+
+    function normEng(val) {
+      const s = (val || '').trim();
+      if (/^ftl\s*4$/i.test(s)) return 'Tom Green';
+      return s || 'Unknown';
+    }
+
+    // Generate the last 5 weeks commencing Mondays
+    function getWeekCommencingList(count = 5) {
+      const ref = getPreviousWorkingDay();
+      const day = ref.getDay();
+      const diff = ref.getDate() - day + (day === 0 ? -6 : 1);
+      const latestMonday = new Date(ref);
+      latestMonday.setDate(diff);
+      latestMonday.setHours(0,0,0,0);
+
+      const list = [];
+      for(let i = 0; i < count; i++) {
+        const m = new Date(latestMonday);
+        m.setDate(latestMonday.getDate() - (i * 7));
+        list.push(m);
+      }
+      return list;
+    }
+
+    const weeks = getWeekCommencingList(5);
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramDate = urlParams.get('date');
+    let activeWeekIndex = 0;
+    if (paramDate) {
+      const found = weeks.findIndex(w => formatISO(w) === paramDate);
+      if (found !== -1) activeWeekIndex = found;
+    }
+
+    function buildNav() {
+      const nav = document.getElementById('weekNav');
+      nav.innerHTML = weeks.map((w, i) => `
+        <button class="week-pill${i === activeWeekIndex ? ' active' : ''}" id="wpill-${i}" onclick="switchWeek(${i})">
+          ${i === 0 ? '⚡ ' : '📅 '}W/C ${formatDate(w)}${i === 0 ? ' (Current Week)' : ''}
+        </button>`).join('');
+    }
+
+    window.switchWeek = function(index) {
+      activeWeekIndex = index;
+      weeks.forEach((_, i) => {
+        const pill = document.getElementById(`wpill-${i}`);
+        if (pill) pill.classList.toggle('active', i === index);
+      });
+      loadWeekData(weeks[index], index === 0);
+    };
+
+    async function loadWeekData(mondayDate, isCurrentWeek) {
+      const container = document.getElementById('dataContainer');
+      const summaryStats = document.getElementById('summaryStats');
+      const runningTotalsContainer = document.getElementById('runningTotalsContainer');
+      const dateDisplay = document.getElementById('dateDisplay');
+
+      container.innerHTML = '<div class="loading">Loading weekly data…</div>';
+      summaryStats.innerHTML = '';
+      runningTotalsContainer.innerHTML = '';
+
+      // Determine working days for this week
+      const weekWorkingDays = [];
+      const now = new Date();
+      for(let i = 0; i < 5; i++) {
+        const dayDate = new Date(mondayDate);
+        dayDate.setDate(mondayDate.getDate() + i);
+        if (isCurrentWeek && dayDate > now) continue;
+        if (isWorkingDay(dayDate)) {
+          weekWorkingDays.push(dayDate);
+        }
+      }
+
+      if (!weekWorkingDays.length) {
+        container.innerHTML = `<div class="error-msg">No working days found for W/C ${formatLong(mondayDate)}.</div>`;
+        return;
+      }
+
+      const firstDay = weekWorkingDays[0];
+      const lastDay = weekWorkingDays[weekWorkingDays.length - 1];
+      dateDisplay.textContent = `Week Commencing ${formatLong(mondayDate)} · ${formatDate(firstDay)} to ${formatDate(lastDay)} (${weekWorkingDays.length} working day${weekWorkingDays.length > 1 ? 's' : ''})`;
+
+      try {
+        const snaps = await Promise.all(weekWorkingDays.map(d => {
+          const ds = formatISO(d);
+          return getDocs(query(collection(db, "performance - Energise"), where("date", "==", ds)));
+        }));
+
+        const teamMap = {};
+        let totalRecords = 0;
+
+        snaps.forEach((snapshot, dayIndex) => {
+          snapshot.forEach(doc => {
+            totalRecords++;
+            const d = doc.data();
+            const team = normTeam(d.teamLeader);
+            const eng = normEng(d.engineerName);
+
+            if (!teamMap[team]) {
+              teamMap[team] = {
+                engineers: {},
+                totals: { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, comms:0, dualRemoval:0, singleRemoval:0, daysWorkedSum:0 }
+              };
+            }
+
+            if (!teamMap[team].engineers[eng]) {
+              teamMap[team].engineers[eng] = {
+                jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, comms:0, dualRemoval:0, singleRemoval:0,
+                activeDays: new Set()
+              };
+            }
+
+            const row = teamMap[team].engineers[eng];
+            const m = Number(d.meters || 0);
+            const j = Number(d.jobs || 0);
+            const c = Number(d.completed || 0);
+            const a = Number(d.aborted || 0);
+
+            row.jobs += j;
+            row.completed += c;
+            row.aborts += a;
+            row.meters += m;
+            row.duals += Number(d.duals || 0);
+            row.singles += Number(d.singles || 0);
+            row.comms += Number(d.comms || 0);
+            row.dualRemoval += Number(d.dualRemoval || 0);
+            row.singleRemoval += Number(d.singleRemoval || 0);
+
+            if (m > 0 || j > 0) {
+              row.activeDays.add(dayIndex);
+            }
+          });
+        });
+
+        if (totalRecords === 0) {
+          container.innerHTML = `<div class="error-msg">No performance data recorded for W/C ${formatLong(mondayDate)}.</div>`;
+          return;
+        }
+
+        const teamsSorted = Object.keys(teamMap).sort();
+        const grand = { jobs:0, completed:0, aborts:0, meters:0, duals:0, singles:0, comms:0, dualRemoval:0, singleRemoval:0, engineerCount:0, totalDaysWorked:0 };
+
+        teamsSorted.forEach(team => {
+          const t = teamMap[team].totals;
+          const engs = teamMap[team].engineers;
+          Object.keys(engs).forEach(eng => {
+            const r = engs[eng];
+            const daysWorked = Math.max(1, r.activeDays.size);
+            r.daysCount = daysWorked;
+            r.mpd = daysWorked > 0 ? (r.meters / daysWorked).toFixed(2) : '0.00';
+
+            t.jobs += r.jobs;
+            t.completed += r.completed;
+            t.aborts += r.aborts;
+            t.meters += r.meters;
+            t.duals += r.duals;
+            t.singles += r.singles;
+            t.comms += r.comms;
+            t.dualRemoval += r.dualRemoval;
+            t.singleRemoval += r.singleRemoval;
+            t.daysWorkedSum += daysWorked;
+          });
+
+          grand.jobs += t.jobs;
+          grand.completed += t.completed;
+          grand.aborts += t.aborts;
+          grand.meters += t.meters;
+          grand.duals += t.duals;
+          grand.singles += t.singles;
+          grand.comms += t.comms;
+          grand.dualRemoval += t.dualRemoval;
+          grand.singleRemoval += t.singleRemoval;
+          grand.engineerCount += Object.keys(engs).length;
+          grand.totalDaysWorked += t.daysWorkedSum;
+        });
+
+        // 1. TOP SUMMARY STATS
+        const grandCompPerc = grand.jobs > 0 ? ((grand.completed / grand.jobs) * 100).toFixed(1) : '0.0';
+        const grandMpd = grand.totalDaysWorked > 0 ? (grand.meters / grand.totalDaysWorked).toFixed(2) : '0.00';
+        const grandDailyPace = weekWorkingDays.length > 0 ? (grand.meters / weekWorkingDays.length).toFixed(1) : '0.0';
+
+        summaryStats.innerHTML = `
+          <div class="summary-stats">
+            <div class="stat-card">
+              <div class="stat-label">Total Meters (Week)</div>
+              <div class="stat-value highlight">${grand.meters.toLocaleString()}</div>
+              <div class="stat-sub">${grandDailyPace} meters/day pace</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Average MPD</div>
+              <div class="stat-value">${grandMpd}</div>
+              <div class="stat-sub">meters per engineer day</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Completion %</div>
+              <div class="stat-value" style="color:${parseFloat(grandCompPerc)>=90?'#10b981':parseFloat(grandCompPerc)>=80?'#f59e0b':'#ef4444'}">${grandCompPerc}%</div>
+              <div class="stat-sub">${grand.completed} of ${grand.jobs} jobs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Aborts</div>
+              <div class="stat-value" style="color:${grand.aborts===0?'#10b981':'#ef4444'}">${grand.aborts}</div>
+              <div class="stat-sub">${grand.jobs>0?((grand.aborts/grand.jobs)*100).toFixed(1):'0'}% abort rate</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Active Engineers</div>
+              <div class="stat-value">${grand.engineerCount}</div>
+              <div class="stat-sub">across ${teamsSorted.length} teams</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Duals / Singles</div>
+              <div class="stat-value">${grand.duals} <span style="font-size:0.6em;color:var(--text-dim);">/ ${grand.singles}</span></div>
+              <div class="stat-sub">${grand.duals + grand.singles} meter jobs</div>
+            </div>
+          </div>
+        `;
+
+        // 2. TEAM RUNNING TOTALS OVERVIEW SECTION
+        let runningTotalsRows = '';
+        const teamOverviewList = teamsSorted.map(team => {
+          const t = teamMap[team].totals;
+          const engCount = Object.keys(teamMap[team].engineers).length;
+          const compPerc = t.jobs > 0 ? ((t.completed / t.jobs) * 100).toFixed(1) : '0.0';
+          const abortPerc = t.jobs > 0 ? ((t.aborts / t.jobs) * 100).toFixed(1) : '0.0';
+          const teamMpd = t.daysWorkedSum > 0 ? (t.meters / t.daysWorkedSum).toFixed(2) : '0.00';
+          const weeklyTarget = Math.round(engCount * 4 * weekWorkingDays.length);
+          const vsTarget = weeklyTarget > 0 ? ((t.meters / weeklyTarget) * 100).toFixed(1) : '0.0';
+          return { team, engCount, totals: t, compPerc, abortPerc, teamMpd, weeklyTarget, vsTarget };
+        }).sort((a,b) => b.totals.meters - a.totals.meters);
+
+        teamOverviewList.forEach((item, idx) => {
+          const vsClass = parseFloat(item.vsTarget) >= 100 ? 'badge-green' : parseFloat(item.vsTarget) >= 90 ? 'badge-amber' : 'badge-red';
+          const compClass = parseFloat(item.compPerc) >= 90 ? 'badge-green' : parseFloat(item.compPerc) >= 80 ? 'badge-amber' : 'badge-red';
+          runningTotalsRows += `
+            <tr class="engineer-row">
+              <td style="font-weight:700;font-size:1.05em;color:var(--accent-cyan);">
+                <span style="display:inline-block;width:24px;text-align:center;color:var(--text-dim);font-size:0.85em;margin-right:6px;">#${idx+1}</span>
+                ${item.team}
+              </td>
+              <td style="text-align:center;">${item.engCount}</td>
+              <td style="text-align:center;">${item.totals.jobs}</td>
+              <td style="text-align:center;color:#34d399;font-weight:700;">${item.totals.completed}</td>
+              <td style="text-align:center;"><span class="badge ${compClass}">${item.compPerc}%</span></td>
+              <td style="text-align:center;color:#f87171;">${item.totals.aborts}</td>
+              <td class="meters-col" style="font-size:1.15em;">${item.totals.meters.toLocaleString()}</td>
+              <td class="mpd-col" style="font-size:1.15em;">${item.teamMpd}</td>
+              <td style="text-align:right;color:var(--text-dim);">${item.weeklyTarget}</td>
+              <td style="text-align:center;"><span class="badge ${vsClass}">${item.vsTarget}%</span></td>
+            </tr>
+          `;
+        });
+
+        runningTotalsContainer.innerHTML = `
+          <div class="running-totals-section">
+            <div class="running-totals-header">
+              <div>🏆 Running Totals by Team Leader</div>
+              <span>${weekWorkingDays.length} Working Day${weekWorkingDays.length > 1 ? 's' : ''} Cumulative</span>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Team Leader</th>
+                    <th style="text-align:center;">Engineers</th>
+                    <th style="text-align:center;">Jobs</th>
+                    <th style="text-align:center;">Completed</th>
+                    <th style="text-align:center;">Comp%</th>
+                    <th style="text-align:center;">Aborts</th>
+                    <th style="text-align:right;">Meters Total</th>
+                    <th style="text-align:right;">MPD</th>
+                    <th style="text-align:right;">Target</th>
+                    <th style="text-align:center;">% Target</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${runningTotalsRows}
+                  <tr class="total-row">
+                    <td>TOTAL</td>
+                    <td style="text-align:center;">${grand.engineerCount}</td>
+                    <td style="text-align:center;">${grand.jobs}</td>
+                    <td style="text-align:center;">${grand.completed}</td>
+                    <td style="text-align:center;">${grandCompPerc}%</td>
+                    <td style="text-align:center;">${grand.aborts}</td>
+                    <td style="text-align:right;font-size:1.2em;color:#fbbf24;">${grand.meters.toLocaleString()}</td>
+                    <td style="text-align:right;font-size:1.2em;color:var(--accent-cyan);">${grandMpd}</td>
+                    <td style="text-align:right;">${Math.round(grand.engineerCount * 4 * weekWorkingDays.length)}</td>
+                    <td style="text-align:center;">${(grand.meters / Math.max(1, Math.round(grand.engineerCount * 4 * weekWorkingDays.length)) * 100).toFixed(1)}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        // 3. DETAILED BREAKDOWN PER TEAM
+        let detailHtml = '';
+        teamsSorted.forEach(team => {
+          const data = teamMap[team];
+          const tt = data.totals;
+          const engCount = Object.keys(data.engineers).length;
+          const tCompPerc  = tt.jobs > 0 ? ((tt.completed / tt.jobs) * 100).toFixed(1) : '0.0';
+          const tAbortPerc = tt.jobs > 0 ? ((tt.aborts / tt.jobs) * 100).toFixed(1) : '0.0';
+          const tMpd = tt.daysWorkedSum > 0 ? (tt.meters / tt.daysWorkedSum).toFixed(2) : '0.00';
+
+          detailHtml += `
+            <div class="team-section">
+              <div class="team-header">
+                <div>${team}</div>
+                <div class="team-header-stats">
+                  <div class="team-header-stat-pill">Engineers: <strong>${engCount}</strong></div>
+                  <div class="team-header-stat-pill">Weekly Meters: <strong>${tt.meters}</strong></div>
+                  <div class="team-header-stat-pill">Team MPD: <strong>${tMpd}</strong></div>
+                  <div class="team-header-stat-pill">Comp: <strong>${tCompPerc}%</strong></div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Engineer</th>
+                      <th style="text-align:center;">Days</th>
+                      <th style="text-align:center;">Jobs</th>
+                      <th style="text-align:center;">Completed</th>
+                      <th style="text-align:center;">Comp%</th>
+                      <th style="text-align:center;">Aborts</th>
+                      <th style="text-align:center;">Abort%</th>
+                      <th style="text-align:right;">Meters</th>
+                      <th style="text-align:right;">MPD</th>
+                      <th style="text-align:center;">Duals</th>
+                      <th style="text-align:center;">Singles</th>
+                      <th style="text-align:center;">Comms</th>
+                      <th style="text-align:center;">Dual Rem</th>
+                      <th style="text-align:center;">Single Rem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+          `;
+
+          const engListSorted = Object.keys(data.engineers).sort((a,b) => data.engineers[b].meters - data.engineers[a].meters);
+          engListSorted.forEach(eng => {
+            const row = data.engineers[eng];
+            const compPerc  = row.jobs > 0 ? ((row.completed / row.jobs) * 100).toFixed(1) : '0.0';
+            const abortPerc = row.jobs > 0 ? ((row.aborts / row.jobs) * 100).toFixed(1) : '0.0';
+            detailHtml += `
+              <tr class="engineer-row">
+                <td style="font-weight:600;color:#fff;">${eng}</td>
+                <td style="text-align:center;color:var(--text-dim);">${row.daysCount}</td>
+                <td style="text-align:center;">${row.jobs}</td>
+                <td style="text-align:center;color:#34d399;">${row.completed}</td>
+                <td style="text-align:center;">${compPerc}%</td>
+                <td style="text-align:center;color:#f87171;">${row.aborts}</td>
+                <td style="text-align:center;color:var(--text-dim);">${abortPerc}%</td>
+                <td class="meters-col">${row.meters}</td>
+                <td class="mpd-col">${row.mpd}</td>
+                <td style="text-align:center;">${row.duals}</td>
+                <td style="text-align:center;">${row.singles}</td>
+                <td style="text-align:center;">${row.comms}</td>
+                <td style="text-align:center;">${row.dualRemoval}</td>
+                <td style="text-align:center;">${row.singleRemoval}</td>
+              </tr>
+            `;
+          });
+
+          detailHtml += `
+                    <tr class="total-row">
+                      <td>Team Total</td>
+                      <td style="text-align:center;">${tt.daysWorkedSum}</td>
+                      <td style="text-align:center;">${tt.jobs}</td>
+                      <td style="text-align:center;">${tt.completed}</td>
+                      <td style="text-align:center;">${tCompPerc}%</td>
+                      <td style="text-align:center;">${tt.aborts}</td>
+                      <td style="text-align:center;">${tAbortPerc}%</td>
+                      <td class="meters-col" style="font-size:1.1em;">${tt.meters}</td>
+                      <td class="mpd-col" style="font-size:1.1em;">${tMpd}</td>
+                      <td style="text-align:center;">${tt.duals}</td>
+                      <td style="text-align:center;">${tt.singles}</td>
+                      <td style="text-align:center;">${tt.comms}</td>
+                      <td style="text-align:center;">${tt.dualRemoval}</td>
+                      <td style="text-align:center;">${tt.singleRemoval}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        });
+
+        container.innerHTML = detailHtml;
+
+      } catch (err) {
+        console.error("Weekly load error:", err);
+        container.innerHTML = `<div class="error-msg">Error loading weekly performance data: ${err.message || 'Unknown error'}</div>`;
+      }
+    }
+
+    buildNav();
+    loadWeekData(weeks[activeWeekIndex], activeWeekIndex === 0);
+  </script>
+</body>
+</html>
