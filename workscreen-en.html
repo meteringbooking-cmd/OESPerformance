@@ -559,6 +559,15 @@
         const DISPLAY_TO_DATA_TEAMLEADER = { 'Tom Green': 'FTL 4' };
         function dataTeamLeader(displayName) { return DISPLAY_TO_DATA_TEAMLEADER[displayName] || displayName; }
 
+        const EXCLUDED_EN_ENGINEERS = new Set(['chris timm', 'ian dobson', 'jon convery']);
+        function isExcludedEnergise(teamLeader, engineerName) {
+            const tl = (teamLeader || '').trim().toLowerCase();
+            const eng = (engineerName || '').trim().toLowerCase();
+            if (tl.startsWith('richard wiecko')) return true;
+            if (EXCLUDED_EN_ENGINEERS.has(eng)) return true;
+            return false;
+        }
+
         const BANK_HOLIDAYS = [
             "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", "2024-08-26", "2024-12-25", "2024-12-26",
             "2025-01-01", "2025-04-18", "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26",
@@ -774,6 +783,7 @@
                     if (/^scott carson\b/i.test(tl)) tl = 'Scott Carson';
                     if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
                     if (!TEAM_KEY_MAP[tl] && /ftl\s*4/i.test(engineerName)) tl = 'FTL 4';
+                    if (isExcludedEnergise(tl, engineerName)) return;
                     const key = TEAM_KEY_MAP[tl]||null;
                     if (key) teamBuckets[key].push({ engineer:engineerName, value:val });
                     allRecords.push({ engineer:engineerName, teamLeader:tl, value:val });
@@ -782,7 +792,7 @@
                 const allVals = allRecords.map(r=>r.value);
                 document.getElementById('milesOverallAvg').textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
                 function teamAvg(key) { const vals=teamBuckets[key].map(r=>r.value); if(!vals.length) return '—'; return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2); }
-                document.getElementById('milesTeam_richard').textContent=teamAvg('richard');
+                document.getElementById('milesTeam_richard').textContent='N/A';
                 document.getElementById('milesTeam_scott').textContent=teamAvg('scott');
                 document.getElementById('milesTeam_stuart').textContent=teamAvg('stuart');
                 document.getElementById('milesTeam_ftl4').textContent=teamAvg('ftl4');
@@ -1076,6 +1086,7 @@
                         const data = doc.data();
                         const tl = data.teamLeader || 'Unknown Team', eng = data.engineer || '';
                         if (!eng) return;
+                        if (isExcludedEnergise(tl, eng)) return;
                         const parsed = parseAbortReasons(data.reason || '', data.total || 1);
                         const docTotal = parsed.reduce((s,r)=>s+r.qty,0);
                         total += docTotal;
@@ -1283,8 +1294,13 @@
                 let oes=0,sp=0,edf=0,bo=0;
                 staffSnap.forEach(doc=>{
                     const d=doc.data();if(d.leaveDate)return;
-                    const loc=(d.Location||d.location||'').trim().toUpperCase(),tl=(d['Team Leader']||d.teamLeader||'').trim().toUpperCase();
-                    if(tl==='BACK OFFICE')bo++;else if(loc==='OES ENERGISE'||loc==='EDF')oes++;else if(loc==='SCOTTISH POWER')sp++;
+                    const loc=(d.Location||d.location||'').trim().toUpperCase(),tl=(d['Team Leader']||d.teamLeader||'').trim();
+                    const name=(d['Full Name']||d.Name||d.name||'').trim();
+                    if(tl.toUpperCase()==='BACK OFFICE')bo++;
+                    else if(loc==='OES ENERGISE'||loc==='EDF') {
+                        if (!isExcludedEnergise(tl, name)) oes++;
+                    }
+                    else if(loc==='SCOTTISH POWER')sp++;
                 });
                 oesEngineerCount=oes;
                 window.oesEngineerCount=oes;
@@ -1299,7 +1315,11 @@ _setTxt('backOfficeCount', bo);
 _setTxt('metersTarget', Math.round(oes*4));
                 const perfSnap=await getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr)));
                 let meters=0,jobs=0,completed=0;
-                perfSnap.forEach(doc=>{const d=doc.data();meters+=d.meters||0;jobs+=d.jobs||0;completed+=d.completed||0;});
+                perfSnap.forEach(doc=>{
+                    const d=doc.data();
+                    if (isExcludedEnergise(d.teamLeader, d.engineerName)) return;
+                    meters+=d.meters||0;jobs+=d.jobs||0;completed+=d.completed||0;
+                });
                 const metersTarget=Math.round(oes*4);
                 const metersRate=metersTarget?(meters/metersTarget*100).toFixed(1):'0';
                 const compRate=jobs?(completed/jobs*100).toFixed(1):'0';
@@ -1331,11 +1351,19 @@ _setTxt('metersTarget', Math.round(oes*4));
                     ]);
 
                     let todayTotal = 0;
-                    todayKrakenSnap.forEach(doc => { todayTotal += doc.data().totalMeters || 0; });
+                    todayKrakenSnap.forEach(doc => {
+                        const d = doc.data();
+                        if (isExcludedEnergise(d.team, d.engineer)) return;
+                        todayTotal += d.totalMeters || 0;
+                    });
                     document.getElementById('krakenTodayMeters').textContent = todayKrakenSnap.empty ? 'No data' : Math.round(todayTotal).toLocaleString();
 
                     let prevTotal = 0;
-                    prevKrakenSnap.forEach(doc => { prevTotal += doc.data().totalMeters || 0; });
+                    prevKrakenSnap.forEach(doc => {
+                        const d = doc.data();
+                        if (isExcludedEnergise(d.team, d.engineer)) return;
+                        prevTotal += d.totalMeters || 0;
+                    });
                     document.getElementById('krakenPrevDayMeters').textContent = prevKrakenSnap.empty ? 'No data' : Math.round(prevTotal).toLocaleString();
 
                 } catch(err) {
@@ -1371,13 +1399,21 @@ _setTxt('metersTarget', Math.round(oes*4));
                     getDocs(query(collection(performanceDb,"KrakenAM Energise"),where("date","==",ds)))
                 ]);
                 let m=0,j=0,c=0;
-                perfSnap.forEach(doc=>{const d=doc.data();m+=d.meters||0;j+=d.jobs||0;c+=d.completed||0;});
+                perfSnap.forEach(doc=>{
+                    const d=doc.data();
+                    if (isExcludedEnergise(d.teamLeader, d.engineerName)) return;
+                    m+=d.meters||0;j+=d.jobs||0;c+=d.completed||0;
+                });
                 let aw='0',h='0',s='0',aa='0';
                 gsSnap.forEach(doc=>{const d=doc.data();aw=(d.atWorkPercent||0).toFixed(1);h=(d.holidayPercent||0).toFixed(1);s=(d.sickPercent||0).toFixed(1);aa=(d.aaupPercent||0).toFixed(1);});
                 let krakenMeters = null;
                 if (!krakenSnap.empty) {
                     let kt = 0;
-                    krakenSnap.forEach(doc => { kt += doc.data().totalMeters || 0; });
+                    krakenSnap.forEach(doc => { 
+                        const kd = doc.data();
+                        if (isExcludedEnergise(kd.team, kd.engineer)) return;
+                        kt += kd.totalMeters || 0; 
+                    });
                     krakenMeters = Math.round(kt);
                 }
                 historicalData.push({displayDate:disp,totalMeters:m,metersTarget:Math.round(oesEngineerCount*4),totalJobs:j,totalCompleted:c,completionRate:j?(c/j*100).toFixed(1):'0',atWorkPercent:aw,holPercent:h,sickPercent:s,aaupPercent:aa,krakenMeters});
@@ -1434,6 +1470,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                     let meters = 0, jobs = 0, completed = 0, aborts = 0;
                     perfSnap.forEach(doc => {
                         const data = doc.data();
+                        if (isExcludedEnergise(data.teamLeader, data.engineerName)) return;
                         meters += data.meters || 0;
                         jobs += data.jobs || 0;
                         completed += data.completed || 0;
@@ -1441,7 +1478,11 @@ _setTxt('metersTarget', Math.round(oes*4));
                     });
 
                     let kraken = 0;
-                    krakenSnap.forEach(doc => { kraken += doc.data().totalMeters || 0; });
+                    krakenSnap.forEach(doc => {
+                        const kd = doc.data();
+                        if (isExcludedEnergise(kd.team, kd.engineer)) return;
+                        kraken += kd.totalMeters || 0;
+                    });
 
                     let aw = null, hol = null, sick = null, aaup = null;
                     if (!gsSnap.empty) {
@@ -1455,13 +1496,15 @@ _setTxt('metersTarget', Math.round(oes*4));
                     const milesRecords = [];
                     milesSnap.forEach(doc => {
                         const md = doc.data();
+                        const engineerName = (md.engineer || '').trim();
+                        let tl = (md.teamLeader || md.team_leader || '').trim();
+                        if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                        if (/^scott carson/i.test(tl)) tl = 'Scott Carson';
+                        if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
+                        if (isExcludedEnergise(tl, engineerName)) return;
+
                         const val = parseFloat(md.milesPerMeter);
                         if (!isNaN(val)) {
-                            const engineerName = (md.engineer || '').trim();
-                            let tl = (md.teamLeader || md.team_leader || '').trim();
-                            if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
-                            if (/^scott carson/i.test(tl)) tl = 'Scott Carson';
-                            if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
                             milesRecords.push({ engineer: engineerName, teamLeader: tl, value: val });
                         }
                     });
@@ -1538,7 +1581,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                     if (!vals || !vals.length) return '—';
                     return (vals.reduce((a,b)=>a+b,0) / vals.length).toFixed(2);
                 }
-                document.getElementById('weeklyMilesTeam_richard').textContent = calcTeamAvg('richard');
+                document.getElementById('weeklyMilesTeam_richard').textContent = 'N/A';
                 document.getElementById('weeklyMilesTeam_scott').textContent = calcTeamAvg('scott');
                 document.getElementById('weeklyMilesTeam_stuart').textContent = calcTeamAvg('stuart');
                 document.getElementById('weeklyMilesTeam_ftl4').textContent = calcTeamAvg('ftl4');
@@ -1571,13 +1614,15 @@ _setTxt('metersTarget', Math.round(oes*4));
         setInterval(loadDashboard, 300000);
 
         async function getEngineerCount(teamLeader) {
-            if (teamLeader === 'Scott Carson') return 17;
+            if (isExcludedEnergise(teamLeader, '')) return 0;
             const dataKey = dataTeamLeader(teamLeader);
             if(!dataKey) return oesEngineerCount;
             const staffSnap=await getDocs(collection(staffDb,"employees")); let count=0;
             staffSnap.forEach(doc=>{
                 const d=doc.data();if(d.leaveDate)return;
                 const tl=(d['Team Leader']||d.teamLeader||'').trim();
+                const name=(d['Full Name']||d.Name||d.name||'').trim();
+                if (isExcludedEnergise(tl, name)) return;
                 const loc=(d.Location||d.location||'').trim().toUpperCase();
                 const tlNorm=/^ftl\s*4$/i.test(tl)?'FTL 4':tl==='Tom Green'?'FTL 4':tl;
                 const isMatch = (dataKey === 'Scott Carson') ? tlNorm.startsWith('Scott Carson') : (tlNorm === dataKey);
@@ -1644,7 +1689,11 @@ _setTxt('metersTarget', Math.round(oes*4));
                 result.dates.push(formatDate(date)); result.targets.push(dailyTarget);
                 const perfSnap = await queryPerfSnap(ds, dataKey);
                 let m=0, j=0, c=0;
-                perfSnap.forEach(doc=>{const d=doc.data(); m+=d.meters||0; j+=d.jobs||0; c+=d.completed||0;});
+                perfSnap.forEach(doc=>{
+                    const d=doc.data(); 
+                    if (isExcludedEnergise(d.teamLeader || dataKey, d.engineerName || d.engineer)) return;
+                    m+=d.meters||0; j+=d.jobs||0; c+=d.completed||0;
+                });
                 result.meters.push(m); result.vsTargetPct.push(dailyTarget>0?Math.round((m/dailyTarget)*1000)/10:0);
                 result.completion.push(j>0?Math.round((c/j)*1000)/10:0);
                 
@@ -1653,6 +1702,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                 abortSnap.forEach(doc=>{
                     const d=doc.data();
                     if(!d.engineer || d.engineer==='') return;
+                    if (isExcludedEnergise(d.teamLeader || dataKey, d.engineer)) return;
                     parseAbortReasons(d.reason||'', d.total||1).forEach(r => {
                         abortTotal += r.qty;
                         result.abortReasons[r.reason] = (result.abortReasons[r.reason] || 0) + r.qty;
@@ -1714,7 +1764,7 @@ _setTxt('metersTarget', Math.round(oes*4));
             btn.disabled=true; btn.textContent='⏳ Fetching data...';
             try {
                 const pptx=new PptxGenJS(); pptx.layout='LAYOUT_16x9'; pptx.author='Energise Performance System'; pptx.company='NGU'; pptx.title='Energise Weekly Performance Report';
-                const teamLeaders=['Richard Wiecko','Scott Carson','Stuart Whyte','Tom Green'];
+                const teamLeaders=['Scott Carson','Stuart Whyte','Tom Green'];
                 
                 btn.textContent='⏳ Overall slide 1...'; await createOverallSlide1(pptx, wcDate);
                 btn.textContent='⏳ Overall slide 2...'; await createOverallSlide2(pptx, wcDate);
@@ -1935,7 +1985,7 @@ _setTxt('metersTarget', Math.round(oes*4));
                 pptx.author = 'Energise Performance System'; pptx.company = 'NGU'; 
                 pptx.title = 'Energise Trend Performance Report';
                 
-                const teamLeaders = ['Richard Wiecko', 'Scott Carson', 'Stuart Whyte', 'Tom Green'];
+                const teamLeaders = ['Scott Carson', 'Stuart Whyte', 'Tom Green'];
                 
                 btn.textContent = '⏳ Overall 1...'; await createLongOverallSlide1(pptx, startDate, endDate, bucketType);
                 btn.textContent = '⏳ Overall 2...'; await createLongOverallSlide2(pptx, startDate, endDate, bucketType);
@@ -1987,6 +2037,7 @@ _setTxt('metersTarget', Math.round(oes*4));
             const perfSnap = await getDocs(query(collection(performanceDb, "performance - Energise"), where("date", ">=", startStr), where("date", "<=", endStr)));
             perfSnap.forEach(d => {
                 const data = d.data();
+                if (isExcludedEnergise(data.teamLeader, data.engineerName || data.engineer)) return;
                 const tl = data.teamLeader;
                 let match = false;
                 if(!dataKey) match = true;
@@ -2010,6 +2061,7 @@ _setTxt('metersTarget', Math.round(oes*4));
             abortSnap.forEach(d => {
                 const data = d.data();
                 if(!data.engineer || data.engineer === '') return;
+                if (isExcludedEnergise(data.teamLeader, data.engineer)) return;
                 const tl = data.teamLeader;
                 let match = false;
                 if(!dataKey) match = true;
@@ -2048,8 +2100,7 @@ _setTxt('metersTarget', Math.round(oes*4));
             }
 
             let heads = oesEngineerCount;
-            if (teamLeader === 'Scott Carson') heads = 17;
-            else if (teamLeader) heads = await getEngineerCount(teamLeader);
+            if (teamLeader) heads = await getEngineerCount(teamLeader);
 
             for(let [key, b] of buckets) {
                 if(b.workingDays === 0) continue; 
