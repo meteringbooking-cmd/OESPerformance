@@ -437,7 +437,7 @@
             <h2 class="section-title">📥 Export Aborts</h2>
             <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
                 <h3 style="color: #2e7d32;">Export to Excel</h3>
-                <p>Select a date range to download a summary of abort reasons and their total quantity across that range (summed from the "Reason" and "Total" columns of each upload).</p>
+                <p>Select a date range to download every individual abort record submitted in that range, with each row's team leader, engineer, and reasons.</p>
             </div>
             <form id="exportAbortsForm">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -1150,7 +1150,7 @@
         });
 
         // ════════════════════════════════════════════════════════════════════
-        // ── Export Aborts (Reason + Quantity) to Excel ───────────────────────
+        // ── Export Aborts (Full Record List) ─────────────────────────────────
         // ════════════════════════════════════════════════════════════════════
         document.getElementById('exportAbortsForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1173,25 +1173,31 @@
                     return;
                 }
 
-                // Sum "total" grouped by the primary "reason" field across every
-                // record in the date range (Reason 1 / Reason 2 are sub-breakdowns
-                // on the individual abort record, not separate reason categories,
-                // so they are not included in this summary).
-                const reasonTotals = {};
+                // Collect every individual record, sorted by date then engineer
+                const records = [];
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
-                    const reason = (data.reason && data.reason.trim()) || 'Unspecified';
-                    const total = typeof data.total === 'number' ? data.total : (parseInt(data.total) || 0);
-                    reasonTotals[reason] = (reasonTotals[reason] || 0) + total;
+                    records.push({
+                        date: data.date || '',
+                        teamLeader: data.teamLeader || '',
+                        engineer: data.engineer || '',
+                        reason: data.reason || '',
+                        total: typeof data.total === 'number' ? data.total : (parseInt(data.total) || 0),
+                        reason1: data.reason1 || '',
+                        reason2: data.reason2 || ''
+                    });
                 });
 
-                // Sort by quantity, highest first
-                const sortedReasons = Object.entries(reasonTotals).sort((a, b) => b[1] - a[1]);
+                records.sort((a, b) => {
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return a.engineer.localeCompare(b.engineer);
+                });
 
-                const exportMatrix = [["Reason", "Quantity"]];
-                sortedReasons.forEach(([reason, qty]) => exportMatrix.push([reason, qty]));
-                const grandTotal = sortedReasons.reduce((s, [, qty]) => s + qty, 0);
-                exportMatrix.push(["Total", grandTotal]);
+                // Build one row per record, plus a grand total row at the end
+                const exportMatrix = [["Date", "Team Leader", "Engineer", "Reason", "Total", "Reason 1", "Reason 2"]];
+                records.forEach(r => exportMatrix.push([r.date, r.teamLeader, r.engineer, r.reason, r.total, r.reason1, r.reason2]));
+                const grandTotal = records.reduce((s, r) => s + r.total, 0);
+                exportMatrix.push(["", "", "", "Total", grandTotal, "", ""]);
 
                 const ws = XLSX.utils.aoa_to_sheet(exportMatrix);
                 const wb = XLSX.utils.book_new();
