@@ -202,6 +202,34 @@
         .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
         .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
 
+        /* ── ABORTS SECTION ── */
+        .rc-aborts-section { border-top: 1px solid var(--border); }
+        .rc-aborts-head {
+            display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+            padding: 12px 22px 4px;
+        }
+        .rc-aborts-title {
+            font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--purple);
+        }
+        .rc-aborts-note {
+            font-size: 0.78rem; color: var(--text-dim); max-width: 60ch;
+        }
+        .rc-aborts { padding: 2px 22px 6px; }
+        .rc-abort-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            padding: 12px 0; border-bottom: 1px solid rgba(44,59,79,0.6);
+        }
+        .rc-abort-row:last-child { border-bottom: none; }
+        .rc-abort-info { flex: 1; min-width: 220px; }
+        .rc-abort-label { font-weight: 600; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .rc-abort-total { font-family: 'DM Mono', monospace; font-size: 0.74rem; color: var(--purple); font-weight: 600; }
+        .rc-abort-detail { font-size: 0.8rem; color: var(--text-mid); margin-top: 3px; line-height: 1.4; }
+        .rc-abort-empty { padding: 10px 0; font-size: 0.82rem; color: var(--text-dim); }
+        .toggle-btn.warranted.on { background: rgba(195,206,222,0.12); border-color: var(--border-hi); color: var(--text-mid); }
+        .toggle-btn.overturn.on { background: rgba(187,140,255,0.15); border-color: var(--purple); color: var(--purple); }
+        .rc-bonus-note { font-size: 0.78rem; color: var(--purple); margin-top: 4px; }
+
         .rc-footer {
             display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
             padding: 16px 22px; border-top: 1px solid var(--border);
@@ -233,7 +261,7 @@
     <section class="hero">
         <div class="hero-label">Monthly Review — Stage 1</div>
         <h1 class="hero-title">FTM <em>Review</em></h1>
-        <p class="hero-sub">Review completion rate, attendance and everything submitted on Bonus Deductions for the month. Accept or remove each item, then submit each engineer individually — your decisions go forward to the final review before anything reaches the engineer portal.</p>
+        <p class="hero-sub">Review completion rate, attendance, aborts and everything submitted on Bonus Deductions for the month. Accept or remove each item, confirm or overturn each abort, then submit each engineer individually — your decisions go forward to the final review before anything reaches the engineer portal.</p>
     </section>
 
     <main class="content">
@@ -330,12 +358,17 @@
             } catch (e) { return ''; }
         }
 
-        // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission ──
-        function buildRowDefs(ctx, submission) {
+        // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission.
+        // `bonusInfo` reflects the FTM's current abort confirm/overturn choices for this engineer. ──
+        function buildRowDefs(ctx, submission, bonusInfo) {
             const rows = [];
-            if (ctx.completionDeductPct > 0) {
-                rows.push({ key: 'completion', label: 'Completion Rate', pct: ctx.completionDeductPct,
-                    detail: `${fmtPct(ctx.completionRate)}% this month (minimum is 85%)` });
+            const rate = bonusInfo ? bonusInfo.bonusRate : ctx.completionRate;
+            const deductPct = completionDeductPct(rate);
+            if (deductPct > 0) {
+                const overturned = bonusInfo && bonusInfo.overturnedTotal > 0;
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: deductPct,
+                    detail: `${fmtPct(rate)}% this month (minimum is 85%)` +
+                        (overturned ? ` — includes ${bonusInfo.overturnedTotal} overturned abort(s) added back for bonus purposes (raw: ${fmtPct(ctx.completionRate)}%)` : '') });
             }
             if (ctx.attendanceInstances.length > 0) {
                 const byCode = {};
@@ -369,12 +402,14 @@
             return Math.min(total, 100);
         }
 
-        // ── Fetch + group attendance/performance for one engineer, filtered to the given month ──
+        // ── Fetch + group attendance/performance/aborts for one engineer, filtered to the given month ──
         async function fetchEngineerMonthContext(engineerName, month) {
-            const [attSnap, perfSnap, energiseSnap] = await Promise.all([
+            const [attSnap, perfSnap, energiseSnap, abortsSnap, abortsEnergiseSnap] = await Promise.all([
                 getDocs(query(collection(db, "attendance"), where("engineerName", "==", engineerName))),
                 getDocs(query(collection(db, "performance"), where("engineerName", "==", engineerName))),
                 getDocs(query(collection(db, "performance - Energise"), where("engineerName", "==", engineerName))),
+                getDocs(query(collection(db, "aborts"), where("engineer", "==", engineerName))),
+                getDocs(query(collection(db, "aborts energise"), where("engineer", "==", engineerName))),
             ]);
 
             const attendanceInstances = [];
@@ -396,12 +431,46 @@
             perfSnap.forEach(sumPerf);
             energiseSnap.forEach(sumPerf);
 
+            // Aborts — shown so the FTM can confirm each is warranted (counts against
+            // completion as normal) or overturn it (bonus-purposes-only adjustment, see
+            // computeBonusCompletion below). The raw `aborts`/`aborts energise` collections
+            // themselves are never written to from this page.
+            const aborts = [];
+            const collectAborts = (snap, source) => {
+                snap.forEach(d => {
+                    const data = d.data();
+                    if ((data.date || '').startsWith(month)) {
+                        aborts.push({
+                            key: `${source}_${d.id}`, source,
+                            date: data.date, reason: data.reason || '', reason1: data.reason1 || '',
+                            reason2: data.reason2 || '', total: Number(data.total) || 0,
+                            teamLeader: data.teamLeader || '',
+                        });
+                    }
+                });
+            };
+            collectAborts(abortsSnap, 'aborts');
+            collectAborts(abortsEnergiseSnap, 'aborts energise');
+            aborts.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
             const completionRate = jobs > 0 ? (completed / jobs) * 100 : null;
             return {
                 jobs, completed, completionRate,
                 completionDeductPct: completionDeductPct(completionRate),
                 attendanceInstances,
+                aborts,
             };
+        }
+
+        // ── Bonus-only completion rate: any abort the FTM overturns is added back into
+        // "completed" for THIS calculation only, purely for the completion-rate deduction
+        // tier. It never touches jobs/completed on the performance collection, never touches
+        // the raw aborts collections, and never affects anything shown outside this pipeline. ──
+        function computeBonusCompletion(ctx, abortAccepted) {
+            let overturnedTotal = 0;
+            ctx.aborts.forEach(a => { if (abortAccepted[a.key] === false) overturnedTotal += a.total; });
+            const bonusRate = ctx.jobs > 0 ? Math.min(100, ((ctx.completed + overturnedTotal) / ctx.jobs) * 100) : null;
+            return { bonusRate, overturnedTotal };
         }
 
         // ── Load engineers + populate team filter ──
@@ -436,8 +505,8 @@
                 revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; });
 
                 const withDataEngineers = engineers.filter(e => submissionByEngineer[e.id]);
-                // Also check completion/attendance for every engineer, in case nothing was
-                // submitted on Bonus Deductions but a live deduction still applies.
+                // Also check completion/attendance/aborts for every engineer, in case nothing was
+                // submitted on Bonus Deductions but a live deduction (or an abort to review) still applies.
                 const others = engineers.filter(e => !submissionByEngineer[e.id]);
 
                 const rows = [];
@@ -447,7 +516,7 @@
                 }
                 for (const eng of others) {
                     const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
-                    if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0) {
+                    if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0 || ctx.aborts.length > 0) {
                         rows.push({ engineer: eng, ctx, submission: null, reviewed: reviewedByEngineer[eng.id] || null });
                     }
                 }
@@ -480,7 +549,17 @@
             document.getElementById('cardsContainer').style.display = 'flex';
 
             visible.forEach(r => {
-                const rowDefs = buildRowDefs(r.ctx, r.submission);
+                // Prefill abort decisions from the previous review, if any; default Warranted (true).
+                r._abortAccepted = {};
+                const prevAborts = (r.reviewed && Array.isArray(r.reviewed.abortsDetail)) ? r.reviewed.abortsDetail : [];
+                r.ctx.aborts.forEach(a => {
+                    const prev = prevAborts.find(p => p.key === a.key);
+                    r._abortAccepted[a.key] = prev ? !prev.overturned : true;
+                });
+
+                const bonusInfo = computeBonusCompletion(r.ctx, r._abortAccepted);
+                r._bonusInfo = bonusInfo;
+                const rowDefs = buildRowDefs(r.ctx, r.submission, bonusInfo);
                 r._rowDefs = rowDefs;
                 r._accepted = {};
                 rowDefs.forEach(rd => {
@@ -496,6 +575,7 @@
                 const contextBits = [];
                 contextBits.push(`<span>Completion: <b>${r.ctx.completionRate === null ? 'no job data' : fmtPct(r.ctx.completionRate) + '%'}</b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.ctx.attendanceInstances.length ? r.ctx.attendanceInstances.length + ' flagged instance(s)' : 'clear'}</b></span>`);
+                contextBits.push(`<span>Aborts: <b>${r.ctx.aborts.length ? r.ctx.aborts.length + ' this month' : 'none'}</b></span>`);
 
                 const prevBadge = r.reviewed
                     ? `<div class="rc-prev-badge">Previously reviewed${r.reviewed.reviewedBy ? ' by ' + r.reviewed.reviewedBy : ''}${r.reviewed.reviewedAt ? ' · ' + fmtWhen(r.reviewed.reviewedAt) : ''}</div>`
@@ -515,6 +595,13 @@
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
                     <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                    <div class="rc-aborts-section">
+                        <div class="rc-aborts-head">
+                            <span class="rc-aborts-title">Aborts This Month</span>
+                            <span class="rc-aborts-note">Confirm each abort as warranted — it counts against completion as normal — or overturn it, which only adjusts the completion rate used for THIS bonus review. It never changes the raw abort record or the real completion/aborted figures shown elsewhere.</span>
+                        </div>
+                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
+                    </div>
                     <div class="rc-footer">
                         <span class="rc-status" id="status_${r.engineer.id}"></span>
                         <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Submit Review</button>
@@ -523,38 +610,115 @@
                 container.appendChild(card);
 
                 const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
-                rowDefs.forEach(rd => {
-                    const rowEl = document.createElement('div');
-                    rowEl.className = 'rc-row';
-                    rowEl.innerHTML = `
-                        <div class="rc-row-info">
-                            <div class="rc-row-label">${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span></div>
-                            <div class="rc-row-detail">${rd.detail}</div>
-                        </div>
-                        <div class="toggle-pair">
-                            <button type="button" class="toggle-btn accept" data-eng="${r.engineer.id}" data-key="${rd.key}">Accept</button>
-                            <button type="button" class="toggle-btn remove" data-eng="${r.engineer.id}" data-key="${rd.key}">Remove</button>
-                        </div>
-                    `;
-                    rowsEl.appendChild(rowEl);
-                });
+                rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+
+                const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
+                if (!r.ctx.aborts.length) {
+                    abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
+                } else {
+                    r.ctx.aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                }
 
                 card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerReview(r.engineer.id, this); });
 
                 updateCardTotal(r);
             });
+        }
 
-            container.querySelectorAll('.toggle-btn').forEach(btn => {
+        // ── One completion/attendance/category row, with its own Accept/Remove listener. ──
+        function buildRowElement(engId, rd) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'rc-row';
+            rowEl.dataset.key = rd.key;
+            rowEl.innerHTML = `
+                <div class="rc-row-info">
+                    <div class="rc-row-label">${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span></div>
+                    <div class="rc-row-detail">${rd.detail}</div>
+                </div>
+                <div class="toggle-pair">
+                    <button type="button" class="toggle-btn accept" data-eng="${engId}" data-key="${rd.key}">Accept</button>
+                    <button type="button" class="toggle-btn remove" data-eng="${engId}" data-key="${rd.key}">Remove</button>
+                </div>
+            `;
+            rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
-                    const engId = this.dataset.eng, key = this.dataset.key;
                     const r = engineerRows.find(x => x.engineer.id === engId);
                     if (!r) return;
-                    r._accepted[key] = this.classList.contains('accept');
+                    r._accepted[rd.key] = this.classList.contains('accept');
                     updateCardTotal(r);
                     const status = document.getElementById(`status_${engId}`);
                     if (status) { status.textContent = ''; status.className = 'rc-status'; }
                 });
             });
+            return rowEl;
+        }
+
+        // ── One abort row, with its own Warranted/Overturn listener. Overturning only
+        // recomputes the bonus-purposes completion rate for this review — it never writes
+        // to the aborts collection and never changes the engineer's real stats. ──
+        function buildAbortRowElement(engId, abort) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'rc-abort-row';
+            rowEl.dataset.key = abort.key;
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(abort.date || '');
+            const dateStr = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : (abort.date || '');
+            const detailBits = [dateStr, abort.teamLeader, abort.reason1, abort.reason2].filter(Boolean);
+            rowEl.innerHTML = `
+                <div class="rc-abort-info">
+                    <div class="rc-abort-label">${abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}</span></div>
+                    <div class="rc-abort-detail">${detailBits.join(' · ')}</div>
+                </div>
+                <div class="toggle-pair">
+                    <button type="button" class="toggle-btn warranted" data-eng="${engId}" data-key="${abort.key}">Warranted</button>
+                    <button type="button" class="toggle-btn overturn" data-eng="${engId}" data-key="${abort.key}">Overturn</button>
+                </div>
+            `;
+            rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    if (!r) return;
+                    r._abortAccepted[abort.key] = this.classList.contains('warranted');
+                    updateAbortToggles(r);
+                    rebuildCompletionRow(r);
+                    updateCardTotal(r);
+                    const status = document.getElementById(`status_${engId}`);
+                    if (status) { status.textContent = ''; status.className = 'rc-status'; }
+                });
+            });
+            return rowEl;
+        }
+
+        function updateAbortToggles(r) {
+            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            if (!card) return;
+            r.ctx.aborts.forEach(a => {
+                const row = card.querySelector(`.rc-abort-row[data-key="${CSS.escape(a.key)}"]`);
+                if (!row) return;
+                const warranted = r._abortAccepted[a.key] !== false;
+                row.querySelector('.toggle-btn.warranted').classList.toggle('on', warranted);
+                row.querySelector('.toggle-btn.overturn').classList.toggle('on', !warranted);
+            });
+        }
+
+        // ── Re-derives the bonus-only completion rate from the current abort decisions and
+        // rebuilds just the "Completion Rate" row (it may appear, disappear, or change pct/detail
+        // as aborts are overturned) without touching any other row's accept/remove state. ──
+        function rebuildCompletionRow(r) {
+            const bonusInfo = computeBonusCompletion(r.ctx, r._abortAccepted);
+            r._bonusInfo = bonusInfo;
+            const newDefs = buildRowDefs(r.ctx, r.submission, bonusInfo);
+            const newAccepted = {};
+            newDefs.forEach(rd => {
+                newAccepted[rd.key] = (r._accepted[rd.key] !== undefined) ? r._accepted[rd.key] : true;
+            });
+            r._rowDefs = newDefs;
+            r._accepted = newAccepted;
+
+            const rowsEl = document.getElementById(`rows_${r.engineer.id}`);
+            if (rowsEl) {
+                rowsEl.innerHTML = '';
+                newDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+            }
         }
 
         function updateCardTotal(r) {
@@ -592,6 +756,9 @@
             btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
 
             try {
+                const bonusInfo = r._bonusInfo || computeBonusCompletion(r.ctx, r._abortAccepted);
+                const bonusRate = bonusInfo.bonusRate;
+                const bonusDeductPct = completionDeductPct(bonusRate);
                 const record = {
                     engineerId: r.engineer.id,
                     engineerName: r.engineer.engineerName,
@@ -599,10 +766,27 @@
                     month,
                     // Completion / attendance — nominal values are always kept (even if removed)
                     // so the final review stage can still see what the original figures were.
-                    completionRate: r.ctx.completionRate,
-                    completionNominalPct: r.ctx.completionDeductPct,
-                    completionFlagged: r.ctx.completionDeductPct > 0,
+                    // `completionRate`/`completionNominalPct` are the BONUS-PURPOSES figures (after
+                    // any overturned aborts are added back) — this is what feeds the deduction tier.
+                    // `completionRateRaw` is preserved unchanged for audit/transparency only.
+                    completionRate: bonusRate,
+                    completionRateRaw: r.ctx.completionRate,
+                    completionJobs: r.ctx.jobs,
+                    completionCompleted: r.ctx.completed,
+                    completionNominalPct: bonusDeductPct,
+                    completionFlagged: bonusDeductPct > 0,
                     completionAccepted: !!r._accepted.completion,
+                    // Aborts — the FTM's per-abort confirm/overturn decisions. This is the ONLY
+                    // place overturning an abort has any effect: it never touches the "aborts"/
+                    // "aborts energise" collections themselves, nor the performance collection's
+                    // real completed/aborted figures.
+                    abortsFlagged: r.ctx.aborts.length > 0,
+                    abortsOverturnedTotal: bonusInfo.overturnedTotal,
+                    abortsDetail: r.ctx.aborts.map(a => ({
+                        key: a.key, source: a.source, date: a.date, reason: a.reason,
+                        reason1: a.reason1, reason2: a.reason2, total: a.total, teamLeader: a.teamLeader,
+                        overturned: r._abortAccepted[a.key] === false,
+                    })),
                     attendanceInstances: r.ctx.attendanceInstances.length,
                     attendanceDetail: r.ctx.attendanceInstances,
                     attendanceNominalPct: r.ctx.attendanceInstances.length * 5,
