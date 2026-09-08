@@ -223,6 +223,11 @@
         .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
         .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
 
+        .rc-fixed-note {
+            font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.03em;
+            color: var(--text-dim); flex-shrink: 0; text-align: right; max-width: 170px; line-height: 1.4;
+        }
+
         .rc-footer {
             display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
             padding: 16px 22px; border-top: 1px solid var(--border);
@@ -255,7 +260,7 @@
     <section class="hero">
         <div class="hero-label">Monthly Review — Stage 2 (Final)</div>
         <h1 class="hero-title">Final <em>Review</em></h1>
-        <p class="hero-sub">The last check before deductions reach the engineer portal. Every item shows what was originally submitted and what the FTM decided — approve each engineer's figures individually, or override before finalizing.</p>
+        <p class="hero-sub">The last check before deductions reach the engineer portal. Every item shows what was originally submitted and what the FTM decided — approve each engineer's figures individually, or override before finalizing. Completion rate is fixed and carries straight through from the FTM review.</p>
     </section>
 
     <main class="content">
@@ -354,9 +359,11 @@
         function buildRowDefs(fd) {
             const rows = [];
             if (fd.completionFlagged) {
-                rows.push({ key: 'completion', label: 'Completion Rate', pct: fd.completionNominalPct,
-                    detail: `${fd.completionRate === null || fd.completionRate === undefined ? 'n/a' : fmtPct(fd.completionRate) + '%'} this month (minimum is 85%)`,
-                    ftmAccepted: !!fd.completionAccepted });
+                // Completion Rate is fixed here too — it's driven entirely by the FTM's completion
+                // figure (already adjusted for any overturned aborts), not a discretionary decision
+                // either reviewer accepts or removes.
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: fd.completionNominalPct, fixed: true,
+                    detail: `${fd.completionRate === null || fd.completionRate === undefined ? 'n/a' : fmtPct(fd.completionRate) + '%'} this month (minimum is 85%)` });
             }
             if (fd.attendanceFlagged) {
                 let detail = `${fd.attendanceInstances} instance(s)`;
@@ -460,9 +467,11 @@
                 r._rowDefs = rowDefs;
                 r._accepted = {};
                 rowDefs.forEach(rd => {
-                    // Default to Carl's previous final decision if one exists, else the FTM's decision.
+                    // Fixed rows (Completion Rate) are always counted — no Accept/Remove discretion.
+                    // Everything else defaults to Carl's previous final decision if one exists, else
+                    // the FTM's decision.
                     const prevFinal = r.final ? r.final[rd.key + 'Accepted'] : undefined;
-                    r._accepted[rd.key] = prevFinal === undefined ? rd.ftmAccepted : !!prevFinal;
+                    r._accepted[rd.key] = rd.fixed ? true : (prevFinal === undefined ? rd.ftmAccepted : !!prevFinal);
                 });
 
                 const isFinalized = !!r.final;
@@ -513,26 +522,32 @@
             });
         }
 
-        // ── One completion/attendance/category row, with its own Accept/Remove listener. ──
+        // ── One completion/attendance/category row. Every row except Completion Rate gets its
+        // own Accept/Remove listener and FTM badge — Completion Rate is fixed (see buildRowDefs). ──
         function buildRowElement(engId, rd) {
             const rowEl = document.createElement('div');
             rowEl.className = 'rc-row';
             rowEl.dataset.key = rd.key;
-            rowEl.innerHTML = `
-                <div class="rc-row-info">
-                    <div class="rc-row-label">
-                        ${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span>
-                        <span class="ftm-badge ${rd.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${rd.ftmAccepted ? 'Accepted' : 'Removed'}</span>
-                    </div>
-                    <div class="rc-row-detail"><span class="rc-original-label">Original</span>${rd.detail}</div>
-                </div>
-                <div class="row-right">
+            const badgeHTML = rd.fixed ? '' :
+                `<span class="ftm-badge ${rd.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${rd.ftmAccepted ? 'Accepted' : 'Removed'}</span>`;
+            const rightHTML = rd.fixed
+                ? `<div class="rc-fixed-note">Fixed — not editable</div>`
+                : `<div class="row-right">
                     <span class="amended-tag" data-tag="${rd.key}">Amended</span>
                     <div class="toggle-pair">
                         <button type="button" class="toggle-btn accept" data-eng="${engId}" data-key="${rd.key}">Accept</button>
                         <button type="button" class="toggle-btn remove" data-eng="${engId}" data-key="${rd.key}">Remove</button>
                     </div>
+                </div>`;
+            rowEl.innerHTML = `
+                <div class="rc-row-info">
+                    <div class="rc-row-label">
+                        ${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span>
+                        ${badgeHTML}
+                    </div>
+                    <div class="rc-row-detail"><span class="rc-original-label">Original</span>${rd.detail}</div>
                 </div>
+                ${rightHTML}
             `;
             rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
