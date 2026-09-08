@@ -151,6 +151,15 @@
         }
         .empty-state strong { color: var(--success); }
 
+        .uptodate-note {
+            display: none;
+            align-items: center; gap: 8px;
+            background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.25);
+            border-radius: 8px; padding: 10px 16px; margin-bottom: 16px;
+            font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--success);
+        }
+        .uptodate-note.show { display: flex; }
+
         /* ── ENGINEER REVIEW CARD ── */
         #cardsContainer { display: flex; flex-direction: column; gap: 16px; }
         .review-card {
@@ -289,9 +298,11 @@
             <span class="spinner"></span>Loading month data…
         </div>
 
+        <div id="upToDateNote" class="uptodate-note"></div>
+
         <div id="emptyState" class="empty-state" style="display:none;">
             <strong>Nothing to review.</strong><br>
-            No engineer has a completion-rate deduction, attendance instance, or Bonus Deductions submission for this month.
+            <span id="emptyStateDetail">No engineer has a completion-rate deduction, attendance instance, or Bonus Deductions submission for this month.</span>
         </div>
 
         <div id="cardsContainer" style="display:none;"></div>
@@ -329,6 +340,26 @@
 
         let engineers = [];      // {id, engineerName, teamLeader}
         let engineerRows = [];   // one entry per engineer *shown for review*
+        let hiddenUpToDate = 0;  // engineers already reviewed with nothing new since — kept off the list
+
+        // Shows/hides the "N already reviewed and up to date" banner, and adjusts the empty-state
+        // message so an all-caught-up month doesn't read the same as a month with nothing at all.
+        function renderUpToDateNote(count) {
+            hiddenUpToDate = count;
+            const note = document.getElementById('upToDateNote');
+            if (count > 0) {
+                note.textContent = `✓ ${count} engineer${count === 1 ? '' : 's'} already reviewed and up to date this month — hidden until a new Bonus Deductions submission or a new abort comes in.`;
+                note.classList.add('show');
+            } else {
+                note.classList.remove('show');
+            }
+            const detail = document.getElementById('emptyStateDetail');
+            if (detail) {
+                detail.textContent = count > 0
+                    ? 'Everything for this month has already been reviewed and nothing new has come in since.'
+                    : 'No engineer has a completion-rate deduction, attendance instance, or Bonus Deductions submission for this month.';
+            }
+        }
 
         // ── Deduction maths (kept in sync with engineers2.html / bonus-deduction.html) ──
         function completionDeductPct(ratePct) {
@@ -473,6 +504,50 @@
             return { bonusRate, overturnedTotal };
         }
 
+        // ── "Needs review" detection ──────────────────────────────────────────────────
+        // bonus-deduction.html re-saves the WHOLE month every time (delete + re-add), so every
+        // engineer gets a fresh submittedAt timestamp even when nothing about them changed — a
+        // timestamp comparison would reopen everyone's card on every single save. Instead we diff
+        // the actual submitted values against what the FTM's last review captured.
+        function datesEqual(a, b) {
+            const sa = [...(a || [])].sort(), sb = [...(b || [])].sort();
+            if (sa.length !== sb.length) return false;
+            return sa.every((v, i) => v === sb[i]);
+        }
+        function submissionChanged(submission, reviewed) {
+            const s = submission || {};
+            const flagPairs = [
+                ['customerService', 'customerServiceFlagged'],
+                ['fleet', 'fleetFlagged'],
+                ['housekeeping', 'housekeepingFlagged'],
+                ['complianceCat1', 'complianceCat1Flagged'],
+                ['complianceCat2', 'complianceCat2Flagged'],
+                ['complianceCat3', 'complianceCat3Flagged'],
+            ];
+            for (const [subKey, revKey] of flagPairs) {
+                if (!!s[subKey] !== !!reviewed[revKey]) return true;
+            }
+            if (!datesEqual(s.fleet ? s.fleetDates : [], reviewed.fleetFlagged ? reviewed.fleetDates : [])) return true;
+            if (!datesEqual(s.housekeeping ? s.housekeepingDates : [], reviewed.housekeepingFlagged ? reviewed.housekeepingDates : [])) return true;
+            return false;
+        }
+        // True if any CURRENT abort (this month, for this engineer) isn't one the FTM's last
+        // review already accounted for — i.e. a genuinely new abort has appeared since then.
+        function hasNewAbort(currentAborts, reviewedAbortsDetail) {
+            const known = new Set((reviewedAbortsDetail || []).map(a => a.key));
+            return (currentAborts || []).some(a => !known.has(a.key));
+        }
+        // An engineer only needs to reappear in the FTM's queue if they've never been reviewed,
+        // or something new has shown up since the last review: an edited/new Bonus Deductions
+        // submission, or a new abort. Otherwise — even though the completion/attendance deduction
+        // itself may still be "live" — the FTM already made a decision on it and it hasn't changed.
+        function needsReview(ctx, submission, reviewed) {
+            if (!reviewed) return true;
+            if (submissionChanged(submission, reviewed)) return true;
+            if (hasNewAbort(ctx.aborts, reviewed.abortsDetail)) return true;
+            return false;
+        }
+
         // ── Load engineers + populate team filter ──
         async function loadEngineers() {
             const snap = await getDocs(collection(db, "engineers"));
@@ -511,19 +586,32 @@
                 const others = engineers.filter(e => !submissionByEngineer[e.id]);
 
                 const rows = [];
+                let hiddenUpToDateCount = 0;
                 for (const eng of withDataEngineers) {
                     const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
-                    rows.push({ engineer: eng, ctx, submission: submissionByEngineer[eng.id] || null, reviewed: reviewedByEngineer[eng.id] || null });
+                    const submission = submissionByEngineer[eng.id] || null;
+                    const reviewed = reviewedByEngineer[eng.id] || null;
+                    if (needsReview(ctx, submission, reviewed)) {
+                        rows.push({ engineer: eng, ctx, submission, reviewed });
+                    } else {
+                        hiddenUpToDateCount++;
+                    }
                 }
                 for (const eng of others) {
                     const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
                     if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0) {
-                        rows.push({ engineer: eng, ctx, submission: null, reviewed: reviewedByEngineer[eng.id] || null });
+                        const reviewed = reviewedByEngineer[eng.id] || null;
+                        if (needsReview(ctx, null, reviewed)) {
+                            rows.push({ engineer: eng, ctx, submission: null, reviewed });
+                        } else {
+                            hiddenUpToDateCount++;
+                        }
                     }
                 }
 
                 rows.sort((a, b) => a.engineer.engineerName.localeCompare(b.engineer.engineerName));
                 engineerRows = rows;
+                renderUpToDateNote(hiddenUpToDateCount);
                 renderCards();
             } catch (err) {
                 console.error(err);
