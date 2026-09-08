@@ -211,6 +211,11 @@
         .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
         .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
 
+        .rc-fixed-note {
+            font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.03em;
+            color: var(--text-dim); flex-shrink: 0; text-align: right; max-width: 170px; line-height: 1.4;
+        }
+
         /* ── ABORTS SECTION ── */
         .rc-aborts-section { border-top: 1px solid var(--border); }
         .rc-aborts-head {
@@ -270,7 +275,7 @@
     <section class="hero">
         <div class="hero-label">Monthly Review — Stage 1</div>
         <h1 class="hero-title">FTM <em>Review</em></h1>
-        <p class="hero-sub">Review completion rate, attendance, aborts and everything submitted on Bonus Deductions for the month. Accept or remove each item, confirm or overturn each abort, then submit each engineer individually — your decisions go forward to the final review before anything reaches the engineer portal.</p>
+        <p class="hero-sub">Review completion rate, attendance, aborts and everything submitted on Bonus Deductions for the month. Accept or remove attendance and any flagged category, confirm or overturn each abort — completion rate is fixed and only moves when an abort is overturned — then submit each engineer individually. Your decisions go forward to the final review before anything reaches the engineer portal.</p>
     </section>
 
     <main class="content">
@@ -397,7 +402,9 @@
             const deductPct = completionDeductPct(rate);
             if (deductPct > 0) {
                 const overturned = bonusInfo && bonusInfo.overturnedTotal > 0;
-                rows.push({ key: 'completion', label: 'Completion Rate', pct: deductPct,
+                // Completion Rate is fixed, not a discretionary Accept/Remove item — the only lever
+                // that adjusts it is confirming/overturning aborts below (see rebuildCompletionRow).
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: deductPct, fixed: true,
                     detail: `${fmtPct(rate)}% this month (minimum is 85%)` +
                         (overturned ? ` — includes ${bonusInfo.overturnedTotal} overturned abort(s) added back for bonus purposes (raw: ${fmtPct(ctx.completionRate)}%)` : '') });
             }
@@ -652,9 +659,10 @@
                 r._rowDefs = rowDefs;
                 r._accepted = {};
                 rowDefs.forEach(rd => {
-                    // Default: whatever the previous review said, else Accept.
+                    // Fixed rows (Completion Rate) are always counted — no Accept/Remove discretion.
+                    // Everything else defaults to whatever the previous review said, else Accept.
                     const prev = r.reviewed ? r.reviewed[rd.key + 'Accepted'] : undefined;
-                    r._accepted[rd.key] = prev === undefined ? true : !!prev;
+                    r._accepted[rd.key] = rd.fixed ? true : (prev === undefined ? true : !!prev);
                 });
 
                 const card = document.createElement('div');
@@ -725,20 +733,24 @@
             });
         }
 
-        // ── One completion/attendance/category row, with its own Accept/Remove listener. ──
+        // ── One completion/attendance/category row. Every row except Completion Rate gets its
+        // own Accept/Remove listener — Completion Rate is fixed (see buildRowDefs). ──
         function buildRowElement(engId, rd) {
             const rowEl = document.createElement('div');
             rowEl.className = 'rc-row';
             rowEl.dataset.key = rd.key;
+            const controlHTML = rd.fixed
+                ? `<div class="rc-fixed-note">Fixed — adjust via Aborts below</div>`
+                : `<div class="toggle-pair">
+                    <button type="button" class="toggle-btn accept" data-eng="${engId}" data-key="${rd.key}">Accept</button>
+                    <button type="button" class="toggle-btn remove" data-eng="${engId}" data-key="${rd.key}">Remove</button>
+                </div>`;
             rowEl.innerHTML = `
                 <div class="rc-row-info">
                     <div class="rc-row-label">${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span></div>
                     <div class="rc-row-detail">${rd.detail}</div>
                 </div>
-                <div class="toggle-pair">
-                    <button type="button" class="toggle-btn accept" data-eng="${engId}" data-key="${rd.key}">Accept</button>
-                    <button type="button" class="toggle-btn remove" data-eng="${engId}" data-key="${rd.key}">Remove</button>
-                </div>
+                ${controlHTML}
             `;
             rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
@@ -809,7 +821,7 @@
             const newDefs = buildRowDefs(r.ctx, r.submission, bonusInfo);
             const newAccepted = {};
             newDefs.forEach(rd => {
-                newAccepted[rd.key] = (r._accepted[rd.key] !== undefined) ? r._accepted[rd.key] : true;
+                newAccepted[rd.key] = rd.fixed ? true : ((r._accepted[rd.key] !== undefined) ? r._accepted[rd.key] : true);
             });
             r._rowDefs = newDefs;
             r._accepted = newAccepted;
