@@ -505,8 +505,9 @@
                 revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; });
 
                 const withDataEngineers = engineers.filter(e => submissionByEngineer[e.id]);
-                // Also check completion/attendance/aborts for every engineer, in case nothing was
-                // submitted on Bonus Deductions but a live deduction (or an abort to review) still applies.
+                // Also check completion/attendance for every engineer, in case nothing was
+                // submitted on Bonus Deductions but a live deduction still applies. Aborts alone
+                // (with completion at/above 90%) don't pull an engineer in — see showAborts below.
                 const others = engineers.filter(e => !submissionByEngineer[e.id]);
 
                 const rows = [];
@@ -516,7 +517,7 @@
                 }
                 for (const eng of others) {
                     const ctx = await fetchEngineerMonthContext(eng.engineerName, month);
-                    if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0 || ctx.aborts.length > 0) {
+                    if (ctx.completionDeductPct > 0 || ctx.attendanceInstances.length > 0) {
                         rows.push({ engineer: eng, ctx, submission: null, reviewed: reviewedByEngineer[eng.id] || null });
                     }
                 }
@@ -572,14 +573,29 @@
                 card.className = 'review-card';
                 card.dataset.engineerId = r.engineer.id;
 
+                // Aborts are only relevant to review when the raw completion rate is actually
+                // under 90% (i.e. a completion deduction tier applies) — gated on the RAW rate,
+                // not the bonus-adjusted one, so the section can't disappear on you mid-review as
+                // you overturn things. Below 90% there's no deduction to affect either way.
+                const showAborts = r.ctx.completionDeductPct > 0;
+
                 const contextBits = [];
                 contextBits.push(`<span>Completion: <b>${r.ctx.completionRate === null ? 'no job data' : fmtPct(r.ctx.completionRate) + '%'}</b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.ctx.attendanceInstances.length ? r.ctx.attendanceInstances.length + ' flagged instance(s)' : 'clear'}</b></span>`);
-                contextBits.push(`<span>Aborts: <b>${r.ctx.aborts.length ? r.ctx.aborts.length + ' this month' : 'none'}</b></span>`);
+                if (showAborts) contextBits.push(`<span>Aborts: <b>${r.ctx.aborts.length ? r.ctx.aborts.length + ' this month' : 'none'}</b></span>`);
 
                 const prevBadge = r.reviewed
                     ? `<div class="rc-prev-badge">Previously reviewed${r.reviewed.reviewedBy ? ' by ' + r.reviewed.reviewedBy : ''}${r.reviewed.reviewedAt ? ' · ' + fmtWhen(r.reviewed.reviewedAt) : ''}</div>`
                     : '';
+
+                const abortsSectionHTML = showAborts ? `
+                    <div class="rc-aborts-section">
+                        <div class="rc-aborts-head">
+                            <span class="rc-aborts-title">Aborts This Month</span>
+                            <span class="rc-aborts-note">Confirm each abort as warranted — it counts against completion as normal — or overturn it, which only adjusts the completion rate used for THIS bonus review. It never changes the raw abort record or the real completion/aborted figures shown elsewhere.</span>
+                        </div>
+                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
+                    </div>` : '';
 
                 card.innerHTML = `
                     <div class="rc-head">
@@ -595,13 +611,7 @@
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
                     <div class="rc-rows" id="rows_${r.engineer.id}"></div>
-                    <div class="rc-aborts-section">
-                        <div class="rc-aborts-head">
-                            <span class="rc-aborts-title">Aborts This Month</span>
-                            <span class="rc-aborts-note">Confirm each abort as warranted — it counts against completion as normal — or overturn it, which only adjusts the completion rate used for THIS bonus review. It never changes the raw abort record or the real completion/aborted figures shown elsewhere.</span>
-                        </div>
-                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
-                    </div>
+                    ${abortsSectionHTML}
                     <div class="rc-footer">
                         <span class="rc-status" id="status_${r.engineer.id}"></span>
                         <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Submit Review</button>
@@ -612,11 +622,13 @@
                 const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
                 rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
 
-                const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
-                if (!r.ctx.aborts.length) {
-                    abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
-                } else {
-                    r.ctx.aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                if (showAborts) {
+                    const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
+                    if (!r.ctx.aborts.length) {
+                        abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
+                    } else {
+                        r.ctx.aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                    }
                 }
 
                 card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerReview(r.engineer.id, this); });
