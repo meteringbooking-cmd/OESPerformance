@@ -19,6 +19,7 @@
             --text-mid:  #C3D8D4;
             --text-dim:  #82A19B;
             --danger:    #FF7A7A;
+            --purple:    #BB8CFF;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -223,6 +224,31 @@
         .toggle-btn.accept.on { background: rgba(52,211,153,0.15); border-color: var(--success); color: var(--success); }
         .toggle-btn.remove.on { background: rgba(255,122,122,0.15); border-color: var(--danger); color: var(--danger); }
 
+        /* ── ABORTS SECTION ── */
+        .rc-aborts-section { border-top: 1px solid var(--border); }
+        .rc-aborts-head {
+            display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+            padding: 12px 22px 4px;
+        }
+        .rc-aborts-title {
+            font-family: 'DM Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--purple);
+        }
+        .rc-aborts-note { font-size: 0.78rem; color: var(--text-dim); max-width: 60ch; }
+        .rc-aborts { padding: 2px 22px 6px; }
+        .rc-abort-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            padding: 12px 0; border-bottom: 1px solid rgba(61,49,34,0.7);
+        }
+        .rc-abort-row:last-child { border-bottom: none; }
+        .rc-abort-info { flex: 1; min-width: 220px; }
+        .rc-abort-label { font-weight: 600; font-size: 0.9rem; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .rc-abort-total { font-family: 'DM Mono', monospace; font-size: 0.74rem; color: var(--purple); font-weight: 600; }
+        .rc-abort-detail { font-size: 0.8rem; color: var(--text-mid); margin-top: 3px; line-height: 1.4; }
+        .rc-abort-empty { padding: 10px 0; font-size: 0.82rem; color: var(--text-dim); }
+        .toggle-btn.warranted.on { background: rgba(195,206,222,0.12); border-color: var(--border-hi); color: var(--text-mid); }
+        .toggle-btn.overturn.on { background: rgba(187,140,255,0.15); border-color: var(--purple); color: var(--purple); }
+
         .rc-footer {
             display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
             padding: 16px 22px; border-top: 1px solid var(--border);
@@ -255,7 +281,7 @@
     <section class="hero">
         <div class="hero-label">Monthly Review — Stage 2 (Final)</div>
         <h1 class="hero-title">Final <em>Review</em></h1>
-        <p class="hero-sub">The last check before deductions reach the engineer portal. Every item shows what was originally submitted and what the FTM decided — approve each engineer's figures individually, or override before finalizing.</p>
+        <p class="hero-sub">The last check before deductions reach the engineer portal. Every item — including each abort — shows what was originally submitted and what the FTM decided. Approve each engineer's figures individually, or override before finalizing.</p>
     </section>
 
     <main class="content">
@@ -349,14 +375,41 @@
             return `${label}: ${by || 'unknown'}${when ? ' · ' + when : ''}`;
         }
 
+        // Same deduction tiers used on bonus-deduction.html / bonus-deduction-ftm-review.html /
+        // engineers2.html — kept in sync so Carl's own abort overrides land on the same tiers.
+        function completionDeductPct(ratePct) {
+            if (ratePct === null || ratePct === undefined) return 0;
+            if (ratePct < 85) return 10;
+            if (ratePct <= 87.5) return 5;
+            if (ratePct <= 89.9) return 2.5;
+            return 0;
+        }
+
+        // ── Bonus-only completion rate, recomputed from Carl's own abort confirm/overturn
+        // choices. Uses the jobs/completed counts the FTM's review captured — never touches the
+        // "aborts"/"aborts energise" collections or the real performance figures. ──
+        function computeBonusCompletion(fd, abortAccepted) {
+            let overturnedTotal = 0;
+            (fd.abortsDetail || []).forEach(a => { if (abortAccepted[a.key] === false) overturnedTotal += a.total; });
+            const jobs = fd.completionJobs || 0;
+            const completed = fd.completionCompleted || 0;
+            const bonusRate = jobs > 0 ? Math.min(100, ((completed + overturnedTotal) / jobs) * 100) : null;
+            return { bonusRate, overturnedTotal };
+        }
+
         // ── Row definitions sourced from the FTM's stored (Reviewed) record, not live data —
-        // Carl reviews exactly what the FTM saw and decided. ──
-        function buildRowDefs(fd) {
+        // Carl reviews exactly what the FTM saw and decided. `bonusInfo` reflects Carl's own
+        // current abort confirm/overturn choices for this engineer. ──
+        function buildRowDefs(fd, bonusInfo) {
             const rows = [];
-            if (fd.completionFlagged) {
-                rows.push({ key: 'completion', label: 'Completion Rate', pct: fd.completionNominalPct,
-                    detail: `${fd.completionRate === null || fd.completionRate === undefined ? 'n/a' : fmtPct(fd.completionRate) + '%'} this month (minimum is 85%)`,
-                    ftmAccepted: !!fd.completionAccepted });
+            const rate = bonusInfo ? bonusInfo.bonusRate : fd.completionRate;
+            const deductPct = completionDeductPct(rate);
+            if (deductPct > 0) {
+                const overturned = bonusInfo && bonusInfo.overturnedTotal > 0;
+                rows.push({ key: 'completion', label: 'Completion Rate', pct: deductPct,
+                    detail: `${rate === null || rate === undefined ? 'n/a' : fmtPct(rate) + '%'} this month (minimum is 85%)` +
+                        (overturned ? ` — includes ${bonusInfo.overturnedTotal} overturned abort(s) added back for bonus purposes (raw: ${fd.completionRateRaw === undefined || fd.completionRateRaw === null ? 'n/a' : fmtPct(fd.completionRateRaw) + '%'})` : ''),
+                    ftmAccepted: !!fd.completionAccepted, noOriginalPrefix: true });
             }
             if (fd.attendanceFlagged) {
                 let detail = `${fd.attendanceInstances} instance(s)`;
@@ -456,7 +509,22 @@
             document.getElementById('cardsContainer').style.display = 'flex';
 
             visible.forEach(r => {
-                const rowDefs = buildRowDefs(r.reviewed);
+                const fd = r.reviewed;
+                // Prefill abort decisions: Carl's previous final decision if one exists, else the FTM's.
+                r._abortAccepted = {};
+                const prevAbortsFinal = (r.final && Array.isArray(r.final.abortsDetail)) ? r.final.abortsDetail : null;
+                (fd.abortsDetail || []).forEach(a => {
+                    if (prevAbortsFinal) {
+                        const prev = prevAbortsFinal.find(p => p.key === a.key);
+                        r._abortAccepted[a.key] = prev ? !prev.overturned : !a.overturned;
+                    } else {
+                        r._abortAccepted[a.key] = !a.overturned;
+                    }
+                });
+
+                const bonusInfo = computeBonusCompletion(fd, r._abortAccepted);
+                r._bonusInfo = bonusInfo;
+                const rowDefs = buildRowDefs(fd, bonusInfo);
                 r._rowDefs = rowDefs;
                 r._accepted = {};
                 rowDefs.forEach(rd => {
@@ -475,6 +543,7 @@
                 const contextBits = [];
                 contextBits.push(`<span>Completion: <b>${r.reviewed.completionRate === null || r.reviewed.completionRate === undefined ? 'no job data' : fmtPct(r.reviewed.completionRate) + '%'}</b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.reviewed.attendanceInstances ? r.reviewed.attendanceInstances + ' flagged instance(s)' : 'clear'}</b></span>`);
+                contextBits.push(`<span>Aborts: <b>${(fd.abortsDetail || []).length ? fd.abortsDetail.length + ' this month' : 'none'}</b></span>`);
 
                 let badges = '';
                 if (isStale) badges += `<span class="rc-badge stale">FTM Updated Since</span>`;
@@ -497,6 +566,13 @@
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
                     <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                    <div class="rc-aborts-section">
+                        <div class="rc-aborts-head">
+                            <span class="rc-aborts-title">Aborts This Month</span>
+                            <span class="rc-aborts-note">Shows the FTM's confirm/overturn decision for each abort. Override if needed — this only adjusts the completion rate used for this bonus review, nothing else.</span>
+                        </div>
+                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
+                    </div>
                     <div class="rc-footer">
                         <span class="rc-status" id="status_${r.engineer.id}"></span>
                         <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Finalize & Submit</button>
@@ -505,45 +581,131 @@
                 container.appendChild(card);
 
                 const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
-                rowDefs.forEach(rd => {
-                    const rowEl = document.createElement('div');
-                    rowEl.className = 'rc-row';
-                    rowEl.dataset.key = rd.key;
-                    rowEl.innerHTML = `
-                        <div class="rc-row-info">
-                            <div class="rc-row-label">
-                                ${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span>
-                                <span class="ftm-badge ${rd.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${rd.ftmAccepted ? 'Accepted' : 'Removed'}</span>
-                            </div>
-                            <div class="rc-row-detail"><span class="rc-original-label">Original</span>${rd.detail}</div>
-                        </div>
-                        <div class="row-right">
-                            <span class="amended-tag" data-tag="${rd.key}">Amended</span>
-                            <div class="toggle-pair">
-                                <button type="button" class="toggle-btn accept" data-eng="${r.engineer.id}" data-key="${rd.key}">Accept</button>
-                                <button type="button" class="toggle-btn remove" data-eng="${r.engineer.id}" data-key="${rd.key}">Remove</button>
-                            </div>
-                        </div>
-                    `;
-                    rowsEl.appendChild(rowEl);
-                });
+                rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+
+                const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
+                const aborts = fd.abortsDetail || [];
+                if (!aborts.length) {
+                    abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
+                } else {
+                    aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                }
 
                 card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerFinal(r.engineer.id, this); });
 
                 updateCardTotal(r);
             });
+        }
 
-            container.querySelectorAll('.toggle-btn').forEach(btn => {
+        // ── One completion/attendance/category row, with its own Accept/Remove listener. ──
+        function buildRowElement(engId, rd) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'rc-row';
+            rowEl.dataset.key = rd.key;
+            rowEl.innerHTML = `
+                <div class="rc-row-info">
+                    <div class="rc-row-label">
+                        ${rd.label} <span class="rc-row-pct">−${fmtPct(rd.pct)}%</span>
+                        <span class="ftm-badge ${rd.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${rd.ftmAccepted ? 'Accepted' : 'Removed'}</span>
+                    </div>
+                    <div class="rc-row-detail">${rd.noOriginalPrefix ? '' : '<span class="rc-original-label">Original</span>'}${rd.detail}</div>
+                </div>
+                <div class="row-right">
+                    <span class="amended-tag" data-tag="${rd.key}">Amended</span>
+                    <div class="toggle-pair">
+                        <button type="button" class="toggle-btn accept" data-eng="${engId}" data-key="${rd.key}">Accept</button>
+                        <button type="button" class="toggle-btn remove" data-eng="${engId}" data-key="${rd.key}">Remove</button>
+                    </div>
+                </div>
+            `;
+            rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
-                    const engId = this.dataset.eng, key = this.dataset.key;
                     const r = engineerRows.find(x => x.engineer.id === engId);
                     if (!r) return;
-                    r._accepted[key] = this.classList.contains('accept');
+                    r._accepted[rd.key] = this.classList.contains('accept');
                     updateCardTotal(r);
                     const status = document.getElementById(`status_${engId}`);
                     if (status) { status.textContent = ''; status.className = 'rc-status'; }
                 });
             });
+            return rowEl;
+        }
+
+        // ── One abort row: shows the FTM's confirm/overturn decision, lets Carl override it,
+        // and flags "Amended" when Carl's choice differs from the FTM's. Overturning only
+        // recomputes the bonus-purposes completion rate for this review. ──
+        function buildAbortRowElement(engId, abort) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'rc-abort-row';
+            rowEl.dataset.key = abort.key;
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(abort.date || '');
+            const dateStr = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : (abort.date || '');
+            const detailBits = [dateStr, abort.teamLeader, abort.reason1, abort.reason2].filter(Boolean);
+            const ftmWarranted = !abort.overturned;
+            rowEl.innerHTML = `
+                <div class="rc-abort-info">
+                    <div class="rc-abort-label">
+                        ${abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}</span>
+                        <span class="ftm-badge ${ftmWarranted ? 'accepted' : 'removed'}">FTM: ${ftmWarranted ? 'Warranted' : 'Overturned'}</span>
+                    </div>
+                    <div class="rc-abort-detail">${detailBits.join(' · ')}</div>
+                </div>
+                <div class="row-right">
+                    <span class="amended-tag" data-tag="${abort.key}">Amended</span>
+                    <div class="toggle-pair">
+                        <button type="button" class="toggle-btn warranted" data-eng="${engId}" data-key="${abort.key}">Warranted</button>
+                        <button type="button" class="toggle-btn overturn" data-eng="${engId}" data-key="${abort.key}">Overturn</button>
+                    </div>
+                </div>
+            `;
+            rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    if (!r) return;
+                    r._abortAccepted[abort.key] = this.classList.contains('warranted');
+                    updateAbortToggles(r);
+                    rebuildCompletionRow(r);
+                    updateCardTotal(r);
+                    const status = document.getElementById(`status_${engId}`);
+                    if (status) { status.textContent = ''; status.className = 'rc-status'; }
+                });
+            });
+            return rowEl;
+        }
+
+        function updateAbortToggles(r) {
+            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            if (!card) return;
+            (r.reviewed.abortsDetail || []).forEach(a => {
+                const row = card.querySelector(`.rc-abort-row[data-key="${CSS.escape(a.key)}"]`);
+                if (!row) return;
+                const warranted = r._abortAccepted[a.key] !== false;
+                row.querySelector('.toggle-btn.warranted').classList.toggle('on', warranted);
+                row.querySelector('.toggle-btn.overturn').classList.toggle('on', !warranted);
+                const tag = row.querySelector(`.amended-tag[data-tag="${CSS.escape(a.key)}"]`);
+                if (tag) tag.classList.toggle('show', warranted !== !a.overturned);
+            });
+        }
+
+        // ── Re-derives the bonus-only completion rate from Carl's current abort decisions and
+        // rebuilds just the "Completion Rate" row (it may appear, disappear, or change pct/detail)
+        // without touching any other row's accept/remove state. ──
+        function rebuildCompletionRow(r) {
+            const bonusInfo = computeBonusCompletion(r.reviewed, r._abortAccepted);
+            r._bonusInfo = bonusInfo;
+            const newDefs = buildRowDefs(r.reviewed, bonusInfo);
+            const newAccepted = {};
+            newDefs.forEach(rd => {
+                newAccepted[rd.key] = (r._accepted[rd.key] !== undefined) ? r._accepted[rd.key] : rd.ftmAccepted;
+            });
+            r._rowDefs = newDefs;
+            r._accepted = newAccepted;
+
+            const rowsEl = document.getElementById(`rows_${r.engineer.id}`);
+            if (rowsEl) {
+                rowsEl.innerHTML = '';
+                newDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+            }
         }
 
         function updateCardTotal(r) {
@@ -603,15 +765,32 @@
 
             try {
                 const fd = r.reviewed;
+                const bonusInfo = r._bonusInfo || computeBonusCompletion(fd, r._abortAccepted);
+                const bonusRate = bonusInfo.bonusRate;
+                const bonusDeductPct = completionDeductPct(bonusRate);
                 const record = {
                     engineerId: r.engineer.id,
                     engineerName: r.engineer.engineerName,
                     teamLeader: r.engineer.teamLeader || '',
                     month,
-                    completionRate: fd.completionRate,
-                    completionNominalPct: fd.completionNominalPct,
-                    completionFlagged: !!fd.completionFlagged,
+                    // Bonus-purposes completion figures, recomputed from Carl's own abort
+                    // confirm/overturn choices (which default to the FTM's, but can be overridden).
+                    completionRate: bonusRate,
+                    completionRateRaw: fd.completionRateRaw,
+                    completionJobs: fd.completionJobs,
+                    completionCompleted: fd.completionCompleted,
+                    completionNominalPct: bonusDeductPct,
+                    completionFlagged: bonusDeductPct > 0,
                     completionAccepted: !!r._accepted.completion,
+                    // Aborts — Carl's final per-abort confirm/overturn decision. Never touches the
+                    // "aborts"/"aborts energise" collections or the real performance figures.
+                    abortsFlagged: (fd.abortsDetail || []).length > 0,
+                    abortsOverturnedTotal: bonusInfo.overturnedTotal,
+                    abortsDetail: (fd.abortsDetail || []).map(a => ({
+                        key: a.key, source: a.source, date: a.date, reason: a.reason,
+                        reason1: a.reason1, reason2: a.reason2, total: a.total, teamLeader: a.teamLeader,
+                        overturned: r._abortAccepted[a.key] === false,
+                    })),
                     attendanceInstances: fd.attendanceInstances,
                     attendanceDetail: fd.attendanceDetail || [],
                     attendanceNominalPct: fd.attendanceNominalPct,
