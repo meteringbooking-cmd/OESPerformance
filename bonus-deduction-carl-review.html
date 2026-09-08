@@ -540,10 +540,16 @@
                 card.className = 'review-card' + (isFinalized ? ' finalized' : '');
                 card.dataset.engineerId = r.engineer.id;
 
+                // Aborts only matter for review when the RAW completion rate was under 90% (i.e. a
+                // completion deduction tier applied) — same gate as the FTM review page, so the
+                // section can't vanish mid-review as abort decisions change.
+                const showAborts = completionDeductPct(fd.completionRateRaw) > 0;
+                const aborts = fd.abortsDetail || [];
+
                 const contextBits = [];
                 contextBits.push(`<span>Completion: <b>${r.reviewed.completionRate === null || r.reviewed.completionRate === undefined ? 'no job data' : fmtPct(r.reviewed.completionRate) + '%'}</b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.reviewed.attendanceInstances ? r.reviewed.attendanceInstances + ' flagged instance(s)' : 'clear'}</b></span>`);
-                contextBits.push(`<span>Aborts: <b>${(fd.abortsDetail || []).length ? fd.abortsDetail.length + ' this month' : 'none'}</b></span>`);
+                if (showAborts) contextBits.push(`<span>Aborts: <b>${aborts.length ? aborts.length + ' this month' : 'none'}</b></span>`);
 
                 let badges = '';
                 if (isStale) badges += `<span class="rc-badge stale">FTM Updated Since</span>`;
@@ -551,6 +557,15 @@
 
                 const metaLine = fmtMetaSegment('FTM', r.reviewed.reviewedBy, r.reviewed.reviewedAt) +
                     (isFinalized ? ` &nbsp;|&nbsp; ${fmtMetaSegment('Finalized', r.final.finalizedBy, r.final.finalizedAt)}` : '');
+
+                const abortsSectionHTML = showAborts ? `
+                    <div class="rc-aborts-section">
+                        <div class="rc-aborts-head">
+                            <span class="rc-aborts-title">Aborts This Month</span>
+                            <span class="rc-aborts-note">Shows the FTM's confirm/overturn decision for each abort. Override if needed — this only adjusts the completion rate used for this bonus review, nothing else.</span>
+                        </div>
+                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
+                    </div>` : '';
 
                 card.innerHTML = `
                     <div class="rc-head">
@@ -566,13 +581,7 @@
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
                     <div class="rc-rows" id="rows_${r.engineer.id}"></div>
-                    <div class="rc-aborts-section">
-                        <div class="rc-aborts-head">
-                            <span class="rc-aborts-title">Aborts This Month</span>
-                            <span class="rc-aborts-note">Shows the FTM's confirm/overturn decision for each abort. Override if needed — this only adjusts the completion rate used for this bonus review, nothing else.</span>
-                        </div>
-                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
-                    </div>
+                    ${abortsSectionHTML}
                     <div class="rc-footer">
                         <span class="rc-status" id="status_${r.engineer.id}"></span>
                         <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Finalize & Submit</button>
@@ -583,12 +592,13 @@
                 const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
                 rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
 
-                const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
-                const aborts = fd.abortsDetail || [];
-                if (!aborts.length) {
-                    abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
-                } else {
-                    aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                if (showAborts) {
+                    const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
+                    if (!aborts.length) {
+                        abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this month.</div>`;
+                    } else {
+                        aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                    }
                 }
 
                 card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerFinal(r.engineer.id, this); });
