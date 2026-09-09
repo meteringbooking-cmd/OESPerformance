@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Office Screen - OES Performance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+            background: #1b232e;
+            color: #f2f6f9;
+            height: 100vh;
+            padding: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0; padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.18);
+            margin-bottom: 6px;
+        }
+        .header-logo-img { height: 28px; object-fit: contain; }
+        .logo {
+            font-size: 1.7em; font-weight: 800;
+            background: linear-gradient(135deg, #29e0ff 0%, #4ee8ab 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+        .date-display { font-size: 1.15em; color: #cdf0f2; font-weight: 600; }
+        .last-updated { font-size: 0.8em; color: #a3bad0; font-weight: 500; }
+        .loading { text-align: center; padding: 100px 0; font-size: 1.7em; color: #cdf0f2; font-weight: 600; }
+
+        .dashboard-rows {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 6px;
+            min-height: 0;
+        }
+        .row-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 0;
+        }
+        .row-header {
+            flex-shrink: 0;
+            margin-bottom: 3px;
+        }
+        .sureserve-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #29e0ff; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(0, 210, 255, 0.5); padding-bottom: 3px;
+        }
+        .energise-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #c3a5ff; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(167, 139, 250, 0.5); padding-bottom: 3px;
+        }
+        .general-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #4ee8ab; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(16, 185, 129, 0.5); padding-bottom: 3px;
+        }
+
+        /* KPI grid structure */
+        .kpi-grid {
+            flex: 1;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            min-height: 0;
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(34,43,57,0.97), rgba(45,58,76,0.97));
+            border: 1px solid rgba(0,210,255,0.3); border-radius: 12px;
+            padding: 10px; position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column; justify-content: space-between;
+            height: 100%;
+        }
+        .kpi-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.12);
+            flex-shrink: 0;
+        }
+        .kpi-title { font-size: 0.8em; font-weight: 700; color: #cdf0f2; text-transform: uppercase; letter-spacing: 1px; }
+        .kpi-value {
+            font-size: 2.6em; font-weight: 900; margin: 2px 0;
+            background: linear-gradient(135deg, #ffffff 0%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            line-height: 1.1;
+        }
+        .kpi-target { font-size: 0.78em; color: #b9cbdc; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-target strong { color: #ffffff; }
+
+        /* Progress bars */
+        .progress-bar-container {
+            background: rgba(0,0,0,0.4); height: 6px; border-radius: 10px;
+            overflow: hidden; margin-top: 5px; margin-bottom: 3px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .progress-bar {
+            height: 100%; border-radius: 10px; transition: width 1.5s ease;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5); box-shadow: 0 0 15px rgba(0,210,255,0.6);
+        }
+        .progress-bar.warning { background: linear-gradient(90deg, #f59e0b, #d97706); box-shadow: 0 0 15px rgba(245,158,11,0.6); }
+        .progress-bar.danger  { background: linear-gradient(90deg, #ef4444, #dc2626); box-shadow: 0 0 15px rgba(239,68,68,0.6); }
+        .progress-text { font-size: 0.78em; color: #cdf0f2; text-align: right; font-weight: 700; }
+
+        /* Energise KPI card overrides */
+        .energise-grid .kpi-card {
+            border-color: rgba(167, 139, 250, 0.45);
+            background: linear-gradient(135deg, rgba(36,41,54,0.97), rgba(60,51,80,0.97));
+        }
+        .energise-grid .kpi-title { color: #d1abfc; }
+        .energise-grid .kpi-value {
+            background: linear-gradient(135deg, #ffffff 0%, #c084fc 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .energise-grid .progress-bar {
+            background: linear-gradient(90deg, #a78bfa, #c084fc);
+            box-shadow: 0 0 15px rgba(167, 139, 250, 0.6);
+        }
+
+        /* Team Grids */
+        .attendance-grid, .miles-team-grid { display: grid; gap: 6px; margin-top: 4px; flex: 1; align-content: space-around; }
+        .attendance-grid { grid-template-columns: repeat(2, 1fr); }
+        .miles-team-grid { grid-template-columns: repeat(3, 1fr); }
+        .attendance-item, .miles-team-item {
+            text-align: center; padding: 6px 4px; background: rgba(0,0,0,0.25);
+            border-radius: 8px; border: 1px solid rgba(0,210,255,0.3);
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .energise-grid .attendance-item, .energise-grid .miles-team-item { border-color: rgba(167, 139, 250, 0.3); }
+        .attendance-item-label, .miles-team-label { font-size: 0.65em; color: #cdf0f2; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; }
+        .attendance-item-value, .miles-team-value { font-size: 1.1em; font-weight: 800; color: #ffffff; }
+
+        /* Secondary Stats list */
+        .secondary-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; flex: 1; align-content: space-around; }
+        .secondary-stat {
+            text-align: center; padding: 6px; background: rgba(0,0,0,0.25);
+            border-radius: 8px; border: 1px solid rgba(0,210,255,0.3);
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .secondary-stat-label { font-size: 0.65em; color: #cdf0f2; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; }
+        .secondary-stat-value { font-size: 1.1em; font-weight: 800; color: #ffffff; }
+
+        /* Workforce styles */
+        .sub-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 4px; }
+        .sub-stat { text-align: center; background: rgba(0,0,0,0.2); padding: 5px 2px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); }
+        .sub-stat-label { font-size: 0.62em; color: #cdf0f2; text-transform: uppercase; margin-bottom: 2px; }
+        .sub-stat-value { font-size: 1.2em; font-weight: 800; }
+
+        /* Engineer Tags list for vehicle checks */
+        .engineer-tags-container {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; overflow-y: auto; margin-top: 6px; flex: 1;
+        }
+        .engineer-tag {
+            background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.4);
+            color: #ffb3ae; font-size: 0.78em; font-weight: 600; padding: 4px; border-radius: 6px;
+            text-align: center; text-transform: uppercase; letter-spacing: 0.5px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Historical data expands list */
+        .historical-table { display: none; }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        const _cfg = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717"
+        };
+        const _app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(_cfg);
+        window._db = getFirestore(_app);
+        document.documentElement.style.visibility = 'visible';
+    </script>
+
+    <div class="container">
+        <div class="header">
+            <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
+            <div class="logo">Office Screen</div>
+            <div style="text-align: right;">
+                <div class="date-display" id="statsDate">Loading...</div>
+                <div class="last-updated" id="lastUpdated">Last updated: --</div>
+            </div>
+        </div>
+
+        <div id="loadingDiv" class="loading">Loading dashboard data...</div>
+
+        <div id="dashboardContent" class="dashboard-rows" style="display: none;">
+            <!-- Sureserve Row -->
+            <div class="row-section">
+                <div class="row-header sureserve-theme-header">
+                    <h2>Sureserve Stats</h2>
+                </div>
+                <div class="kpi-grid">
+                    <!-- Meters Installed -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Installed</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" id="metersActual" style="font-size: 5.5em; margin: 0;">0</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong id="metersTarget">0</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="metersProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="metersProgressText">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Completion Rate -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;"><span id="completionActual">0</span>%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>90%</strong></div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="completionProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="completionProgressText">0 of 0 jobs</div>
+                        </div>
+                    </div>
+
+                    <!-- Miles per Meter -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Miles per Meter</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Overall Avg</span>
+                                <span class="kpi-value" id="milesOverallAvg" style="font-size: 2em; margin: 0;">—</span>
+                            </div>
+                            <div class="miles-team-grid" style="margin-top: 0;">
+                                <div class="miles-team-item"><div class="miles-team-label">Richard</div><div class="miles-team-value" id="milesTeam_richard">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott</div><div class="miles-team-value" id="milesTeam_scott">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott (Scot)</div><div class="miles-team-value" id="milesTeam_scottScot">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Stuart</div><div class="miles-team-value" id="milesTeam_stuart">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Tom Green</div><div class="miles-team-value" id="milesTeam_ftl4">—</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Attendance (OES)</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Engineers Scheduled</span>
+                                <span class="kpi-value" id="attendanceTotal" style="font-size: 2em; margin: 0;">0</span>
+                            </div>
+                            <div class="attendance-grid" style="margin-top: 0;">
+                                <div class="attendance-item"><div class="attendance-item-label">At Work</div><div class="attendance-item-value" id="atWorkPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">Holiday</div><div class="attendance-item-value" id="holPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">Sick</div><div class="attendance-item-value" id="sickPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">AAUP</div><div class="attendance-item-value" id="aaupPercent">0%</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Energise Row -->
+            <div class="row-section">
+                <div class="row-header energise-theme-header">
+                    <h2>Energise Stats</h2>
+                </div>
+                <div class="kpi-grid energise-grid">
+                    <!-- Meters Installed -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Installed</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" id="enMetersActual" style="font-size: 5.5em; margin: 0;">0</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong id="enMetersTarget">0</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="enMetersProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="enMetersProgressText">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Completion Rate -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;"><span id="enCompletionActual">0</span>%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>90%</strong></div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="enCompletionProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="enCompletionProgressText">0 of 0 jobs</div>
+                        </div>
+                    </div>
+
+                    <!-- Miles per Meter -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Miles per Meter</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Overall Avg</span>
+                                <span class="kpi-value" id="enMilesOverallAvg" style="font-size: 2em; margin: 0;">—</span>
+                            </div>
+                            <div class="miles-team-grid" style="margin-top: 0;">
+                                <div class="miles-team-item"><div class="miles-team-label">Richard</div><div class="miles-team-value" id="enMilesTeam_richard">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott</div><div class="miles-team-value" id="enMilesTeam_scott">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott (Scot)</div><div class="miles-team-value" id="enMilesTeam_scottScot">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Stuart</div><div class="miles-team-value" id="enMilesTeam_stuart">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Tom Green</div><div class="miles-team-value" id="enMilesTeam_ftl4">—</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Attendance (OES)</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Engineers Scheduled</span>
+                                <span class="kpi-value" id="enAttendanceTotal" style="font-size: 2em; margin: 0;">0</span>
+                            </div>
+                            <div class="attendance-grid" style="margin-top: 0;">
+                                <div class="attendance-item"><div class="attendance-item-label">At Work</div><div class="attendance-item-value" id="enAtWorkPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">Holiday</div><div class="attendance-item-value" id="enHolPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">Sick</div><div class="attendance-item-value" id="enSickPercent">0%</div></div>
+                                <div class="attendance-item"><div class="attendance-item-label">AAUP</div><div class="attendance-item-value" id="enAaupPercent">0%</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Projects & Compliance Row -->
+            <div class="row-section">
+                <div class="row-header general-theme-header">
+                    <h2>Other Projects & Compliance</h2>
+                </div>
+                <div class="kpi-grid">
+                    <!-- SP Jobs Completion Rate -->
+                    <div class="kpi-card" style="
+                        background: linear-gradient(135deg, rgba(20,26,35,0.95), rgba(30,50,40,0.95));
+                        border: 1px solid rgba(16,185,129,0.4);
+                    ">
+                        <div class="kpi-header" style="border-bottom: 1px solid rgba(16,185,129,0.35);">
+                            <span class="kpi-title" style="color: #34d399;">SP Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 3.2em; margin: 0; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"><span id="spCompletionActual">—</span>%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target" style="color: #cdf0f2;">Target: <strong style="color: #34d399;">90%</strong> · <span id="spCompletionDateLabel">Loading…</span></div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="spCompletionProgress" style="width: 0%; background: linear-gradient(90deg, #10b981, #34d399); box-shadow: 0 0 12px rgba(16,185,129,0.6);"></div>
+                            </div>
+                            <div class="progress-text" id="spCompletionProgressText" style="color: #cdf0f2;">Loading…</div>
+                        </div>
+                    </div>
+
+                    <!-- Job Changes -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Job Changes <span id="jobChangesDateLabel" style="font-size: 0.85em; opacity: 0.7; font-weight: normal; margin-left: 4px;"></span></span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-around; min-height: 0; width: 100%;">
+                            <div>
+                                <div class="kpi-target" style="margin-bottom: 3px;">Yesterday</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value" id="jcSsTotal">0</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value" id="jcEnTotal">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="border-top: 1px solid rgba(255,255,255,0.15); padding-top: 4px;">
+                                <div class="kpi-target" style="margin-bottom: 3px;">Month to Date</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value" id="jcSsMonthTotal">0</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value" id="jcEnMonthTotal">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Missing Vehicle Checks -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Missing Vehicle Checks <span id="vehicleChecksDate" style="font-size: 0.85em; opacity: 0.7; font-weight: normal; margin-left: 4px;"></span></span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Missing Uploads today</span>
+                                <span class="kpi-value" id="statMissingVehicleChecks" style="font-size: 2em; margin: 0; background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">—</span>
+                            </div>
+                            <div class="engineer-tags-container" id="missingChecksList" style="flex: 1; margin-top: 3px;">Loading checks...</div>
+                        </div>
+                    </div>
+
+                    <!-- Workforce -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Workforce</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-around; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span class="kpi-target">Total Staff</span>
+                                <span class="kpi-value" id="totalEmployees" style="font-size: 2.3em; margin: 0; background: linear-gradient(135deg, #10b981 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">0</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 4px;">
+                                <span class="kpi-target">Engineers / Office</span>
+                                <span style="font-size: 1.15em; font-weight: 800; color: #ffffff;"><strong id="engineerCount">0</strong> / <strong id="backOfficeCount">0</strong></span>
+                            </div>
+                            <div class="sub-stats" style="margin-top: 3px;">
+                                <div class="sub-stat" style="border-color: rgba(0,210,255,0.4);">
+                                    <div class="sub-stat-label">Sureserve</div>
+                                    <div class="sub-stat-value" style="color: #00d2ff;" id="oesCount">0</div>
+                                </div>
+                                <div class="sub-stat" style="border-color: rgba(245,158,11,0.4);">
+                                    <div class="sub-stat-label">SP</div>
+                                    <div class="sub-stat-value" style="color: #f59e0b;" id="scottishPowerCount">0</div>
+                                </div>
+                                <div class="sub-stat" style="border-color: rgba(167,139,250,0.4);">
+                                    <div class="sub-stat-label">EES</div>
+                                    <div class="sub-stat-value" style="color: #a78bfa;" id="edfCount">0</div>
+                                </div>
+                                <div class="sub-stat" style="border-color: rgba(16,185,129,0.4);">
+                                    <div class="sub-stat-label">Calisen</div>
+                                    <div class="sub-stat-value" style="color: #34d399;" id="calisenCount">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const performanceApp = initializeApp({
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        }, "performance");
+        
+        const staffApp = initializeApp({
+            apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+            authDomain: "pingu-solar.firebaseapp.com",
+            projectId: "pingu-solar",
+            storageBucket: "pingu-solar.firebasestorage.app",
+            messagingSenderId: "232764952866",
+            appId: "1:232764952866:web:5923b7f419de6355d6157b",
+            measurementId: "G-PFH059DZ64"
+        }, "staff");
+
+        const performanceDb = getFirestore(performanceApp);
+        const staffDb = getFirestore(staffApp);
+
+        let oesEngineerCount = 0;
+        let enOesEngineerCount = 0;
+        let engineerTeamMap = null;
+        let enEngineerTeamMap = null;
+
+        // --- UK bank holiday awareness ---------------------------------
+        // Fetched once from the official gov.uk API and cached as a Set of
+        // 'YYYY-MM-DD' strings so it never needs to be hardcoded/updated.
+        let bankHolidaySet = null;
+        async function loadBankHolidays() {
+            if (bankHolidaySet) return bankHolidaySet;
+            bankHolidaySet = new Set();
+            try {
+                const resp = await fetch('https://www.gov.uk/bank-holidays.json');
+                const data = await resp.json();
+                const events = (data['england-and-wales'] && data['england-and-wales'].events) || [];
+                events.forEach(e => bankHolidaySet.add(e.date));
+            } catch (err) {
+                console.error('Bank holiday fetch failed, falling back to weekends-only:', err);
+            }
+            return bankHolidaySet;
+        }
+        // -----------------------------------------------------------------
+
+        const TEAM_KEY_MAP = {
+            'Richard Wiecko':'richard','Scott Carson':'scott',
+            'Scott Carson - Scot':'scottScot','Stuart Whyte':'stuart',
+            'FTL 4':'ftl4','Tom Green':'ftl4',
+        };
+
+        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false;
+            if (bankHolidaySet && bankHolidaySet.has(formatDateForQuery(d))) return false;
+            return true;
+        }
+        function getPreviousWorkingDay() {
+            let d = new Date(); d.setDate(d.getDate() - 1);
+            while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+            return d;
+        }
+        function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+        function normaliseName(n) { return (n || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+        
+        function lookupTeamLeader(rawName) {
+            if (!engineerTeamMap) return '';
+            const exact = engineerTeamMap[rawName.trim()]; if (exact) return exact;
+            const norm = normaliseName(rawName);
+            for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                if (normaliseName(storedName) === norm) return tl;
+            }
+            const lastWord = norm.split(' ').pop();
+            if (lastWord && lastWord.length > 2) {
+                for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                    if (normaliseName(storedName).split(' ').pop() === lastWord) return tl;
+                }
+            }
+            return '';
+        }
+        
+        function lookupEnTeamLeader(rawName) {
+            if (!enEngineerTeamMap) return '';
+            const exact = enEngineerTeamMap[rawName.trim()]; if (exact) return exact;
+            const norm = normaliseName(rawName);
+            for (const [storedName, tl] of Object.entries(enEngineerTeamMap)) {
+                if (normaliseName(storedName) === norm) return tl;
+            }
+            const lastWord = norm.split(' ').pop();
+            if (lastWord && lastWord.length > 2) {
+                for (const [storedName, tl] of Object.entries(enEngineerTeamMap)) {
+                    if (normaliseName(storedName).split(' ').pop() === lastWord) return tl;
+                }
+            }
+            return '';
+        }
+
+        async function buildEngineerTeamMap() {
+            if (engineerTeamMap) return engineerTeamMap;
+            engineerTeamMap = {};
+            try {
+                const snap = await getDocs(collection(performanceDb, "engineers"));
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const name = (d.engineerName || '').trim();
+                    let tl = (d.teamLeader || '').trim();
+                    const contract = (d.contract || '').trim();
+                    if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                    if (name && tl && !contract.includes('Energise')) engineerTeamMap[name] = tl;
+                });
+            } catch (err) { console.error('Error building Sureserve team map:', err); }
+            return engineerTeamMap || {};
+        }
+
+        async function buildEnEngineerTeamMap() {
+            if (enEngineerTeamMap) return enEngineerTeamMap;
+            enEngineerTeamMap = {};
+            try {
+                const snap = await getDocs(collection(performanceDb, "engineers"));
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const name = (d.engineerName || '').trim();
+                    let tl = (d.teamLeader || '').trim();
+                    const contract = (d.contract || '').trim();
+                    if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                    if (name && tl && contract.includes('Energise')) enEngineerTeamMap[name] = tl;
+                });
+            } catch (err) { console.error('Error building Energise team map:', err); }
+            return enEngineerTeamMap || {};
+        }
+
+        async function loadMilesPerMeter(dateStr) {
+            try {
+                const [milesSnap, teamMap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))),
+                    buildEngineerTeamMap()
+                ]);
+                if (milesSnap.empty) {
+                    document.getElementById('milesOverallAvg').textContent = 'N/A';
+                    ['richard','scott','scottScot','stuart','ftl4'].forEach(k => document.getElementById(`milesTeam_${k}`).textContent = 'N/A');
+                    return;
+                }
+                const teamBuckets = { richard:[], scott:[], scottScot:[], stuart:[], ftl4:[] };
+                milesSnap.forEach(doc => {
+                    const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
+                    const engineerName = (d.engineer||'').trim();
+                    let tl = (d.teamLeader || d.team_leader || '').trim();
+                    if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
+                    const key = TEAM_KEY_MAP[tl]||null;
+                    if (key && teamBuckets[key] !== undefined) teamBuckets[key].push(val);
+                });
+                const allVals = Object.values(teamBuckets).flat();
+                document.getElementById('milesOverallAvg').textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
+                const teamAvg = (key) => teamBuckets[key].length ? (teamBuckets[key].reduce((a,b)=>a+b,0)/teamBuckets[key].length).toFixed(2) : '—';
+                document.getElementById('milesTeam_richard').textContent=teamAvg('richard');
+                document.getElementById('milesTeam_scott').textContent=teamAvg('scott');
+                document.getElementById('milesTeam_scottScot').textContent=teamAvg('scottScot');
+                document.getElementById('milesTeam_stuart').textContent=teamAvg('stuart');
+                document.getElementById('milesTeam_ftl4').textContent=teamAvg('ftl4');
+            } catch (err) { console.error('Miles load error:', err); }
+        }
+
+        async function loadEnMilesPerMeter(dateStr) {
+            try {
+                const [milesSnap, teamMap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Miles to Meter energise"), where("date", "==", dateStr))),
+                    buildEnEngineerTeamMap()
+                ]);
+                if (milesSnap.empty) {
+                    document.getElementById('enMilesOverallAvg').textContent = 'N/A';
+                    ['richard','scott','scottScot','stuart','ftl4'].forEach(k => document.getElementById(`enMilesTeam_${k}`).textContent = 'N/A');
+                    return;
+                }
+                const teamBuckets = { richard:[], scott:[], scottScot:[], stuart:[], ftl4:[] };
+                milesSnap.forEach(doc => {
+                    const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
+                    const engineerName = (d.engineer||'').trim();
+                    let tl = (d.teamLeader || d.team_leader || '').trim();
+                    if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupEnTeamLeader(engineerName);
+                    const key = TEAM_KEY_MAP[tl]||null;
+                    if (key && teamBuckets[key] !== undefined) teamBuckets[key].push(val);
+                });
+                const allVals = Object.values(teamBuckets).flat();
+                document.getElementById('enMilesOverallAvg').textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
+                const teamAvg = (key) => teamBuckets[key].length ? (teamBuckets[key].reduce((a,b)=>a+b,0)/teamBuckets[key].length).toFixed(2) : '—';
+                document.getElementById('enMilesTeam_richard').textContent=teamAvg('richard');
+                document.getElementById('enMilesTeam_scott').textContent=teamAvg('scott');
+                document.getElementById('enMilesTeam_scottScot').textContent=teamAvg('scottScot');
+                document.getElementById('enMilesTeam_stuart').textContent=teamAvg('stuart');
+                document.getElementById('enMilesTeam_ftl4').textContent=teamAvg('ftl4');
+            } catch (err) { console.error('Energise Miles load error:', err); }
+        }
+
+        async function loadSPCompletion(dateStr) {
+            try {
+                const spD = new Date(dateStr + 'T12:00:00');
+                const spLabel = spD.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+                const nowHour = new Date().getHours();
+                const spNote = nowHour < 11 ? '(before 11am — showing day before yesterday)' : '(from 11am — showing yesterday)';
+                const labelEl = document.getElementById('spCompletionDateLabel');
+                if (labelEl) labelEl.textContent = `${spLabel} ${spNote}`;
+
+                const [jobsSnap, teamsSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, 'SP Submitted Data'),
+                        where('submissionDate', '==', dateStr))),
+                    getDocs(collection(performanceDb, 'SP - Teams'))
+                ]);
+
+                const knownEngineers = new Set();
+                teamsSnap.forEach(d => {
+                    const name = (d.data().engineerName || '').trim().toLowerCase();
+                    if (name) knownEngineers.add(name);
+                });
+
+                let total = 0, completed = 0;
+                jobsSnap.forEach(d => {
+                    const data   = d.data();
+                    const eng    = (data.outcomeResource || '').trim().toLowerCase();
+                    const status = (data.jobStatus || '').trim().toLowerCase();
+                    if (!knownEngineers.has(eng)) return;
+                    if (status === 'completed' || status === 'full abort') {
+                        total++;
+                        if (status === 'completed') completed++;
+                    }
+                });
+
+                const pct = total > 0 ? ((completed / total) * 100).toFixed(1) : 0;
+                document.getElementById('spCompletionActual').textContent      = pct;
+                document.getElementById('spCompletionProgressText').textContent = total > 0 ? `${completed} of ${total} jobs` : 'No data for this date';
+                updateProgressBar('spCompletionProgress', +pct);
+            } catch(err) {
+                console.error('SP Completion load error:', err);
+                document.getElementById('spCompletionActual').textContent      = 'Err';
+                document.getElementById('spCompletionProgressText').textContent = 'Error loading data';
+            }
+        }
+
+        function getSPCompletionDate() {
+            const now = new Date();
+            const hourNow = now.getHours();
+            const daysBack = hourNow < 11 ? 2 : 1;
+            let target = new Date();
+            let count = 0;
+            while (count < daysBack) {
+                target.setDate(target.getDate() - 1);
+                if (isWorkingDay(target)) count++;
+            }
+            return formatDateForQuery(target);
+        }
+
+        function getFirstDayOfMonthStr() {
+            const now = new Date();
+            const first = new Date(now.getFullYear(), now.getMonth(), 1);
+            return formatDateForQuery(first);
+        }
+
+        async function loadJobChanges(dateStr) {
+            try {
+                const monthStartStr = getFirstDayOfMonthStr();
+                const todayStr = formatDateForQuery(new Date());
+
+                const [ssDaySnap, enDaySnap, ssMonthSnap, enMonthSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Job Changes"), where("date", "==", dateStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes - Energise"), where("date", "==", dateStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes"), where("date", ">=", monthStartStr), where("date", "<=", todayStr))),
+                    getDocs(query(collection(performanceDb, "Job Changes - Energise"), where("date", ">=", monthStartStr), where("date", "<=", todayStr)))
+                ]);
+
+                function sumTotal(snap) {
+                    let total = 0;
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        total += (d.dual||0) + (d.single||0) + (d.comms||0) + (d.removal||0);
+                    });
+                    return total;
+                }
+
+                document.getElementById('jcSsTotal').textContent = sumTotal(ssDaySnap);
+                document.getElementById('jcEnTotal').textContent = sumTotal(enDaySnap);
+                document.getElementById('jcSsMonthTotal').textContent = sumTotal(ssMonthSnap).toLocaleString();
+                document.getElementById('jcEnMonthTotal').textContent = sumTotal(enMonthSnap).toLocaleString();
+
+                const dLabelEl = document.getElementById('jobChangesDateLabel');
+                if (dLabelEl) {
+                    const dObj = new Date(dateStr + 'T12:00:00');
+                    dLabelEl.textContent = `(${formatDate(dObj)})`;
+                }
+            } catch (err) {
+                console.error("Error loading job changes:", err);
+            }
+        }
+
+        async function loadVehicleChecks(dateStr) {
+            try {
+                const latestQuery = query(collection(performanceDb, "vehicle check"), orderBy("date", "desc"), limit(1));
+                const latestSnap = await getDocs(latestQuery);
+                let targetDate = dateStr;
+                if (!latestSnap.empty) {
+                    latestSnap.forEach(doc => {
+                        targetDate = doc.data().date;
+                    });
+                }
+
+                const dateEl = document.getElementById('vehicleChecksDate');
+                if (dateEl && targetDate) {
+                    const dObj = new Date(targetDate + 'T12:00:00');
+                    dateEl.textContent = `(${formatDate(dObj)})`;
+                }
+
+                const q = query(collection(performanceDb, "vehicle check"), where("date", "==", targetDate));
+                const snap = await getDocs(q);
+                const missingNames = [];
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.checkComplete === 0 && d.attendance === 'X') {
+                        missingNames.push(d.name);
+                    }
+                });
+                
+                document.getElementById('statMissingVehicleChecks').textContent = missingNames.length;
+                if (missingNames.length === 0) {
+                    document.getElementById('missingChecksList').innerHTML = '<div style="color: #10b981; font-weight: 700; font-size: 1.2em; display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; grid-column: span 2;">All Checked</div>';
+                } else {
+                    document.getElementById('missingChecksList').innerHTML = missingNames.map(n => `<span class="engineer-tag">${n}</span>`).join('');
+                }
+            } catch(err) {
+                console.error("Error loading vehicle checks:", err);
+                document.getElementById('statMissingVehicleChecks').textContent = 'Error';
+            }
+        }
+
+        function updateProgressBar(id, pct) {
+            const bar=document.getElementById(id), val=Math.min(Math.max(0,pct),100);
+            bar.style.width=val+'%';
+            bar.className='progress-bar'+(val>=90?'':val>=70?' warning':' danger');
+        }
+
+        async function loadDashboard() {
+            try {
+                // Load the current UK bank holiday list first so isWorkingDay()
+                // correctly skips holidays as well as weekends.
+                await loadBankHolidays();
+
+                const prevDay=getPreviousWorkingDay(),dateStr=formatDateForQuery(prevDay);
+                document.getElementById('statsDate').textContent=`Stats for ${formatDate(prevDay)}`;
+                
+                // 1. Sureserve Staff counts
+                const staffSnap=await getDocs(collection(staffDb,"employees"));
+                let oes=0,sp=0,edf=0,bo=0,cal=0;
+                staffSnap.forEach(doc=>{
+                    const d=doc.data();if(d.leaveDate)return;
+                    const loc=(d.Location||d.location||'').trim().toUpperCase(),tl=d['Team Leader']||d.teamLeader;
+                    if(tl==='Back Office')bo++;else if(loc==='OES')oes++;else if(loc==='SCOTTISH POWER')sp++;else if(loc==='CALISEN')cal++;else if(loc==='OES ENERGISE'||loc==='EDF')edf++;
+                });
+                oesEngineerCount=oes;
+                const totalEng=oes+sp+edf+cal;
+                document.getElementById('totalEmployees').textContent=totalEng+bo;
+                document.getElementById('engineerCount').textContent=totalEng;
+                document.getElementById('oesCount').textContent=oes;
+                document.getElementById('scottishPowerCount').textContent=sp;
+                document.getElementById('edfCount').textContent=edf;
+                document.getElementById('calisenCount').textContent=cal;
+                document.getElementById('backOfficeCount').textContent=bo;
+                document.getElementById('metersTarget').textContent=Math.round(oes*6*0.9);
+
+                // 2. Energise Staff counts (from the same employees collection, identified by Location 'OES Energise')
+                enOesEngineerCount = edf;
+                document.getElementById('enMetersTarget').textContent=Math.round(edf*4);
+
+                // 3. Data fetch
+                const [perfSnap, enPerfSnap, gsSnap, enGsSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb,"performance"),where("date","==",dateStr))),
+                    getDocs(query(collection(performanceDb,"performance - Energise"),where("date","==",dateStr))),
+                    getDocs(query(collection(performanceDb,"garethstats"),where("date","==",dateStr))),
+                    getDocs(query(collection(performanceDb,"garethstats energise"),where("date","==",dateStr)))
+                ]);
+
+                // Sureserve performance
+                let meters=0,jobs=0,completed=0;
+                perfSnap.forEach(doc=>{const d=doc.data();meters+=d.meters||0;jobs+=d.jobs||0;completed+=d.completed||0;});
+                const metersTarget=Math.round(oes*6*0.9);
+                const metersRate=metersTarget?(meters/metersTarget*100).toFixed(1):'0';
+                const compRate=jobs?(completed/jobs*100).toFixed(1):'0';
+                document.getElementById('metersActual').textContent=meters.toLocaleString();
+                document.getElementById('metersProgressText').textContent=metersRate+'%';
+                updateProgressBar('metersProgress',+metersRate);
+                document.getElementById('completionActual').textContent=compRate;
+                document.getElementById('completionProgressText').textContent=`${completed.toLocaleString()} of ${jobs.toLocaleString()} jobs`;
+                updateProgressBar('completionProgress',+compRate);
+
+                // Energise performance
+                let enMeters=0,enJobs=0,enCompleted=0;
+                enPerfSnap.forEach(doc=>{const d=doc.data();enMeters+=d.meters||0;enJobs+=d.jobs||0;enCompleted+=d.completed||0;});
+                const enMetersTarget=Math.round(edf*4);
+                const enMetersRate=enMetersTarget?(enMeters/enMetersTarget*100).toFixed(1):'0';
+                const enCompRate=enJobs?(enCompleted/enJobs*100).toFixed(1):'0';
+                document.getElementById('enMetersActual').textContent=enMeters.toLocaleString();
+                document.getElementById('enMetersProgressText').textContent=enMetersRate+'%';
+                updateProgressBar('enMetersProgress',+enMetersRate);
+                document.getElementById('enCompletionActual').textContent=enCompRate;
+                document.getElementById('enCompletionProgressText').textContent=`${enCompleted.toLocaleString()} of ${enJobs.toLocaleString()} jobs`;
+                updateProgressBar('enCompletionProgress',+enCompRate);
+
+                // Sureserve attendance
+                let aw=0,hol=0,sick=0,aaup=0;
+                gsSnap.forEach(doc=>{const d=doc.data();aw=d.atWorkPercent||0;hol=d.holidayPercent||0;sick=d.sickPercent||0;aaup=d.aaupPercent||0;});
+                document.getElementById('attendanceTotal').textContent=oes;
+                document.getElementById('atWorkPercent').textContent=aw.toFixed(1)+'%';
+                document.getElementById('holPercent').textContent=hol.toFixed(1)+'%';
+                document.getElementById('sickPercent').textContent=sick.toFixed(1)+'%';
+                document.getElementById('aaupPercent').textContent=aaup.toFixed(1)+'%';
+
+                // Energise attendance
+                let enAw=0,enHol=0,enSick=0,enAaup=0;
+                enGsSnap.forEach(doc=>{const d=doc.data();enAw=d.atWorkPercent||0;enHol=d.holidayPercent||0;enSick=d.sickPercent||0;enAaup=d.aaupPercent||0;});
+                document.getElementById('enAttendanceTotal').textContent=edf;
+                document.getElementById('enAtWorkPercent').textContent=enAw.toFixed(1)+'%';
+                document.getElementById('enHolPercent').textContent=enHol.toFixed(1)+'%';
+                document.getElementById('enSickPercent').textContent=enSick.toFixed(1)+'%';
+                document.getElementById('enAaupPercent').textContent=enAaup.toFixed(1)+'%';
+
+                await Promise.all([
+                    loadMilesPerMeter(dateStr),
+                    loadEnMilesPerMeter(dateStr)
+                ]);
+
+                const spDate = getSPCompletionDate();
+                await loadSPCompletion(spDate);
+                await loadJobChanges(dateStr);
+                document.getElementById('lastUpdated').textContent=`Last updated: ${new Date().toLocaleTimeString()}`;
+                document.getElementById('loadingDiv').style.display='none';
+                document.getElementById('dashboardContent').style.display='flex';
+                await loadVehicleChecks(dateStr);
+            } catch(err) {
+                console.error("Dashboard error:", err);
+                document.getElementById('loadingDiv').innerHTML='<div style="color:#ef4444">Error loading data</div>';
+            }
+        }
+
+        loadDashboard();
+        setInterval(loadDashboard, 300000); // Refresh every 5 minutes
+    </script>
+</body>
+</html>
