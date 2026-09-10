@@ -1163,6 +1163,7 @@
   window.addEventListener('load', async () => {
     await Promise.all([ loadInventory(), loadProductImages(), loadEngineerSelections() ]);
     filterItems();
+    updateBasket();  // sync badge count with any basket restored from localStorage
     attachRowHover();
   });
 </script>
@@ -1177,8 +1178,21 @@ let filteredItems = [];
 // --- LOGIN & FAVOURITES LOGIC ---
 const urlParams = new URLSearchParams(window.location.search);
 const loginUser = urlParams.get('user') || '';
-const favsKey = 'energise_favs_' + (loginUser || 'guest');
+const favsKey    = 'energise_favs_'    + (loginUser || 'guest');
+const basketKey  = 'energise_basket_'  + (loginUser || 'guest');
 let userFavs = JSON.parse(localStorage.getItem(favsKey) || '[]');
+
+// Restore basket from localStorage so it survives page navigation
+(function restoreBasket() {
+  try {
+    const saved = localStorage.getItem(basketKey);
+    if (saved) window.basket = JSON.parse(saved);
+  } catch (e) { window.basket = {}; }
+})();
+
+function saveBasket() {
+  try { localStorage.setItem(basketKey, JSON.stringify(window.basket)); } catch (e) {}
+}
 
 window.toggleFav = function(sku) {
   if (userFavs.includes(sku)) {
@@ -1349,6 +1363,7 @@ window.addItem = function(sku) {
   }
   
   window.basket[sku] = { ...item, qty };
+  saveBasket();
   updateBasket();
   const cell = document.getElementById('action-' + sku);
   if (cell) cell.innerHTML = buildActionCell(item, window.basket[sku]);
@@ -1358,6 +1373,7 @@ window.addItem = function(sku) {
 
 window.removeItem = function(sku) {
   delete window.basket[sku];
+  saveBasket();
   updateBasket();
   const item = ITEMS.find(i => i.sku === sku);
   const cell = document.getElementById('action-' + sku);
@@ -1368,6 +1384,7 @@ window.removeItem = function(sku) {
 
 window.clearBasket = function() {
   window.basket = {};
+  saveBasket();
   updateBasket();
   renderTable();
 };
