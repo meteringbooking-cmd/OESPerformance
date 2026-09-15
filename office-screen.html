@@ -128,6 +128,16 @@
             box-shadow: 0 0 15px rgba(167, 139, 250, 0.6);
         }
 
+        /* Miles per Meter team breakdown grid (same as officescreen.html) */
+        .miles-team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 4px; flex: 1; align-content: space-around; }
+        .miles-team-item {
+            text-align: center; padding: 6px 4px; background: rgba(0,0,0,0.25);
+            border-radius: 8px; border: 1px solid rgba(0,210,255,0.3);
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .miles-team-label { font-size: 0.65em; color: #cdf0f2; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; }
+        .miles-team-value { font-size: 1.1em; font-weight: 800; color: #ffffff; }
+
         /* Secondary Stats list (Job Changes) */
         .secondary-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; flex: 1; align-content: space-around; }
         .secondary-stat {
@@ -200,19 +210,6 @@
                         </div>
                     </div>
 
-                    <!-- Miles per Meter (live, matches officescreen.html) -->
-                    <div class="kpi-card">
-                        <div class="kpi-header">
-                            <span class="kpi-title">Miles per Meter</span>
-                        </div>
-                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" id="milesOverallAvg" style="font-size: 5.5em; margin: 0;">—</div>
-                        </div>
-                        <div style="width: 100%;">
-                            <div class="kpi-target">Overall Average</div>
-                        </div>
-                    </div>
-
                     <!-- Meters Per Head -->
                     <div class="kpi-card">
                         <div class="kpi-header">
@@ -223,6 +220,26 @@
                         </div>
                         <div style="width: 100%;">
                             <div class="kpi-target">Per Engineer / Day</div>
+                        </div>
+                    </div>
+
+                    <!-- Miles per Meter (live, matches officescreen.html) -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Miles per Meter</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.15);">
+                                <span class="kpi-target">Overall Avg</span>
+                                <span class="kpi-value" id="milesOverallAvg" style="font-size: 2em; margin: 0;">—</span>
+                            </div>
+                            <div class="miles-team-grid" style="margin-top: 0;">
+                                <div class="miles-team-item"><div class="miles-team-label">Richard</div><div class="miles-team-value" id="milesTeam_richard">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott</div><div class="miles-team-value" id="milesTeam_scott">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Scott (Scot)</div><div class="miles-team-value" id="milesTeam_scottScot">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Stuart</div><div class="miles-team-value" id="milesTeam_stuart">—</div></div>
+                                <div class="miles-team-item"><div class="miles-team-label">Tom Green</div><div class="miles-team-value" id="milesTeam_ftl4">—</div></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -307,14 +324,14 @@
                             <span class="kpi-title" style="color: #34d399;">SP Completion Rate</span>
                         </div>
                         <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" style="font-size: 5.5em; margin: 0; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">85.0%</div>
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"><span id="spCompletionActual">—</span>%</div>
                         </div>
                         <div style="width: 100%;">
-                            <div class="kpi-target" style="color: #cdf0f2;">Target: <strong style="color: #34d399;">90%</strong></div>
+                            <div class="kpi-target" style="color: #cdf0f2;">Target: <strong style="color: #34d399;">90%</strong> · <span id="spCompletionDateLabel">Loading…</span></div>
                             <div class="progress-bar-container">
-                                <div class="progress-bar warning" style="width: 85%;"></div>
+                                <div class="progress-bar" id="spCompletionProgress" style="width: 0%; background: linear-gradient(90deg, #10b981, #34d399); box-shadow: 0 0 12px rgba(16,185,129,0.6);"></div>
                             </div>
-                            <div class="progress-text" style="color: #cdf0f2;">170 of 200 jobs</div>
+                            <div class="progress-text" id="spCompletionProgressText" style="color: #cdf0f2;">Loading…</div>
                         </div>
                     </div>
 
@@ -505,8 +522,11 @@
                     getDocs(query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))),
                     buildEngineerTeamMap()
                 ]);
-                const milesEl = document.getElementById('milesOverallAvg');
-                if (milesSnap.empty) { milesEl.textContent = 'N/A'; return; }
+                if (milesSnap.empty) {
+                    document.getElementById('milesOverallAvg').textContent = 'N/A';
+                    ['richard','scott','scottScot','stuart','ftl4'].forEach(k => document.getElementById(`milesTeam_${k}`).textContent = 'N/A');
+                    return;
+                }
                 const teamBuckets = { richard:[], scott:[], scottScot:[], stuart:[], ftl4:[] };
                 milesSnap.forEach(doc => {
                     const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
@@ -517,8 +537,72 @@
                     if (key && teamBuckets[key] !== undefined) teamBuckets[key].push(val);
                 });
                 const allVals = Object.values(teamBuckets).flat();
-                milesEl.textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
+                document.getElementById('milesOverallAvg').textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
+                const teamAvg = (key) => teamBuckets[key].length ? (teamBuckets[key].reduce((a,b)=>a+b,0)/teamBuckets[key].length).toFixed(2) : '—';
+                document.getElementById('milesTeam_richard').textContent=teamAvg('richard');
+                document.getElementById('milesTeam_scott').textContent=teamAvg('scott');
+                document.getElementById('milesTeam_scottScot').textContent=teamAvg('scottScot');
+                document.getElementById('milesTeam_stuart').textContent=teamAvg('stuart');
+                document.getElementById('milesTeam_ftl4').textContent=teamAvg('ftl4');
             } catch (err) { console.error('Miles load error:', err); }
+        }
+
+        // --- Scottish Power Completion Rate (same as officescreen.html) ---
+        async function loadSPCompletion(dateStr) {
+            try {
+                const spD = new Date(dateStr + 'T12:00:00');
+                const spLabel = spD.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+                const nowHour = new Date().getHours();
+                const spNote = nowHour < 11 ? '(before 11am — showing day before yesterday)' : '(from 11am — showing yesterday)';
+                const labelEl = document.getElementById('spCompletionDateLabel');
+                if (labelEl) labelEl.textContent = `${spLabel} ${spNote}`;
+
+                const [jobsSnap, teamsSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, 'SP Submitted Data'),
+                        where('submissionDate', '==', dateStr))),
+                    getDocs(collection(performanceDb, 'SP - Teams'))
+                ]);
+
+                const knownEngineers = new Set();
+                teamsSnap.forEach(d => {
+                    const name = (d.data().engineerName || '').trim().toLowerCase();
+                    if (name) knownEngineers.add(name);
+                });
+
+                let total = 0, completed = 0;
+                jobsSnap.forEach(d => {
+                    const data   = d.data();
+                    const eng    = (data.outcomeResource || '').trim().toLowerCase();
+                    const status = (data.jobStatus || '').trim().toLowerCase();
+                    if (!knownEngineers.has(eng)) return;
+                    if (status === 'completed' || status === 'full abort') {
+                        total++;
+                        if (status === 'completed') completed++;
+                    }
+                });
+
+                const pct = total > 0 ? ((completed / total) * 100).toFixed(1) : 0;
+                document.getElementById('spCompletionActual').textContent      = pct;
+                document.getElementById('spCompletionProgressText').textContent = total > 0 ? `${completed} of ${total} jobs` : 'No data for this date';
+                updateProgressBar('spCompletionProgress', +pct);
+            } catch(err) {
+                console.error('SP Completion load error:', err);
+                document.getElementById('spCompletionActual').textContent      = 'Err';
+                document.getElementById('spCompletionProgressText').textContent = 'Error loading data';
+            }
+        }
+
+        function getSPCompletionDate() {
+            const now = new Date();
+            const hourNow = now.getHours();
+            const daysBack = hourNow < 11 ? 2 : 1;
+            let target = new Date();
+            let count = 0;
+            while (count < daysBack) {
+                target.setDate(target.getDate() - 1);
+                if (isWorkingDay(target)) count++;
+            }
+            return formatDateForQuery(target);
         }
 
         function updateProgressBar(id, pct) {
@@ -571,6 +655,9 @@
                 document.getElementById('enMetersTarget').textContent = enMetersTarget.toLocaleString();
                 document.getElementById('enMetersProgressText').textContent = enMetersRate + '%';
                 updateProgressBar('enMetersProgress', +enMetersRate);
+
+                const spDate = getSPCompletionDate();
+                await loadSPCompletion(spDate);
 
                 document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
             } catch (err) {
