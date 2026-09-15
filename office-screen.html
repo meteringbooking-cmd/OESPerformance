@@ -158,8 +158,8 @@
             <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
             <div class="logo">Office Screen</div>
             <div style="text-align: right;">
-                <div class="date-display">Stats Overview</div>
-                <div class="last-updated">Sample data</div>
+                <div class="date-display" id="statsDate">Loading...</div>
+                <div class="last-updated" id="lastUpdated">Last updated: --</div>
             </div>
         </div>
 
@@ -170,43 +170,43 @@
                     <h2>Sureserve Stats</h2>
                 </div>
                 <div class="kpi-grid">
-                    <!-- Meters Installed -->
+                    <!-- Meters Installed (live, matches officescreen.html) -->
                     <div class="kpi-card">
                         <div class="kpi-header">
                             <span class="kpi-title">Meters Installed</span>
                         </div>
                         <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">140</div>
+                            <div class="kpi-value" id="metersActual" style="font-size: 5.5em; margin: 0;">—</div>
                         </div>
                         <div style="width: 100%;">
-                            <div class="kpi-target">Target: <strong>146</strong> meters</div>
-                            <div class="progress-bar-container"><div class="progress-bar" style="width: 95.9%"></div></div>
-                            <div class="progress-text">95.9%</div>
+                            <div class="kpi-target">Target: <strong id="metersTarget">—</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="metersProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="metersProgressText">—</div>
                         </div>
                     </div>
 
-                    <!-- Completion Rate -->
+                    <!-- Completion Rate (live, matches officescreen.html) -->
                     <div class="kpi-card">
                         <div class="kpi-header">
                             <span class="kpi-title">Completion Rate</span>
                         </div>
                         <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">92.5%</div>
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;"><span id="completionActual">—</span>%</div>
                         </div>
                         <div style="width: 100%;">
                             <div class="kpi-target">Target: <strong>90%</strong></div>
-                            <div class="progress-bar-container"><div class="progress-bar" style="width: 100%"></div></div>
-                            <div class="progress-text">99 of 107 jobs</div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="completionProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="completionProgressText">—</div>
                         </div>
                     </div>
 
-                    <!-- Miles per Meter -->
+                    <!-- Miles per Meter (live, matches officescreen.html) -->
                     <div class="kpi-card">
                         <div class="kpi-header">
                             <span class="kpi-title">Miles per Meter</span>
                         </div>
                         <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">9.84</div>
+                            <div class="kpi-value" id="milesOverallAvg" style="font-size: 5.5em; margin: 0;">—</div>
                         </div>
                         <div style="width: 100%;">
                             <div class="kpi-target">Overall Average</div>
@@ -234,18 +234,18 @@
                     <h2>Energise Stats</h2>
                 </div>
                 <div class="kpi-grid energise-grid">
-                    <!-- Meters Installed -->
+                    <!-- Meters Installed (live: 90% of Sureserve's, rounded) -->
                     <div class="kpi-card">
                         <div class="kpi-header">
                             <span class="kpi-title">Meters Installed</span>
                         </div>
                         <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">126</div>
+                            <div class="kpi-value" id="enMetersActual" style="font-size: 5.5em; margin: 0;">—</div>
                         </div>
                         <div style="width: 100%;">
-                            <div class="kpi-target">Target: <strong>134</strong> meters</div>
-                            <div class="progress-bar-container"><div class="progress-bar" style="width: 94.0%"></div></div>
-                            <div class="progress-text">94.0%</div>
+                            <div class="kpi-target">Target: <strong id="enMetersTarget">—</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" id="enMetersProgress" style="width: 0%"></div></div>
+                            <div class="progress-text" id="enMetersProgressText">—</div>
                         </div>
                     </div>
 
@@ -394,5 +394,193 @@
             </div>
         </div>
     </div>
+
+    <!--
+        Live section: Sureserve "Meters Installed", "Completion Rate" and "Miles per Meter",
+        plus the Energise "Meters Installed" derived from it (90% of Sureserve, rounded).
+        This mirrors officescreen.html's own data + formulas exactly, so these four figures
+        always match that page day for day. Everything else on this page stays fixed/fake.
+    -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const performanceApp = initializeApp({
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        }, "office-screen-performance");
+
+        const staffApp = initializeApp({
+            apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+            authDomain: "pingu-solar.firebaseapp.com",
+            projectId: "pingu-solar",
+            storageBucket: "pingu-solar.firebasestorage.app",
+            messagingSenderId: "232764952866",
+            appId: "1:232764952866:web:5923b7f419de6355d6157b",
+            measurementId: "G-PFH059DZ64"
+        }, "office-screen-staff");
+
+        const performanceDb = getFirestore(performanceApp);
+        const staffDb = getFirestore(staffApp);
+
+        // --- UK bank holiday awareness (same as officescreen.html) ---
+        let bankHolidaySet = null;
+        async function loadBankHolidays() {
+            if (bankHolidaySet) return bankHolidaySet;
+            bankHolidaySet = new Set();
+            try {
+                const resp = await fetch('https://www.gov.uk/bank-holidays.json');
+                const data = await resp.json();
+                const events = (data['england-and-wales'] && data['england-and-wales'].events) || [];
+                events.forEach(e => bankHolidaySet.add(e.date));
+            } catch (err) {
+                console.error('Bank holiday fetch failed, falling back to weekends-only:', err);
+            }
+            return bankHolidaySet;
+        }
+        function formatDateForQuery(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function isWorkingDay(d) {
+            const day = d.getDay();
+            if (day === 0 || day === 6) return false;
+            if (bankHolidaySet && bankHolidaySet.has(formatDateForQuery(d))) return false;
+            return true;
+        }
+        function getPreviousWorkingDay() {
+            let d = new Date(); d.setDate(d.getDate() - 1);
+            while (!isWorkingDay(d)) d.setDate(d.getDate() - 1);
+            return d;
+        }
+        function formatDate(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+
+        // --- Miles per Meter team matching (same rules as officescreen.html, so the
+        //     overall average is filtered identically and lines up exactly) ---
+        const TEAM_KEY_MAP = {
+            'Richard Wiecko':'richard','Scott Carson':'scott',
+            'Scott Carson - Scot':'scottScot','Stuart Whyte':'stuart',
+            'FTL 4':'ftl4','Tom Green':'ftl4',
+        };
+        function normaliseName(n) { return (n || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+
+        let engineerTeamMap = null;
+        async function buildEngineerTeamMap() {
+            if (engineerTeamMap) return engineerTeamMap;
+            engineerTeamMap = {};
+            try {
+                const snap = await getDocs(collection(performanceDb, "engineers"));
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const name = (d.engineerName || '').trim();
+                    let tl = (d.teamLeader || '').trim();
+                    const contract = (d.contract || '').trim();
+                    if (/^ftl\s*4$/i.test(tl)) tl = 'FTL 4';
+                    if (name && tl && !contract.includes('Energise')) engineerTeamMap[name] = tl;
+                });
+            } catch (err) { console.error('Error building Sureserve team map:', err); }
+            return engineerTeamMap || {};
+        }
+        function lookupTeamLeader(rawName) {
+            if (!engineerTeamMap) return '';
+            const exact = engineerTeamMap[rawName.trim()]; if (exact) return exact;
+            const norm = normaliseName(rawName);
+            for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                if (normaliseName(storedName) === norm) return tl;
+            }
+            const lastWord = norm.split(' ').pop();
+            if (lastWord && lastWord.length > 2) {
+                for (const [storedName, tl] of Object.entries(engineerTeamMap)) {
+                    if (normaliseName(storedName).split(' ').pop() === lastWord) return tl;
+                }
+            }
+            return '';
+        }
+
+        async function loadMilesPerMeter(dateStr) {
+            try {
+                const [milesSnap] = await Promise.all([
+                    getDocs(query(collection(performanceDb, "Miles to Meter"), where("date", "==", dateStr))),
+                    buildEngineerTeamMap()
+                ]);
+                const milesEl = document.getElementById('milesOverallAvg');
+                if (milesSnap.empty) { milesEl.textContent = 'N/A'; return; }
+                const teamBuckets = { richard:[], scott:[], scottScot:[], stuart:[], ftl4:[] };
+                milesSnap.forEach(doc => {
+                    const d = doc.data(); const val = parseFloat(d.milesPerMeter); if (isNaN(val)) return;
+                    const engineerName = (d.engineer||'').trim();
+                    let tl = (d.teamLeader || d.team_leader || '').trim();
+                    if (!tl || !TEAM_KEY_MAP[tl]) tl = lookupTeamLeader(engineerName);
+                    const key = TEAM_KEY_MAP[tl]||null;
+                    if (key && teamBuckets[key] !== undefined) teamBuckets[key].push(val);
+                });
+                const allVals = Object.values(teamBuckets).flat();
+                milesEl.textContent = allVals.length ? (allVals.reduce((a,b)=>a+b,0)/allVals.length).toFixed(2) : '—';
+            } catch (err) { console.error('Miles load error:', err); }
+        }
+
+        function updateProgressBar(id, pct) {
+            const bar = document.getElementById(id); if (!bar) return;
+            const val = Math.min(Math.max(0, pct), 100);
+            bar.style.width = val + '%';
+            bar.className = 'progress-bar' + (val >= 90 ? '' : val >= 70 ? ' warning' : ' danger');
+        }
+
+        async function loadLiveStats() {
+            try {
+                await loadBankHolidays();
+                const prevDay = getPreviousWorkingDay();
+                const dateStr = formatDateForQuery(prevDay);
+                document.getElementById('statsDate').textContent = `Stats for ${formatDate(prevDay)}`;
+
+                // Sureserve engineer headcount -> meters target (same formula as officescreen.html)
+                const staffSnap = await getDocs(collection(staffDb, "employees"));
+                let oes = 0;
+                staffSnap.forEach(doc => {
+                    const d = doc.data(); if (d.leaveDate) return;
+                    const loc = (d.Location || d.location || '').trim().toUpperCase();
+                    if (loc === 'OES') oes++;
+                });
+                const metersTarget = Math.round(oes * 6 * 0.9);
+
+                // Sureserve performance -> Meters Installed + Completion Rate
+                const perfSnap = await getDocs(query(collection(performanceDb, "performance"), where("date", "==", dateStr)));
+                let meters = 0, jobs = 0, completed = 0;
+                perfSnap.forEach(doc => { const d = doc.data(); meters += d.meters||0; jobs += d.jobs||0; completed += d.completed||0; });
+                const metersRate = metersTarget ? (meters/metersTarget*100).toFixed(1) : '0';
+                const compRate = jobs ? (completed/jobs*100).toFixed(1) : '0';
+
+                document.getElementById('metersActual').textContent = meters.toLocaleString();
+                document.getElementById('metersTarget').textContent = metersTarget.toLocaleString();
+                document.getElementById('metersProgressText').textContent = metersRate + '%';
+                updateProgressBar('metersProgress', +metersRate);
+
+                document.getElementById('completionActual').textContent = compRate;
+                document.getElementById('completionProgressText').textContent = `${completed.toLocaleString()} of ${jobs.toLocaleString()} jobs`;
+                updateProgressBar('completionProgress', +compRate);
+
+                await loadMilesPerMeter(dateStr);
+
+                // Energise Meters Installed = 90% of Sureserve's, rounded (target scaled the same way)
+                const enMeters = Math.round(meters * 0.9);
+                const enMetersTarget = Math.round(metersTarget * 0.9);
+                const enMetersRate = enMetersTarget ? (enMeters/enMetersTarget*100).toFixed(1) : '0';
+                document.getElementById('enMetersActual').textContent = enMeters.toLocaleString();
+                document.getElementById('enMetersTarget').textContent = enMetersTarget.toLocaleString();
+                document.getElementById('enMetersProgressText').textContent = enMetersRate + '%';
+                updateProgressBar('enMetersProgress', +enMetersRate);
+
+                document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+            } catch (err) {
+                console.error('Office-Screen live stats error:', err);
+                document.getElementById('statsDate').textContent = 'Error loading live stats';
+            }
+        }
+
+        loadLiveStats();
+        setInterval(loadLiveStats, 300000); // refresh every 5 minutes
+    </script>
 </body>
 </html>
