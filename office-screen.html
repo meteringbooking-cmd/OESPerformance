@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Office Screen - OES Performance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+            background: #1b232e;
+            color: #f2f6f9;
+            height: 100vh;
+            padding: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0; padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.18);
+            margin-bottom: 6px;
+        }
+        .header-logo-img { height: 28px; object-fit: contain; }
+        .logo {
+            font-size: 1.7em; font-weight: 800;
+            background: linear-gradient(135deg, #29e0ff 0%, #4ee8ab 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+        .date-display { font-size: 1.15em; color: #cdf0f2; font-weight: 600; }
+        .last-updated { font-size: 0.8em; color: #a3bad0; font-weight: 500; }
+
+        .dashboard-rows {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 6px;
+            min-height: 0;
+        }
+        .row-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 0;
+        }
+        .row-header {
+            flex-shrink: 0;
+            margin-bottom: 3px;
+        }
+        .sureserve-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #29e0ff; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(0, 210, 255, 0.5); padding-bottom: 3px;
+        }
+        .energise-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #c3a5ff; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(167, 139, 250, 0.5); padding-bottom: 3px;
+        }
+        .general-theme-header h2 {
+            font-size: 1.05em; font-weight: 800; color: #4ee8ab; text-transform: uppercase; letter-spacing: 2px;
+            border-bottom: 1px solid rgba(16, 185, 129, 0.5); padding-bottom: 3px;
+        }
+
+        /* KPI grid structure -> 4 columns x 3 rows overall */
+        .kpi-grid {
+            flex: 1;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            min-height: 0;
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(34,43,57,0.97), rgba(45,58,76,0.97));
+            border: 1px solid rgba(0,210,255,0.3); border-radius: 12px;
+            padding: 10px; position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column; justify-content: space-between;
+            height: 100%;
+        }
+        .kpi-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.12);
+            flex-shrink: 0;
+        }
+        .kpi-title { font-size: 0.8em; font-weight: 700; color: #cdf0f2; text-transform: uppercase; letter-spacing: 1px; }
+        .kpi-value {
+            font-size: 2.6em; font-weight: 900; margin: 2px 0;
+            background: linear-gradient(135deg, #ffffff 0%, #00d2ff 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            line-height: 1.1;
+        }
+        .kpi-target { font-size: 0.78em; color: #b9cbdc; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-target strong { color: #ffffff; }
+
+        /* Progress bars */
+        .progress-bar-container {
+            background: rgba(0,0,0,0.4); height: 6px; border-radius: 10px;
+            overflow: hidden; margin-top: 5px; margin-bottom: 3px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .progress-bar {
+            height: 100%; border-radius: 10px;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5); box-shadow: 0 0 15px rgba(0,210,255,0.6);
+        }
+        .progress-bar.warning { background: linear-gradient(90deg, #f59e0b, #d97706); box-shadow: 0 0 15px rgba(245,158,11,0.6); }
+        .progress-bar.danger  { background: linear-gradient(90deg, #ef4444, #dc2626); box-shadow: 0 0 15px rgba(239,68,68,0.6); }
+        .progress-text { font-size: 0.78em; color: #cdf0f2; text-align: right; font-weight: 700; }
+
+        /* Energise KPI card overrides */
+        .energise-grid .kpi-card {
+            border-color: rgba(167, 139, 250, 0.45);
+            background: linear-gradient(135deg, rgba(36,41,54,0.97), rgba(60,51,80,0.97));
+        }
+        .energise-grid .kpi-title { color: #d1abfc; }
+        .energise-grid .kpi-value {
+            background: linear-gradient(135deg, #ffffff 0%, #c084fc 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .energise-grid .progress-bar {
+            background: linear-gradient(90deg, #a78bfa, #c084fc);
+            box-shadow: 0 0 15px rgba(167, 139, 250, 0.6);
+        }
+
+        /* Secondary Stats list (Job Changes) */
+        .secondary-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; flex: 1; align-content: space-around; }
+        .secondary-stat {
+            text-align: center; padding: 6px; background: rgba(0,0,0,0.25);
+            border-radius: 8px; border: 1px solid rgba(0,210,255,0.3);
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .secondary-stat-label { font-size: 0.65em; color: #cdf0f2; margin-bottom: 2px; font-weight: 600; text-transform: uppercase; }
+        .secondary-stat-value { font-size: 1.1em; font-weight: 800; color: #ffffff; }
+
+        /* Outstanding issues sub-grid (2x2) */
+        .issues-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 4px; flex: 1; }
+        .issue-box {
+            text-align: center; padding: 8px 4px; background: rgba(0,0,0,0.25);
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px;
+        }
+        .issue-label { font-size: 0.68em; color: #cdf0f2; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .issue-placeholder { font-size: 0.72em; color: #7f95ab; font-style: italic; }
+
+        /* Text-value card (SIP) */
+        .kpi-value.text-value { font-size: 1.5em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://www.dropbox.com/scl/fi/kkujm1u6y7vvnp7luq8d7/ngu-main-white.png?rlkey=kgq2uh48qh4xssh4vlbz868lr&st=481r4vh1&raw=1" alt="NGU Logo" class="header-logo-img">
+            <div class="logo">Office Screen</div>
+            <div style="text-align: right;">
+                <div class="date-display">Stats Overview</div>
+                <div class="last-updated">Sample data</div>
+            </div>
+        </div>
+
+        <div class="dashboard-rows">
+            <!-- Sureserve Row -->
+            <div class="row-section">
+                <div class="row-header sureserve-theme-header">
+                    <h2>Sureserve Stats</h2>
+                </div>
+                <div class="kpi-grid">
+                    <!-- Meters Installed -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Installed</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">220</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>240</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" style="width: 91.7%"></div></div>
+                            <div class="progress-text">91.7%</div>
+                        </div>
+                    </div>
+
+                    <!-- Completion Rate -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">91.2%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>90%</strong></div>
+                            <div class="progress-bar-container"><div class="progress-bar" style="width: 100%"></div></div>
+                            <div class="progress-text">228 of 250 jobs</div>
+                        </div>
+                    </div>
+
+                    <!-- Miles per Meter -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Miles per Meter</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">4.6</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Overall Average</div>
+                        </div>
+                    </div>
+
+                    <!-- Meters Per Head -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Per Head</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">6.1</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Per Engineer / Day</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Energise Row -->
+            <div class="row-section">
+                <div class="row-header energise-theme-header">
+                    <h2>Energise Stats</h2>
+                </div>
+                <div class="kpi-grid energise-grid">
+                    <!-- Meters Installed -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Installed</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">198</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>210</strong> meters</div>
+                            <div class="progress-bar-container"><div class="progress-bar" style="width: 94.3%"></div></div>
+                            <div class="progress-text">94.3%</div>
+                        </div>
+                    </div>
+
+                    <!-- Completion Rate -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">92.4%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Target: <strong>90%</strong></div>
+                            <div class="progress-bar-container"><div class="progress-bar" style="width: 100%"></div></div>
+                            <div class="progress-text">231 of 250 jobs</div>
+                        </div>
+                    </div>
+
+                    <!-- Meters Per Head -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Meters Per Head</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0;">5.4</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Per Engineer / Day</div>
+                        </div>
+                    </div>
+
+                    <!-- SIP -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">SIP</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value text-value">Placeholder Text</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">&nbsp;</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Projects Row -->
+            <div class="row-section">
+                <div class="row-header general-theme-header">
+                    <h2>Other Projects</h2>
+                </div>
+                <div class="kpi-grid">
+                    <!-- Scottish Power Completion Rate -->
+                    <div class="kpi-card" style="
+                        background: linear-gradient(135deg, rgba(20,26,35,0.95), rgba(30,50,40,0.95));
+                        border: 1px solid rgba(16,185,129,0.4);
+                    ">
+                        <div class="kpi-header" style="border-bottom: 1px solid rgba(16,185,129,0.35);">
+                            <span class="kpi-title" style="color: #34d399;">SP Completion Rate</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0; background: linear-gradient(135deg, #ffffff 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">85.0%</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target" style="color: #cdf0f2;">Target: <strong style="color: #34d399;">90%</strong></div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar warning" style="width: 85%;"></div>
+                            </div>
+                            <div class="progress-text" style="color: #cdf0f2;">170 of 200 jobs</div>
+                        </div>
+                    </div>
+
+                    <!-- Job Changes -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Job Changes</span>
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-around; min-height: 0; width: 100%;">
+                            <div>
+                                <div class="kpi-target" style="margin-bottom: 3px;">Yesterday</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value">8</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value">5</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="border-top: 1px solid rgba(255,255,255,0.15); padding-top: 4px;">
+                                <div class="kpi-target" style="margin-bottom: 3px;">Month to Date</div>
+                                <div class="secondary-stats" style="margin-top: 0;">
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Sureserve</div>
+                                        <div class="secondary-stat-value">142</div>
+                                    </div>
+                                    <div class="secondary-stat">
+                                        <div class="secondary-stat-label">Energise</div>
+                                        <div class="secondary-stat-value">96</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Outstanding Issues -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Outstanding Issues</span>
+                        </div>
+                        <div class="issues-grid">
+                            <div class="issue-box">
+                                <div class="issue-label">Sureserve</div>
+                                <div class="issue-placeholder">Placeholder Text</div>
+                            </div>
+                            <div class="issue-box">
+                                <div class="issue-label">Energise</div>
+                                <div class="issue-placeholder">Placeholder Text</div>
+                            </div>
+                            <div class="issue-box">
+                                <div class="issue-label">Calisen</div>
+                                <div class="issue-placeholder">Placeholder Text</div>
+                            </div>
+                            <div class="issue-box">
+                                <div class="issue-label">MDS</div>
+                                <div class="issue-placeholder">Placeholder Text</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Total Workforce -->
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <span class="kpi-title">Total Workforce</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                            <div class="kpi-value" style="font-size: 5.5em; margin: 0; background: linear-gradient(135deg, #10b981 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">76</div>
+                        </div>
+                        <div style="width: 100%;">
+                            <div class="kpi-target">Total Staff</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
