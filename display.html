@@ -913,20 +913,42 @@
             document.getElementById('summarySection').style.display = 'none';
 
             try {
-                const q = query(
-                    collection(db, "performance"),
-                    where("date", ">=", startDate),
-                    where("date", "<=", endDate),
-                    orderBy("date", "desc"),
-                    orderBy("engineerName")
-                );
+                // Load Sureserve + Energise performance data together (combined
+                // totals: figures for the same engineer/date are summed so the
+                // page just shows bigger, combined numbers with no separate label).
+                const [ssSnapshot, enSnapshot] = await Promise.all([
+                    getDocs(query(
+                        collection(db, "performance"),
+                        where("date", ">=", startDate),
+                        where("date", "<=", endDate)
+                    )),
+                    getDocs(query(
+                        collection(db, "performance - Energise"),
+                        where("date", ">=", startDate),
+                        where("date", "<=", endDate)
+                    ))
+                ]);
 
-                const querySnapshot = await getDocs(q);
-                
-                allData = [];
-                querySnapshot.forEach((doc) => {
-                    allData.push(doc.data());
-                });
+                const mergedMap = {};
+                function addPerformanceRecord(data) {
+                    const key = `${data.engineerName}|${data.date}`;
+                    if (!mergedMap[key]) {
+                        mergedMap[key] = { ...data };
+                    } else {
+                        const existing = mergedMap[key];
+                        existing.jobs = (existing.jobs || 0) + (data.jobs || 0);
+                        existing.completed = (existing.completed || 0) + (data.completed || 0);
+                        existing.aborted = (existing.aborted || 0) + (data.aborted || 0);
+                        existing.meters = (existing.meters || 0) + (data.meters || 0);
+                        existing.value = (existing.value || 0) + (data.value || 0);
+                    }
+                }
+                ssSnapshot.forEach((doc) => addPerformanceRecord(doc.data()));
+                enSnapshot.forEach((doc) => addPerformanceRecord(doc.data()));
+
+                allData = Object.values(mergedMap);
+
+                console.log(`[Daily Load ${startDate} to ${endDate}] Sureserve docs: ${ssSnapshot.size}, Energise docs: ${enSnapshot.size}, combined rows: ${allData.length}`);
 
                 // Load attendance data for the same date range
                 const attendanceQuery = query(
@@ -1940,18 +1962,26 @@ window.exportDailyMatrix = async function() {
     btn.textContent = '⏳ Exporting...';
 
     try {
-        const q = query(
-            collection(db, "performance"),
-            where("date", ">=", startDate),
-            where("date", "<=", endDate)
-        );
-        const snapshot = await getDocs(q);
+        // Combine Sureserve + Energise performance data (same as the main table),
+        // summing meters together per engineer/date.
+        const [ssSnapshot, enSnapshot] = await Promise.all([
+            getDocs(query(
+                collection(db, "performance"),
+                where("date", ">=", startDate),
+                where("date", "<=", endDate)
+            )),
+            getDocs(query(
+                collection(db, "performance - Energise"),
+                where("date", ">=", startDate),
+                where("date", "<=", endDate)
+            ))
+        ]);
 
         const metersByEngineerDate = {};
         const engineerSet = new Set();
         const dateSet = new Set();
 
-        snapshot.forEach((doc) => {
+        function addMeters(doc) {
             const d = doc.data();
             const engineer = (d.engineerName || '').trim();
             const date = d.date;
@@ -1960,7 +1990,9 @@ window.exportDailyMatrix = async function() {
             dateSet.add(date);
             if (!metersByEngineerDate[engineer]) metersByEngineerDate[engineer] = {};
             metersByEngineerDate[engineer][date] = (metersByEngineerDate[engineer][date] || 0) + (d.meters || 0);
-        });
+        }
+        ssSnapshot.forEach(addMeters);
+        enSnapshot.forEach(addMeters);
 
         if (engineerSet.size === 0) {
             alert('No data found for the selected date range.');
