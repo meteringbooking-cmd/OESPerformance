@@ -747,6 +747,7 @@
                     <button class="btn" onclick="loadData()">Load Data</button>
                     <button class="btn btn-secondary" onclick="generatePDF()" id="pdfBtn" style="display: none;">📄 Create PDF</button>
                     <button class="btn btn-secondary" onclick="exportToExcel()" id="excelBtn" style="display: none; background: #28a745;">⬇️ Export Excel</button>
+                    <button class="btn" onclick="openDailyExportModal()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">📅 Daily Export</button>
                 </div>
             </div>
             
@@ -829,6 +830,28 @@
                 <div class="bonus-details-info" id="bonusDetailsInfo"></div>
             </div>
             <div id="bonusDetailsDays"></div>
+        </div>
+    </div>
+
+    <!-- Daily Export Modal -->
+    <div id="dailyExportModal" class="bonus-details-modal" onclick="closeDailyExportModal(event)">
+        <div class="bonus-details-content" onclick="event.stopPropagation()" style="max-width: 450px;">
+            <span class="bonus-details-close" onclick="closeDailyExportModal()">&times;</span>
+            <div class="bonus-details-header">
+                <div class="bonus-details-title">Daily Meters Export</div>
+                <div class="bonus-details-info">Select a date range. Engineers will be listed down column A, with each date across the top and their meters for that day in the matrix.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+                <div class="filter-group">
+                    <label for="dailyExportStart">Start Date</label>
+                    <input type="date" id="dailyExportStart">
+                </div>
+                <div class="filter-group">
+                    <label for="dailyExportEnd">End Date</label>
+                    <input type="date" id="dailyExportEnd">
+                </div>
+                <button class="btn btn-secondary" onclick="exportDailyMatrix()" id="dailyExportConfirmBtn" style="width: 100%;">⬇️ Export to Excel</button>
+            </div>
         </div>
     </div>
 
@@ -1211,62 +1234,6 @@
                 const xPosition = 10 + (pageWidth - 20 - chartWidth) / 2;
                 pdf.addImage(chartImgData, 'JPEG', xPosition, yPosition, chartWidth, chartHeight);
                 yPosition += chartHeight + 10;
-
-                const absenceSummary = document.getElementById('absenceSummary');
-                if (absenceSummary && absenceSummary.style.display !== 'none') {
-                    const summaryCanvas = await html2canvas(absenceSummary, {
-                        backgroundColor: '#ffffff',
-                        scale: 1.5
-                    });
-                    const summaryImgData = summaryCanvas.toDataURL('image/jpeg', 0.85);
-                    const summaryWidth = pageWidth - 20;
-                    const summaryHeight = (summaryCanvas.height * summaryWidth) / summaryCanvas.width;
-
-                    if (yPosition + summaryHeight > pageHeight - 10) {
-                        pdf.addPage();
-                        yPosition = 20;
-                    }
-
-                    pdf.addImage(summaryImgData, 'JPEG', 10, yPosition, summaryWidth, summaryHeight);
-                    yPosition += summaryHeight + 10;
-                }
-
-                const absenceSection = document.getElementById('absenceSection');
-                if (absenceSection && absenceSection.style.display !== 'none') {
-                    const absenceCanvas = await html2canvas(absenceSection, {
-                        backgroundColor: '#ffffff',
-                        scale: 1.5
-                    });
-                    const absenceImgData = absenceCanvas.toDataURL('image/jpeg', 0.85);
-                    const absenceWidth = pageWidth - 20;
-                    const absenceHeight = (absenceCanvas.height * absenceWidth) / absenceCanvas.width;
-
-                    if (yPosition + absenceHeight > pageHeight - 10) {
-                        pdf.addPage();
-                        yPosition = 20;
-                    }
-
-                    pdf.addImage(absenceImgData, 'JPEG', 10, yPosition, absenceWidth, absenceHeight);
-                    yPosition += absenceHeight + 10;
-                }
-
-                const bonusSection = document.getElementById('bonusSection');
-                if (bonusSection && bonusSection.style.display !== 'none') {
-                    const bonusCanvas = await html2canvas(bonusSection, {
-                        backgroundColor: '#ffffff',
-                        scale: 1.5
-                    });
-                    const bonusImgData = bonusCanvas.toDataURL('image/jpeg', 0.85);
-                    const bonusWidth = pageWidth - 20;
-                    const bonusHeight = (bonusCanvas.height * bonusWidth) / bonusCanvas.width;
-
-                    if (yPosition + bonusHeight > pageHeight - 10) {
-                        pdf.addPage();
-                        yPosition = 20;
-                    }
-
-                    pdf.addImage(bonusImgData, 'JPEG', 10, yPosition, bonusWidth, bonusHeight);
-                }
 
                 pdf.save(filename);
 
@@ -1937,6 +1904,105 @@
 window.closeBonusDetails = function(event) {
     if (!event || event.target === document.getElementById('bonusDetailsModal')) {
         document.getElementById('bonusDetailsModal').style.display = 'none';
+    }
+}
+
+window.openDailyExportModal = function() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    document.getElementById('dailyExportStart').value = startDate || '';
+    document.getElementById('dailyExportEnd').value = endDate || '';
+    document.getElementById('dailyExportModal').style.display = 'block';
+}
+
+window.closeDailyExportModal = function(event) {
+    if (!event || event.target === document.getElementById('dailyExportModal')) {
+        document.getElementById('dailyExportModal').style.display = 'none';
+    }
+}
+
+window.exportDailyMatrix = async function() {
+    const startDate = document.getElementById('dailyExportStart').value;
+    const endDate = document.getElementById('dailyExportEnd').value;
+
+    if (!startDate || !endDate) {
+        alert('Please select both a start and end date');
+        return;
+    }
+    if (startDate > endDate) {
+        alert('Start date must be before end date');
+        return;
+    }
+
+    const btn = document.getElementById('dailyExportConfirmBtn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Exporting...';
+
+    try {
+        const q = query(
+            collection(db, "performance"),
+            where("date", ">=", startDate),
+            where("date", "<=", endDate)
+        );
+        const snapshot = await getDocs(q);
+
+        const metersByEngineerDate = {};
+        const engineerSet = new Set();
+        const dateSet = new Set();
+
+        snapshot.forEach((doc) => {
+            const d = doc.data();
+            const engineer = (d.engineerName || '').trim();
+            const date = d.date;
+            if (!engineer || !date) return;
+            engineerSet.add(engineer);
+            dateSet.add(date);
+            if (!metersByEngineerDate[engineer]) metersByEngineerDate[engineer] = {};
+            metersByEngineerDate[engineer][date] = (metersByEngineerDate[engineer][date] || 0) + (d.meters || 0);
+        });
+
+        if (engineerSet.size === 0) {
+            alert('No data found for the selected date range.');
+            return;
+        }
+
+        const engineers = [...engineerSet].sort((a, b) => a.localeCompare(b));
+        const dates = [...dateSet].sort();
+
+        const wsData = [];
+        wsData.push(['Engineer', ...dates]);
+        engineers.forEach((engineer) => {
+            const row = [engineer];
+            dates.forEach((date) => {
+                const val = metersByEngineerDate[engineer] ? metersByEngineerDate[engineer][date] : undefined;
+                row.push(val !== undefined ? Math.round(val) : '');
+            });
+            wsData.push(row);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Daily Meters');
+        XLSX.writeFile(wb, `Daily_Meters_${startDate}_to_${endDate}.xlsx`);
+
+        closeDailyExportModal();
+    } catch (error) {
+        console.error('Error exporting daily meters matrix:', error);
+
+        if (error.message && error.message.includes('index')) {
+            const match = error.message.match(/https:\/\/[^\s]+/);
+            if (match) {
+                alert('Firestore needs to create an index for this query. Check the browser console for a link to create it, then wait 1-2 minutes and try again.');
+            } else {
+                alert('Index error. Check console for the link to create it.');
+            }
+        } else {
+            alert('Error exporting data: ' + error.message);
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 
