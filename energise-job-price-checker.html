@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Job Material Spend & Price Checker - Energise</title>
-  
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&family=DM+Mono:ital,wght@0,300..500;1,300..500&display=swap" rel="stylesheet">
-  
+
   <style>
     :root {
       --bg: #f8fafc;
@@ -138,7 +138,7 @@
     .metric-card .value.used { color: var(--accent2); }
     .metric-card .value.waste { color: var(--danger); }
     .metric-card .value.efficiency { color: var(--text); }
-    
+
     /* Progress bar indicator for efficiency */
     .efficiency-bar-bg {
       position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: var(--surface2);
@@ -167,7 +167,7 @@
       font-family: inherit;
     }
     .search-input:focus { border-color: var(--accent); }
-    
+
     /* Suggestion Box */
     .suggestion-box {
       position: absolute; top: 100%; left: 0; width: 100%;
@@ -263,6 +263,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         Save Estimate
       </button>
+      <button class="btn" onclick="exportAllJobsToExcel()" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="11"/><line x1="9" y1="11" x2="15" y2="15"/></svg>
+        Export All to Excel
+      </button>
       <button class="btn" onclick="window.location.href='energise-order-form.html'" style="background:transparent; border-color:rgba(255,255,255,0.25); color:#fff;">
         Back to Order Form
       </button>
@@ -272,7 +276,7 @@
   <div class="layout-wrapper">
     <!-- Main Estimator Screen -->
     <main class="main-estimator" style="width: 100%;">
-      
+
       <!-- Metrics row -->
       <div class="metrics-row">
         <div class="metric-card">
@@ -346,6 +350,9 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- SheetJS (client-side Excel export) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <!-- Firebase & Estimation Scripts -->
   <script type="module">
@@ -439,7 +446,7 @@
         const snap = await getDocs(collection(db, 'Energise Job Estimates'));
         const dropdown = document.getElementById('savedJobsDropdown');
         dropdown.innerHTML = '<option value="">— Select a saved job —</option>';
-        
+
         snap.forEach(d => {
           const data = d.data();
           const option = document.createElement('option');
@@ -458,18 +465,18 @@
       const nameStr = (name || '').toLowerCase().trim();
 
       // Check roll with meter length, e.g. RL-10m, RL-100m, 10m roll, etc.
-      let match = uomStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
-                  uomStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i) || 
-                  nameStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) || 
+      let match = uomStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) ||
+                  uomStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i) ||
+                  nameStr.match(/rl[-_\s]*(\d+(?:\.\d+)?)\s*m?/i) ||
                   nameStr.match(/(\d+(?:\.\d+)?)\s*m\s*(?:roll|rl)/i);
       if (match) {
         return { packSize: parseFloat(match[1]), unit: 'm' };
       }
 
       // Check standard pk-100, pack of 100, box of 50
-      match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
+      match = uomStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) ||
               uomStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i) ||
-              nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) || 
+              nameStr.match(/(?:pk|pack|box|bag|qty)[-\s]*(\d+)/i) ||
               nameStr.match(/(\d+)[-\s]*(?:pack|pcs|items)/i);
       if (match) {
         return { packSize: parseInt(match[1]), unit: 'pcs' };
@@ -478,19 +485,59 @@
       return { packSize: 1, unit: 'each' };
     }
 
+    // ── Shared job-total calculation (used by the on-screen table AND the Excel export) ──
+    function calculateJobTotals(items) {
+      let totalPurchaseCost = 0;
+      let totalUsedCost = 0;
+
+      const rows = (items || []).map(item => {
+        const packSize = Math.max(0.001, parseFloat(item.packSize) || 1);
+        const reqQty = Math.max(0, parseFloat(item.requiredQty) || 0);
+        const price = parseFloat(item.price) || 0;
+
+        const packsToBuy = Math.ceil(reqQty / packSize);
+        const purchaseCost = packsToBuy * price;
+        const usedValue = (price / packSize) * reqQty;
+        const wastage = purchaseCost - usedValue;
+
+        totalPurchaseCost += purchaseCost;
+        totalUsedCost += usedValue;
+
+        return {
+          sku: item.sku,
+          name: item.name,
+          uom: item.uom,
+          unit: item.unit || 'each',
+          price,
+          packSize,
+          reqQty,
+          packsToBuy,
+          purchaseCost,
+          usedValue,
+          wastage,
+          isSystemLocked: !!item.isSystemLocked
+        };
+      });
+
+      const totalWastage = totalPurchaseCost - totalUsedCost;
+      const efficiency = totalPurchaseCost > 0 ? (totalUsedCost / totalPurchaseCost) * 100 : 0;
+
+      return { rows, totalPurchaseCost, totalUsedCost, totalWastage, efficiency };
+    }
+
     // ── Autocomplete / Search Handling ────────────────────────────────────────
     window.handleSearchInput = function(val) {
       const box = document.getElementById('inventorySuggestions');
       const query = val.toLowerCase().trim();
-      
+
       if (!query) {
         box.style.display = 'none';
         return;
       }
 
       // Filter matches
-      const matches = ITEMS.filter(item => 
-        item.sku.toLowerCase().includes(query) || 
+      const matches = ITEMS.filter(item =>
+        item.sku.toLowerCase().includes(query) ||
         item.name.toLowerCase().includes(query)
       ).slice(0, 10);
 
@@ -552,7 +599,7 @@
     // ── Recalculate and Render Estimate Basket ────────────────────────────────
     window.recalculateEstimate = function() {
       const tbody = document.getElementById('estimatorTableBody');
-      
+
       if (estimationBasket.length === 0) {
         tbody.innerHTML = `
           <tr>
@@ -565,69 +612,50 @@
         return;
       }
 
-      let totalPurchaseCost = 0;
-      let totalUsedCost = 0;
+      const { rows, totalPurchaseCost, totalUsedCost, totalWastage, efficiency } = calculateJobTotals(estimationBasket);
 
-      tbody.innerHTML = estimationBasket.map((item, idx) => {
-        // Validation of values
-        const packSize = Math.max(0.001, parseFloat(item.packSize) || 1);
-        const reqQty = Math.max(0, parseFloat(item.requiredQty) || 0);
-        const price = parseFloat(item.price) || 0;
+      tbody.innerHTML = rows.map((row, idx) => {
+        const item = estimationBasket[idx];
 
-        // calculations:
-        // Packs to Buy = Ceil(Req Qty / Pack Size)
-        const packsToBuy = Math.ceil(reqQty / packSize);
-        // Purchase Cost = Packs * Price
-        const purchaseCost = packsToBuy * price;
-        // Used Value = (Price / Pack Size) * Req Qty
-        const usedValue = (price / packSize) * reqQty;
-        // Wastage = Purchase Cost - Used Value
-        const wastage = purchaseCost - usedValue;
-        
-        totalPurchaseCost += purchaseCost;
-        totalUsedCost += usedValue;
-
-        const wasteBadge = wastage > 0.01 
-          ? `<span class="badge-waste">£${wastage.toFixed(2)} waste</span>` 
+        const wasteBadge = row.wastage > 0.01
+          ? `<span class="badge-waste">£${row.wastage.toFixed(2)} waste</span>`
           : `<span class="badge-ok">No waste</span>`;
 
-        const packSizeHtml = item.isSystemLocked 
-          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>` 
+        const packSizeHtml = item.isSystemLocked
+          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>`
           : `<div style="display:inline-flex; align-items:center; gap:4px;">
-               <input type="number" class="tbl-input" min="0.001" step="any" value="${packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
-               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
-             </div>`;
-             
-        const reqQtyHtml = item.isSystemLocked 
-          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>` 
-          : `<div style="display:inline-flex; align-items:center; gap:4px;">
-               <input type="number" class="tbl-input" min="0" step="any" value="${reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
-               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${item.unit || 'each'}</span>
+               <input type="number" class="tbl-input" min="0.001" step="any" value="${row.packSize}" onchange="updateRowPackSize(${idx}, this.value)" style="width:70px;">
+               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${row.unit}</span>
              </div>`;
 
-        const deleteButtonHtml = item.isSystemLocked 
-          ? `<span style="font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase;">System</span>` 
+        const reqQtyHtml = item.isSystemLocked
+          ? `<span style="font-size:13px; color:var(--text-muted); font-weight:600;">1 each</span>`
+          : `<div style="display:inline-flex; align-items:center; gap:4px;">
+               <input type="number" class="tbl-input" min="0" step="any" value="${row.reqQty}" onchange="updateRowRequiredQty(${idx}, this.value)" style="width:70px;">
+               <span style="font-size:12px; color:var(--text-muted); font-weight:600;">${row.unit}</span>
+             </div>`;
+
+        const deleteButtonHtml = item.isSystemLocked
+          ? `<span style="font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase;">System</span>`
           : `<button class="btn btn-danger" onclick="deleteRow(${idx})" style="padding: 4px 8px; font-size: 12px;">×</button>`;
 
         return `
           <tr>
-            <td><span class="sku-mono">${item.sku}</span></td>
-            <td><strong>${item.name}</strong></td>
-            <td class="price-mono" style="text-align:right;">£${price.toFixed(2)}</td>
-            <td style="text-align:center; color:var(--text-muted); font-size:12px;">${item.uom}</td>
+            <td><span class="sku-mono">${row.sku}</span></td>
+            <td><strong>${row.name}</strong></td>
+            <td class="price-mono" style="text-align:right;">£${row.price.toFixed(2)}</td>
+            <td style="text-align:center; color:var(--text-muted); font-size:12px;">${row.uom}</td>
             <td style="text-align:center;">${packSizeHtml}</td>
             <td style="text-align:center;">${reqQtyHtml}</td>
-            <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${packsToBuy}</td>
-            <td class="price-mono" style="text-align:right;">£${purchaseCost.toFixed(2)}</td>
-            <td class="price-mono" style="text-align:right; color:var(--accent2);">£${usedValue.toFixed(2)}</td>
+            <td style="text-align:center; font-weight:600; font-family:'DM Mono', monospace;">${row.packsToBuy}</td>
+            <td class="price-mono" style="text-align:right;">£${row.purchaseCost.toFixed(2)}</td>
+            <td class="price-mono" style="text-align:right; color:var(--accent2);">£${row.usedValue.toFixed(2)}</td>
             <td style="text-align:center;">${wasteBadge}</td>
             <td style="text-align:center;">${deleteButtonHtml}</td>
           </tr>
         `;
       }).join('');
 
-      const totalWastage = totalPurchaseCost - totalUsedCost;
-      const efficiency = totalPurchaseCost > 0 ? (totalUsedCost / totalPurchaseCost) * 100 : 0;
       updateMetrics(totalPurchaseCost, totalUsedCost, totalWastage, efficiency);
     };
 
@@ -667,7 +695,7 @@
       document.getElementById('metricPurchaseCost').textContent = `£${purchase.toFixed(2)}`;
       document.getElementById('metricUsedCost').textContent = `£${used.toFixed(2)}`;
       document.getElementById('metricWastageCost').textContent = `£${waste.toFixed(2)}`;
-      
+
       document.getElementById('metricEfficiency').textContent = `${eff.toFixed(1)}%`;
       document.getElementById('metricEfficiencyBar').style.width = `${Math.min(100, eff)}%`;
 
@@ -720,7 +748,7 @@
 
         showToast(`✓ Estimate "${targetName}" saved successfully!`);
         await loadSavedJobsDropdown();
-        
+
         document.getElementById('savedJobsDropdown').value = targetId;
         document.getElementById('estimatorTitle').textContent = `Job Materials List: ${targetName}`;
       } catch (err) {
@@ -748,7 +776,7 @@
           estimationBasket = foundData.items || [];
           ensureByBoxItem(estimationBasket);
           recalculateEstimate();
-          
+
           currentLoadedJobId = id;
           currentLoadedJobName = foundData.jobName || id;
 
@@ -759,6 +787,165 @@
       } catch (err) {
         console.error(err);
         showToast('Failed to load saved estimate: ' + err.message, true);
+      }
+    };
+
+    // ── Sheet-name sanitiser (Excel: max 31 chars, no \ / ? * [ ] :, must be unique) ──
+    function sanitizeSheetName(name, usedNamesLowercase) {
+      let base = (name || 'Job').toString().replace(/[\\\/\?\*\[\]:]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!base) base = 'Job';
+      if (base.length > 31) base = base.substring(0, 31).trim();
+
+      let candidate = base;
+      let counter = 1;
+      while (usedNamesLowercase.has(candidate.toLowerCase())) {
+        const suffix = ` (${counter})`;
+        candidate = base.substring(0, Math.max(1, 31 - suffix.length)) + suffix;
+        counter++;
+      }
+      usedNamesLowercase.add(candidate.toLowerCase());
+      return candidate;
+    }
+
+    // ── Export ALL saved jobs to a single Excel workbook ──────────────────────
+    window.exportAllJobsToExcel = async function() {
+      if (typeof XLSX === 'undefined') {
+        showToast('Excel export library failed to load — check your connection and try again.', true);
+        return;
+      }
+
+      showToast('Preparing export…');
+
+      try {
+        const snap = await getDocs(collection(db, 'Energise Job Estimates'));
+        const jobs = [];
+        snap.forEach(d => {
+          const data = d.data();
+          jobs.push({
+            id: d.id,
+            jobName: data.jobName || d.id,
+            items: Array.isArray(data.items) ? data.items : [],
+            updatedAt: data.updatedAt || ''
+          });
+        });
+
+        if (jobs.length === 0) {
+          showToast('No saved estimates found to export.', true);
+          return;
+        }
+
+        jobs.sort((a, b) => a.jobName.localeCompare(b.jobName));
+
+        // Compute totals per job and assign a safe, unique sheet name to each
+        const usedSheetNames = new Set(['summary']);
+        const computed = jobs.map(job => {
+          const totals = calculateJobTotals(job.items);
+          const sheetName = sanitizeSheetName(job.jobName, usedSheetNames);
+          return { ...job, ...totals, sheetName };
+        });
+
+        const wb = XLSX.utils.book_new();
+        const currencyFmt = '"£"#,##0.00';
+
+        // ── Sheet 1: Summary of all saved jobs ───────────────────────────
+        const summaryHeader = ['Job Name', 'Actual Materials Used', 'Job Purchase Cost', 'Wastage / Leftover Stock', 'Material Efficiency (%)', 'Last Updated'];
+        const summaryRows = computed.map(j => [
+          j.jobName,
+          Number(j.totalUsedCost.toFixed(2)),
+          Number(j.totalPurchaseCost.toFixed(2)),
+          Number(j.totalWastage.toFixed(2)),
+          Number(j.efficiency.toFixed(1)),
+          j.updatedAt ? new Date(j.updatedAt).toLocaleString('en-GB') : ''
+        ]);
+
+        const grandUsed = computed.reduce((s, j) => s + j.totalUsedCost, 0);
+        const grandPurchase = computed.reduce((s, j) => s + j.totalPurchaseCost, 0);
+        const grandWaste = grandPurchase - grandUsed;
+        const grandEff = grandPurchase > 0 ? (grandUsed / grandPurchase) * 100 : 0;
+        const totalRow = ['TOTAL (all jobs)', Number(grandUsed.toFixed(2)), Number(grandPurchase.toFixed(2)), Number(grandWaste.toFixed(2)), Number(grandEff.toFixed(1)), ''];
+
+        const summaryAoa = [summaryHeader, ...summaryRows, [], totalRow];
+        const summaryWs = XLSX.utils.aoa_to_sheet(summaryAoa);
+        summaryWs['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 20 }, { wch: 24 }, { wch: 22 }, { wch: 20 }];
+
+        // Hyperlink each job name to its own sheet
+        computed.forEach((j, idx) => {
+          const ref = XLSX.utils.encode_cell({ r: idx + 1, c: 0 });
+          if (summaryWs[ref]) {
+            summaryWs[ref].l = { Target: `#'${j.sheetName}'!A1`, Tooltip: `Open ${j.jobName}` };
+          }
+        });
+
+        // Currency + percentage number formats
+        for (let r = 1; r <= summaryRows.length; r++) {
+          [1, 2, 3].forEach(c => {
+            const ref = XLSX.utils.encode_cell({ r, c });
+            if (summaryWs[ref] && typeof summaryWs[ref].v === 'number') summaryWs[ref].z = currencyFmt;
+          });
+          const effRef = XLSX.utils.encode_cell({ r, c: 4 });
+          if (summaryWs[effRef] && typeof summaryWs[effRef].v === 'number') summaryWs[effRef].z = '0.0"%"';
+        }
+        const totalRowIdx = summaryRows.length + 2; // header row + data rows + blank row
+        [1, 2, 3].forEach(c => {
+          const ref = XLSX.utils.encode_cell({ r: totalRowIdx, c });
+          if (summaryWs[ref] && typeof summaryWs[ref].v === 'number') summaryWs[ref].z = currencyFmt;
+        });
+        const totalEffRef = XLSX.utils.encode_cell({ r: totalRowIdx, c: 4 });
+        if (summaryWs[totalEffRef] && typeof summaryWs[totalEffRef].v === 'number') summaryWs[totalEffRef].z = '0.0"%"';
+
+        XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+
+        // ── One sheet per job: its Job Materials List ────────────────────
+        const jobHeader = ['SKU', 'Product Description', 'Pack Price', 'UOM', 'Pack Size', 'Unit', 'Required Qty', 'Packs to Buy', 'Purchase Cost', 'Used Value', 'Wastage'];
+
+        computed.forEach(j => {
+          const dataRows = j.rows.map(r => [
+            r.sku, r.name, Number(r.price.toFixed(2)), r.uom, r.packSize, r.unit, r.reqQty, r.packsToBuy,
+            Number(r.purchaseCost.toFixed(2)), Number(r.usedValue.toFixed(2)), Number(r.wastage.toFixed(2))
+          ]);
+          const totalsRow = ['', '', '', '', '', '', '', 'TOTAL', Number(j.totalPurchaseCost.toFixed(2)), Number(j.totalUsedCost.toFixed(2)), Number(j.totalWastage.toFixed(2))];
+
+          const aoa = [
+            [`Job: ${j.jobName}`],
+            [],
+            jobHeader,
+            ...dataRows,
+            [],
+            totalsRow
+          ];
+
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 13 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 13 }];
+
+          // Link back to the summary sheet
+          ws['K1'] = { t: 's', v: '← Back to Summary', l: { Target: "#'Summary'!A1", Tooltip: 'Back to Summary' } };
+
+          // Currency formatting for data + totals rows
+          const dataStart = 3;
+          const dataEnd = 3 + dataRows.length - 1;
+          const totalsRowIdx = dataEnd + 2;
+          const currencyCols = [2, 8, 9, 10];
+
+          for (let r = dataStart; r <= dataEnd; r++) {
+            currencyCols.forEach(c => {
+              const ref = XLSX.utils.encode_cell({ r, c });
+              if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = currencyFmt;
+            });
+          }
+          currencyCols.forEach(c => {
+            const ref = XLSX.utils.encode_cell({ r: totalsRowIdx, c });
+            if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = currencyFmt;
+          });
+
+          XLSX.utils.book_append_sheet(wb, ws, j.sheetName);
+        });
+
+        const filename = `Energise_Job_Estimates_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, filename);
+        showToast(`✓ Exported ${jobs.length} job estimate(s) to Excel`);
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to export estimates: ' + err.message, true);
       }
     };
 
