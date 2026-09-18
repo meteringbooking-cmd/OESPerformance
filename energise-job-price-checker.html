@@ -848,25 +848,23 @@
         const currencyFmt = '"£"#,##0.00';
 
         // ── Sheet 1: Summary of all saved jobs ───────────────────────────
-        const summaryHeader = ['Job Name', 'Actual Materials Used', 'Job Purchase Cost', 'Wastage / Leftover Stock', 'Material Efficiency (%)', 'Last Updated'];
+        const summaryHeader = ['Job Name', 'Actual Materials Used', 'Job Purchase Cost', 'Material Efficiency (%)', 'Last Updated'];
         const summaryRows = computed.map(j => [
           j.jobName,
           Number(j.totalUsedCost.toFixed(2)),
           Number(j.totalPurchaseCost.toFixed(2)),
-          Number(j.totalWastage.toFixed(2)),
           Number(j.efficiency.toFixed(1)),
           j.updatedAt ? new Date(j.updatedAt).toLocaleString('en-GB') : ''
         ]);
 
         const grandUsed = computed.reduce((s, j) => s + j.totalUsedCost, 0);
         const grandPurchase = computed.reduce((s, j) => s + j.totalPurchaseCost, 0);
-        const grandWaste = grandPurchase - grandUsed;
         const grandEff = grandPurchase > 0 ? (grandUsed / grandPurchase) * 100 : 0;
-        const totalRow = ['TOTAL (all jobs)', Number(grandUsed.toFixed(2)), Number(grandPurchase.toFixed(2)), Number(grandWaste.toFixed(2)), Number(grandEff.toFixed(1)), ''];
+        const totalRow = ['TOTAL (all jobs)', Number(grandUsed.toFixed(2)), Number(grandPurchase.toFixed(2)), Number(grandEff.toFixed(1)), ''];
 
         const summaryAoa = [summaryHeader, ...summaryRows, [], totalRow];
         const summaryWs = XLSX.utils.aoa_to_sheet(summaryAoa);
-        summaryWs['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 20 }, { wch: 24 }, { wch: 22 }, { wch: 20 }];
+        summaryWs['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 20 }, { wch: 22 }, { wch: 20 }];
 
         // Hyperlink each job name to its own sheet
         computed.forEach((j, idx) => {
@@ -878,32 +876,32 @@
 
         // Currency + percentage number formats
         for (let r = 1; r <= summaryRows.length; r++) {
-          [1, 2, 3].forEach(c => {
+          [1, 2].forEach(c => {
             const ref = XLSX.utils.encode_cell({ r, c });
             if (summaryWs[ref] && typeof summaryWs[ref].v === 'number') summaryWs[ref].z = currencyFmt;
           });
-          const effRef = XLSX.utils.encode_cell({ r, c: 4 });
+          const effRef = XLSX.utils.encode_cell({ r, c: 3 });
           if (summaryWs[effRef] && typeof summaryWs[effRef].v === 'number') summaryWs[effRef].z = '0.0"%"';
         }
         const totalRowIdx = summaryRows.length + 2; // header row + data rows + blank row
-        [1, 2, 3].forEach(c => {
+        [1, 2].forEach(c => {
           const ref = XLSX.utils.encode_cell({ r: totalRowIdx, c });
           if (summaryWs[ref] && typeof summaryWs[ref].v === 'number') summaryWs[ref].z = currencyFmt;
         });
-        const totalEffRef = XLSX.utils.encode_cell({ r: totalRowIdx, c: 4 });
+        const totalEffRef = XLSX.utils.encode_cell({ r: totalRowIdx, c: 3 });
         if (summaryWs[totalEffRef] && typeof summaryWs[totalEffRef].v === 'number') summaryWs[totalEffRef].z = '0.0"%"';
 
         XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
 
         // ── One sheet per job: its Job Materials List ────────────────────
-        const jobHeader = ['SKU', 'Product Description', 'Pack Price', 'UOM', 'Pack Size', 'Unit', 'Required Qty', 'Packs to Buy', 'Purchase Cost', 'Used Value', 'Wastage'];
+        const jobHeader = ['SKU', 'Product Description', 'Pack Price', 'UOM', 'Pack Size', 'Unit', 'Required Qty', 'Packs to Buy', 'Purchase Cost', 'Used Value'];
 
         computed.forEach(j => {
           const dataRows = j.rows.map(r => [
             r.sku, r.name, Number(r.price.toFixed(2)), r.uom, r.packSize, r.unit, r.reqQty, r.packsToBuy,
-            Number(r.purchaseCost.toFixed(2)), Number(r.usedValue.toFixed(2)), Number(r.wastage.toFixed(2))
+            Number(r.purchaseCost.toFixed(2)), Number(r.usedValue.toFixed(2))
           ]);
-          const totalsRow = ['', '', '', '', '', '', '', 'TOTAL', Number(j.totalPurchaseCost.toFixed(2)), Number(j.totalUsedCost.toFixed(2)), Number(j.totalWastage.toFixed(2))];
+          const totalsRow = ['', '', '', '', '', '', '', 'TOTAL', Number(j.totalPurchaseCost.toFixed(2)), Number(j.totalUsedCost.toFixed(2))];
 
           const aoa = [
             [`Job: ${j.jobName}`],
@@ -915,16 +913,16 @@
           ];
 
           const ws = XLSX.utils.aoa_to_sheet(aoa);
-          ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 13 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 13 }, { wch: 15 }, { wch: 15 }, { wch: 13 }];
+          ws['!cols'] = [{ wch: 14 }, { wch: 34 }, { wch: 13 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 13 }, { wch: 15 }, { wch: 15 }];
 
-          // Link back to the summary sheet
+          // Link back to the summary sheet (placed one column past the data)
           ws['K1'] = { t: 's', v: '← Back to Summary', l: { Target: "#'Summary'!A1", Tooltip: 'Back to Summary' } };
 
           // Currency formatting for data + totals rows
           const dataStart = 3;
           const dataEnd = 3 + dataRows.length - 1;
           const totalsRowIdx = dataEnd + 2;
-          const currencyCols = [2, 8, 9, 10];
+          const currencyCols = [2, 8, 9];
 
           for (let r = dataStart; r <= dataEnd; r++) {
             currencyCols.forEach(c => {
