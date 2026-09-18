@@ -15,8 +15,9 @@
             --amber-dim: #C07B10;
             --cyan:      #2BE4C3;
             --text:      #E8EDF4;
-            --text-mid:  #7A8FA6;
-            --text-dim:  #3D5168;
+            --text-mid:  #9DB0C4;
+            --text-dim:  #5C7690;
+            --text-faint:#3D5168;
             --danger:    #FF5757;
             --success:   #2BE4C3;
             --warning:   #F5A623;
@@ -202,11 +203,14 @@
         thead th:first-child { padding-left: 20px; position: sticky; left: 0; background: var(--bg); z-index: 2; }
 
         tbody tr {
-            border-bottom: 1px solid rgba(28,42,58,0.6);
+            border-bottom: 1px solid rgba(42,63,85,0.75);
             transition: background 0.15s;
         }
+        tbody tr:nth-child(even) { background: rgba(255,255,255,0.018); }
+        tbody tr:nth-child(even) td:first-child { background: #101927; }
         tbody tr:last-child { border-bottom: none; }
-        tbody tr:hover { background: rgba(245,166,35,0.04); }
+        tbody tr:hover { background: rgba(245,166,35,0.06); }
+        tbody tr:hover td:first-child { background: #16202f; }
 
         td {
             padding: 8px 10px;
@@ -220,24 +224,23 @@
             background: var(--surface);
             z-index: 1;
         }
-        tbody tr:hover td:first-child { background: #131b28; }
 
-        .eng-name { font-weight: 600; color: var(--text); font-size: 0.86rem; }
-        .eng-ref { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: var(--text-dim); }
+        .eng-name { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+        .eng-ref { font-family: 'DM Mono', monospace; font-size: 0.74rem; color: var(--text-mid); }
 
         .qual-cell {
             display: inline-flex; align-items: center; gap: 6px;
             background: transparent; border: 1px solid transparent;
             border-radius: 6px; padding: 5px 9px;
-            font-family: 'DM Mono', monospace; font-size: 0.76rem;
+            font-family: 'DM Mono', monospace; font-size: 0.82rem;
             color: var(--text-mid); cursor: pointer;
             transition: all 0.15s;
         }
         .qual-cell:hover { border-color: var(--border-hi); background: rgba(255,255,255,0.03); }
-        .qual-cell.ok { color: var(--text-mid); }
-        .qual-cell.soon { color: var(--amber); }
-        .qual-cell.overdue { color: var(--danger); font-weight: 600; }
-        .qual-cell.empty { color: var(--text-dim); font-style: italic; }
+        .qual-cell.ok { color: var(--text); font-weight: 500; }
+        .qual-cell.soon { color: var(--amber); font-weight: 600; }
+        .qual-cell.overdue { color: var(--danger); font-weight: 700; }
+        .qual-cell.empty { color: var(--text-faint); font-style: italic; }
         .qual-cell.st-booked { background: rgba(43,228,195,0.08); border-color: rgba(43,228,195,0.35); color: var(--cyan); }
         .qual-cell.st-attended { background: rgba(200,155,255,0.1); border-color: rgba(200,155,255,0.4); color: #C89BFF; }
 
@@ -524,15 +527,25 @@
             document.getElementById('tableContainer').style.display = 'block';
         }
 
+        // Display column order mirrors the spreadsheet: Gas Safe sits between
+        // NPG expiry and Expiry, as a plain reference number (not a qual with a workflow).
+        const DISPLAY_COLS = (() => {
+            const cols = QUAL_COLS.map(k => ({ type: 'qual', key: k }));
+            const idx = QUAL_COLS.indexOf('Expiry');
+            cols.splice(idx, 0, { type: 'static', key: 'gasSafe', label: 'Gas Safe' });
+            return cols;
+        })();
+
         function renderStats() {
-            let overdue = 0, soon = 0, booked = 0, attended = 0;
+            let overdue = 0, booked = 0, attended = 0;
+            const affected = new Set();
             engineers.forEach(eng => {
                 QUAL_COLS.forEach(q => {
                     const qual = eng.quals?.[q];
                     if (!qual) return;
                     const st = qualStatus(qual.expiry);
-                    if (st === 'overdue') overdue++;
-                    else if (st === 'soon') soon++;
+                    if (st === 'overdue') { overdue++; affected.add(eng.id); }
+                    else if (st === 'soon') { affected.add(eng.id); }
                     if (qual.assessment?.status === 'booked') booked++;
                     if (qual.assessment?.status === 'attended') attended++;
                 });
@@ -540,7 +553,7 @@
             const row = document.getElementById('statRow');
             row.innerHTML = `
                 <div class="stat-chip overdue"><span class="n">${overdue}</span><span class="l">Overdue</span></div>
-                <div class="stat-chip soon"><span class="n">${soon}</span><span class="l">Due &le; 6 months</span></div>
+                <div class="stat-chip soon"><span class="n">${affected.size}</span><span class="l">Engineers Affected</span></div>
                 <div class="stat-chip booked"><span class="n">${booked}</span><span class="l">Assessments booked</span></div>
                 <div class="stat-chip attended"><span class="n">${attended}</span><span class="l">Awaiting result</span></div>
             `;
@@ -549,8 +562,7 @@
         function renderHead() {
             const tr = document.getElementById('tableHeadRow');
             let html = '<th>Engineer</th><th>EUSR</th>';
-            QUAL_COLS.forEach(q => { html += `<th>${q}</th>`; });
-            html += '<th>Gas Safe</th>';
+            DISPLAY_COLS.forEach(c => { html += `<th>${c.type === 'static' ? c.label : c.key}</th>`; });
             tr.innerHTML = html;
         }
 
@@ -561,17 +573,18 @@
                 !filterText || e.engineerName.toLowerCase().includes(filterText)
             );
             if (!filtered.length) {
-                tbody.innerHTML = `<tr><td colspan="${QUAL_COLS.length + 3}" style="text-align:center; color:var(--text-dim); padding:30px;">No engineers match that filter.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${DISPLAY_COLS.length + 2}" style="text-align:center; color:var(--text-dim); padding:30px;">No engineers match that filter.</td></tr>`;
                 return;
             }
             filtered.forEach(eng => {
                 const tr = document.createElement('tr');
                 let html = `<td><div class="eng-name">${eng.engineerName}</div></td>`;
                 html += `<td class="eng-ref">${eng.eusr || '—'}</td>`;
-                QUAL_COLS.forEach(q => {
-                    html += `<td>${renderQualCell(eng, q)}</td>`;
+                DISPLAY_COLS.forEach(c => {
+                    html += c.type === 'static'
+                        ? `<td class="eng-ref">${eng[c.key] || '—'}</td>`
+                        : `<td>${renderQualCell(eng, c.key)}</td>`;
                 });
-                html += `<td class="eng-ref">${eng.gasSafe || '—'}</td>`;
                 tr.innerHTML = html;
                 tbody.appendChild(tr);
             });
