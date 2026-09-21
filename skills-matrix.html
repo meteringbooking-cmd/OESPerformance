@@ -228,6 +228,36 @@
         .eng-name { font-weight: 600; color: var(--text); font-size: 0.9rem; }
         .eng-ref { font-family: 'DM Mono', monospace; font-size: 0.74rem; color: var(--text-mid); }
 
+        .ref-cell {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: transparent; border: 1px solid transparent;
+            border-radius: 6px; padding: 5px 9px;
+            font-family: 'DM Mono', monospace; font-size: 0.74rem;
+            color: var(--text-mid); cursor: pointer;
+            transition: all 0.15s;
+        }
+        .ref-cell:hover { border-color: var(--border-hi); background: rgba(255,255,255,0.03); color: var(--text); }
+        .ref-cell.empty { color: var(--text-faint); font-style: italic; }
+        .ref-cell .pencil { opacity: 0; font-size: 0.7rem; transition: opacity 0.15s; }
+        .ref-cell:hover .pencil { opacity: 0.7; }
+        .ref-edit-wrap { display: inline-flex; align-items: center; gap: 6px; }
+        .ref-edit-input {
+            background: var(--bg); border: 1px solid var(--amber);
+            color: var(--text); padding: 4px 8px; border-radius: 5px;
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            width: 120px;
+        }
+        .ref-edit-input:focus { outline: none; }
+        .ref-edit-btn {
+            border: none; border-radius: 5px; padding: 4px 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.68rem;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .ref-edit-btn.save { background: var(--amber); color: #080C14; }
+        .ref-edit-btn.save:hover { background: #FFB93A; }
+        .ref-edit-btn.cancel { background: transparent; border: 1px solid var(--border-hi); color: var(--text-mid); }
+        .ref-edit-btn.cancel:hover { color: var(--text); }
+
         .qual-cell {
             display: inline-flex; align-items: center; gap: 6px;
             background: transparent; border: 1px solid transparent;
@@ -293,6 +323,10 @@
         }
         .modal-row .k { color: var(--text-mid); }
         .modal-row .v { font-family: 'DM Mono', monospace; font-weight: 500; }
+        .modal-manual { display: flex; gap: 8px; margin-top: 16px; }
+        .modal-manual .modal-btn { flex: 1; padding: 0.5rem 0.8rem; font-size: 0.72rem; }
+        .modal-manual .modal-btn.ghost { background: transparent; border: 1px solid var(--border-hi); color: var(--text-mid); }
+        .modal-manual .modal-btn.ghost:hover { border-color: var(--amber); color: var(--amber); }
         .modal-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
         .modal-btn {
             display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -401,6 +435,8 @@
                 <span class="v" id="modalAssessValue">—</span>
             </div>
 
+            <div class="modal-manual" id="modalManual"></div>
+
             <div class="modal-actions" id="modalActions"></div>
 
             <div class="modal-date-picker" id="datePickerBlock">
@@ -447,6 +483,7 @@
         let engineers = [];      // live state, array of {id, engineerName, eusr, gasSafe, quals}
         let filterText = '';
         let modalCtx = null;     // { engineerId, qualKey }
+        let editingRef = null;   // { engineerId, field } — 'eusr' or 'gasSafe' cell currently in inline-edit mode
 
         function showMessage(text, type) {
             const el = document.getElementById('message');
@@ -579,19 +616,82 @@
             filtered.forEach(eng => {
                 const tr = document.createElement('tr');
                 let html = `<td><div class="eng-name">${eng.engineerName}</div></td>`;
-                html += `<td class="eng-ref">${eng.eusr || '—'}</td>`;
+                html += `<td>${renderRefCell(eng, 'eusr')}</td>`;
                 DISPLAY_COLS.forEach(c => {
                     html += c.type === 'static'
-                        ? `<td class="eng-ref">${eng[c.key] || '—'}</td>`
+                        ? `<td>${renderRefCell(eng, c.key)}</td>`
                         : `<td>${renderQualCell(eng, c.key)}</td>`;
                 });
                 tr.innerHTML = html;
                 tbody.appendChild(tr);
             });
-            // wire click handlers
+            // wire click handlers — qualification cells open the assessment modal
             tbody.querySelectorAll('[data-eng][data-qual]').forEach(el => {
                 el.addEventListener('click', () => openModal(el.getAttribute('data-eng'), el.getAttribute('data-qual')));
             });
+            // wire click handlers — EUSR / Gas Safe reference numbers edit inline
+            tbody.querySelectorAll('[data-ref-eng][data-ref-field]').forEach(el => {
+                el.addEventListener('click', () => startEditRef(el.getAttribute('data-ref-eng'), el.getAttribute('data-ref-field')));
+            });
+            // wire the inline edit input itself, if one is currently open
+            if (editingRef) {
+                const input = tbody.querySelector('.ref-edit-input');
+                const saveBtn = tbody.querySelector('.ref-edit-btn.save');
+                const cancelBtn = tbody.querySelector('.ref-edit-btn.cancel');
+                if (input) {
+                    input.focus();
+                    input.select();
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') saveRef(editingRef.engineerId, editingRef.field, input.value);
+                        if (e.key === 'Escape') cancelEditRef();
+                    });
+                }
+                if (saveBtn) saveBtn.addEventListener('click', () => saveRef(editingRef.engineerId, editingRef.field, input.value));
+                if (cancelBtn) cancelBtn.addEventListener('click', cancelEditRef);
+            }
+        }
+
+        const REF_LABELS = { eusr: 'EUSR number', gasSafe: 'Gas Safe number' };
+
+        function renderRefCell(eng, field) {
+            if (editingRef && editingRef.engineerId === eng.id && editingRef.field === field) {
+                const current = eng[field] || '';
+                return `
+                    <span class="ref-edit-wrap">
+                        <input type="text" class="ref-edit-input" value="${current.replace(/"/g, '&quot;')}" placeholder="${REF_LABELS[field]}">
+                        <button class="ref-edit-btn save">Save</button>
+                        <button class="ref-edit-btn cancel">✕</button>
+                    </span>`;
+            }
+            const value = eng[field];
+            const cls = value ? 'ref-cell' : 'ref-cell empty';
+            return `<span class="${cls}" data-ref-eng="${eng.id}" data-ref-field="${field}" title="Click to edit ${REF_LABELS[field]}">${value || '— add —'}<span class="pencil">✎</span></span>`;
+        }
+
+        function startEditRef(engId, field) {
+            editingRef = { engineerId: engId, field };
+            renderBody();
+        }
+
+        function cancelEditRef() {
+            editingRef = null;
+            renderBody();
+        }
+
+        async function saveRef(engId, field, value) {
+            const eng = engineers.find(e => e.id === engId);
+            if (!eng) return;
+            const trimmed = value.trim();
+            try {
+                await updateDoc(doc(db, MATRIX_COLLECTION, engId), { [field]: trimmed });
+                eng[field] = trimmed;
+                editingRef = null;
+                renderBody();
+                showMessage(`${REF_LABELS[field]} updated for ${eng.engineerName}.`, 'success');
+            } catch (err) {
+                console.error(err);
+                showMessage('Error saving — please try again.', 'error');
+            }
         }
 
         function renderQualCell(eng, qualKey) {
@@ -648,6 +748,7 @@
             const actions = document.getElementById('modalActions');
             actions.innerHTML = '';
             hideDatePicker();
+            renderManualControls(qual);
 
             const status = qual.assessment?.status || 'none';
 
@@ -710,13 +811,14 @@
 
         // ── Date picker sub-panel ──
         let pendingConfirm = null;
-        function showDatePicker({ label, confirmLabel, min, onConfirm }) {
+        function showDatePicker({ label, confirmLabel, min, value, onConfirm }) {
             document.getElementById('modalActions').style.display = 'none';
+            document.getElementById('modalManual').style.display = 'none';
             const block = document.getElementById('datePickerBlock');
             document.getElementById('datePickerLabel').textContent = label;
             const input = document.getElementById('datePickerInput');
-            input.value = '';
-            if (min) input.min = min;
+            input.value = value || '';
+            input.min = min || '';
             const btn = document.getElementById('datePickerConfirmBtn');
             btn.textContent = confirmLabel;
             pendingConfirm = onConfirm;
@@ -732,6 +834,60 @@
         function hideDatePicker() {
             document.getElementById('datePickerBlock').classList.remove('show');
             document.getElementById('modalActions').style.display = 'flex';
+            document.getElementById('modalManual').style.display = 'flex';
+        }
+
+        // ── Manual correction controls (always available, independent of assessment workflow) ──
+        function renderManualControls(qual) {
+            const wrap = document.getElementById('modalManual');
+            let html = `<button class="modal-btn ghost" id="btnEditDate">✏️ Edit date</button>`;
+            if (qual.expiry) {
+                html += `<button class="modal-btn ghost" id="btnClearDate">🗑 Clear date</button>`;
+            }
+            wrap.innerHTML = html;
+            document.getElementById('btnEditDate').addEventListener('click', () => showDatePicker({
+                label: 'Correct expiry date',
+                confirmLabel: 'Save Date',
+                value: qual.expiry || '',
+                onConfirm: (dateVal) => saveManualExpiry(dateVal)
+            }));
+            const clearBtn = document.getElementById('btnClearDate');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    if (confirm('Clear this expiry date? This does not affect any booked assessment.')) {
+                        saveManualExpiry(null);
+                    }
+                });
+            }
+        }
+
+        async function saveManualExpiry(newDateOrNull) {
+            const eng = engineers.find(e => e.id === modalCtx.engineerId);
+            const qualKey = modalCtx.qualKey;
+            const qual = eng.quals[qualKey] || { expiry: null, assessment: null, history: [] };
+
+            const note = newDateOrNull
+                ? `Expiry manually corrected to ${formatDisplay(newDateOrNull)}`
+                : 'Expiry date manually cleared';
+
+            const updatedQual = {
+                expiry: newDateOrNull,
+                assessment: qual.assessment || null,
+                history: [...(qual.history || []), { at: new Date().toISOString(), note }]
+            };
+
+            const updatedQuals = { ...eng.quals, [qualKey]: updatedQual };
+
+            try {
+                await updateDoc(doc(db, MATRIX_COLLECTION, eng.id), { quals: updatedQuals });
+                eng.quals = updatedQuals;
+                render();
+                renderModal();
+                showMessage('Saved.', 'success');
+            } catch (err) {
+                console.error(err);
+                showMessage('Error saving — please try again.', 'error');
+            }
         }
 
         // ── Persist ──
