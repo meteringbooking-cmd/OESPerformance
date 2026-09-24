@@ -346,6 +346,11 @@
             margin-top: 20px;
         }
 
+        .total-section.amended {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            margin-top: 10px;
+        }
+
         .action-buttons {
             display: flex;
             gap: 10px;
@@ -578,6 +583,86 @@
             border-color: #667eea;
         }
 
+        /* Job amendment rows */
+        .job-amend-row {
+            display: grid;
+            grid-template-columns: 1fr 190px 70px 100px;
+            gap: 12px;
+            align-items: center;
+            padding: 10px 12px;
+            margin-top: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            transition: opacity 0.2s ease;
+        }
+
+        .job-amend-row.changed {
+            border-left-color: #17a2b8;
+            background: #e8f6f8;
+        }
+
+        .job-amend-row.removed {
+            opacity: 0.5;
+            border-left-color: #dc3545;
+        }
+
+        .job-amend-row.removed .job-amend-amount {
+            text-decoration: line-through;
+            color: #dc3545;
+        }
+
+        .job-amend-original {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .job-type-select {
+            padding: 8px 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.95em;
+            background: white;
+            cursor: pointer;
+        }
+
+        .job-type-select:focus {
+            outline: none;
+            border-color: #17a2b8;
+        }
+
+        .job-type-select:disabled {
+            cursor: not-allowed;
+            background: #eee;
+        }
+
+        .job-amend-amount {
+            font-weight: 700;
+            color: #28a745;
+            text-align: right;
+        }
+
+        .job-amend-remove {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9em;
+            color: #dc3545;
+            cursor: pointer;
+        }
+
+        .job-amend-total {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: #d1ecf1;
+            border-radius: 6px;
+            font-weight: 600;
+            color: #0c5460;
+            display: flex;
+            justify-content: space-between;
+        }
+
         .comment-section {
             margin-top: 20px;
         }
@@ -732,6 +817,10 @@
             .btn-reject,
             .btn-view {
                 width: 100%;
+            }
+
+            .job-amend-row {
+                grid-template-columns: 1fr 1fr;
             }
         }
     </style>
@@ -909,6 +998,23 @@ const db = getFirestore(getApps()[0]);
         let engineerTeamLeaders = {};
         let currentModalPayment = null;
 
+        // Job types and rates (value is what's stored in Firestore)
+        const JOB_TYPES = [
+            { value: 'Comms',  label: 'Comms Visit', amount: 25 },
+            { value: 'Single', label: 'Single',      amount: 50 },
+            { value: 'Dual',   label: 'Dual',        amount: 80 }
+        ];
+
+        function getJobAmount(jobType) {
+            const t = JOB_TYPES.find(j => j.value === jobType);
+            return t ? t.amount : 0;
+        }
+
+        function getJobLabel(jobType) {
+            const t = JOB_TYPES.find(j => j.value === jobType);
+            return t ? t.label : jobType;
+        }
+
         // Rejection Modal Functions
         window.openRejectionModal = function(paymentId) {
             currentModalPayment = allPayments.find(p => p.id === paymentId);
@@ -1053,30 +1159,82 @@ const db = getFirestore(getApps()[0]);
                 }, 100);
             }
 
-            // Jobs amendment
+            // Jobs amendment - change job type and/or remove
             if (currentModalPayment.hasJobs && currentModalPayment.jobs && currentModalPayment.jobs.length > 0) {
                 const claimedJobs = currentModalPayment.jobs.filter(j => j.claimPricePerJob === 'yes');
                 if (claimedJobs.length > 0) {
                     const item = document.createElement('div');
                     item.className = 'amendment-item';
-                    let jobsHTML = '<label class="amendment-label">Jobs to Remove (select any that should not be claimed):</label>';
+
+                    let originalTotal = 0;
+                    let jobsHTML = '<label class="amendment-label">Price Per Job Claims (change the job type, or tick Remove if it should not be claimed):</label>';
 
                     claimedJobs.forEach((job, index) => {
-                        let jobAmount = 0;
-                        if (job.jobType === 'Dual') jobAmount = 80;
-                        else if (job.jobType === 'Single') jobAmount = 50;
-                        else if (job.jobType === 'Comms') jobAmount = 25;
+                        const jobAmount = getJobAmount(job.jobType);
+                        originalTotal += jobAmount;
+
+                        let optionsHTML = '';
+                        if (!JOB_TYPES.some(t => t.value === job.jobType)) {
+                            optionsHTML += `<option value="${job.jobType}" selected>${job.jobType} (£0)</option>`;
+                        }
+                        optionsHTML += JOB_TYPES.map(t =>
+                            `<option value="${t.value}" ${t.value === job.jobType ? 'selected' : ''}>${t.label} (£${t.amount})</option>`
+                        ).join('');
 
                         jobsHTML += `
-                            <div class="amendment-option" style="width: 100%; margin-top: 10px;">
-                                <input type="checkbox" name="remove_job" value="${job.jobNumber}" id="job_${index}">
-                                <label for="job_${index}">Job #${job.jobNumber} - ${job.postcode} (${job.jobType} - £${jobAmount})</label>
+                            <div class="job-amend-row" id="job_row_${index}">
+                                <div>
+                                    <strong>Job #${job.jobNumber}</strong> - ${job.postcode}
+                                    <div class="job-amend-original">Claimed as: ${getJobLabel(job.jobType)} (£${jobAmount})</div>
+                                </div>
+                                <select class="job-type-select" id="job_type_${index}"
+                                        data-index="${index}"
+                                        data-job-number="${job.jobNumber}"
+                                        data-original="${job.jobType}">
+                                    ${optionsHTML}
+                                </select>
+                                <span class="job-amend-amount" id="job_amount_${index}">£${jobAmount}</span>
+                                <label class="job-amend-remove" for="job_${index}">
+                                    <input type="checkbox" name="remove_job" value="${job.jobNumber}" id="job_${index}" data-index="${index}">
+                                    Remove
+                                </label>
                             </div>
                         `;
                     });
 
+                    jobsHTML += `
+                        <div class="job-amend-total">
+                            <span>Jobs Total (after changes)</span>
+                            <span><span id="jobs_amended_total">£${originalTotal}</span>
+                            <span style="font-weight: 400; color: #666;"> (claimed £${originalTotal})</span></span>
+                        </div>
+                    `;
+
                     item.innerHTML = jobsHTML;
                     formSection.appendChild(item);
+
+                    // Live update of amounts and total
+                    const updateJobsTotal = () => {
+                        let total = 0;
+                        item.querySelectorAll('.job-type-select').forEach(sel => {
+                            const idx = sel.dataset.index;
+                            const removeCb = item.querySelector(`#job_${idx}`);
+                            const row = item.querySelector(`#job_row_${idx}`);
+                            const amount = getJobAmount(sel.value);
+
+                            item.querySelector(`#job_amount_${idx}`).textContent = '£' + amount;
+                            sel.disabled = removeCb.checked;
+                            row.classList.toggle('removed', removeCb.checked);
+                            row.classList.toggle('changed', !removeCb.checked && sel.value !== sel.dataset.original);
+
+                            if (!removeCb.checked) total += amount;
+                        });
+                        item.querySelector('#jobs_amended_total').textContent = '£' + total;
+                    };
+
+                    item.querySelectorAll('.job-type-select, input[name="remove_job"]').forEach(el => {
+                        el.addEventListener('change', updateJobsTotal);
+                    });
                 }
             }
 
@@ -1191,19 +1349,44 @@ const db = getFirestore(getApps()[0]);
                 amendments.removeJobs = Array.from(removeJobsCheckboxes).map(cb => cb.value);
             }
 
+            // Job type changes (ignored for jobs being removed)
+            const jobTypeChanges = [];
+            document.querySelectorAll('.job-type-select').forEach(sel => {
+                const removeCb = document.getElementById(`job_${sel.dataset.index}`);
+                if (removeCb && removeCb.checked) return;
+                if (sel.value !== sel.dataset.original) {
+                    jobTypeChanges.push({
+                        jobNumber: sel.dataset.jobNumber,
+                        from: sel.dataset.original,
+                        to: sel.value,
+                        fromAmount: getJobAmount(sel.dataset.original),
+                        toAmount: getJobAmount(sel.value)
+                    });
+                }
+            });
+            if (jobTypeChanges.length > 0) {
+                amendments.jobTypeChanges = jobTypeChanges;
+            }
+
+            const payment = allPayments.find(p => p.id === paymentId);
+            const approvedAmount = payment
+                ? Math.round(calculateAmendedTotal({ ...payment, amendments }) * 100) / 100
+                : null;
+
             try {
                 const paymentRef = doc(db, "additionalPayments", paymentId);
                 await updateDoc(paymentRef, {
                     status: 'approved-with-changes',
                     amendments: amendments,
+                    approvedAmount: approvedAmount,
                     changesComment: comment,
                     reviewedAt: new Date()
                 });
 
-                const payment = allPayments.find(p => p.id === paymentId);
                 if (payment) {
                     payment.status = 'approved-with-changes';
                     payment.amendments = amendments;
+                    payment.approvedAmount = approvedAmount;
                     payment.changesComment = comment;
                 }
 
@@ -1421,10 +1604,7 @@ const db = getFirestore(getApps()[0]);
                 if (claimedJobs.length > 0) {
                     let jobsListHTML = '';
                     claimedJobs.forEach(job => {
-                        let jobAmount = 0;
-                        if (job.jobType === 'Dual') jobAmount = 80;
-                        else if (job.jobType === 'Single') jobAmount = 50;
-                        else if (job.jobType === 'Comms') jobAmount = 25;
+                        const jobAmount = getJobAmount(job.jobType);
 
                         jobsListHTML += `
                             <div class="job-item">
@@ -1434,7 +1614,7 @@ const db = getFirestore(getApps()[0]);
                                 </div>
                                 <div class="job-item-row">
                                     <span>${job.postcode}</span>
-                                    <span>${job.jobType}</span>
+                                    <span>${getJobLabel(job.jobType)}</span>
                                 </div>
                             </div>
                         `;
@@ -1494,6 +1674,11 @@ const db = getFirestore(getApps()[0]);
                     }
                     amendmentsHTML += `</div>`;
                 }
+                if (payment.amendments.jobTypeChanges && payment.amendments.jobTypeChanges.length > 0) {
+                    payment.amendments.jobTypeChanges.forEach(c => {
+                        amendmentsHTML += `<div class="amendment-detail">• Job #${c.jobNumber} type changed: ${getJobLabel(c.from)} (£${getJobAmount(c.from)}) → ${getJobLabel(c.to)} (£${getJobAmount(c.to)})</div>`;
+                    });
+                }
                 if (payment.amendments.removeJobs && payment.amendments.removeJobs.length > 0) {
                     amendmentsHTML += `<div class="amendment-detail">• Jobs Removed: ${payment.amendments.removeJobs.join(', ')}</div>`;
                 }
@@ -1503,6 +1688,13 @@ const db = getFirestore(getApps()[0]);
                 amendmentsHTML += '</div>';
                 actionButtonsHTML = amendmentsHTML;
             }
+
+            const amendedTotalHTML = (payment.status === 'approved-with-changes' && payment.amendments) ? `
+                <div class="total-section amended">
+                    <span>Approved Amount (after changes)</span>
+                    <span>£${calculateAmendedTotal(payment).toFixed(2)}</span>
+                </div>
+            ` : '';
 
             card.innerHTML = `
                 <div class="payment-header">
@@ -1530,6 +1722,8 @@ const db = getFirestore(getApps()[0]);
                     <span>£${totalAmount.toFixed(2)}</span>
                 </div>
 
+                ${amendedTotalHTML}
+
                 ${actionButtonsHTML}
             `;
 
@@ -1545,6 +1739,36 @@ const db = getFirestore(getApps()[0]);
             if (payment.workingAway === 'yes') total += breakdown.workingAway.amount;
             if (payment.overtime === 'yes') total += breakdown.overtime.amount;
             if (payment.hasJobs) total += breakdown.jobs.amount;
+
+            return total;
+        }
+
+        // Total after applying amendments (removed items, modified overtime, job type changes)
+        function calculateAmendedTotal(payment) {
+            const a = payment.amendments || {};
+            const dateObj = new Date(payment.date + 'T00:00:00');
+            const breakdown = calculatePaymentBreakdown(payment, dateObj);
+
+            let total = 0;
+            if (payment.standby === 'yes' && a.standby !== false) total += breakdown.standby.amount;
+            if (payment.workingAway === 'yes' && a.workingAway !== false) total += breakdown.workingAway.amount;
+            if (payment.overtime === 'yes' && a.overtime !== false) {
+                const hours = a.overtimeHours || payment.overtimeHours || 0;
+                total += hours * breakdown.overtime.rate;
+            }
+
+            if (payment.hasJobs && payment.jobs) {
+                const removed = new Set((a.removeJobs || []).map(String));
+                const typeChanges = {};
+                (a.jobTypeChanges || []).forEach(c => { typeChanges[String(c.jobNumber)] = c.to; });
+
+                payment.jobs.forEach(job => {
+                    if (job.claimPricePerJob !== 'yes') return;
+                    const num = String(job.jobNumber);
+                    if (removed.has(num)) return;
+                    total += getJobAmount(typeChanges[num] || job.jobType);
+                });
+            }
 
             return total;
         }
@@ -1602,9 +1826,7 @@ const db = getFirestore(getApps()[0]);
             if (payment.hasJobs && payment.jobs) {
                 payment.jobs.forEach(job => {
                     if (job.claimPricePerJob === 'yes') {
-                        if (job.jobType === 'Dual') breakdown.jobs.amount += 80;
-                        else if (job.jobType === 'Single') breakdown.jobs.amount += 50;
-                        else if (job.jobType === 'Comms') breakdown.jobs.amount += 25;
+                        breakdown.jobs.amount += getJobAmount(job.jobType);
                     }
                 });
             }
