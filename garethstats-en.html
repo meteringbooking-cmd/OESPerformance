@@ -239,6 +239,29 @@
         <div class="section-divider"></div>
 
         <div class="form-section">
+            <h2 class="section-title">📥 Export Aborts</h2>
+            <div class="info-box" style="border-left-color: #28a745; background-color: #e8f5e9;">
+                <h3 style="color: #2e7d32;">Export to Excel</h3>
+                <p>Select a date range to download the abort records saved for that period. The workbook has two sheets: <strong>Aborts</strong> (every record: date, team leader, engineer, reason, total) and <strong>Summary</strong> (total aborts per engineer across the range).</p>
+            </div>
+            <form id="exportAbortsForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="exportAbortsStartDate">Start Date</label>
+                        <input type="date" id="exportAbortsStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="exportAbortsEndDate">End Date</label>
+                        <input type="date" id="exportAbortsEndDate" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">Export to Excel (.xlsx)</button>
+            </form>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="form-section">
             <h2 class="section-title">🚗 Miles per Meter Upload</h2>
             <div class="info-box">
                 <h3>Upload Miles per Meter Data</h3>
@@ -480,6 +503,8 @@
         document.getElementById('exportMilesEndDate').valueAsDate = new Date();
         document.getElementById('vanCheckExportStartDate').valueAsDate = aWeekAgo;
         document.getElementById('vanCheckExportEndDate').valueAsDate = new Date();
+        document.getElementById('exportAbortsStartDate').valueAsDate = aWeekAgo;
+        document.getElementById('exportAbortsEndDate').valueAsDate = new Date();
 
         // ── Attendance ──────────────────────────────────────────────────────
         function updateAtWorkPercent() {
@@ -611,6 +636,91 @@
                 showMessage(`Successfully saved ${abortsData.length} abort records!`, 'success');
                 document.getElementById('abortsPreview').style.display = 'none'; document.getElementById('abortsForm').reset(); document.getElementById('abortsFileInfo').classList.remove('show'); document.getElementById('abortsDate').valueAsDate = yesterday; abortsData = [];
             } catch (err) { showMessage('Error saving aborts: ' + err.message, 'error'); } finally { btn.disabled = false; }
+        });
+
+        // ════════════════════════════════════════════════════════════════════
+        // ── Export Aborts to Excel ──────────────────────────────────────────
+        // ════════════════════════════════════════════════════════════════════
+        document.getElementById('exportAbortsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const start = document.getElementById('exportAbortsStartDate').value;
+            const end = document.getElementById('exportAbortsEndDate').value;
+            const btn = e.target.querySelector('button');
+
+            if (start > end) {
+                showMessage('Start date must be before end date', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Fetching and Exporting...';
+
+            try {
+                const abortsRef = collection(db, "aborts energise");
+                const q = query(abortsRef, where("date", ">=", start), where("date", "<=", end));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showMessage('No aborts data found for the selected date range.', 'error');
+                    return;
+                }
+
+                const records = [];
+                querySnapshot.forEach((doc) => records.push(doc.data()));
+
+                // Sort by date, then team leader, then engineer
+                records.sort((a, b) => {
+                    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+                    const tl = (a.teamLeader || '').localeCompare(b.teamLeader || '');
+                    if (tl !== 0) return tl;
+                    return (a.engineer || '').localeCompare(b.engineer || '');
+                });
+
+                // Sheet 1: every abort record
+                const detailRows = [['Date', 'Team Leader', 'Engineer', 'Reason', 'Total']];
+                records.forEach((r) => {
+                    detailRows.push([
+                        r.date,
+                        r.teamLeader || '',
+                        r.engineer || '',
+                        r.reason || '',
+                        Number(r.total) || 0
+                    ]);
+                });
+
+                // Sheet 2: total aborts per engineer across the range
+                const summaryMap = new Map();
+                records.forEach((r) => {
+                    const key = `${r.teamLeader || ''}||${r.engineer || ''}`;
+                    const existing = summaryMap.get(key) || { teamLeader: r.teamLeader || '', engineer: r.engineer || '', total: 0 };
+                    existing.total += Number(r.total) || 0;
+                    summaryMap.set(key, existing);
+                });
+                const summaryList = Array.from(summaryMap.values()).sort((a, b) => b.total - a.total || a.engineer.localeCompare(b.engineer));
+                const summaryRows = [['Team Leader', 'Engineer', 'Total Aborts']];
+                summaryList.forEach((s) => summaryRows.push([s.teamLeader, s.engineer, s.total]));
+                summaryRows.push(['', 'Grand Total', summaryList.reduce((sum, s) => sum + s.total, 0)]);
+
+                const wb = XLSX.utils.book_new();
+                const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+                wsDetail['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 35 }, { wch: 8 }];
+                XLSX.utils.book_append_sheet(wb, wsDetail, "Aborts");
+
+                const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+                wsSummary['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 14 }];
+                XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+                const fileName = `Aborts_${start}_to_${end}.xlsx`;
+                XLSX.writeFile(wb, fileName);
+
+                showMessage(`Export generated successfully! (${records.length} records)`, 'success');
+            } catch (err) {
+                console.error('Export error:', err);
+                showMessage('Error exporting data: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Export to Excel (.xlsx)';
+            }
         });
 
         // ── Miles per Meter ──────────────────────────────────────────────────
@@ -905,7 +1015,7 @@
             const start = document.getElementById('exportStartDate').value;
             const end = document.getElementById('exportEndDate').value;
             const btn = e.target.querySelector('button');
-            
+
             btn.disabled = true;
             btn.textContent = 'Fetching and Exporting...';
 
@@ -939,7 +1049,7 @@
 
                 // Prepare the matrix (Array of Arrays for SheetJS)
                 const exportMatrix = [];
-                
+
                 // Top header row
                 exportMatrix.push(["Engineer Name", ...sortedDates]);
 
