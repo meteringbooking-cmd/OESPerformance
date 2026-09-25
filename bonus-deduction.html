@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bonus Deductions - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #141A26;
+            --surface:   #1B2333;
+            --border:    #2C3B4F;
+            --border-hi: #415771;
+            --amber:     #F5A623;
+            --cyan:      #2BE4C3;
+            --purple:    #BB8CFF;
+            --text:      #F7F9FC;
+            --text-mid:  #C3CEDE;
+            --text-dim:  #93A4BA;
+            --danger:    #FF7A7A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(168,85,247,0.07) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.9); backdrop-filter: blur(12px);
+            animation: fadeDown 0.6s ease both;
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--purple);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.25rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--purple); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text); text-decoration: none;
+            border: 1px solid var(--border-hi); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--purple); border-color: var(--purple); }
+
+        .hero {
+            position: relative; z-index: 10;
+            padding: 48px 48px 32px;
+            animation: fadeUp 0.7s ease 0.1s both;
+        }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--purple); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--purple); }
+        .hero-sub { font-size: 1.02rem; font-weight: 400; color: var(--text-mid); }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 48px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.2s both;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.75rem;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mid);
+        }
+        .ctrl-input {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus { outline: none; border-color: var(--purple); }
+        .ctrl-actions { display: flex; gap: 10px; align-items: flex-end; margin-left: auto; }
+
+        .btn-save {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--purple); border: none; color: #080C14;
+            padding: 0.6rem 1.4rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-save:hover { background: #c084fc; transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ── CATEGORY LEGEND ── */
+        .codes-panel {
+            background: rgba(168,85,247,0.06);
+            border: 1px solid rgba(168,85,247,0.18);
+            border-radius: 10px; padding: 16px 20px;
+            margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.25s both;
+        }
+        .codes-title {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.13em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 14px; font-weight: 500;
+        }
+        .codes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px 28px;
+        }
+        .code-item {
+            display: flex; align-items: flex-start; gap: 10px;
+            font-family: 'Barlow', sans-serif; font-size: 0.86rem; color: var(--text); line-height: 1.55;
+        }
+        .code-badge {
+            background: rgba(187,140,255,0.16); border: 1px solid rgba(187,140,255,0.4);
+            color: var(--purple); padding: 0.15rem 0.6rem; border-radius: 4px;
+            font-family: 'DM Mono', monospace;
+            font-size: 0.75rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+        }
+        .code-item .pct { color: var(--amber); font-weight: 700; }
+
+        /* ── DUPLICATE WARNING BANNER ── */
+        .duplicate-banner {
+            display: none;
+            align-items: center; gap: 12px;
+            background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.35);
+            border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;
+            animation: fadeUp 0.4s ease both;
+        }
+        .duplicate-banner.show { display: flex; }
+        .dup-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .dup-text {
+            font-family: 'Barlow', sans-serif; font-size: 0.88rem;
+            color: var(--amber); line-height: 1.55; flex: 1;
+        }
+        .dup-text strong { font-weight: 600; }
+        .dup-badge {
+            background: var(--amber); color: #080C14;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; padding: 0.25rem 0.7rem; border-radius: 4px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.8rem;
+            margin-bottom: 16px; display: none;
+        }
+        .message.show { display: block; }
+        .message.success { background: rgba(43,228,195,0.1); color: var(--cyan); border: 1px solid rgba(43,228,195,0.3); }
+        .message.error   { background: rgba(255,87,87,0.1); color: var(--danger); border: 1px solid rgba(255,87,87,0.3); }
+        .message.warning { background: rgba(245,166,35,0.1); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+
+        .table-wrap {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; overflow: hidden; overflow-x: auto;
+            animation: fadeUp 0.6s ease 0.3s both;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        thead th {
+            background: var(--surface); padding: 14px 16px;
+            text-align: center;
+            font-family: 'DM Mono', monospace; font-size: 0.74rem; line-height: 1.5;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text);
+            border-bottom: 1px solid var(--border-hi);
+        }
+        thead th:first-child { text-align: left; }
+        thead th.col-deduct { color: var(--purple); }
+
+        tbody tr { border-bottom: 1px solid rgba(28,42,58,0.6); transition: background 0.15s; }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: rgba(168,85,247,0.04); }
+        tbody tr.row-flagged { border-left: 3px solid var(--amber); }
+
+        td { padding: 14px 16px; vertical-align: middle; text-align: center; }
+        td:first-child { text-align: left; }
+        .eng-name { font-weight: 600; color: var(--text); font-size: 0.95rem; }
+        .eng-leader { font-family: 'Barlow', sans-serif; font-size: 0.78rem; color: var(--text-dim); margin-top: 3px; }
+
+        .chk {
+            width: 20px; height: 20px; cursor: pointer; accent-color: var(--purple);
+        }
+        .compliance-group {
+            display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+            font-family: 'Barlow', sans-serif; font-size: 0.8rem; color: var(--text);
+        }
+        .compliance-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        .compliance-group input { width: 15px; height: 15px; accent-color: var(--purple); cursor: pointer; }
+
+        .flag-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .dates-field { width: 100%; max-width: 170px; }
+        .dates-field label {
+            display: block; font-family: 'DM Mono', monospace; font-size: 0.62rem;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+            margin-bottom: 4px; text-align: left;
+        }
+        .dates-input {
+            width: 100%; background: var(--bg); border: 1px solid var(--border-hi);
+            color: var(--text); padding: 0.4rem 0.6rem; border-radius: 5px;
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; text-align: left;
+        }
+        .dates-input:focus { outline: none; border-color: var(--purple); }
+        .dates-input::placeholder { color: var(--text-dim); }
+
+        /* ── VEHICLE CHECK AUTO-FILL ── */
+        .vc-hint {
+            max-width: 170px; font-family: 'DM Mono', monospace; font-size: 0.64rem;
+            line-height: 1.45; color: var(--amber); text-align: left;
+            background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.3);
+            border-radius: 5px; padding: 4px 7px;
+        }
+        .vc-hint .vc-new {
+            display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px;
+            background: var(--amber); color: #080C14; font-weight: 500;
+        }
+        .vc-summary {
+            display: none; font-family: 'Barlow', sans-serif; font-size: 0.86rem;
+            line-height: 1.55; color: var(--text-mid);
+            background: rgba(245,166,35,0.06); border: 1px solid rgba(245,166,35,0.25);
+            border-radius: 10px; padding: 12px 18px; margin-bottom: 16px;
+        }
+        .vc-summary.show { display: block; }
+        .vc-summary strong { color: var(--amber); font-weight: 600; }
+        .vc-summary .vc-unmatched { margin-top: 6px; font-size: 0.8rem; color: var(--text-dim); }
+
+        .deduct-pill {
+            display: inline-block; min-width: 50px;
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.15em;
+            padding: 5px 12px; border-radius: 4px;
+            background: rgba(195,206,222,0.1); border: 1px solid var(--border-hi); color: var(--text-mid);
+        }
+        .deduct-pill.active {
+            background: rgba(255,122,122,0.15); border-color: rgba(255,122,122,0.5); color: var(--danger);
+        }
+
+        .save-footer {
+            background: var(--surface); border-top: 1px solid var(--border);
+            padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+            gap: 12px;
+        }
+        .footer-note {
+            font-family: 'Barlow', sans-serif; font-size: 0.82rem; color: var(--text-mid);
+        }
+        .footer-note span { color: var(--purple); font-weight: 600; }
+
+        .loading-state {
+            padding: 60px; text-align: center;
+            color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 0.9rem;
+        }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--purple);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeUp   { from { opacity: 0; transform: translateY(16px); }  to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 768px) {
+            .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
+            .hero { padding-top: 32px; }
+            .ctrl-actions { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Weekly Record</div>
+        <h1 class="hero-title">Bonus <em>Deductions</em></h1>
+        <p class="hero-sub">Flag Customer Service, Fleet, Housekeeping and Compliance issues per engineer, per week — submitted each Wednesday for the previous week, then reviewed by the FTM and final review. The deduction itself is still worked out per calendar month.</p>
+    </section>
+
+    <main class="content">
+
+        <div class="controls-bar">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Week Commencing</span>
+                <select id="weekStart" class="ctrl-input" required></select>
+            </div>
+            <div class="ctrl-actions">
+                <button class="btn-save" onclick="saveData(event)" id="quickSaveBtn">💾 Save Deductions</button>
+            </div>
+        </div>
+
+        <!-- Duplicate week warning banner -->
+        <div class="duplicate-banner" id="duplicateBanner">
+            <div class="dup-icon">⚠️</div>
+            <div class="dup-text">
+                <strong>Existing records found for this week.</strong><br>
+                Saving will <strong>replace</strong> all <span id="dupCount">0</span> existing entries for <span id="dupMonth">—</span> with the ticked boxes below.
+            </div>
+            <div class="dup-badge">Will Overwrite</div>
+        </div>
+
+        <!-- Vehicle check auto-fill summary -->
+        <div class="vc-summary" id="vcSummary"></div>
+
+        <div class="codes-panel">
+            <div class="codes-title">Deduction Categories</div>
+            <div class="codes-grid">
+                <div class="code-item"><span class="code-badge">Customer Service</span> Persistent failure to make D-1 calls, and/or any upheld customer complaint. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Fleet</span> Failure to complete Daily Vehicle Checks before starting work, and/or any unreasonable recorded speeding incident. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Housekeeping</span> Starting work after 8am on a working day, and/or refusing work in day. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 1</span> Any Cat 1 failure in the month. <span class="pct">−20%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 2</span> Two or more Cat 2 failures in the month. <span class="pct">−10%</span></div>
+                <div class="code-item"><span class="code-badge">Compliance — Cat 3</span> Five or more Cat 3 failures in the month. <span class="pct">−10%</span></div>
+            </div>
+            <div style="margin-top:12px;font-family:'Barlow',sans-serif;font-size:0.84rem;color:var(--text-mid);line-height:1.6;">
+                Cat 2 + Cat 3 together still deduct 20% (10%+10%) — Compliance is capped at a maximum of <span style="color:var(--purple);font-weight:600;">20%</span> deduction regardless of how many Compliance boxes are ticked.<br>
+                Ticking <strong style="color:var(--text);">Fleet</strong> or <strong style="color:var(--text);">Housekeeping</strong> reveals a box for the incident date(s) — enter day numbers (e.g. <span style="color:var(--text);">3, 15, 22</span>) or full dates, comma-separated.<br>
+                <strong style="color:var(--text);">Fleet</strong> is filled in automatically from the vehicle check data uploaded on Gareth Stats: any day an engineer was marked <strong style="color:var(--text);">X (In)</strong> or <strong style="color:var(--text);">H/H (Half Day)</strong> but their check wasn't complete is ticked and added to the dates. Add speeding dates alongside them, or remove any you don't want — a missed check you remove and save won't be added back.<br>
+                <strong style="color:var(--text);">Housekeeping</strong> is filled in the same way from the Van Start &amp; End data: any working day an engineer's first journey started at <strong style="color:var(--text);">08:00 or later</strong>, or their last journey ended <strong style="color:var(--text);">before 16:30</strong>. Holiday, half-day (H/H) and absence days are skipped. Add refused-work dates alongside them.
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="table-wrap">
+            <div id="loadingDiv" class="loading-state">
+                <span class="spinner"></span>Loading engineers…
+            </div>
+            <div id="tableContainer" style="display:none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Engineer</th>
+                            <th>Customer Service<br><span style="color:var(--text-dim);font-weight:400;">(−5%)</span></th>
+                            <th>Fleet<br><span style="color:var(--text-dim);font-weight:400;">(−5%)</span></th>
+                            <th>Housekeeping<br><span style="color:var(--text-dim);font-weight:400;">(−5%)</span></th>
+                            <th>Compliance<br><span style="color:var(--text-dim);font-weight:400;">(up to −20%)</span></th>
+                            <th class="col-deduct">This Week's<br>Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody id="engineersBody"></tbody>
+                </table>
+                <div class="save-footer">
+                    <div class="footer-note" id="footerNote"></div>
+                    <button class="btn-save" onclick="saveData(event)">💾 Save Deductions</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore, collection, getDocs, addDoc,
+            query, where, deleteDoc, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const COLLECTION = "Bonus Deductions";
+
+        // ── Weeks run Monday–Sunday. The picker lists week-commencing Mondays and defaults to the
+        // previous week (submissions are done on a Wednesday for the week just gone). ──
+        const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const parseIso = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+        function mondayOf(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+        function addDays(iso, n) { const d = parseIso(iso); d.setDate(d.getDate() + n); return isoDate(d); }
+        const weekEndOf = wk => addDays(wk, 6);
+        const weekDates = wk => [0, 1, 2, 3, 4, 5, 6].map(n => addDays(wk, n));
+        const inWeek = (date, wk) => !!date && date >= wk && date <= weekEndOf(wk);
+        function formatWeek(wk) {
+            if (!wk) return '—';
+            const s = parseIso(wk), e = parseIso(weekEndOf(wk));
+            const f = (d, o) => d.toLocaleDateString('en-GB', o);
+            return `w/c ${f(s, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+        }
+        function weekRangeLabel(wk) {
+            const s = parseIso(wk), e = parseIso(weekEndOf(wk));
+            const f = (d, o) => d.toLocaleDateString('en-GB', o);
+            return `${f(s, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}  (${f(s, { day: 'numeric', month: 'short' })} – ${f(e, { day: 'numeric', month: 'short' })})`;
+        }
+        (function buildWeekPicker() {
+            const sel = document.getElementById('weekStart');
+            const thisMonday = isoDate(mondayOf(new Date()));
+            const previous = addDays(thisMonday, -7);
+            for (let n = 1; n >= -26; n--) {   // next week … 26 weeks back
+                const wk = addDays(thisMonday, n * 7);
+                const opt = document.createElement('option');
+                opt.value = wk;
+                opt.textContent = weekRangeLabel(wk) + (wk === previous ? '  — last week' : wk === thisMonday ? '  — this week' : '');
+                sel.appendChild(opt);
+            }
+            sel.value = previous;
+        })();
+
+        let engineers = [];
+        let duplicateDocIds = []; // IDs of existing docs for the selected week
+
+        // ── Vehicle check auto-fill (source: "vehicle check" collection, uploaded on gareth-stats.html) ──
+        // A day counts as a missed check when the engineer's attendance on that record is a
+        // working code and checkComplete isn't 1.
+        const VEHICLE_CHECK_COLLECTION = "vehicle check";
+        const WORKING_CODES = ['X', 'IN', 'H/H']; // H/H = half-day holiday — still works part of the day, so a check is due
+        // One housekeeping doc per week (same collection, fixed engineerId so no review page or
+        // the engineer portal ever matches it to an engineer) that remembers which missed-check days
+        // have already been shown and saved — so a day Barry removes stays removed on reload.
+        const VC_META_ENGINEER_ID = '__vehicle_check_meta__';
+        let vcMissedByIndex = [];   // per engineer row: ISO dates of missed checks this week
+        let vcSeenByEngineerId = {}; // from the meta doc: engineerId -> ISO dates already acknowledged
+
+        // ── Housekeeping auto-fill (source: startendvantimes.html — "Van Start and End" journeys +
+        // "Van Attendance", which links each registration to an engineer per day). Same rules as the
+        // van page's Start of Day / Home Before 4:30 PM reports: a working day is flagged when the
+        // first journey (over 0.1 miles) started at 08:00 or later, OR the last journey ended before 16:30.
+        const VAN_JOURNEYS_COLLECTION = "Van Start and End";
+        const VAN_ATTENDANCE_COLLECTION = "Van Attendance";
+        const LATE_START_MINS = 8 * 60;        // 08:00
+        const EARLY_FINISH_MINS = 16 * 60 + 30; // 16:30
+        // Absent codes (incl. H/H half-day holiday) are skipped — a late start/early finish is expected.
+        const VAN_ABSENT_CODES = new Set(['h', 'h/h', 'sick', 'aaup', 'awol', 'tofd', 'aap', 'training']);
+        // Kept in sync with startendvantimes.html
+        const VAN_EXCLUDED_PLATES = new Set(['YF74RMY','WN25FCJ','HK25ZKO','YL74ETZ']);
+        let hkFlaggedByIndex = [];   // per engineer row: [{date, lateStart:'HH:MM'|null, earlyFinish:'HH:MM'|null}]
+        let hkSeenByEngineerId = {}; // from the meta doc: engineerId -> ISO dates already acknowledged
+        let existingEngineerDocCount = 0; // saved engineer records for the week (excludes the meta doc)
+        let loadToken = 0;     // guards against a slow load overwriting a newer week switch
+
+        const normName = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+        // ── Deduction math (kept in sync with engineers2.html's New Structure example) ──
+        function complianceDeductPct(cat1, cat2, cat3) {
+            let pct = 0;
+            if (cat1) pct += 20;
+            if (cat2) pct += 10;
+            if (cat3) pct += 10;
+            return Math.min(pct, 20);
+        }
+        function totalDeductPct(state) {
+            let pct = 0;
+            if (state.customerService) pct += 5;
+            if (state.fleet) pct += 5;
+            if (state.housekeeping) pct += 5;
+            pct += complianceDeductPct(state.complianceCat1, state.complianceCat2, state.complianceCat3);
+            return pct;
+        }
+        function fmtPct(n) {
+            const r = Math.round(n * 10) / 10;
+            return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
+        }
+
+        function rowState(i) {
+            const fleet = document.getElementById(`fl_${i}`)?.checked || false;
+            const housekeeping = document.getElementById(`hk_${i}`)?.checked || false;
+            const wk = document.getElementById('weekStart').value;
+            return {
+                customerService: document.getElementById(`cs_${i}`)?.checked || false,
+                fleet,
+                fleetDates: fleet ? parseDatesInput(document.getElementById(`flDates_${i}`)?.value, wk) : [],
+                housekeeping,
+                housekeepingDates: housekeeping ? parseDatesInput(document.getElementById(`hkDates_${i}`)?.value, wk) : [],
+                complianceCat1: document.getElementById(`c1_${i}`)?.checked || false,
+                complianceCat2: document.getElementById(`c2_${i}`)?.checked || false,
+                complianceCat3: document.getElementById(`c3_${i}`)?.checked || false,
+            };
+        }
+
+        // Shows/hides the incident-date box under Fleet/Housekeeping when ticked/unticked.
+        function toggleDatesField(prefix, i, checked, focus = true) {
+            const wrap = document.getElementById(`${prefix}DatesWrap_${i}`);
+            if (wrap) wrap.hidden = !checked;
+            if (checked && focus) document.getElementById(`${prefix}Dates_${i}`)?.focus();
+        }
+
+        // "14, 16" + week w/c 2026-09-14 -> ["2026-09-14","2026-09-16"]. A day number is matched to the
+        // date in the selected week with that day-of-month (unique within any 7 days, so a week that
+        // crosses into a new month still works).
+        // A token that isn't a plain day number (e.g. an already-full date) is kept as typed.
+        function parseDatesInput(raw, wk) {
+            if (!raw) return [];
+            const days = wk ? weekDates(wk) : [];
+            return raw.split(',')
+                .map(t => t.trim())
+                .filter(Boolean)
+                .map(tok => {
+                    if (/^\d{1,2}$/.test(tok)) {
+                        const hit = days.find(d => Number(d.slice(8, 10)) === Number(tok));
+                        if (hit) return hit;
+                    }
+                    return tok;
+                });
+        }
+
+        // Reverses parseDatesInput for re-populating the text box — shows just the day number
+        // when the stored date falls in the selected week, else the full date.
+        function formatDatesForInput(dates, wk) {
+            if (!Array.isArray(dates)) return '';
+            return dates.map(d => (/^\d{4}-\d{2}-\d{2}$/.test(d) && inWeek(d, wk)) ? String(Number(d.slice(8, 10))) : d).join(', ');
+        }
+
+        function updateRowDeduction(i) {
+            const state = rowState(i);
+            const pct = totalDeductPct(state);
+            const pill = document.getElementById(`deduct_${i}`);
+            if (pill) {
+                pill.textContent = pct > 0 ? `-${fmtPct(pct)}%` : '0%';
+                pill.classList.toggle('active', pct > 0);
+            }
+            const row = document.querySelector(`tr[data-index="${i}"]`);
+            if (row) row.classList.toggle('row-flagged', pct > 0);
+        }
+
+        // ── Load engineers from Firestore ──
+        async function loadEngineers() {
+            try {
+                const querySnapshot = await getDocs(collection(db, "engineers"));
+                engineers = [];
+                querySnapshot.forEach(doc => engineers.push({ id: doc.id, ...doc.data() }));
+                const PINNED_TOP = ['Barry Dixon'];
+                engineers.sort((a, b) => {
+                    const aPinned = PINNED_TOP.includes(a.engineerName);
+                    const bPinned = PINNED_TOP.includes(b.engineerName);
+                    if (aPinned && bPinned) return PINNED_TOP.indexOf(a.engineerName) - PINNED_TOP.indexOf(b.engineerName);
+                    if (aPinned) return -1;
+                    if (bPinned) return 1;
+                    return a.engineerName.localeCompare(b.engineerName);
+                });
+                displayEngineers();
+                await loadWeekState(document.getElementById('weekStart').value);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('loadingDiv').innerHTML = 'Error loading engineers.';
+            }
+        }
+
+        function displayEngineers() {
+            const tbody = document.getElementById('engineersBody');
+            tbody.innerHTML = '';
+
+            if (!engineers.length) {
+                document.getElementById('loadingDiv').innerHTML = 'No engineers found.';
+                return;
+            }
+
+            engineers.forEach((engineer, index) => {
+                const row = tbody.insertRow();
+                row.setAttribute('data-index', index);
+                row.innerHTML = `
+                    <td>
+                        <div class="eng-name">${engineer.engineerName}</div>
+                        <div class="eng-leader">${engineer.teamLeader}</div>
+                    </td>
+                    <td><input type="checkbox" class="chk" id="cs_${index}" data-row-index="${index}"></td>
+                    <td>
+                        <div class="flag-cell">
+                            <input type="checkbox" class="chk" id="fl_${index}" data-row-index="${index}">
+                            <div class="dates-field" id="flDatesWrap_${index}" hidden>
+                                <label for="flDates_${index}">Incident date(s)</label>
+                                <input type="text" class="dates-input" id="flDates_${index}" placeholder="e.g. 3, 15, 22" data-row-index="${index}">
+                            </div>
+                            <div class="vc-hint" id="vcHint_${index}" hidden></div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="flag-cell">
+                            <input type="checkbox" class="chk" id="hk_${index}" data-row-index="${index}">
+                            <div class="dates-field" id="hkDatesWrap_${index}" hidden>
+                                <label for="hkDates_${index}">Incident date(s)</label>
+                                <input type="text" class="dates-input" id="hkDates_${index}" placeholder="e.g. 3, 15, 22" data-row-index="${index}">
+                            </div>
+                            <div class="vc-hint" id="hkHint_${index}" hidden></div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="compliance-group">
+                            <label><input type="checkbox" id="c1_${index}" data-row-index="${index}"> Cat 1</label>
+                            <label><input type="checkbox" id="c2_${index}" data-row-index="${index}"> Cat 2 (2+)</label>
+                            <label><input type="checkbox" id="c3_${index}" data-row-index="${index}"> Cat 3 (5+)</label>
+                        </div>
+                    </td>
+                    <td><span class="deduct-pill" id="deduct_${index}">0%</span></td>
+                `;
+            });
+
+            document.querySelectorAll('#engineersBody input[type="checkbox"]').forEach(chk => {
+                chk.addEventListener('change', function () { updateRowDeduction(this.getAttribute('data-row-index')); updateFooterNote(); });
+            });
+            engineers.forEach((_, i) => {
+                document.getElementById(`fl_${i}`).addEventListener('change', function () { toggleDatesField('fl', i, this.checked); });
+                document.getElementById(`hk_${i}`).addEventListener('change', function () { toggleDatesField('hk', i, this.checked); });
+            });
+
+            document.getElementById('loadingDiv').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'block';
+        }
+
+        // ── Check Firestore for existing records for a given week ──
+        // Returns false if a newer week load has started in the meantime.
+        async function checkForExisting(wk, token) {
+            duplicateDocIds = [];
+            vcSeenByEngineerId = {};
+            hkSeenByEngineerId = {};
+            existingEngineerDocCount = 0;
+            if (!wk) return true;
+
+            try {
+                const q = query(collection(db, COLLECTION), where("weekStart", "==", wk));
+                const snap = await getDocs(q);
+                if (token !== loadToken) return false;
+
+                // Every doc for the week (including the vehicle-check meta doc) is replaced on save.
+                duplicateDocIds = snap.docs.map(d => d.id);
+                const engineerDocs = snap.docs.filter(d => d.data().engineerId !== VC_META_ENGINEER_ID);
+                const metaDoc = snap.docs.find(d => d.data().engineerId === VC_META_ENGINEER_ID);
+                if (metaDoc) {
+                    vcSeenByEngineerId = metaDoc.data().vehicleCheckSeen || {};
+                    hkSeenByEngineerId = metaDoc.data().housekeepingSeen || {};
+                }
+                existingEngineerDocCount = engineerDocs.length;
+
+                const banner = document.getElementById('duplicateBanner');
+                if (engineerDocs.length > 0) {
+                    document.getElementById('dupCount').textContent = engineerDocs.length;
+                    document.getElementById('dupMonth').textContent = formatWeek(wk);
+                    banner.classList.add('show');
+
+                    engineerDocs.forEach(d => {
+                        const data = d.data();
+                        const idx = engineers.findIndex(e => e.id === data.engineerId);
+                        if (idx === -1) return;
+                        const set = (prefix, val) => { const el = document.getElementById(`${prefix}_${idx}`); if (el) el.checked = !!val; };
+                        set('cs', data.customerService);
+                        set('fl', data.fleet);
+                        set('hk', data.housekeeping);
+                        set('c1', data.complianceCat1);
+                        set('c2', data.complianceCat2);
+                        set('c3', data.complianceCat3);
+                        toggleDatesField('fl', idx, !!data.fleet, false);
+                        toggleDatesField('hk', idx, !!data.housekeeping, false);
+                        const flInput = document.getElementById(`flDates_${idx}`);
+                        if (flInput) flInput.value = formatDatesForInput(data.fleetDates, wk);
+                        const hkInput = document.getElementById(`hkDates_${idx}`);
+                        if (hkInput) hkInput.value = formatDatesForInput(data.housekeepingDates, wk);
+                        updateRowDeduction(idx);
+                    });
+                } else {
+                    banner.classList.remove('show');
+                }
+            } catch (error) {
+                console.error('Existing-record check failed:', error);
+            }
+            return true;
+        }
+
+        // ── Vehicle checks: find working days with no completed check, and auto-fill Fleet ──
+        async function applyVehicleChecks(wk, token) {
+            vcMissedByIndex = engineers.map(() => []);
+            engineers.forEach((_, i) => renderVcHint(i, []));
+            if (!wk) return '';
+
+            let snap;
+            try {
+                snap = await getDocs(query(collection(db, VEHICLE_CHECK_COLLECTION),
+                    where("date", ">=", wk), where("date", "<=", weekEndOf(wk))));
+            } catch (error) {
+                console.error('Vehicle check load failed:', error);
+                return `<strong>Couldn't load vehicle check data</strong> — Fleet hasn't been auto-filled for ${formatWeek(wk)}. Tick it manually or reload the page.`;
+            }
+            if (token !== loadToken) return null;
+
+            const idxByName = {};
+            engineers.forEach((e, i) => { idxByName[normName(e.engineerName)] = i; });
+
+            let recordCount = 0;
+            const unmatched = new Set();
+            snap.forEach(d => {
+                const r = d.data();
+                if (!inWeek(String(r.date || ''), wk)) return;
+                recordCount++;
+                const working = WORKING_CODES.includes(String(r.attendance || '').trim().toUpperCase());
+                if (!working || Number(r.checkComplete) === 1) return;
+                const idx = idxByName[normName(r.name)];
+                if (idx === undefined) { unmatched.add(String(r.name || '').trim()); return; }
+                if (!vcMissedByIndex[idx].includes(r.date)) vcMissedByIndex[idx].push(r.date);
+            });
+
+            let engineersWithMisses = 0, totalMisses = 0, autoAddedEngineers = 0;
+            engineers.forEach((eng, i) => {
+                const missed = vcMissedByIndex[i].sort();
+                if (!missed.length) return;
+                engineersWithMisses++;
+                totalMisses += missed.length;
+
+                // Only days not already acknowledged in a previous save are added, so a day that
+                // was deliberately removed isn't forced back in.
+                const seen = new Set(vcSeenByEngineerId[eng.id] || []);
+                const fresh = missed.filter(dt => !seen.has(dt));
+                if (fresh.length) {
+                    autoAddedEngineers++;
+                    autoFillDates('fl', i, fresh, wk);
+                }
+                renderVcHint(i, missed, new Set(fresh));
+            });
+
+            if (!recordCount) {
+                return `<strong>No vehicle check data uploaded for ${formatWeek(wk)} yet</strong> — Fleet will fill in automatically once it's uploaded on Gareth Stats.`;
+            }
+            return `<strong>Vehicle checks:</strong> ${totalMisses} missed check${totalMisses === 1 ? '' : 's'} on working days across ` +
+                    `${engineersWithMisses} engineer${engineersWithMisses === 1 ? '' : 's'} ${formatWeek(wk)}` +
+                    (autoAddedEngineers ? ` — Fleet auto-ticked for ${autoAddedEngineers} (marked <span class="vc-new">NEW</span>). Review, then save.` : '.') +
+                    (unmatched.size ? `<div class="vc-unmatched">Not matched to an engineer on this page (check the name spelling on the upload): ${[...unmatched].sort().join(', ')}</div>` : '');
+        }
+
+        // Ticks a Fleet/Housekeeping box and merges auto-detected dates into its incident-date box,
+        // keeping anything already typed there.
+        function autoFillDates(prefix, i, dates, wk) {
+            const chk = document.getElementById(`${prefix}_${i}`);
+            const input = document.getElementById(`${prefix}Dates_${i}`);
+            const current = parseDatesInput(input.value, wk);
+            const merged = [...new Set([...current, ...dates])].sort();
+            input.value = formatDatesForInput(merged, wk);
+            chk.checked = true;
+            toggleDatesField(prefix, i, true, false);
+            updateRowDeduction(i);
+        }
+
+        // Weekend / UK bank holiday check — same list as startendvantimes.html.
+        const UK_BANK_HOLIDAYS = new Set(['2024-01-01','2024-03-29','2024-04-01','2024-05-06','2024-05-27','2024-08-26','2024-12-25','2024-12-26','2025-01-01','2025-04-18','2025-04-21','2025-05-05','2025-05-26','2025-08-25','2025-12-25','2025-12-26','2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-28','2027-01-01','2027-03-26','2027-03-29','2027-05-03','2027-05-31','2027-08-30','2027-12-27','2027-12-28']);
+        function isNonWorkingDay(ds) {
+            const dow = new Date(ds + 'T12:00:00').getDay();
+            return dow === 0 || dow === 6 || UK_BANK_HOLIDAYS.has(ds);
+        }
+
+        // ── Van start/end times: late starts (08:00+) and early finishes (before 16:30) → Housekeeping ──
+        async function applyVanTimes(wk, token) {
+            hkFlaggedByIndex = engineers.map(() => []);
+            engineers.forEach((_, i) => renderHkHint(i, []));
+            if (!wk) return '';
+
+            let jSnap, aSnap;
+            try {
+                [jSnap, aSnap] = await Promise.all([
+                    getDocs(query(collection(db, VAN_JOURNEYS_COLLECTION),
+                        where("journeyDate", ">=", wk), where("journeyDate", "<=", weekEndOf(wk)))),
+                    getDocs(query(collection(db, VAN_ATTENDANCE_COLLECTION),
+                        where("date", ">=", wk), where("date", "<=", weekEndOf(wk))))
+                ]);
+            } catch (error) {
+                console.error('Van times load failed:', error);
+                return `<strong>Couldn't load van start/end data</strong> — Housekeeping hasn't been auto-filled for ${formatWeek(wk)}. Tick it manually or reload the page.`;
+            }
+            if (token !== loadToken) return null;
+
+            const cleanPlate = v => String(v || '').toUpperCase().replace(/\s/g, '');
+            const hm = mins => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+
+            // date -> plate -> {name, attendance}
+            const attByDatePlate = {};
+            aSnap.forEach(d => {
+                const r = d.data();
+                const p = cleanPlate(r.registration);
+                if (!r.date || !p) return;
+                (attByDatePlate[r.date] = attByDatePlate[r.date] || {})[p] = { name: r.engineerName || '', attendance: r.attendance || '' };
+            });
+
+            // date|plate -> first start / last end (minutes past midnight, local time)
+            const days = {};
+            let journeyCount = 0;
+            jSnap.forEach(d => {
+                const j = d.data();
+                const date = j.journeyDate;
+                if (!inWeek(String(date || ''), wk)) return;
+                const plate = cleanPlate(j.plate || j.registration);
+                if (!plate || VAN_EXCLUDED_PLATES.has(plate)) return;
+                if (isNonWorkingDay(date)) return;
+                journeyCount++;
+                const key = date + '|' + plate;
+                const g = days[key] = days[key] || { date, plate, firstMins: null, lastMins: null };
+                const st = j.startTime ? new Date(j.startTime) : null;
+                const et = j.endTime ? new Date(j.endTime) : null;
+                if (st && !isNaN(st) && Number(j.miles) > 0.1) {
+                    const m = st.getHours() * 60 + st.getMinutes();
+                    if (g.firstMins === null || m < g.firstMins) g.firstMins = m;
+                }
+                if (et && !isNaN(et)) {
+                    const m = et.getHours() * 60 + et.getMinutes();
+                    if (g.lastMins === null || m > g.lastMins) g.lastMins = m;
+                }
+            });
+
+            const idxByName = {};
+            engineers.forEach((e, i) => { idxByName[normName(e.engineerName)] = i; });
+            const unnamedVans = new Set(), unmatchedNames = new Set();
+
+            Object.values(days).forEach(g => {
+                const late = g.firstMins !== null && g.firstMins >= LATE_START_MINS;
+                const early = g.lastMins !== null && g.lastMins < EARLY_FINISH_MINS;
+                if (!late && !early) return;
+                const att = (attByDatePlate[g.date] || {})[g.plate];
+                if (!att || !att.name) { unnamedVans.add(g.plate); return; }
+                if (VAN_ABSENT_CODES.has(String(att.attendance).trim().toLowerCase())) return;
+                const idx = idxByName[normName(att.name)];
+                if (idx === undefined) { unmatchedNames.add(att.name.trim()); return; }
+                const list = hkFlaggedByIndex[idx];
+                const existing = list.find(x => x.date === g.date);
+                const entry = existing || { date: g.date, lateStart: null, earlyFinish: null };
+                if (late) entry.lateStart = hm(g.firstMins);
+                if (early) entry.earlyFinish = hm(g.lastMins);
+                if (!existing) list.push(entry);
+            });
+
+            let engineersFlagged = 0, totalDays = 0, autoAddedEngineers = 0;
+            engineers.forEach((eng, i) => {
+                const flagged = hkFlaggedByIndex[i].sort((a, b) => a.date < b.date ? -1 : 1);
+                if (!flagged.length) return;
+                engineersFlagged++;
+                totalDays += flagged.length;
+                const seen = new Set(hkSeenByEngineerId[eng.id] || []);
+                const fresh = flagged.map(x => x.date).filter(dt => !seen.has(dt));
+                if (fresh.length) {
+                    autoAddedEngineers++;
+                    autoFillDates('hk', i, fresh, wk);
+                }
+                renderHkHint(i, flagged, new Set(fresh));
+            });
+
+            if (!journeyCount) {
+                return `<strong>No van start/end data uploaded for ${formatWeek(wk)} yet</strong> — Housekeeping will fill in automatically once journeys are uploaded on the Van Start &amp; End page.`;
+            }
+            return `<strong>Van times:</strong> ${totalDays} late start / early finish day${totalDays === 1 ? '' : 's'} across ` +
+                `${engineersFlagged} engineer${engineersFlagged === 1 ? '' : 's'} ${formatWeek(wk)} (started 08:00 or later, or home before 16:30)` +
+                (autoAddedEngineers ? ` — Housekeeping auto-ticked for ${autoAddedEngineers} (marked <span class="vc-new">NEW</span>). Review, then save.` : '.') +
+                (unnamedVans.size ? `<div class="vc-unmatched">Vans with no engineer on the van attendance upload for a flagged day: ${[...unnamedVans].sort().join(', ')}</div>` : '') +
+                (unmatchedNames.size ? `<div class="vc-unmatched">Van attendance names not matched to an engineer on this page: ${[...unmatchedNames].sort().join(', ')}</div>` : '');
+        }
+
+        function renderHkHint(i, flagged, freshSet) {
+            const el = document.getElementById(`hkHint_${i}`);
+            if (!el) return;
+            if (!flagged.length) { el.hidden = true; el.innerHTML = ''; return; }
+            const dayNum = d => String(Number(d.slice(8, 10)));
+            const lates = flagged.filter(x => x.lateStart).map(x => `${dayNum(x.date)} (${x.lateStart})`);
+            const earlies = flagged.filter(x => x.earlyFinish).map(x => `${dayNum(x.date)} (${x.earlyFinish})`);
+            const freshCount = freshSet ? freshSet.size : 0;
+            el.innerHTML =
+                (lates.length ? `⏰ Late start: ${lates.join(', ')}` : '') +
+                (lates.length && earlies.length ? '<br>' : '') +
+                (earlies.length ? `🏠 Home early: ${earlies.join(', ')}` : '') +
+                (freshCount ? `<span class="vc-new">NEW ${freshCount}</span>` : '');
+            el.hidden = false;
+        }
+
+        function renderVcHint(i, missedDates, freshSet) {
+            const el = document.getElementById(`vcHint_${i}`);
+            if (!el) return;
+            if (!missedDates.length) { el.hidden = true; el.innerHTML = ''; return; }
+            const days = missedDates.map(d => String(Number(d.slice(8, 10)))).join(', ');
+            const freshCount = freshSet ? freshSet.size : 0;
+            el.innerHTML = `🚐 Missed vehicle check: ${days}` + (freshCount ? `<span class="vc-new">NEW ${freshCount}</span>` : '');
+            el.hidden = false;
+        }
+
+        function updateFooterNote() {
+            const flagged = engineers.filter((_, i) => totalDeductPct(rowState(i)) > 0).length;
+            document.getElementById('footerNote').innerHTML = flagged
+                ? `<span>${flagged}</span> of ${engineers.length} engineers flagged`
+                : '';
+        }
+
+        async function loadWeekState(wk) {
+            const token = ++loadToken;
+            const stillCurrent = await checkForExisting(wk, token);
+            if (!stillCurrent) return;
+            const summary = document.getElementById('vcSummary');
+            const vcHtml = await applyVehicleChecks(wk, token);
+            if (vcHtml === null || token !== loadToken) return;
+            const hkHtml = await applyVanTimes(wk, token);
+            if (hkHtml === null || token !== loadToken) return;
+            const parts = [vcHtml, hkHtml].filter(Boolean);
+            summary.innerHTML = parts.map(h => `<div>${h}</div>`).join('<div style="height:8px"></div>');
+            summary.classList.toggle('show', parts.length > 0);
+            updateFooterNote();
+        }
+
+        // ── Week change → reset checkboxes, then load saved records + vehicle checks ──
+        document.getElementById('weekStart').addEventListener('change', async function () {
+            engineers.forEach((_, i) => {
+                ['cs','fl','hk','c1','c2','c3'].forEach(p => { const el = document.getElementById(`${p}_${i}`); if (el) el.checked = false; });
+                const flInput = document.getElementById(`flDates_${i}`); if (flInput) flInput.value = '';
+                const hkInput = document.getElementById(`hkDates_${i}`); if (hkInput) hkInput.value = '';
+                toggleDatesField('fl', i, false);
+                toggleDatesField('hk', i, false);
+                renderVcHint(i, []);
+                renderHkHint(i, []);
+                updateRowDeduction(i);
+            });
+            await loadWeekState(this.value);
+        });
+
+        // ── SAVE (upsert: delete existing for week then add new) ──
+        window.saveData = async function (event) {
+            const wk = document.getElementById('weekStart').value;
+            if (!wk) return showMessage('Please select a week', 'error');
+
+            const clickedBtn = event.target;
+            clickedBtn.disabled = true;
+            const orig = clickedBtn.innerHTML;
+            clickedBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>';
+
+            try {
+                // 1. Build new records from current checkbox state (only engineers with something ticked)
+                const newRecords = [];
+                for (let i = 0; i < engineers.length; i++) {
+                    const state = rowState(i);
+                    const pct = totalDeductPct(state);
+                    if (pct > 0) {
+                        newRecords.push({
+                            engineerId: engineers[i].id,
+                            engineerName: engineers[i].engineerName,
+                            teamLeader: engineers[i].teamLeader,
+                            weekStart: wk,
+                            weekEnd: weekEndOf(wk),
+                            ...state,
+                            // Missed vehicle checks detected this week (for reference — the Fleet
+                            // dates themselves are whatever is in the box, auto-filled or typed).
+                            vehicleCheckMissedDates: vcMissedByIndex[i] || [],
+                            // Late start / early finish days detected from van times (for reference).
+                            vanTimesFlagged: hkFlaggedByIndex[i] || []
+                        });
+                    }
+                }
+
+                // Remember every missed-check day shown so far, so reloading the week doesn't
+                // re-add a day that was deliberately removed before this save.
+                const vehicleCheckSeen = {};
+                engineers.forEach((eng, i) => {
+                    const days = [...new Set([...(vcSeenByEngineerId[eng.id] || []), ...(vcMissedByIndex[i] || [])])].sort();
+                    if (days.length) vehicleCheckSeen[eng.id] = days;
+                });
+                const housekeepingSeen = {};
+                engineers.forEach((eng, i) => {
+                    const days = [...new Set([...(hkSeenByEngineerId[eng.id] || []), ...(hkFlaggedByIndex[i] || []).map(x => x.date)])].sort();
+                    if (days.length) housekeepingSeen[eng.id] = days;
+                });
+
+                // 2. Delete all existing records for this week (if any)
+                if (duplicateDocIds.length > 0) {
+                    const deletions = duplicateDocIds.map(id => deleteDoc(doc(db, COLLECTION, id)));
+                    await Promise.all(deletions);
+                }
+
+                // 3. Add the new records
+                if (newRecords.length) {
+                    const additions = newRecords.map(record =>
+                        addDoc(collection(db, COLLECTION), { ...record, submittedAt: serverTimestamp() })
+                    );
+                    await Promise.all(additions);
+                }
+                if (Object.keys(vehicleCheckSeen).length || Object.keys(housekeepingSeen).length) {
+                    await addDoc(collection(db, COLLECTION), {
+                        engineerId: VC_META_ENGINEER_ID,
+                        engineerName: '(auto-fill record)',
+                        weekStart: wk,
+                        weekEnd: weekEndOf(wk),
+                        vehicleCheckSeen,
+                        housekeepingSeen,
+                        submittedAt: serverTimestamp()
+                    });
+                }
+
+                const replacedCount = existingEngineerDocCount;
+                const wasOverwrite = replacedCount > 0;
+                showMessage(
+                    newRecords.length
+                        ? (wasOverwrite
+                            ? `Replaced ${replacedCount} existing record(s) with ${newRecords.length} flagged entries for ${formatWeek(wk)}.`
+                            : `Saved! ${newRecords.length} engineer(s) flagged for ${formatWeek(wk)}.`)
+                        : (wasOverwrite
+                            ? `Cleared all ${replacedCount} existing record(s) for ${formatWeek(wk)} — no boxes ticked.`
+                            : `Nothing ticked — no deductions saved for ${formatWeek(wk)}.`),
+                    'success'
+                );
+
+                await loadWeekState(wk);
+
+            } catch (error) {
+                console.error(error);
+                showMessage('Error saving deductions. Please try again.', 'error');
+            } finally {
+                clickedBtn.disabled = false; clickedBtn.innerHTML = orig;
+            }
+        };
+
+        function showMessage(text, type) {
+            const el = document.getElementById('message');
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            setTimeout(() => { el.className = 'message'; }, 6000);
+        }
+
+
+        loadEngineers();
+    </script>
+</body>
+</html>
