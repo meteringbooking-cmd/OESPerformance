@@ -232,8 +232,10 @@
                 </div>
                 <div class="filter-bar">
                     <div class="form-group">
-                        <label class="form-label">Filter by Date</label>
-                        <input type="date" id="filterDate" onchange="renderCards()">
+                        <label class="form-label">Week Commencing</label>
+                        <select id="filterWeek" onchange="renderCards()" style="min-width:170px">
+                            <option value="">All weeks</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Filter by Name</label>
@@ -331,6 +333,29 @@ function fmtDate(ds) {
     const [y,m,d] = ds.split('-');
     return `${d}/${m}/${y}`;
 }
+
+/* ── WEEK COMMENCING HELPERS ── */
+/* Returns the Monday (YYYY-MM-DD) of the week containing ds */
+function weekCommencing(ds) {
+    if (!ds) return '';
+    const [y, m, d] = ds.split('-').map(Number);
+    if (!y || !m || !d) return '';
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const offset = (dt.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+    dt.setUTCDate(dt.getUTCDate() - offset);
+    return dt.toISOString().split('T')[0];
+}
+
+function populateWeekFilter() {
+    const sel = document.getElementById('filterWeek');
+    const current = sel.value;
+    const thisWeek = weekCommencing(new Date().toISOString().split('T')[0]);
+    const weeks = [...new Set([thisWeek, ...window._naData.map(r => weekCommencing(r.date))])]
+        .filter(Boolean).sort().reverse();
+    sel.innerHTML = '<option value="">All weeks</option>' +
+        weeks.map(w => `<option value="${w}" ${w === current ? 'selected' : ''}>w/c ${fmtDate(w)}</option>`).join('');
+}
+
 function getOverallStatus(doc) {
     const attempts = doc.attempts || [];
     const filled = attempts.filter(a => a && a.outcome);
@@ -388,6 +413,7 @@ async function loadAll() {
         );
         window._naData = [];
         snap.forEach(d => window._naData.push({ id: d.id, ...d.data() }));
+        populateWeekFilter();
         renderCards();
     } catch(e) {
         console.error(e);
@@ -431,12 +457,12 @@ window.addNoAccess = addNoAccess;
 
 /* ── RENDER CARDS ── */
 function renderCards() {
-    const filterDate   = document.getElementById('filterDate').value;
+    const filterWeek   = document.getElementById('filterWeek').value;
     const filterName   = document.getElementById('filterName').value.toLowerCase();
     const filterStatus = document.getElementById('filterStatus').value;
     let data = window._naData.slice();
 
-    if (filterDate) data = data.filter(r => r.date === filterDate);
+    if (filterWeek) data = data.filter(r => weekCommencing(r.date) === filterWeek);
     if (filterName) data = data.filter(r => (r.name||'').toLowerCase().includes(filterName));
     if (filterStatus) data = data.filter(r => getOverallStatus(r) === filterStatus);
 
