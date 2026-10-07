@@ -160,6 +160,34 @@
         }
         .uptodate-note.show { display: flex; }
 
+        /* ── MONTH VIEW: engineer groups with weekly cards ── */
+        .eng-group { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+        .eng-group.has-due { border-color: rgba(245,166,35,0.55); box-shadow: 0 0 0 1px rgba(245,166,35,0.18); }
+        .eng-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 16px 20px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+        .eng-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .wk-chip { font-family: 'DM Mono', monospace; font-size: 0.68rem; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border-hi); color: var(--text-dim); }
+        .wk-chip.done { border-color: rgba(52,211,153,0.4); color: var(--success); background: rgba(52,211,153,0.08); }
+        .wk-chip.todo { border-color: var(--border-hi); color: var(--text-mid); }
+        .wk-chip.due { border-color: var(--amber); color: #1a1205; background: var(--amber); font-weight: 600; }
+        .eng-body { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+        .review-card .rc-head { cursor: pointer; }
+        .review-card.collapsed > :not(.rc-head) { display: none; }
+        .review-card.collapsed .rc-head { border-bottom: none; }
+        .rc-week { font-weight: 700; font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .rc-chev { font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--text-dim); width: 12px; display: inline-block; }
+        .wk-badge { font-family: 'DM Mono', monospace; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        .wk-badge.due { background: var(--amber); color: #1a1205; }
+        .wk-badge.done { background: rgba(52,211,153,0.15); color: var(--success); border: 1px solid rgba(52,211,153,0.35); }
+        .wk-badge.todo { background: rgba(195,206,222,0.1); color: var(--text-mid); border: 1px solid var(--border-hi); }
+        .review-card.due { border: 2px solid var(--amber); box-shadow: 0 0 18px rgba(245,166,35,0.15); }
+        .review-card.due .rc-head { background: rgba(245,166,35,0.10); }
+        .review-card.done:not(.due) { opacity: 0.92; }
+        .month-summary { display: none; gap: 10px; flex-wrap: wrap; align-items: center; background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.35);
+            border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; font-size: 0.86rem; color: var(--text-mid); }
+        .month-summary.show { display: flex; }
+        .month-summary b { color: var(--text); }
+        .month-summary .due-tag { background: var(--amber); color: #1a1205; font-family: 'DM Mono', monospace; font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
         /* ── ENGINEER REVIEW CARD ── */
         #cardsContainer { display: flex; flex-direction: column; gap: 16px; }
         .review-card {
@@ -294,17 +322,25 @@
     </header>
 
     <section class="hero">
-        <div class="hero-label">Weekly Review — Stage 1</div>
+        <div class="hero-label">Weekly Review by Month — Stage 1</div>
         <h1 class="hero-title">FTM <em>Review</em></h1>
-        <p class="hero-sub">Review completion rate, attendance, aborts and everything submitted on Bonus Deductions for the week. Accept or remove attendance and any flagged category, confirm or overturn each abort — completion rate is fixed and only moves when an abort is overturned — then submit each engineer individually. Your decisions go forward to the final review before anything reaches the engineer portal.</p>
+        <p class="hero-sub">Pick a month to see each engineer's weekly reviews for it. <b>Last week</b> — the one due for review now — is highlighted and opened for you; earlier weeks are there to check or amend. Accept or remove attendance and any flagged category, confirm or overturn each abort, then submit each week individually. Your decisions go forward to the month-end final review.</p>
     </section>
 
     <main class="content">
 
         <div class="controls-bar">
             <div class="ctrl-group">
-                <span class="ctrl-label">Week Commencing</span>
-                <select id="weekStart" class="ctrl-input" required></select>
+                <span class="ctrl-label">Month</span>
+                <input type="month" id="dataMonth" class="ctrl-input" required>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">Show</span>
+                <select id="showFilter" class="ctrl-select">
+                    <option value="all">All weeks in the month</option>
+                    <option value="due">Last week only</option>
+                    <option value="todo">Anything not yet reviewed</option>
+                </select>
             </div>
             <div class="ctrl-group">
                 <span class="ctrl-label">Team</span>
@@ -321,14 +357,14 @@
         <div id="message" class="message"></div>
 
         <div id="loadingDiv" class="loading-state">
-            <span class="spinner"></span>Loading week data…
+            <span class="spinner"></span>Loading month data…
         </div>
 
-        <div id="upToDateNote" class="uptodate-note"></div>
+        <div id="monthSummary" class="month-summary"></div>
 
         <div id="emptyState" class="empty-state" style="display:none;">
             <strong>Nothing to review.</strong><br>
-            <span id="emptyStateDetail">No engineer has an attendance instance, an abort to review, or a Bonus Deductions submission for this week.</span>
+            <span id="emptyStateDetail">No engineer has anything to review for this month.</span>
         </div>
 
         <div id="cardsContainer" style="display:none;"></div>
@@ -378,41 +414,42 @@
             const f = (d, o) => d.toLocaleDateString('en-GB', o);
             return `${f(s, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}  (${f(s, { day: 'numeric', month: 'short' })} – ${f(e, { day: 'numeric', month: 'short' })})`;
         }
-        (function buildWeekPicker() {
-            const sel = document.getElementById('weekStart');
-            const thisMonday = isoDate(mondayOf(new Date()));
-            const previous = addDays(thisMonday, -7);
-            for (let n = 1; n >= -26; n--) {
-                const wk = addDays(thisMonday, n * 7);
-                const opt = document.createElement('option');
-                opt.value = wk;
-                opt.textContent = weekRangeLabel(wk) + (wk === previous ? '  — last week' : wk === thisMonday ? '  — this week' : '');
-                sel.appendChild(opt);
-            }
-            sel.value = previous;
-        })();
+        // The week due for review now is LAST week (Mon–Sun). The month picker defaults to the month
+        // that holds most of last week, so it opens straight onto what's due.
+        const THIS_MONDAY = isoDate(mondayOf(new Date()));
+        const LAST_MONDAY = addDays(THIS_MONDAY, -7);
+        const monthEndOf = m => { const [y, mo] = m.split('-').map(Number); return isoDate(new Date(y, mo, 0, 12)); };
+        // Weeks (Mondays) with at least one day in the month, up to and including last week —
+        // the current week isn't due yet.
+        function weeksOfMonth(m) {
+            const out = [];
+            for (let wk = isoDate(mondayOf(parseIso(m + '-01'))); wk <= monthEndOf(m) && wk <= LAST_MONDAY; wk = addDays(wk, 7)) out.push(wk);
+            return out;
+        }
+        const formatMonth = m => parseIso(m + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        const shortDate = iso => parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        document.getElementById('dataMonth').value = primaryMonthOf(LAST_MONDAY);
 
         let engineers = [];      // {id, engineerName, teamLeader}
         let engineerRows = [];   // one entry per engineer *shown for review*
-        let hiddenUpToDate = 0;  // engineers already reviewed with nothing new since — kept off the list
 
         // Shows/hides the "N already reviewed and up to date" banner, and adjusts the empty-state
         // message so an all-caught-up month doesn't read the same as a month with nothing at all.
-        function renderUpToDateNote(count) {
-            hiddenUpToDate = count;
-            const note = document.getElementById('upToDateNote');
-            if (count > 0) {
-                note.textContent = `✓ ${count} engineer${count === 1 ? '' : 's'} already reviewed and up to date this week — hidden until a new Bonus Deductions submission or a new abort comes in.`;
-                note.classList.add('show');
-            } else {
-                note.classList.remove('show');
-            }
-            const detail = document.getElementById('emptyStateDetail');
-            if (detail) {
-                detail.textContent = count > 0
-                    ? 'Everything for this week has already been reviewed and nothing new has come in since.'
-                    : 'No engineer has an attendance instance, an abort to review, or a Bonus Deductions submission for this week.';
-            }
+        function renderSummary(month) {
+            const el = document.getElementById('monthSummary');
+            const team = document.getElementById('teamFilter').value;
+            const rows = engineerRows.filter(r => !team || r.engineer.teamLeader === team);
+            const dueRows = rows.filter(r => r.due);
+            const dueTodo = dueRows.filter(r => r.status === 'todo').length;
+            const otherTodo = rows.filter(r => !r.due && r.status === 'todo').length;
+            if (!rows.length) { el.classList.remove('show'); return; }
+            const hasLast = weeksOfMonth(month).includes(LAST_MONDAY);
+            el.innerHTML = (hasLast
+                ? `<span class="due-tag">Due now</span> <span>Last week <b>w/c ${shortDate(LAST_MONDAY)}</b>: <b>${dueTodo}</b> engineer${dueTodo === 1 ? '' : 's'} to review` +
+                  (dueRows.length - dueTodo ? `, ${dueRows.length - dueTodo} already done` : '') + `.</span>`
+                : `<span>Last week (w/c ${shortDate(LAST_MONDAY)}) isn't in ${formatMonth(month)}.</span>`) +
+                (otherTodo ? ` <span>· ${otherTodo} earlier week${otherTodo === 1 ? '' : 's'} not yet reviewed.</span>` : '');
+            el.classList.add('show');
         }
 
         // ── Deduction maths (kept in sync with engineers2.html / bonus-deduction.html) ──
@@ -527,9 +564,9 @@
         }
 
         // ── Fetch + group attendance/performance/aborts for one engineer, filtered to the given month ──
-        async function fetchEngineerMonthContext(engineer, wk) {
+        async function fetchEngineerSnaps(engineer) {
             const engineerName = engineer.engineerName;
-            const [attSnap, perfSnap, energiseSnap, abortsSnap, abortsEnergiseSnap, prevRevSnap] = await Promise.all([
+            return Promise.all([
                 getDocs(query(collection(db, "attendance"), where("engineerName", "==", engineerName))),
                 getDocs(query(collection(db, "performance"), where("engineerName", "==", engineerName))),
                 getDocs(query(collection(db, "performance - Energise"), where("engineerName", "==", engineerName))),
@@ -537,6 +574,9 @@
                 getDocs(query(collection(db, "aborts energise"), where("engineer", "==", engineerName))),
                 getDocs(query(collection(db, REVIEWED), where("engineerId", "==", engineer.id))),
             ]);
+        }
+        function fetchEngineerMonthContext(engineer, wk, snaps) {
+            const [attSnap, perfSnap, energiseSnap, abortsSnap, abortsEnergiseSnap, prevRevSnap] = snaps;
             const weekEnd = weekEndOf(wk);
 
             // Attendance instances — this week only (each is −5% on that month's bonus).
@@ -683,62 +723,55 @@
         }
 
         // ── Build the list of engineers who have something to review this month ──
-        async function loadMonth(wk) {
+        let loadToken = 0;
+        async function loadMonth(month) {
+            const token = ++loadToken;
             document.getElementById('loadingDiv').style.display = 'block';
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('cardsContainer').style.display = 'none';
             document.getElementById('cardsContainer').innerHTML = '';
+            document.getElementById('monthSummary').classList.remove('show');
 
             try {
-                const subSnap = await getDocs(query(collection(db, SUBMISSIONS), where("weekStart", "==", wk)));
-                const submissionByEngineer = {};
-                subSnap.forEach(d => { const data = d.data(); submissionByEngineer[data.engineerId] = data; });
-
-                const revSnap = await getDocs(query(collection(db, REVIEWED), where("weekStart", "==", wk)));
-                const reviewedByEngineer = {};
-                revSnap.forEach(d => { const data = d.data(); reviewedByEngineer[data.engineerId] = data; });
-
-                const withDataEngineers = engineers.filter(e => submissionByEngineer[e.id]);
-                // Also check completion/attendance for every engineer, in case nothing was
-                // submitted on Bonus Deductions but a live deduction still applies. Aborts alone
-                // (with completion at/above 90%) don't pull an engineer in — see showAborts below.
-                const others = engineers.filter(e => !submissionByEngineer[e.id]);
+                const weeks = weeksOfMonth(month);
+                if (!weeks.length) { engineerRows = []; renderCards(); return; }
+                const range = [where("weekStart", ">=", weeks[0]), where("weekStart", "<=", weeks[weeks.length - 1])];
+                const [subSnap, revSnap] = await Promise.all([
+                    getDocs(query(collection(db, SUBMISSIONS), ...range)),
+                    getDocs(query(collection(db, REVIEWED), ...range)),
+                ]);
+                const submissionOf = {}, reviewedOf = {};
+                subSnap.forEach(d => { const x = d.data(); if (x.engineerId && x.weekStart) submissionOf[`${x.engineerId}_${x.weekStart}`] = x; });
+                revSnap.forEach(d => { const x = d.data(); if (x.engineerId && x.weekStart) reviewedOf[`${x.engineerId}_${x.weekStart}`] = x; });
 
                 const rows = [];
-                let hiddenUpToDateCount = 0;
-                for (const eng of withDataEngineers) {
-                    const ctx = await fetchEngineerMonthContext(eng, wk);
-                    const submission = submissionByEngineer[eng.id] || null;
-                    const reviewed = reviewedByEngineer[eng.id] || null;
-                    if (needsReview(ctx, submission, reviewed)) {
-                        rows.push({ engineer: eng, ctx, submission, reviewed });
-                    } else {
-                        hiddenUpToDateCount++;
+                for (const eng of engineers) {
+                    const snaps = await fetchEngineerSnaps(eng);
+                    if (token !== loadToken) return;
+                    for (const wk of weeks) {
+                        const key = `${eng.id}_${wk}`;
+                        const ctx = fetchEngineerMonthContext(eng, wk, snaps);
+                        const submission = submissionOf[key] || null;
+                        const reviewed = reviewedOf[key] || null;
+                        // A week is shown if there's anything to review (Barry's flags, attendance, or
+                        // aborts while under the completion target) or it has already been reviewed.
+                        const hasItems = !!submission || ctx.attendanceInstances.length > 0 || (ctx.aborts.length > 0 && ctx.completionDeductPct > 0);
+                        if (!hasItems && !reviewed) continue;
+                        rows.push({ key, wk, engineer: eng, ctx, submission, reviewed,
+                            due: wk === LAST_MONDAY, status: needsReview(ctx, submission, reviewed) ? 'todo' : 'done' });
                     }
                 }
-                for (const eng of others) {
-                    const ctx = await fetchEngineerMonthContext(eng, wk);
-                    // Nothing submitted: only worth a card if there's attendance to review, or aborts
-                    // this week while the month is under the completion target.
-                    if (ctx.attendanceInstances.length > 0 || (ctx.aborts.length > 0 && ctx.completionDeductPct > 0)) {
-                        const reviewed = reviewedByEngineer[eng.id] || null;
-                        if (needsReview(ctx, null, reviewed)) {
-                            rows.push({ engineer: eng, ctx, submission: null, reviewed });
-                        } else {
-                            hiddenUpToDateCount++;
-                        }
-                    }
-                }
-
-                rows.sort((a, b) => a.engineer.engineerName.localeCompare(b.engineer.engineerName));
+                // Engineers with something due last week first, then alphabetical; weeks in date order.
+                const dueEng = new Set(rows.filter(r => r.due && r.status === 'todo').map(r => r.engineer.id));
+                rows.sort((a, b) => (dueEng.has(b.engineer.id) - dueEng.has(a.engineer.id)) ||
+                    a.engineer.engineerName.localeCompare(b.engineer.engineerName) || a.wk.localeCompare(b.wk));
                 engineerRows = rows;
-                renderUpToDateNote(hiddenUpToDateCount);
                 renderCards();
             } catch (err) {
                 console.error(err);
-                showMessage('Error loading week data: ' + err.message, 'error');
+                showMessage('Error loading month data: ' + err.message, 'error');
             } finally {
-                document.getElementById('loadingDiv').style.display = 'none';
+                if (token === loadToken) document.getElementById('loadingDiv').style.display = 'none';
             }
         }
 
@@ -747,7 +780,11 @@
             const container = document.getElementById('cardsContainer');
             container.innerHTML = '';
 
-            const visible = engineerRows.filter(r => !teamFilter || r.engineer.teamLeader === teamFilter);
+            const showFilter = document.getElementById('showFilter').value;
+            const visible = engineerRows.filter(r => (!teamFilter || r.engineer.teamLeader === teamFilter) &&
+                (showFilter === 'all' || (showFilter === 'due' ? r.due : r.status === 'todo')));
+            renderSummary(document.getElementById('dataMonth').value);
+            const groups = {};
 
             if (!visible.length) {
                 document.getElementById('emptyState').style.display = 'block';
@@ -780,8 +817,8 @@
                 });
 
                 const card = document.createElement('div');
-                card.className = 'review-card';
-                card.dataset.engineerId = r.engineer.id;
+                card.className = 'review-card' + (r.due ? ' due' : '') + (r.status === 'done' ? ' done' : '') + (r.status === 'done' && !r.due ? ' collapsed' : '');
+                card.dataset.rowKey = r.key;
 
                 // Aborts are only relevant to review when the raw completion rate is actually
                 // under 90% (i.e. a completion deduction tier applies) — gated on the RAW rate,
@@ -790,7 +827,7 @@
                 const showAborts = r.ctx.completionDeductPct > 0;
 
                 const contextBits = [];
-                contextBits.push(`<span>Completion: <b id="ctxCompletion_${r.engineer.id}"></b></span>`);
+                contextBits.push(`<span>Completion: <b id="ctxCompletion_${r.key}"></b></span>`);
                 contextBits.push(`<span>Attendance: <b>${r.ctx.attendanceInstances.length ? r.ctx.attendanceInstances.length + ' flagged instance(s)' : 'clear'}</b></span>`);
                 if (showAborts) contextBits.push(`<span>Aborts: <b>${r.ctx.aborts.length ? r.ctx.aborts.length + ' this week' : 'none'}</b></span>`);
 
@@ -804,45 +841,62 @@
                             <span class="rc-aborts-title">Aborts This Week</span>
                             <span class="rc-aborts-note">Confirm each abort as warranted — it counts against completion as normal — or overturn it, which adds the job back into the month's completion rate for bonus purposes only. It never changes the raw abort record or the real completion/aborted figures shown elsewhere.</span>
                         </div>
-                        <div class="rc-bonus-calc" id="bonusCalc_${r.engineer.id}"></div>
-                        <div class="rc-aborts" id="aborts_${r.engineer.id}"></div>
+                        <div class="rc-bonus-calc" id="bonusCalc_${r.key}"></div>
+                        <div class="rc-aborts" id="aborts_${r.key}"></div>
                     </div>` : '';
 
                 card.innerHTML = `
                     <div class="rc-head">
                         <div>
-                            <div class="rc-name">${r.engineer.engineerName}</div>
-                            <div class="rc-leader">${r.engineer.teamLeader || ''}</div>
+                            <div class="rc-week"><span class="rc-chev">${r.status === 'done' && !r.due ? '▸' : '▾'}</span>w/c ${shortDate(r.wk)} <span style="font-weight:400;color:var(--text-dim);font-size:0.85rem;">(${shortDate(r.wk)} – ${shortDate(weekEndOf(r.wk))})</span>
+                                ${r.due ? '<span class="wk-badge due">Due — last week</span>' : ''}
+                                ${r.status === 'done' ? '<span class="wk-badge done">✓ Reviewed</span>' : (r.reviewed ? '<span class="wk-badge todo">Changed since review</span>' : '<span class="wk-badge todo">Not yet reviewed</span>')}</div>
                             ${prevBadge}
                         </div>
                         <div>
                             <div class="rc-total-label">This Week's Flags</div>
-                            <span class="rc-total-pill" id="total_${r.engineer.id}">0%</span>
+                            <span class="rc-total-pill" id="total_${r.key}">0%</span>
                         </div>
                     </div>
                     <div class="rc-context">${contextBits.join('')}</div>
-                    <div class="rc-rows" id="rows_${r.engineer.id}"></div>
+                    <div class="rc-rows" id="rows_${r.key}"></div>
                     ${abortsSectionHTML}
                     <div class="rc-footer">
-                        <span class="rc-status" id="status_${r.engineer.id}"></span>
-                        <button type="button" class="btn-save" data-eng="${r.engineer.id}">✓ Submit Review</button>
+                        <span class="rc-status" id="status_${r.key}"></span>
+                        <button type="button" class="btn-save" data-eng="${r.key}">✓ Submit Review</button>
                     </div>
                 `;
-                container.appendChild(card);
+                // Engineer group header (built once per engineer) with a chip per week.
+                if (!groups[r.engineer.id]) {
+                    const mine = visible.filter(x => x.engineer.id === r.engineer.id);
+                    const g = document.createElement('div');
+                    g.className = 'eng-group' + (mine.some(x => x.due && x.status === 'todo') ? ' has-due' : '');
+                    g.innerHTML = `<div class="eng-head"><div><div class="rc-name">${r.engineer.engineerName}</div><div class="rc-leader">${r.engineer.teamLeader || ''}</div></div>
+                        <div class="eng-chips">${mine.map(x => `<span class="wk-chip ${x.due && x.status === 'todo' ? 'due' : x.status}">${x.status === 'done' ? '✓ ' : x.due ? '● ' : ''}w/c ${shortDate(x.wk)}</span>`).join('')}</div></div>
+                        <div class="eng-body"></div>`;
+                    container.appendChild(g);
+                    groups[r.engineer.id] = g.querySelector('.eng-body');
+                }
+                groups[r.engineer.id].appendChild(card);
+                card.querySelector('.rc-head').addEventListener('click', e => {
+                    if (e.target.closest('button')) return;
+                    card.classList.toggle('collapsed');
+                    card.querySelector('.rc-chev').textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+                });
 
-                const rowsEl = card.querySelector(`#rows_${CSS.escape(r.engineer.id)}`);
-                rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+                const rowsEl = card.querySelector(`#rows_${CSS.escape(r.key)}`);
+                rowDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.key, rd)));
 
                 if (showAborts) {
-                    const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.engineer.id)}`);
+                    const abortsEl = card.querySelector(`#aborts_${CSS.escape(r.key)}`);
                     if (!r.ctx.aborts.length) {
                         abortsEl.innerHTML = `<div class="rc-abort-empty">No aborts recorded this week.</div>`;
                     } else {
-                        r.ctx.aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.engineer.id, a)));
+                        r.ctx.aborts.forEach(a => abortsEl.appendChild(buildAbortRowElement(r.key, a)));
                     }
                 }
 
-                card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerReview(r.engineer.id, this); });
+                card.querySelector('.btn-save').addEventListener('click', function () { submitEngineerReview(r.key, this); });
 
                 updateCardTotal(r);
             });
@@ -869,7 +923,7 @@
             `;
             rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
-                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    const r = engineerRows.find(x => x.key === engId);
                     if (!r) return;
                     r._accepted[rd.key] = this.classList.contains('accept');
                     updateCardTotal(r);
@@ -902,7 +956,7 @@
             `;
             rowEl.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function () {
-                    const r = engineerRows.find(x => x.engineer.id === engId);
+                    const r = engineerRows.find(x => x.key === engId);
                     if (!r) return;
                     r._abortAccepted[abort.key] = this.classList.contains('warranted');
                     updateAbortToggles(r);
@@ -916,7 +970,7 @@
         }
 
         function updateAbortToggles(r) {
-            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            const card = document.querySelector(`.review-card[data-row-key="${CSS.escape(r.key)}"]`);
             if (!card) return;
             r.ctx.aborts.forEach(a => {
                 const row = card.querySelector(`.rc-abort-row[data-key="${CSS.escape(a.key)}"]`);
@@ -941,17 +995,17 @@
             r._rowDefs = newDefs;
             r._accepted = newAccepted;
 
-            const rowsEl = document.getElementById(`rows_${r.engineer.id}`);
+            const rowsEl = document.getElementById(`rows_${r.key}`);
             if (rowsEl) {
                 rowsEl.innerHTML = '';
-                newDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.engineer.id, rd)));
+                newDefs.forEach(rd => rowsEl.appendChild(buildRowElement(r.key, rd)));
             }
         }
 
         // Live completion figures: the card's context line and the calc line under Aborts.
         function updateCompletionDisplay(r) {
             const bi = r._bonusInfo || computeBonusCompletion(r.ctx, r._abortAccepted || {});
-            const ctxEl = document.getElementById(`ctxCompletion_${r.engineer.id}`);
+            const ctxEl = document.getElementById(`ctxCompletion_${r.key}`);
             if (ctxEl) {
                 const parts = bi.months.filter(mo => mo.jobs > 0).map(mo => {
                     const added = mo.priorOverturned + mo.overturnedThisWeek;
@@ -962,7 +1016,7 @@
                 });
                 ctxEl.innerHTML = parts.length ? parts.join(' · ') + ' <span style="color:var(--text-dim)">month to date</span>' : 'no job data';
             }
-            const calcEl = document.getElementById(`bonusCalc_${r.engineer.id}`);
+            const calcEl = document.getElementById(`bonusCalc_${r.key}`);
             if (calcEl) {
                 calcEl.innerHTML = bi.months.filter(mo => mo.jobs > 0).map(mo => {
                     return `${monthName(mo.month)} to date for bonus: <b>${mo.completed}</b>` +
@@ -978,12 +1032,12 @@
             updateCompletionDisplay(r);
             updateAbortToggles(r);
             const total = computeTotal(r._rowDefs, r._accepted);
-            const pill = document.getElementById(`total_${r.engineer.id}`);
+            const pill = document.getElementById(`total_${r.key}`);
             if (pill) {
                 pill.textContent = total > 0 ? `-${fmtPct(total)}%` : '0%';
                 pill.classList.toggle('active', total > 0);
             }
-            const card = document.querySelector(`.review-card[data-engineer-id="${CSS.escape(r.engineer.id)}"]`);
+            const card = document.querySelector(`.review-card[data-row-key="${CSS.escape(r.key)}"]`);
             if (!card) return;
             r._rowDefs.forEach(rd => {
                 const accepted = r._accepted[rd.key];
@@ -994,15 +1048,16 @@
             });
         }
 
-        document.getElementById('weekStart').addEventListener('change', function () { loadMonth(this.value); });
+        document.getElementById('dataMonth').addEventListener('change', function () { loadMonth(this.value); });
+        document.getElementById('showFilter').addEventListener('change', renderCards);
         document.getElementById('teamFilter').addEventListener('change', renderCards);
 
         // ── SUBMIT: writes this ONE engineer's finalized review doc (deterministic id, so
         // resubmitting simply overwrites their own record for the month — nobody else's). ──
         async function submitEngineerReview(engineerId, btn) {
-            const r = engineerRows.find(x => x.engineer.id === engineerId);
+            const r = engineerRows.find(x => x.key === engineerId);
             if (!r) return;
-            const wk = document.getElementById('weekStart').value;
+            const wk = r.wk;
             const reviewer = document.getElementById('reviewerName').value.trim();
             const statusEl = document.getElementById(`status_${engineerId}`);
 
@@ -1076,9 +1131,16 @@
                     reviewedAt: serverTimestamp(),
                 };
 
-                await setDoc(doc(db, REVIEWED, `${r.engineer.id}_${wk}`), record);
+                await setDoc(doc(db, REVIEWED, `${r.engineer.id}_${r.wk}`), record);
 
                 r.reviewed = record;
+                r.status = 'done';
+                const cardEl = document.querySelector(`.review-card[data-row-key="${CSS.escape(r.key)}"]`);
+                if (cardEl) {
+                    cardEl.classList.add('done');
+                    const b = cardEl.querySelector('.wk-badge.todo'); if (b) { b.className = 'wk-badge done'; b.textContent = '✓ Reviewed'; }
+                }
+                renderSummary(document.getElementById('dataMonth').value);
                 if (statusEl) { statusEl.textContent = `✓ Submitted${reviewer ? ' by ' + reviewer : ''}`; statusEl.className = 'rc-status success'; }
             } catch (err) {
                 console.error(err);
@@ -1097,7 +1159,7 @@
 
         (async function init() {
             await loadEngineers();
-            await loadMonth(document.getElementById('weekStart').value);
+            await loadMonth(document.getElementById('dataMonth').value);
         })();
     </script>
 </body>
