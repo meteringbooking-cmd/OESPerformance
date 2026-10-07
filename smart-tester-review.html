@@ -57,6 +57,25 @@
   .head a:hover{ color:#fff; }
 
   .head-right{ display:flex; flex-direction:column; align-items:flex-end; gap:0.9rem; }
+  .head-links{ display:flex; align-items:center; gap:1.2rem; }
+
+  .export-btn{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:1rem;
+    font-weight:600;
+    color:var(--navy);
+    background:var(--amber);
+    border:none;
+    border-radius:8px;
+    padding:0.55rem 1.1rem;
+    cursor:pointer;
+    transition:background .15s, transform .1s;
+  }
+  .export-btn:hover{ background:#e0962c; }
+  .export-btn:active{ transform:translateY(1px); }
+  .export-btn:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  .export-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+
   .progress{
     display:flex;
     align-items:center;
@@ -278,7 +297,10 @@
           <div class="l">submitted</div>
         </div>
       </div>
-      <a href="smart-tester.html">← Back to form</a>
+      <div class="head-links">
+        <button class="export-btn" id="exportBtn" disabled>Export CSV</button>
+        <a href="smart-tester.html">← Back to form</a>
+      </div>
       <div class="clock" id="clock"></div>
     </div>
   </div>
@@ -464,6 +486,44 @@
     document.getElementById('tblExpired').textContent = overdue;
   }
 
+  // ── Export ──
+  // Holds one row per tester (a second tester gets its own row) from the latest load.
+  let exportRows = [];
+  const exportBtn = document.getElementById('exportBtn');
+
+  function csvDate(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${d}/${m}/${y}`; // DD/MM/YYYY for UK Excel
+  }
+
+  function csvCell(v) {
+    const s = String(v ?? '');
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function exportCsv() {
+    if (!exportRows.length) return;
+    const sorted = exportRows.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const lines = [
+      ['Name', 'Serial Number', 'Calibrated Until'].join(','),
+      ...sorted.map(r => [r.name, r.serial, csvDate(r.calibratedUntil)].map(csvCell).join(','))
+    ];
+    // BOM so Excel opens it as UTF-8
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `smart-testers-${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+  exportBtn.addEventListener('click', exportCsv);
+
   async function load() {
     try {
       const snap = await db.collection(COLLECTION).orderBy('createdAt', 'desc').get();
@@ -474,6 +534,8 @@
         updateProgress(0);
         updateSideTable(0, 0, { Calibration: 0, Broken: 0, 'Never been issued one': 0 }, 0);
         renderMissingList(new Set());
+        exportRows = [];
+        exportBtn.disabled = true;
         return;
       }
 
@@ -481,6 +543,7 @@
       const reasonCounts = { Calibration: 0, Broken: 0, 'Never been issued one': 0 };
       const cards = [];
       const submittedNames = new Set();
+      const rows = [];
 
       snap.forEach(doc => {
         const d = doc.data();
@@ -489,6 +552,13 @@
         if (d.hasTester) haveTester++; else noTester++;
         if (!d.hasTester && d.noReason && reasonCounts.hasOwnProperty(d.noReason)) {
           reasonCounts[d.noReason]++;
+        }
+
+        if (d.hasTester) {
+          rows.push({ name: d.name || 'Unnamed', serial: d.serialNumber || '', calibratedUntil: d.calibrationDue || '' });
+          if (d.hasSecondTester) {
+            rows.push({ name: d.name || 'Unnamed', serial: d.serialNumber2 || '', calibratedUntil: d.calibrationDue2 || '' });
+          }
         }
 
         if (d.hasTester && d.calibrationDue) {
@@ -553,6 +623,9 @@
           </div>
         `);
       });
+
+      exportRows = rows;
+      exportBtn.disabled = rows.length === 0;
 
       statsEl.innerHTML = `
         <div class="stat"><div class="n">${total}</div><div class="l">Total declarations</div></div>
