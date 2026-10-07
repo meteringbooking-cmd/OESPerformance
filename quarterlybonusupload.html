@@ -454,6 +454,11 @@
             background: rgba(52, 217, 160, 0.1);
         }
 
+        .btn-parse:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
         /* MESSAGE TOAST */
         .toast {
             position: fixed;
@@ -526,6 +531,87 @@
             height: 1px;
             background: var(--border);
         }
+
+        /* ── EXPORT SECTION ─────────────────────────────────────────────── */
+        .export-card::before {
+            background: linear-gradient(90deg, var(--accent3), var(--accent));
+        }
+
+        .export-controls {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .export-controls .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            min-width: 170px;
+        }
+
+        .export-controls .field span {
+            font-family: 'DM Mono', monospace;
+            font-size: 0.68em;
+            color: var(--text-muted);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        input[type="date"] {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-family: 'DM Mono', monospace;
+            font-size: 0.85em;
+            color-scheme: dark;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+
+        input[type="date"]:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .quick-ranges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+        }
+
+        .chip {
+            font-family: 'DM Mono', monospace;
+            font-size: 0.72em;
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .chip:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        td.meter-col.missing { color: var(--text-dim); }
+
+        tr.total-row td {
+            background: var(--surface2);
+            font-weight: 600;
+            color: var(--accent2);
+            border-top: 1px solid var(--border);
+        }
+
+        th.total-col { color: var(--accent2); text-align: right; }
     </style>
 </head>
 <body>
@@ -614,13 +700,57 @@
             <button class="btn-parse" onclick="parseAndPreview()">🔍 Parse & Preview</button>
             <button class="btn-submit" id="submitBtn" onclick="submitData()" disabled>💾 Save to Firebase</button>
         </div>
+
+        <!-- EXPORT -->
+        <div class="step-divider" style="margin-top:56px;">Export</div>
+        <div class="paste-card export-card">
+            <div class="step-num">Export — Select Date Range</div>
+            <h2>Pull submitted figures into a matrix</h2>
+            <div class="paste-hint">
+                <strong>Layout:</strong> Engineers down the left &nbsp;|&nbsp; Dates across the top &nbsp;|&nbsp; Submitted values in the grid (meters, SICK or AAUP). Only dates that have data are shown. If a day was uploaded more than once, the most recent submission is used.
+            </div>
+            <div class="export-controls">
+                <label class="field">
+                    <span>From</span>
+                    <input type="date" id="exportFrom">
+                </label>
+                <label class="field">
+                    <span>To</span>
+                    <input type="date" id="exportTo">
+                </label>
+                <button class="btn-parse" id="exportLoadBtn" onclick="loadExport()">🔍 Load Data</button>
+            </div>
+            <div class="quick-ranges">
+                <button class="chip" onclick="setExportRange('thisMonth')">This month</button>
+                <button class="chip" onclick="setExportRange('lastMonth')">Last month</button>
+                <button class="chip" onclick="setExportRange('thisQuarter')">This quarter</button>
+                <button class="chip" onclick="setExportRange('lastQuarter')">Last quarter</button>
+            </div>
+        </div>
+
+        <div class="preview-card" id="exportCard">
+            <h2>
+                Export Preview
+                <span class="badge" id="exportBadge">0 engineers</span>
+            </h2>
+            <div class="table-wrap">
+                <table>
+                    <thead id="exportHead"></thead>
+                    <tbody id="exportBody"></tbody>
+                </table>
+            </div>
+            <div class="submit-row" style="margin-top:20px;">
+                <button class="btn-submit" onclick="downloadExportCSV()">⬇ Download CSV</button>
+                <button class="btn-parse" onclick="copyExport()">📋 Copy for Excel</button>
+            </div>
+        </div>
     </div>
 
     <div class="toast" id="toast"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -638,6 +768,7 @@
         // ── Globals ──────────────────────────────────────────────────────────
         let selectedDates = []; // array of Date objects
         let parsedData = [];    // [{engineerName, dates: [{date, meters}]}]
+        let exportData = null;  // { names: [], dates: [], cells: Map, from, to }
 
         // ── Year dropdown ─────────────────────────────────────────────────────
         const yearSel = document.getElementById('yearSelect');
@@ -908,6 +1039,285 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = '💾 Save to Firebase';
+            }
+        };
+
+        // ── Export ────────────────────────────────────────────────────────────
+        window.setExportRange = function(kind) {
+            const y = now.getFullYear();
+            const m = now.getMonth();
+            let from, to;
+            if (kind === 'thisMonth') {
+                from = new Date(y, m, 1);
+                to = new Date(y, m + 1, 0);
+            } else if (kind === 'lastMonth') {
+                from = new Date(y, m - 1, 1);
+                to = new Date(y, m, 0);
+            } else if (kind === 'thisQuarter') {
+                const qStart = Math.floor(m / 3) * 3;
+                from = new Date(y, qStart, 1);
+                to = new Date(y, qStart + 3, 0);
+            } else if (kind === 'lastQuarter') {
+                const qStart = Math.floor(m / 3) * 3 - 3;
+                from = new Date(y, qStart, 1);
+                to = new Date(y, qStart + 3, 0);
+            }
+            document.getElementById('exportFrom').value = formatDate(from);
+            document.getElementById('exportTo').value = formatDate(to);
+        };
+
+        // Default to this month
+        setExportRange('thisMonth');
+
+        window.loadExport = async function() {
+            const from = document.getElementById('exportFrom').value; // YYYY-MM-DD
+            const to = document.getElementById('exportTo').value;
+            if (!from || !to) {
+                showToast('Pick both a start and end date.', 'warning');
+                return;
+            }
+            if (from > to) {
+                showToast('Start date must be before end date.', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('exportLoadBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Loading...';
+
+            try {
+                // Documents are stored per engineer per month ("YYYY-MM"),
+                // so fetch every month the range touches, then filter by day.
+                const q = query(
+                    collection(db, 'Quarterly Figures'),
+                    where('month', '>=', from.slice(0, 7)),
+                    where('month', '<=', to.slice(0, 7))
+                );
+                const snap = await getDocs(q);
+
+                const cells = new Map();    // "nameKey|date" -> { meters, status, ts }
+                const nameMap = new Map();  // nameKey -> display name
+                const dateSet = new Set();
+
+                snap.forEach(docSnap => {
+                    const d = docSnap.data();
+                    const name = (d.engineerName || '').trim();
+                    if (!name) return;
+                    const key = name.toLowerCase();
+                    const ts = d.submittedAt && d.submittedAt.toMillis ? d.submittedAt.toMillis() : 0;
+
+                    (d.entries || []).forEach(e => {
+                        if (!e.date || e.date < from || e.date > to) return;
+                        if (!nameMap.has(key)) nameMap.set(key, name);
+                        dateSet.add(e.date);
+                        const ck = key + '|' + e.date;
+                        const prev = cells.get(ck);
+                        // Latest submission wins if a day was uploaded twice
+                        if (!prev || ts >= prev.ts) {
+                            cells.set(ck, { meters: Number(e.meters) || 0, status: e.status || null, ts });
+                        }
+                    });
+                });
+
+                const names = [...nameMap.keys()].sort((a, b) =>
+                    nameMap.get(a).localeCompare(nameMap.get(b))
+                );
+                const dates = [...dateSet].sort();
+
+                exportData = { names, nameMap, dates, cells, from, to };
+                renderExport();
+
+                if (!names.length) {
+                    showToast('No submitted figures found in that range.', 'warning');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Error loading from Firebase. Check console.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Load Data';
+            }
+        };
+
+        function round2(n) {
+            return Math.round(n * 100) / 100;
+        }
+
+        function prettyDate(iso, withYear) {
+            const [y, m, d] = iso.split('-');
+            return withYear ? `${d}/${m}/${y}` : `${parseInt(d)}/${parseInt(m)}`;
+        }
+
+        // Builds the matrix as a 2D array (shared by CSV + clipboard)
+        function buildExportRows() {
+            const { names, nameMap, dates, cells } = exportData;
+            const rows = [];
+            rows.push(['Engineer', ...dates.map(d => prettyDate(d, true)), 'Total m']);
+
+            const dayTotals = dates.map(() => 0);
+            let grand = 0;
+
+            names.forEach(key => {
+                const row = [nameMap.get(key)];
+                let total = 0;
+                dates.forEach((date, i) => {
+                    const c = cells.get(key + '|' + date);
+                    if (!c) {
+                        row.push('');
+                    } else if (c.status) {
+                        row.push(c.status);
+                    } else {
+                        row.push(round2(c.meters));
+                        total += c.meters;
+                        dayTotals[i] += c.meters;
+                    }
+                });
+                grand += total;
+                row.push(round2(total));
+                rows.push(row);
+            });
+
+            rows.push(['Total', ...dayTotals.map(round2), round2(grand)]);
+            return rows;
+        }
+
+        function renderExport() {
+            const card = document.getElementById('exportCard');
+            const thead = document.getElementById('exportHead');
+            const tbody = document.getElementById('exportBody');
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+
+            if (!exportData || !exportData.names.length) {
+                card.classList.remove('visible');
+                return;
+            }
+
+            const { names, nameMap, dates, cells } = exportData;
+
+            // Header
+            const hr = document.createElement('tr');
+            const th0 = document.createElement('th');
+            th0.textContent = 'Engineer';
+            hr.appendChild(th0);
+            dates.forEach(d => {
+                const th = document.createElement('th');
+                th.className = 'date-col';
+                th.textContent = prettyDate(d, false);
+                hr.appendChild(th);
+            });
+            const thT = document.createElement('th');
+            thT.className = 'total-col';
+            thT.textContent = 'Total m';
+            hr.appendChild(thT);
+            thead.appendChild(hr);
+
+            // Body
+            const dayTotals = dates.map(() => 0);
+            let grand = 0;
+
+            names.forEach(key => {
+                const tr = document.createElement('tr');
+                const td0 = document.createElement('td');
+                td0.className = 'name-col';
+                td0.textContent = nameMap.get(key);
+                tr.appendChild(td0);
+
+                let total = 0;
+                dates.forEach((date, i) => {
+                    const td = document.createElement('td');
+                    const c = cells.get(key + '|' + date);
+                    if (!c) {
+                        td.className = 'meter-col missing';
+                        td.textContent = '·';
+                    } else if (c.status === 'SICK') {
+                        td.className = 'meter-col sick';
+                        td.textContent = 'SICK';
+                    } else if (c.status === 'AAUP') {
+                        td.className = 'meter-col aaup';
+                        td.textContent = 'AAUP';
+                    } else if (c.status) {
+                        td.className = 'meter-col';
+                        td.textContent = c.status;
+                    } else {
+                        td.className = 'meter-col' + (c.meters === 0 ? ' zero' : '');
+                        td.textContent = c.meters === 0 ? '0' : c.meters.toFixed(1);
+                        total += c.meters;
+                        dayTotals[i] += c.meters;
+                    }
+                    tr.appendChild(td);
+                });
+
+                grand += total;
+                const tdT = document.createElement('td');
+                tdT.className = 'meter-col';
+                tdT.style.color = 'var(--accent2)';
+                tdT.style.fontWeight = '600';
+                tdT.textContent = total.toFixed(1);
+                tr.appendChild(tdT);
+                tbody.appendChild(tr);
+            });
+
+            // Totals row
+            const totalTr = document.createElement('tr');
+            totalTr.className = 'total-row';
+            const tl = document.createElement('td');
+            tl.textContent = 'Total';
+            totalTr.appendChild(tl);
+            dayTotals.forEach(t => {
+                const td = document.createElement('td');
+                td.className = 'meter-col';
+                td.style.color = 'var(--accent2)';
+                td.textContent = t.toFixed(1);
+                totalTr.appendChild(td);
+            });
+            const tg = document.createElement('td');
+            tg.className = 'meter-col';
+            tg.style.color = 'var(--accent2)';
+            tg.textContent = grand.toFixed(1);
+            totalTr.appendChild(tg);
+            tbody.appendChild(totalTr);
+
+            document.getElementById('exportBadge').textContent =
+                `${names.length} engineers · ${dates.length} dates`;
+            card.classList.add('visible');
+        }
+
+        window.downloadExportCSV = function() {
+            if (!exportData || !exportData.names.length) {
+                showToast('Load some data first.', 'warning');
+                return;
+            }
+            const esc = v => {
+                const s = String(v);
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
+            const csv = buildExportRows().map(r => r.map(esc).join(',')).join('\r\n');
+            // BOM so Excel opens it with correct encoding
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `OES_Quarterly_Figures_${exportData.from}_to_${exportData.to}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            showToast('✓ CSV downloaded', 'success');
+        };
+
+        window.copyExport = async function() {
+            if (!exportData || !exportData.names.length) {
+                showToast('Load some data first.', 'warning');
+                return;
+            }
+            const tsv = buildExportRows().map(r => r.join('\t')).join('\n');
+            try {
+                await navigator.clipboard.writeText(tsv);
+                showToast('✓ Copied — paste straight into Excel', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Could not copy to clipboard.', 'error');
             }
         };
 
