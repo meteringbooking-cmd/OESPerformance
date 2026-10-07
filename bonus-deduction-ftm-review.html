@@ -179,6 +179,7 @@
         .wk-badge.due { background: var(--amber); color: #1a1205; }
         .wk-badge.done { background: rgba(52,211,153,0.15); color: var(--success); border: 1px solid rgba(52,211,153,0.35); }
         .wk-badge.todo { background: rgba(195,206,222,0.1); color: var(--text-mid); border: 1px solid var(--border-hi); }
+        .rc-split-note { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--text-mid); margin-top: 4px; }
         .review-card.due { border: 2px solid var(--amber); box-shadow: 0 0 18px rgba(245,166,35,0.15); }
         .review-card.due .rc-head { background: rgba(245,166,35,0.10); }
         .review-card.done:not(.due) { opacity: 0.92; }
@@ -564,6 +565,38 @@
         }
 
         // ── Fetch + group attendance/performance/aborts for one engineer, filtered to the given month ──
+        // A week that crosses two months is reviewed in two parts — one per month.
+        const weekSpansMonths = wk => wk.slice(0, 7) !== weekEndOf(wk).slice(0, 7);
+        const reviewDocId = (engId, wk, month) => weekSpansMonths(wk) ? `${engId}_${wk}_${month}` : `${engId}_${wk}`;
+        // Barry's weekly submission cut down to the selected month: dated items keep only their dates
+        // in the month; undated flags (Customer Service, Compliance) belong to the month that holds
+        // most of the week — the same rule the final review and the engineer portal use.
+        function submissionForMonth(sub, wk, month) {
+            if (!sub || !weekSpansMonths(wk)) return sub;
+            const inM = d => typeof d === 'string' && d.startsWith(month);
+            const ownsUndated = primaryMonthOf(wk) === month;
+            const out = { ...sub };
+            const fd = (sub.fleetDates || []).filter(inM), hd = (sub.housekeepingDates || []).filter(inM);
+            out.fleet = !!sub.fleet && ((sub.fleetDates || []).length ? fd.length > 0 : ownsUndated);
+            out.fleetDates = out.fleet ? fd : [];
+            out.housekeeping = !!sub.housekeeping && ((sub.housekeepingDates || []).length ? hd.length > 0 : ownsUndated);
+            out.housekeepingDates = out.housekeeping ? hd : [];
+            ['customerService', 'complianceCat1', 'complianceCat2', 'complianceCat3'].forEach(k => { out[k] = !!sub[k] && ownsUndated; });
+            if (Array.isArray(sub.vehicleCheckMissedDates)) out.vehicleCheckMissedDates = sub.vehicleCheckMissedDates.filter(inM);
+            if (Array.isArray(sub.vanTimesFlagged)) out.vanTimesFlagged = sub.vanTimesFlagged.filter(x => x && inM(x.date));
+            const any = out.fleet || out.housekeeping || out.customerService || out.complianceCat1 || out.complianceCat2 || out.complianceCat3;
+            return any ? out : null;
+        }
+
+        // "Only 1 Oct – 4 Oct counted here — 28 Sept – 30 Sept is reviewed under September 2026."
+        function splitNote(r) {
+            if (!weekSpansMonths(r.wk)) return '';
+            const mStart = r.month + '-01', mEnd = monthEndOf(r.month), wEnd = weekEndOf(r.wk);
+            const from = r.wk > mStart ? r.wk : mStart, to = wEnd < mEnd ? wEnd : mEnd;
+            const otherFrom = from === r.wk ? addDays(to, 1) : r.wk, otherTo = from === r.wk ? wEnd : addDays(from, -1);
+            return `<div class="rc-split-note">Only ${shortDate(from)} – ${shortDate(to)} counted here — ${shortDate(otherFrom)} – ${shortDate(otherTo)} is reviewed under ${formatMonth(otherFrom.slice(0, 7))}.</div>`;
+        }
+
         async function fetchEngineerSnaps(engineer) {
             const engineerName = engineer.engineerName;
             return Promise.all([
@@ -575,22 +608,26 @@
                 getDocs(query(collection(db, REVIEWED), where("engineerId", "==", engineer.id))),
             ]);
         }
-        function fetchEngineerMonthContext(engineer, wk, snaps) {
+        // Everything is limited to the SELECTED MONTH: when a week crosses two months, only the days
+        // inside the selected month are shown and reviewed here (the other days belong to the other
+        // month's view, and are reviewed and saved there as a separate part of the week).
+        function fetchEngineerMonthContext(engineer, wk, snaps, month) {
             const [attSnap, perfSnap, energiseSnap, abortsSnap, abortsEnergiseSnap, prevRevSnap] = snaps;
             const weekEnd = weekEndOf(wk);
+            const inScope = date => inWeek(date, wk) && String(date).startsWith(month);
 
             // Attendance instances — this week only (each is −5% on that month's bonus).
             const attendanceInstances = [];
             attSnap.forEach(d => {
                 const data = d.data();
-                if (inWeek(data.date, wk) && ATT_DEDUCT_CODES.includes(data.attendance)) {
+                if (inScope(data.date) && ATT_DEDUCT_CODES.includes(data.attendance)) {
                     attendanceInstances.push({ date: data.date, code: data.attendance });
                 }
             });
 
             // Completion — MONTH-TO-DATE (1st of the month to the end of this week) for every month
             // the week touches, because the completion deduction is a monthly figure.
-            const months = monthsOfWeek(wk).map(m => ({ month: m, throughDate: weekEnd.slice(0, 7) === m ? weekEnd : `${m}-31`, jobs: 0, completed: 0, priorOverturned: 0 }));
+            const months = [{ month, throughDate: weekEnd.slice(0, 7) === month ? weekEnd : `${month}-31`, jobs: 0, completed: 0, priorOverturned: 0 }];
             const sumPerf = d => {
                 const data = d.data();
                 const mo = months.find(x => (data.date || '').startsWith(x.month) && data.date <= x.throughDate);
@@ -599,12 +636,15 @@
             perfSnap.forEach(sumPerf);
             energiseSnap.forEach(sumPerf);
 
-            // Aborts overturned in OTHER weeks' reviews still count towards the month's bonus rate.
+            // Aborts overturned in OTHER weeks' reviews still count towards the month's bonus rate
+            // (each abort counted once, even if an older whole-week review also lists it).
+            const seenAborts = new Set();
             prevRevSnap.forEach(d => {
                 const data = d.data();
                 if (data.weekStart === wk || !Array.isArray(data.abortsDetail)) return;
                 data.abortsDetail.forEach(a => {
-                    if (!a || !a.overturned || !a.date || inWeek(a.date, wk)) return;
+                    if (!a || !a.overturned || !a.date || inWeek(a.date, wk) || seenAborts.has(a.key)) return;
+                    seenAborts.add(a.key);
                     const mo = months.find(x => a.date.startsWith(x.month) && a.date <= x.throughDate);
                     if (mo) mo.priorOverturned += Number(a.total) || 0;
                 });
@@ -620,7 +660,7 @@
             const collectAborts = (snap, source) => {
                 snap.forEach(d => {
                     const data = d.data();
-                    if (inWeek(data.date, wk)) {
+                    if (inScope(data.date)) {
                         aborts.push({
                             key: `${source}_${d.id}`, source,
                             date: data.date, reason: data.reason || '', reason1: data.reason1 || '',
@@ -634,7 +674,7 @@
             collectAborts(abortsEnergiseSnap, 'aborts energise');
             aborts.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-            const primary = months.find(x => x.month === primaryMonthOf(wk)) || months[0];
+            const primary = months[0];
             return {
                 months, primaryMonth: primary.month,
                 jobs: primary.jobs, completed: primary.completed, completionRate: primary.rawRate,
@@ -742,7 +782,14 @@
                 ]);
                 const submissionOf = {}, reviewedOf = {};
                 subSnap.forEach(d => { const x = d.data(); if (x.engineerId && x.weekStart) submissionOf[`${x.engineerId}_${x.weekStart}`] = x; });
-                revSnap.forEach(d => { const x = d.data(); if (x.engineerId && x.weekStart) reviewedOf[`${x.engineerId}_${x.weekStart}`] = x; });
+                // For a split week, only the review saved for THIS month's part counts here; an older
+                // whole-week review of a split week is ignored (the week is re-reviewed per month).
+                revSnap.forEach(d => {
+                    const x = d.data();
+                    if (!x.engineerId || !x.weekStart) return;
+                    if (weekSpansMonths(x.weekStart)) { if (x.weekSpansMonths && x.month === month) reviewedOf[`${x.engineerId}_${x.weekStart}`] = x; }
+                    else reviewedOf[`${x.engineerId}_${x.weekStart}`] = x;
+                });
 
                 const rows = [];
                 for (const eng of engineers) {
@@ -750,14 +797,14 @@
                     if (token !== loadToken) return;
                     for (const wk of weeks) {
                         const key = `${eng.id}_${wk}`;
-                        const ctx = fetchEngineerMonthContext(eng, wk, snaps);
-                        const submission = submissionOf[key] || null;
+                        const ctx = fetchEngineerMonthContext(eng, wk, snaps, month);
+                        const submission = submissionForMonth(submissionOf[key] || null, wk, month);
                         const reviewed = reviewedOf[key] || null;
                         // A week is shown if there's anything to review (Barry's flags, attendance, or
                         // aborts while under the completion target) or it has already been reviewed.
                         const hasItems = !!submission || ctx.attendanceInstances.length > 0 || (ctx.aborts.length > 0 && ctx.completionDeductPct > 0);
                         if (!hasItems && !reviewed) continue;
-                        rows.push({ key, wk, engineer: eng, ctx, submission, reviewed,
+                        rows.push({ key, wk, month, engineer: eng, ctx, submission, reviewed,
                             due: wk === LAST_MONDAY, status: needsReview(ctx, submission, reviewed) ? 'todo' : 'done' });
                     }
                 }
@@ -851,6 +898,7 @@
                             <div class="rc-week"><span class="rc-chev">${r.status === 'done' && !r.due ? '▸' : '▾'}</span>w/c ${shortDate(r.wk)} <span style="font-weight:400;color:var(--text-dim);font-size:0.85rem;">(${shortDate(r.wk)} – ${shortDate(weekEndOf(r.wk))})</span>
                                 ${r.due ? '<span class="wk-badge due">Due — last week</span>' : ''}
                                 ${r.status === 'done' ? '<span class="wk-badge done">✓ Reviewed</span>' : (r.reviewed ? '<span class="wk-badge todo">Changed since review</span>' : '<span class="wk-badge todo">Not yet reviewed</span>')}</div>
+                            ${splitNote(r)}
                             ${prevBadge}
                         </div>
                         <div>
@@ -1075,7 +1123,8 @@
                     teamLeader: r.engineer.teamLeader || '',
                     weekStart: wk,
                     weekEnd: weekEndOf(wk),
-                    month: r.ctx.primaryMonth,
+                    month: r.month,
+                    weekSpansMonths: weekSpansMonths(wk),
                     // Month-to-date completion for every month this week touches (monthly deduction).
                     completionByMonth: bonusInfo.months.map(mo => ({
                         month: mo.month, throughDate: mo.throughDate, jobs: mo.jobs, completed: mo.completed,
@@ -1131,7 +1180,7 @@
                     reviewedAt: serverTimestamp(),
                 };
 
-                await setDoc(doc(db, REVIEWED, `${r.engineer.id}_${r.wk}`), record);
+                await setDoc(doc(db, REVIEWED, reviewDocId(r.engineer.id, r.wk, r.month)), record);
 
                 r.reviewed = record;
                 r.status = 'done';
