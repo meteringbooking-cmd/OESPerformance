@@ -532,13 +532,11 @@
                 rows.push({ key: 'completion', label: 'Completion Rate (monthly)', pct: bi.primary.deductPct, fixed: true, monthly: true,
                     detail: lines.join('') + `<div style="color:var(--text-dim);font-size:0.76rem;margin-top:2px;">Applied once to the month's bonus from the full month's figures — not part of this week's total.</div>` });
             }
-            if (ctx.attendanceInstances.length > 0) {
-                const byCode = {};
-                ctx.attendanceInstances.forEach(a => { (byCode[a.code] = byCode[a.code] || []).push(a.date); });
-                const parts = Object.keys(byCode).map(code => `${byCode[code].length}× ${code} (${fmtDateList(byCode[code])})`);
-                rows.push({ key: 'attendance', label: 'Attendance', pct: ctx.attendanceInstances.length * 5,
-                    detail: parts.join(', ') });
-            }
+            // Attendance — one row per day, so each Sick / AAUP / AWOL day can be accepted or removed on its own.
+            ctx.attendanceInstances.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(a => {
+                rows.push({ key: `attendance_${a.date}`, attDate: a.date, label: `Attendance — ${a.code}`, pct: 5,
+                    detail: parseIso(a.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) });
+            });
             if (submission) {
                 if (submission.customerService) rows.push({ key: 'customerService', label: 'Customer Service', pct: 5,
                     detail: 'Persistent failure to make D-1 calls, and/or an upheld customer complaint.' });
@@ -565,6 +563,32 @@
         }
 
         // ── Fetch + group attendance/performance/aborts for one engineer, filtered to the given month ──
+        // ── Splitting aborts into one row per job ──
+        // "No Access x2"  → two "No Access" rows; "No access, DNO issue" → "No access" + "DNO issue".
+        // The breakdown is read from whichever field carries it (Reason 1, Reason 2 or Reason). Each row is
+        // one job; if the record's job count is higher than the reasons listed, the last reason repeats.
+        function parseAbortReasons(text) {
+            const out = [];
+            String(text || '').split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach(part => {
+                let m = /^(.*?)\s*[x×]\s*(\d+)\s*$/i.exec(part) || null, label = part, n = 1;
+                if (m && m[1]) { label = m[1].trim(); n = Number(m[2]) || 1; }
+                else if ((m = /^(\d+)\s*[x×]\s*(.+)$/i.exec(part))) { label = m[2].trim(); n = Number(m[1]) || 1; }
+                for (let i = 0; i < Math.min(n, 50); i++) out.push(label);
+            });
+            return out;
+        }
+        function splitAbort(a) {
+            const hasBreakdown = t => /[,;]|[x×]\s*\d+\s*$|^\s*\d+\s*[x×]/i.test(String(t || ''));
+            const field = [a.reason1, a.reason2, a.reason].find(hasBreakdown);
+            let reasons = field ? parseAbortReasons(field) : [];
+            const total = Number(a.total) || 0;
+            if (!reasons.length) reasons = [a.reason1 || a.reason || 'Abort'];
+            const n = Math.max(total, reasons.length);
+            if (n <= 1) return [{ ...a, total, parentKey: a.key, label: reasons[0] }];
+            while (reasons.length < n) reasons.push(reasons[reasons.length - 1]);
+            return reasons.map((label, i) => ({ ...a, key: `${a.key}#${i + 1}`, parentKey: a.key, total: 1, label, part: i + 1, parts: n }));
+        }
+
         // A week that crosses two months is reviewed in two parts — one per month.
         const weekSpansMonths = wk => wk.slice(0, 7) !== weekEndOf(wk).slice(0, 7);
         const reviewDocId = (engId, wk, month) => weekSpansMonths(wk) ? `${engId}_${wk}_${month}` : `${engId}_${wk}`;
@@ -673,6 +697,7 @@
             collectAborts(abortsSnap, 'aborts');
             collectAborts(abortsEnergiseSnap, 'aborts energise');
             aborts.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            const splitAborts = aborts.flatMap(splitAbort);
 
             const primary = months[0];
             return {
@@ -681,7 +706,7 @@
                 // Aborts are worth reviewing if ANY month the week touches is under target.
                 completionDeductPct: Math.max(...months.map(x => x.rawDeductPct)),
                 attendanceInstances,
-                aborts,
+                aborts: splitAborts,
             };
         }
 
@@ -734,7 +759,7 @@
         // review already accounted for — i.e. a genuinely new abort has appeared since then.
         function hasNewAbort(currentAborts, reviewedAbortsDetail) {
             const known = new Set((reviewedAbortsDetail || []).map(a => a.key));
-            return (currentAborts || []).some(a => !known.has(a.key));
+            return (currentAborts || []).some(a => !known.has(a.key) && !known.has(a.parentKey));
         }
         // An engineer only needs to reappear in the FTM's queue if they've never been reviewed,
         // or something new has shown up since the last review: an edited/new Bonus Deductions
@@ -847,7 +872,7 @@
                 r._abortAccepted = {};
                 const prevAborts = (r.reviewed && Array.isArray(r.reviewed.abortsDetail)) ? r.reviewed.abortsDetail : [];
                 r.ctx.aborts.forEach(a => {
-                    const prev = prevAborts.find(p => p.key === a.key);
+                    const prev = prevAborts.find(p => p.key === a.key) || prevAborts.find(p => p.key === a.parentKey);
                     r._abortAccepted[a.key] = prev ? !prev.overturned : true;
                 });
 
@@ -859,7 +884,11 @@
                 rowDefs.forEach(rd => {
                     // Fixed rows (Completion Rate) are always counted — no Accept/Remove discretion.
                     // Everything else defaults to whatever the previous review said, else Accept.
-                    const prev = r.reviewed ? r.reviewed[rd.key + 'Accepted'] : undefined;
+                    let prev = r.reviewed ? r.reviewed[rd.key + 'Accepted'] : undefined;
+                    if (rd.attDate && r.reviewed) {
+                        const hit = (r.reviewed.attendanceDetail || []).find(x => x && x.date === rd.attDate);
+                        prev = (hit && hit.accepted !== undefined) ? hit.accepted : r.reviewed.attendanceAccepted;
+                    }
                     r._accepted[rd.key] = rd.fixed ? true : (prev === undefined ? true : !!prev);
                 });
 
@@ -991,10 +1020,11 @@
             rowEl.dataset.key = abort.key;
             const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(abort.date || '');
             const dateStr = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : (abort.date || '');
-            const detailBits = [dateStr, abort.teamLeader, abort.reason1, abort.reason2].filter(Boolean);
+            const original = [abort.reason, abort.reason1, abort.reason2].filter(Boolean).join(' · ');
+            const detailBits = [dateStr, abort.teamLeader, abort.parts ? `${abort.part} of ${abort.parts} from "${original}"` : [abort.reason1, abort.reason2].filter(Boolean).join(' · ')].filter(Boolean);
             rowEl.innerHTML = `
                 <div class="rc-abort-info">
-                    <div class="rc-abort-label">${abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}</span></div>
+                    <div class="rc-abort-label">${abort.label || abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}</span></div>
                     <div class="rc-abort-detail">${detailBits.join(' · ')}</div>
                 </div>
                 <div class="toggle-pair">
@@ -1150,15 +1180,17 @@
                     abortsFlagged: r.ctx.aborts.length > 0,
                     abortsOverturnedTotal: bonusInfo.overturnedTotal,
                     abortsDetail: r.ctx.aborts.map(a => ({
-                        key: a.key, source: a.source, date: a.date, reason: a.reason,
+                        key: a.key, parentKey: a.parentKey || a.key, label: a.label || a.reason, source: a.source, date: a.date, reason: a.reason,
                         reason1: a.reason1, reason2: a.reason2, total: a.total, teamLeader: a.teamLeader,
                         overturned: r._abortAccepted[a.key] === false,
                     })),
+                    // Attendance — every day kept, each with its own decision.
                     attendanceInstances: r.ctx.attendanceInstances.length,
-                    attendanceDetail: r.ctx.attendanceInstances,
-                    attendanceNominalPct: r.ctx.attendanceInstances.length * 5,
+                    attendanceDetail: r.ctx.attendanceInstances.map(a => ({ ...a, accepted: r._accepted[`attendance_${a.date}`] !== false })),
+                    attendanceAcceptedCount: r.ctx.attendanceInstances.filter(a => r._accepted[`attendance_${a.date}`] !== false).length,
+                    attendanceNominalPct: r.ctx.attendanceInstances.filter(a => r._accepted[`attendance_${a.date}`] !== false).length * 5,
                     attendanceFlagged: r.ctx.attendanceInstances.length > 0,
-                    attendanceAccepted: !!r._accepted.attendance,
+                    attendanceAccepted: r.ctx.attendanceInstances.some(a => r._accepted[`attendance_${a.date}`] !== false),
                     customerServiceFlagged: !!r.submission?.customerService,
                     customerServiceAccepted: !!(r.submission?.customerService && r._accepted.customerService),
                     fleetFlagged: !!r.submission?.fleet,
