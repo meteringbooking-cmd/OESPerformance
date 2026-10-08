@@ -564,29 +564,33 @@
 
         // ── Fetch + group attendance/performance/aborts for one engineer, filtered to the given month ──
         // ── Splitting aborts into one row per job ──
-        // "No Access x2"  → two "No Access" rows; "No access, DNO issue" → "No access" + "DNO issue".
-        // The breakdown is read from whichever field carries it (Reason 1, Reason 2 or Reason). Each row is
-        // one job; if the record's job count is higher than the reasons listed, the last reason repeats.
-        function parseAbortReasons(text) {
+        // Only the main Reason (the abort category) is split: "No Access x2" → two "No Access" rows;
+        // "No access, DNO issue" → "No access" + "DNO issue". Reason 1 / Reason 2 are explanations and are
+        // never split — Reason 1 goes with the first category, Reason 2 with the second. (When the Reason is
+        // a single category repeated, e.g. "No Access x2", Reason 1 and 2 go with job 1 and job 2.)
+        // If the record's job count is higher than the categories listed, the last category repeats.
+        function parseAbortCategories(text) {
             const out = [];
-            String(text || '').split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach(part => {
-                let m = /^(.*?)\s*[x×]\s*(\d+)\s*$/i.exec(part) || null, label = part, n = 1;
+            String(text || '').split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach((part, catIdx) => {
+                let m = /^(.*?)\s*[x×]\s*(\d+)\s*$/i.exec(part), label = part, n = 1;
                 if (m && m[1]) { label = m[1].trim(); n = Number(m[2]) || 1; }
                 else if ((m = /^(\d+)\s*[x×]\s*(.+)$/i.exec(part))) { label = m[2].trim(); n = Number(m[1]) || 1; }
-                for (let i = 0; i < Math.min(n, 50); i++) out.push(label);
+                for (let i = 0; i < Math.min(n, 50); i++) out.push({ label, catIdx });
             });
             return out;
         }
         function splitAbort(a) {
-            const hasBreakdown = t => /[,;]|[x×]\s*\d+\s*$|^\s*\d+\s*[x×]/i.test(String(t || ''));
-            const field = [a.reason1, a.reason2, a.reason].find(hasBreakdown);
-            let reasons = field ? parseAbortReasons(field) : [];
             const total = Number(a.total) || 0;
-            if (!reasons.length) reasons = [a.reason1 || a.reason || 'Abort'];
-            const n = Math.max(total, reasons.length);
-            if (n <= 1) return [{ ...a, total, parentKey: a.key, label: reasons[0] }];
-            while (reasons.length < n) reasons.push(reasons[reasons.length - 1]);
-            return reasons.map((label, i) => ({ ...a, key: `${a.key}#${i + 1}`, parentKey: a.key, total: 1, label, part: i + 1, parts: n }));
+            let units = parseAbortCategories(a.reason);
+            if (!units.length) units = [{ label: a.reason || 'Abort', catIdx: 0 }];
+            const n = Math.max(total, units.length);
+            const explanations = [a.reason1, a.reason2];
+            const multiCategory = new Set(units.map(u => u.catIdx)).size > 1;
+            const explain = (u, i) => (multiCategory ? explanations[u.catIdx] : explanations[i]) || '';
+            if (n <= 1) return [{ ...a, total, parentKey: a.key, label: units[0].label, explanation: [a.reason1, a.reason2].filter(Boolean).join(' · ') }];
+            while (units.length < n) units.push(units[units.length - 1]);
+            return units.map((u, i) => ({ ...a, key: `${a.key}#${i + 1}`, parentKey: a.key, total: 1, label: u.label,
+                explanation: explain(u, i), part: i + 1, parts: n }));
         }
 
         // A week that crosses two months is reviewed in two parts — one per month.
@@ -1020,11 +1024,11 @@
             rowEl.dataset.key = abort.key;
             const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(abort.date || '');
             const dateStr = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : (abort.date || '');
-            const original = [abort.reason, abort.reason1, abort.reason2].filter(Boolean).join(' · ');
-            const detailBits = [dateStr, abort.teamLeader, abort.parts ? `${abort.part} of ${abort.parts} from "${original}"` : [abort.reason1, abort.reason2].filter(Boolean).join(' · ')].filter(Boolean);
+            // Reason (category) on top; date, team leader and the matching explanation underneath.
+            const detailBits = [dateStr, abort.teamLeader, abort.explanation].filter(Boolean);
             rowEl.innerHTML = `
                 <div class="rc-abort-info">
-                    <div class="rc-abort-label">${abort.label || abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}</span></div>
+                    <div class="rc-abort-label">${abort.label || abort.reason || 'Abort'} <span class="rc-abort-total">${abort.total} job${abort.total === 1 ? '' : 's'}${abort.parts ? ` · ${abort.part} of ${abort.parts}` : ''}</span></div>
                     <div class="rc-abort-detail">${detailBits.join(' · ')}</div>
                 </div>
                 <div class="toggle-pair">
@@ -1180,7 +1184,7 @@
                     abortsFlagged: r.ctx.aborts.length > 0,
                     abortsOverturnedTotal: bonusInfo.overturnedTotal,
                     abortsDetail: r.ctx.aborts.map(a => ({
-                        key: a.key, parentKey: a.parentKey || a.key, label: a.label || a.reason, source: a.source, date: a.date, reason: a.reason,
+                        key: a.key, parentKey: a.parentKey || a.key, label: a.label || a.reason, explanation: a.explanation || '', source: a.source, date: a.date, reason: a.reason,
                         reason1: a.reason1, reason2: a.reason2, total: a.total, teamLeader: a.teamLeader,
                         overturned: r._abortAccepted[a.key] === false,
                     })),
