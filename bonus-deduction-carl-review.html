@@ -462,8 +462,11 @@
             reviews.forEach(rv => {
                 const wk = rv.weekStart;
                 if (rv.attendanceFlagged) {
-                    const inst = (rv.attendanceDetail || []).filter(a => a && inM(a.date));
-                    if (inst.length) items.push({ key: `attendance_${wk}`, cat: 'attendance', weekStart: wk, instances: inst, ftmAccepted: !!rv.attendanceAccepted, ftmBy: rv.reviewedBy || '' });
+                    // One item per day, so each Sick / AAUP / AWOL day can be accepted or removed on its own.
+                    (rv.attendanceDetail || []).filter(a => a && inM(a.date)).sort((x, y) => x.date.localeCompare(y.date)).forEach(a => {
+                        const ftmAcc = a.accepted !== undefined ? !!a.accepted : !!rv.attendanceAccepted;
+                        items.push({ key: `attendance_${wk}_${a.date}`, cat: 'attendance', weekStart: wk, instances: [a], ftmAccepted: ftmAcc, ftmBy: rv.reviewedBy || '' });
+                    });
                 }
                 CATEGORIES.filter(c => c.key !== 'attendance').forEach(c => {
                     if (!rv[c.key + 'Flagged']) return;
@@ -680,7 +683,7 @@
                     : `${fmtPct(c.rawRate)}% — ${c.completed} of ${c.jobs} jobs`) +
                     (c.deductPct > 0 ? ' — below the 90% target' : ' — target met, no deduction');
                 if (c.overturned.length) {
-                    detail += `<div class="rc-evidence"><div><span class="ev-tag ev-abort">↺ Overturned by FTM</span> ${c.overturned.map(a => `${a.reason || 'Abort'} — ${dayOf(a.date)} (${a.total} job${a.total === 1 ? '' : 's'}, w/c ${shortDate(a.weekStart)})`).join(' · ')}</div></div>`;
+                    detail += `<div class="rc-evidence"><div><span class="ev-tag ev-abort">↺ Overturned by FTM</span> ${c.overturned.map(a => `${a.label || a.reason || 'Abort'} — ${dayOf(a.date)} (${a.total} job${a.total === 1 ? '' : 's'}, w/c ${shortDate(a.weekStart)})`).join(' · ')}</div></div>`;
                 }
             }
             row.innerHTML = `
