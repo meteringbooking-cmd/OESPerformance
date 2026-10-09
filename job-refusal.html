@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Refusals - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #141A26;
+            --surface:   #1B2333;
+            --border:    #2C3B4F;
+            --border-hi: #415771;
+            --amber:     #F5A623;
+            --cyan:      #2BE4C3;
+            --purple:    #BB8CFF;
+            --text:      #F7F9FC;
+            --text-mid:  #C3CEDE;
+            --text-dim:  #93A4BA;
+            --danger:    #FF7A7A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(168,85,247,0.07) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.9); backdrop-filter: blur(12px);
+            animation: fadeDown 0.6s ease both;
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--purple);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.25rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--purple); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text); text-decoration: none;
+            border: 1px solid var(--border-hi); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--purple); border-color: var(--purple); }
+
+        .hero {
+            position: relative; z-index: 10;
+            padding: 48px 48px 32px;
+            animation: fadeUp 0.7s ease 0.1s both;
+        }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--purple); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--purple); }
+        .hero-sub { font-size: 1.02rem; font-weight: 400; color: var(--text-mid); }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 48px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.2s both;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.75rem;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mid);
+        }
+        .ctrl-input {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.85rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus { outline: none; border-color: var(--purple); }
+        .ctrl-actions { display: flex; gap: 10px; align-items: flex-end; margin-left: auto; }
+
+        .btn-save {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--purple); border: none; color: #080C14;
+            padding: 0.6rem 1.4rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+        }
+        .btn-save:hover { background: #c084fc; transform: translateY(-1px); }
+        .btn-save:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ── CATEGORY LEGEND ── */
+        .codes-panel {
+            background: rgba(168,85,247,0.06);
+            border: 1px solid rgba(168,85,247,0.18);
+            border-radius: 10px; padding: 16px 20px;
+            margin-bottom: 20px;
+            animation: fadeUp 0.6s ease 0.25s both;
+        }
+        .codes-title {
+            font-family: 'DM Mono', monospace; font-size: 0.78rem;
+            letter-spacing: 0.13em; text-transform: uppercase;
+            color: var(--purple); margin-bottom: 14px; font-weight: 500;
+        }
+        .codes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px 28px;
+        }
+        .code-item {
+            display: flex; align-items: flex-start; gap: 10px;
+            font-family: 'Barlow', sans-serif; font-size: 0.86rem; color: var(--text); line-height: 1.55;
+        }
+        .code-badge {
+            background: rgba(187,140,255,0.16); border: 1px solid rgba(187,140,255,0.4);
+            color: var(--purple); padding: 0.15rem 0.6rem; border-radius: 4px;
+            font-family: 'DM Mono', monospace;
+            font-size: 0.75rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+        }
+        .code-item .pct { color: var(--amber); font-weight: 700; }
+
+        /* ── DUPLICATE WARNING BANNER ── */
+        .duplicate-banner {
+            display: none;
+            align-items: center; gap: 12px;
+            background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.35);
+            border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;
+            animation: fadeUp 0.4s ease both;
+        }
+        .duplicate-banner.show { display: flex; }
+        .dup-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .dup-text {
+            font-family: 'Barlow', sans-serif; font-size: 0.88rem;
+            color: var(--amber); line-height: 1.55; flex: 1;
+        }
+        .dup-text strong { font-weight: 600; }
+        .dup-badge {
+            background: var(--amber); color: #080C14;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; padding: 0.25rem 0.7rem; border-radius: 4px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px;
+            font-family: 'DM Mono', monospace; font-size: 0.8rem;
+            margin-bottom: 16px; display: none;
+        }
+        .message.show { display: block; }
+        .message.success { background: rgba(43,228,195,0.1); color: var(--cyan); border: 1px solid rgba(43,228,195,0.3); }
+        .message.error   { background: rgba(255,87,87,0.1); color: var(--danger); border: 1px solid rgba(255,87,87,0.3); }
+        .message.warning { background: rgba(245,166,35,0.1); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+
+        .table-wrap {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; overflow: hidden; overflow-x: auto;
+            animation: fadeUp 0.6s ease 0.3s both;
+        }
+
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        thead th {
+            background: var(--surface); padding: 14px 16px;
+            text-align: center;
+            font-family: 'DM Mono', monospace; font-size: 0.74rem; line-height: 1.5;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text);
+            border-bottom: 1px solid var(--border-hi);
+        }
+        thead th:first-child { text-align: left; }
+        thead th.col-deduct { color: var(--purple); }
+
+        tbody tr { border-bottom: 1px solid rgba(28,42,58,0.6); transition: background 0.15s; }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: rgba(168,85,247,0.04); }
+        tbody tr.row-flagged { border-left: 3px solid var(--amber); }
+
+        td { padding: 14px 16px; vertical-align: middle; text-align: center; }
+        td:first-child { text-align: left; }
+        .eng-name { font-weight: 600; color: var(--text); font-size: 0.95rem; }
+        .eng-leader { font-family: 'Barlow', sans-serif; font-size: 0.78rem; color: var(--text-dim); margin-top: 3px; }
+
+        .chk {
+            width: 20px; height: 20px; cursor: pointer; accent-color: var(--purple);
+        }
+        .compliance-group {
+            display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+            font-family: 'Barlow', sans-serif; font-size: 0.8rem; color: var(--text);
+        }
+        .compliance-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        .compliance-group input { width: 15px; height: 15px; accent-color: var(--purple); cursor: pointer; }
+
+        .flag-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .dates-field { width: 100%; max-width: 170px; }
+        .dates-field label {
+            display: block; font-family: 'DM Mono', monospace; font-size: 0.62rem;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+            margin-bottom: 4px; text-align: left;
+        }
+        .dates-input {
+            width: 100%; background: var(--bg); border: 1px solid var(--border-hi);
+            color: var(--text); padding: 0.4rem 0.6rem; border-radius: 5px;
+            font-family: 'DM Mono', monospace; font-size: 0.76rem; text-align: left;
+        }
+        .dates-input:focus { outline: none; border-color: var(--purple); }
+        .dates-input::placeholder { color: var(--text-dim); }
+
+        /* ── VEHICLE CHECK AUTO-FILL ── */
+        .vc-hint {
+            max-width: 170px; font-family: 'DM Mono', monospace; font-size: 0.64rem;
+            line-height: 1.45; color: var(--amber); text-align: left;
+            background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.3);
+            border-radius: 5px; padding: 4px 7px;
+        }
+        .vc-hint .vc-new {
+            display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px;
+            background: var(--amber); color: #080C14; font-weight: 500;
+        }
+        .vc-summary {
+            display: none; font-family: 'Barlow', sans-serif; font-size: 0.86rem;
+            line-height: 1.55; color: var(--text-mid);
+            background: rgba(245,166,35,0.06); border: 1px solid rgba(245,166,35,0.25);
+            border-radius: 10px; padding: 12px 18px; margin-bottom: 16px;
+        }
+        .vc-summary.show { display: block; }
+        .vc-summary strong { color: var(--amber); font-weight: 600; }
+        .vc-summary .vc-unmatched { margin-top: 6px; font-size: 0.8rem; color: var(--text-dim); }
+
+        .deduct-pill {
+            display: inline-block; min-width: 50px;
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.15em;
+            padding: 5px 12px; border-radius: 4px;
+            background: rgba(195,206,222,0.1); border: 1px solid var(--border-hi); color: var(--text-mid);
+        }
+        .deduct-pill.active {
+            background: rgba(255,122,122,0.15); border-color: rgba(255,122,122,0.5); color: var(--danger);
+        }
+
+        .save-footer {
+            background: var(--surface); border-top: 1px solid var(--border);
+            padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+            gap: 12px;
+        }
+        .footer-note {
+            font-family: 'Barlow', sans-serif; font-size: 0.82rem; color: var(--text-mid);
+        }
+        .footer-note span { color: var(--purple); font-weight: 600; }
+
+        .loading-state {
+            padding: 60px; text-align: center;
+            color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 0.9rem;
+        }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--purple);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeDown { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeUp   { from { opacity: 0; transform: translateY(16px); }  to { opacity: 1; transform: translateY(0); } }
+
+        @media (max-width: 768px) {
+            .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
+            .hero { padding-top: 32px; }
+            .ctrl-actions { margin-left: 0; }
+        }
+    
+        /* ── JOB REFUSALS ── */
+        .panel {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            padding: 22px 24px; margin-bottom: 20px;
+        }
+        .panel-title {
+            font-family: 'DM Mono', monospace; font-size: 0.74rem; letter-spacing: 0.12em;
+            text-transform: uppercase; color: var(--purple); margin-bottom: 16px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .editing-tag { display: none; background: var(--amber); color: #141A26; padding: 2px 8px; border-radius: 4px; font-weight: 600; letter-spacing: 0.06em; }
+        .editing-tag.show { display: inline-block; }
+        .form-grid { display: grid; grid-template-columns: 170px 200px 1fr; gap: 16px; }
+        .form-grid .full { grid-column: 1 / -1; }
+        .field { display: flex; flex-direction: column; gap: 8px; }
+        .field textarea {
+            background: var(--bg); border: 1px solid var(--border-hi); color: var(--text);
+            padding: 0.65rem 0.8rem; border-radius: 6px; font-family: 'Barlow', sans-serif;
+            font-size: 0.95rem; min-height: 84px; resize: vertical;
+        }
+        .field textarea:focus { outline: none; border-color: var(--purple); }
+        .field .ctrl-input, .field select.ctrl-input { width: 100%; }
+        .req { color: var(--danger); }
+        .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+        .btn-ghost {
+            background: transparent; border: 1px solid var(--border-hi); color: var(--text-mid);
+            padding: 0.7rem 1.2rem; border-radius: 6px; cursor: pointer;
+            font-family: 'Barlow Condensed', sans-serif; font-size: 0.85rem; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
+        .dup-warn { display: none; font-family: 'DM Mono', monospace; font-size: 0.76rem; color: var(--amber); }
+        .dup-warn.show { display: inline; }
+
+        .list-bar { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+        .list-summary { font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--text-mid); margin-left: auto; }
+        .list-summary b { color: var(--text); }
+        table.jr { min-width: 760px; }
+        table.jr td, table.jr th { text-align: left; }
+        table.jr td.reason { color: var(--text-mid); font-size: 0.9rem; line-height: 1.45; max-width: 520px; white-space: pre-wrap; }
+        table.jr td.job { font-family: 'DM Mono', monospace; font-size: 0.86rem; }
+        table.jr td.date { white-space: nowrap; font-family: 'DM Mono', monospace; font-size: 0.82rem; color: var(--text-mid); }
+        table.jr td.actions { white-space: nowrap; text-align: right; }
+        .row-btn {
+            background: transparent; border: 1px solid var(--border-hi); color: var(--text-dim);
+            padding: 4px 10px; border-radius: 4px; cursor: pointer; margin-left: 6px;
+            font-family: 'DM Mono', monospace; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .row-btn:hover { color: var(--purple); border-color: var(--purple); }
+        .row-btn.danger:hover, .row-btn.confirm { color: var(--danger); border-color: var(--danger); }
+        .empty-row td { text-align: center; color: var(--text-dim); padding: 28px; }
+        @media (max-width: 768px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .list-summary { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Job Refusals</div>
+        <h1 class="hero-title">Job <em>Refusals</em></h1>
+        <p class="hero-sub">Log every job an engineer refuses — the date, the job number and the reason they gave. Refusing work in day counts under Housekeeping on the bonus deductions.</p>
+    </section>
+
+    <main class="content">
+
+        <!-- ── Add / edit ── -->
+        <div class="panel">
+            <div class="panel-title">Log a Refusal <span class="editing-tag" id="editingTag">Editing</span></div>
+            <form id="refusalForm" autocomplete="off">
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="ctrl-label" for="fDate">Date <span class="req">*</span></label>
+                        <input type="date" id="fDate" class="ctrl-input" required>
+                    </div>
+                    <div class="field">
+                        <label class="ctrl-label" for="fJob">Job Number <span class="req">*</span></label>
+                        <input type="text" id="fJob" class="ctrl-input" placeholder="e.g. 123456" required>
+                    </div>
+                    <div class="field">
+                        <label class="ctrl-label" for="fEngineer">Engineer Name <span class="req">*</span></label>
+                        <select id="fEngineer" class="ctrl-input" required>
+                            <option value="">Loading engineers…</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label class="ctrl-label" for="fReason">Engineer's Reason <span class="req">*</span></label>
+                        <textarea id="fReason" placeholder="What reason did the engineer give for refusing the job?" required></textarea>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-save" id="saveBtn">💾 Save Refusal</button>
+                    <button type="button" class="btn-ghost" id="cancelEditBtn" style="display:none;">Cancel Edit</button>
+                    <span class="dup-warn" id="dupWarn"></span>
+                </div>
+            </form>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <!-- ── List ── -->
+        <div class="panel" style="padding-bottom: 8px;">
+            <div class="panel-title">Logged Refusals</div>
+            <div class="list-bar">
+                <div class="ctrl-group">
+                    <span class="ctrl-label">Month</span>
+                    <input type="month" id="fMonth" class="ctrl-input">
+                </div>
+                <div class="ctrl-group">
+                    <span class="ctrl-label">Engineer</span>
+                    <select id="fFilterEngineer" class="ctrl-input"><option value="">All engineers</option></select>
+                </div>
+                <div class="ctrl-group">
+                    <span class="ctrl-label">Job Number</span>
+                    <input type="text" id="fSearch" class="ctrl-input" placeholder="Search…">
+                </div>
+                <div class="ctrl-group">
+                    <span class="ctrl-label">&nbsp;</span>
+                    <button type="button" class="btn-ghost" id="exportBtn">⬇ Export to Excel</button>
+                </div>
+                <div class="list-summary" id="listSummary"></div>
+            </div>
+            <div class="table-wrap" style="border:none;">
+                <table class="jr">
+                    <thead>
+                        <tr><th>Date</th><th>Job Number</th><th>Engineer</th><th>Reason</th><th></th></tr>
+                    </thead>
+                    <tbody id="listBody">
+                        <tr class="empty-row"><td colspan="5"><span class="spinner"></span>Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import {
+            getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc,
+            query, where, doc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // One document per refusal: { date, jobNumber, engineerId, engineerName, teamLeader, reason, createdAt, updatedAt }
+        const COLLECTION = "Job Refusals";
+
+        const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const parseIso = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+        const fmtDate = iso => /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? parseIso(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : (iso || '');
+        const fmtMonth = m => parseIso(m + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const monthEnd = m => { const [y, mo] = m.split('-').map(Number); return isoDate(new Date(y, mo, 0, 12)); };
+
+        let engineers = [];
+        let rows = [];          // refusals for the selected month
+        let editingId = null;
+
+        const $ = id => document.getElementById(id);
+        const today = new Date();
+        $('fDate').value = isoDate(today);
+        $('fDate').max = isoDate(today);
+        $('fMonth').value = isoDate(today).slice(0, 7);
+
+        function showMessage(text, type) {
+            const el = $('message');
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            setTimeout(() => { el.className = 'message'; }, 6000);
+        }
+
+        // ── Engineers (same list as the other OES pages) ──
+        async function loadEngineers() {
+            const snap = await getDocs(collection(db, "engineers"));
+            engineers = [];
+            snap.forEach(d => { const x = d.data(); if (x.engineerName) engineers.push({ id: d.id, ...x }); });
+            engineers.sort((a, b) => a.engineerName.localeCompare(b.engineerName));
+            $('fEngineer').innerHTML = '<option value="">Select engineer…</option>' +
+                engineers.map(e => `<option value="${esc(e.id)}">${esc(e.engineerName)}${e.teamLeader ? ' — ' + esc(e.teamLeader) : ''}</option>`).join('');
+            $('fFilterEngineer').innerHTML = '<option value="">All engineers</option>' +
+                engineers.map(e => `<option value="${esc(e.id)}">${esc(e.engineerName)}</option>`).join('');
+        }
+
+        // ── List ──
+        async function loadMonth() {
+            const m = $('fMonth').value;
+            if (!m) return;
+            $('listBody').innerHTML = `<tr class="empty-row"><td colspan="5"><span class="spinner"></span>Loading…</td></tr>`;
+            try {
+                const snap = await getDocs(query(collection(db, COLLECTION), where("date", ">=", m + '-01'), where("date", "<=", monthEnd(m))));
+                rows = [];
+                snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+                rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (a.engineerName || '').localeCompare(b.engineerName || ''));
+                renderList();
+            } catch (err) {
+                console.error(err);
+                $('listBody').innerHTML = `<tr class="empty-row"><td colspan="5">Couldn't load refusals: ${esc(err.message)}</td></tr>`;
+            }
+        }
+
+        function filteredRows() {
+            const eng = $('fFilterEngineer').value;
+            const q = $('fSearch').value.trim().toLowerCase();
+            return rows.filter(r => (!eng || r.engineerId === eng) && (!q || String(r.jobNumber || '').toLowerCase().includes(q)));
+        }
+
+        function renderList() {
+            const list = filteredRows();
+            const m = $('fMonth').value;
+            const engCount = new Set(list.map(r => r.engineerId || r.engineerName)).size;
+            $('listSummary').innerHTML = `<b>${list.length}</b> refusal${list.length === 1 ? '' : 's'} in ${fmtMonth(m)}` + (list.length ? ` · <b>${engCount}</b> engineer${engCount === 1 ? '' : 's'}` : '');
+            if (!list.length) {
+                $('listBody').innerHTML = `<tr class="empty-row"><td colspan="5">No job refusals logged for ${fmtMonth(m)}${$('fFilterEngineer').value || $('fSearch').value ? ' matching these filters' : ''}.</td></tr>`;
+                return;
+            }
+            $('listBody').innerHTML = list.map(r => `
+                <tr data-id="${esc(r.id)}">
+                    <td class="date">${esc(fmtDate(r.date))}</td>
+                    <td class="job">${esc(r.jobNumber)}</td>
+                    <td><div class="eng-name">${esc(r.engineerName)}</div><div class="eng-leader">${esc(r.teamLeader || '')}</div></td>
+                    <td class="reason">${esc(r.reason)}</td>
+                    <td class="actions">
+                        <button type="button" class="row-btn" data-act="edit">Edit</button>
+                        <button type="button" class="row-btn danger" data-act="delete">Delete</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        // Edit / delete (delete asks for a second click rather than a pop-up)
+        $('listBody').addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn) return;
+            const id = btn.closest('tr').dataset.id;
+            const r = rows.find(x => x.id === id);
+            if (!r) return;
+            if (btn.dataset.act === 'edit') startEdit(r);
+            if (btn.dataset.act === 'delete') {
+                if (!btn.classList.contains('confirm')) {
+                    btn.classList.add('confirm'); btn.textContent = 'Confirm delete';
+                    setTimeout(() => { if (btn.isConnected) { btn.classList.remove('confirm'); btn.textContent = 'Delete'; } }, 4000);
+                    return;
+                }
+                btn.disabled = true;
+                try {
+                    await deleteDoc(doc(db, COLLECTION, id));
+                    if (editingId === id) resetForm();
+                    showMessage(`Deleted refusal for job ${r.jobNumber}.`, 'success');
+                    await loadMonth();
+                } catch (err) { console.error(err); showMessage('Error deleting: ' + err.message, 'error'); btn.disabled = false; }
+            }
+        });
+
+        function startEdit(r) {
+            editingId = r.id;
+            $('fDate').value = r.date || '';
+            $('fJob').value = r.jobNumber || '';
+            $('fEngineer').value = r.engineerId || '';
+            $('fReason').value = r.reason || '';
+            $('editingTag').classList.add('show');
+            $('saveBtn').innerHTML = '💾 Update Refusal';
+            $('cancelEditBtn').style.display = '';
+            checkDuplicate();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        function resetForm() {
+            editingId = null;
+            $('fJob').value = ''; $('fReason').value = ''; $('fEngineer').value = '';
+            $('editingTag').classList.remove('show');
+            $('saveBtn').innerHTML = '💾 Save Refusal';
+            $('cancelEditBtn').style.display = 'none';
+            $('dupWarn').classList.remove('show');
+        }
+        $('cancelEditBtn').addEventListener('click', resetForm);
+
+        // Warn (don't block) if the same job number is already logged
+        async function checkDuplicate() {
+            const job = $('fJob').value.trim();
+            const warn = $('dupWarn');
+            if (!job) { warn.classList.remove('show'); return null; }
+            try {
+                const snap = await getDocs(query(collection(db, COLLECTION), where("jobNumber", "==", job)));
+                const others = []; snap.forEach(d => { if (d.id !== editingId) others.push(d.data()); });
+                if (others.length) {
+                    const o = others[0];
+                    warn.textContent = `⚠ Job ${job} is already logged — ${o.engineerName}, ${fmtDate(o.date)}.`;
+                    warn.classList.add('show');
+                } else warn.classList.remove('show');
+                return others;
+            } catch (e) { warn.classList.remove('show'); return null; }
+        }
+        $('fJob').addEventListener('change', checkDuplicate);
+
+        // ── Save ──
+        $('refusalForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const date = $('fDate').value, jobNumber = $('fJob').value.trim(), reason = $('fReason').value.trim();
+            const eng = engineers.find(x => x.id === $('fEngineer').value);
+            if (!date || !jobNumber || !eng || !reason) return showMessage('Please fill in the date, job number, engineer and reason.', 'error');
+            const btn = $('saveBtn'); btn.disabled = true;
+            const record = { date, jobNumber, engineerId: eng.id, engineerName: eng.engineerName, teamLeader: eng.teamLeader || '', reason };
+            try {
+                if (editingId) {
+                    await updateDoc(doc(db, COLLECTION, editingId), { ...record, updatedAt: serverTimestamp() });
+                    showMessage(`Updated refusal for job ${jobNumber}.`, 'success');
+                } else {
+                    await addDoc(collection(db, COLLECTION), { ...record, createdAt: serverTimestamp() });
+                    showMessage(`Saved — ${eng.engineerName} refused job ${jobNumber} on ${fmtDate(date)}.`, 'success');
+                }
+                resetForm();
+                if (date.slice(0, 7) !== $('fMonth').value) $('fMonth').value = date.slice(0, 7);
+                await loadMonth();
+            } catch (err) {
+                console.error(err); showMessage('Error saving refusal: ' + err.message, 'error');
+            } finally { btn.disabled = false; }
+        });
+
+        // ── Export ──
+        $('exportBtn').addEventListener('click', () => {
+            const list = filteredRows();
+            if (!list.length) return showMessage('Nothing to export for this month.', 'warning');
+            const data = [['Date', 'Job Number', 'Engineer', 'Team Leader', 'Reason']].concat(
+                list.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(r => [r.date, r.jobNumber, r.engineerName, r.teamLeader || '', r.reason]));
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 70 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Job Refusals');
+            XLSX.writeFile(wb, `Job_Refusals_${$('fMonth').value}.xlsx`);
+        });
+
+        $('fMonth').addEventListener('change', loadMonth);
+        $('fFilterEngineer').addEventListener('change', renderList);
+        $('fSearch').addEventListener('input', renderList);
+
+        (async function init() {
+            try { await loadEngineers(); } catch (e) { console.error(e); showMessage('Error loading engineers: ' + e.message, 'error'); }
+            await loadMonth();
+        })();
+    </script>
+</body>
+</html>
