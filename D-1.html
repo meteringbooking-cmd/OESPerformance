@@ -125,6 +125,25 @@
   .tval { text-align: center; font-weight: 650; font-size: 13px; }
   .tlab { text-align: center; font-size: 11.5px; color: var(--ink-3); line-height: 1.25; }
 
+  /* Delta */
+  .delta { font-weight: 650; white-space: nowrap; }
+  .delta small { display: block; font-weight: 500; font-size: 11.5px; color: var(--ink-3); }
+  .delta.up { color: var(--good); } .delta.down { color: var(--bad); } .delta.flat, .delta.na { color: var(--ink-3); }
+  .k-delta { font-weight: 650; }
+  .k-delta.up { color: var(--good); } .k-delta.down { color: var(--bad); }
+
+  /* Completion by call type */
+  .cmp-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; padding: 0 18px 8px; }
+  .cmp { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; background: var(--surface-2); }
+  .cmp .c-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
+  .cmp .c-value { font-size: 28px; font-weight: 650; letter-spacing: -.02em; margin: 6px 0 8px; line-height: 1.1; }
+  .cmp .meter { height: 8px; border-radius: 4px; background: #e5eaf1; overflow: hidden; display: flex; }
+  .cmp .meter .ok { background: var(--navy-2); } .cmp .meter .ab { background: var(--bad); }
+  .cmp .c-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 8px; line-height: 1.5; }
+  .cmp-insight { margin: 4px 18px 16px; padding: 10px 14px; border-radius: 8px; background: #eaf1fe; border: 1px solid #bcd0f7; color: #17408f; font-size: 13px; }
+  .cmp-insight:empty { display: none; }
+  .cmp-note { padding: 0 18px 16px; font-size: 12px; color: var(--ink-3); }
+
   /* Engineer table */
   .table-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
@@ -186,6 +205,7 @@
   .footnote b { color: var(--ink-2); }
 
   @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi:first-child { grid-column: 1 / -1; } }
+  @media (max-width: 800px) { .cmp-grid { grid-template-columns: 1fr; } }
   @media (max-width: 640px) {
     .topbar-inner, main { padding-left: 16px; padding-right: 16px; }
     .detail-inner { padding-left: 12px; }
@@ -276,6 +296,18 @@
     <div class="trend-wrap"><div class="trend" id="trend"></div></div>
   </section>
 
+  <section class="panel" style="margin-bottom:18px" aria-label="Completion by call type">
+    <div class="section-head">
+      <div>
+        <h2>Job completion by call type</h2>
+        <div class="sub">Does earlier contact lead to more completed jobs?</div>
+      </div>
+    </div>
+    <div class="cmp-grid" id="cmpGrid"></div>
+    <div class="cmp-insight" id="cmpInsight"></div>
+    <div class="cmp-note" id="cmpNote"></div>
+  </section>
+
   <section class="panel" aria-label="Engineer performance">
     <div class="section-head">
       <div>
@@ -296,6 +328,7 @@
             <th class="sort num" data-k="d1" tabindex="0">D-1 call made<span class="arr"></span></th>
             <th class="sort num" data-k="same" tabindex="0">Called on the day<span class="arr"></span></th>
             <th class="sort num" data-k="never" tabindex="0">Never called<span class="arr"></span></th>
+            <th class="sort num" data-k="delta" tabindex="0" title="Change in D-1 % against the previous period of equal length">D-1 vs previous<span class="arr"></span></th>
             <th class="dist-h">Distribution</th>
           </tr>
         </thead>
@@ -522,6 +555,25 @@
   const fmtPct = v => (Math.round(v * 10) / 10).toFixed(1) + "%";
   const d1Tone = v => v >= state.target ? "good" : (v >= state.target - 15 ? "warn" : "bad");
 
+  // Previous period = same number of days immediately before the selected range, same status filter
+  function prevRange() {
+    if (!state.from || !state.to) return null;
+    const len = Math.round((fromIso(state.to) - fromIso(state.from)) / 864e5) + 1;
+    const pTo = addDays(state.from, -1);
+    return { from: addDays(pTo, -(len - 1)), to: pTo, len };
+  }
+  function prevRows() {
+    const pr = prevRange(); if (!pr) return [];
+    return state.rows.filter(r => r.date >= pr.from && r.date <= pr.to && state.statuses.has(r.status));
+  }
+  function deltaHtml(d, prevVal) {
+    if (d === null || d === undefined) return `<span class="delta na">No prior data</span>`;
+    const r = Math.round(d * 10) / 10;
+    const cls = r > 0 ? "up" : r < 0 ? "down" : "flat";
+    const arrow = r > 0 ? "\u25B2" : r < 0 ? "\u25BC" : "\u2013";
+    return `<span class="delta ${cls}">${arrow} ${Math.abs(r).toFixed(1)} pts<small>was ${fmtPct(prevVal)}</small></span>`;
+  }
+
   function byEngineer(rows) {
     const m = new Map();
     rows.forEach(r => { if (!m.has(r.engineer)) m.set(r.engineer, []); m.get(r.engineer).push(r); });
@@ -538,17 +590,22 @@
     const search = state.search.trim().toLowerCase();
     let engs = byEngineer(rows);
     const all = tally(rows);
+    const prevR = prevRows();
+    const prevMap = new Map(byEngineer(prevR).map(e => [e.name, e]));
+    const prevAll = tally(prevR);
+    engs.forEach(e => { const pe = prevMap.get(e.name); e.prevD1 = pe ? pe.d1 : null; e.delta = pe ? e.d1 - pe.d1 : null; });
     if (search) engs = engs.filter(e => e.name.toLowerCase().includes(search));
 
     const k = state.sortKey, dir = state.sortDir === "asc" ? 1 : -1;
     engs.sort((a, b) => {
-      const c = k === "name" ? a.name.localeCompare(b.name) : (a[k] - b[k]);
+      const c = k === "name" ? a.name.localeCompare(b.name) : ((a[k] ?? -999) - (b[k] ?? -999));
       return (c || a.name.localeCompare(b.name)) * dir;
     });
 
-    renderKpis(all, byEngineer(rows));
+    renderKpis(all, byEngineer(rows), prevAll);
+    renderCompletion();
     renderTrend(rows);
-    renderTable(engs, all);
+    renderTable(engs, all, prevAll);
     document.querySelectorAll("th.sort").forEach(th => {
       th.querySelector(".arr").textContent = th.dataset.k === k ? (state.sortDir === "asc" ? "▲" : "▼") : "";
       th.setAttribute("aria-sort", th.dataset.k === k ? (state.sortDir === "asc" ? "ascending" : "descending") : "none");
@@ -556,21 +613,56 @@
     document.querySelectorAll("#presets .chip").forEach(c => c.classList.toggle("on", presetRange(c.dataset.p) && presetRange(c.dataset.p)[0] === state.from && presetRange(c.dataset.p)[1] === state.to));
   }
 
-  function renderKpis(all, engs) {
+  function renderKpis(all, engs, prevAll) {
     const d1 = pct(all.d1, all.total), same = pct(all.same, all.total), never = pct(all.never, all.total);
+    const kd = prevAll && prevAll.total ? d1 - pct(prevAll.d1, prevAll.total) : null;
+    const kdHtml = kd === null ? "" : (() => { const r = Math.round(kd * 10) / 10; return `<span class="k-delta ${r > 0 ? "up" : r < 0 ? "down" : ""}">${r > 0 ? "\u25B2" : r < 0 ? "\u25BC" : "\u2013"} ${Math.abs(r).toFixed(1)} pts</span> vs previous period`; })();
     const below = engs.filter(e => e.d1 < state.target).length;
     const best = engs.length ? engs.reduce((a, b) => (b.d1 > a.d1 ? b : a)) : null;
     $("kpis").innerHTML = `
       <div class="panel kpi navy"><div class="k-label">Jobs in range</div><div class="k-value">${all.total.toLocaleString("en-GB")}</div>
         <div class="k-sub">${engs.length} engineer${engs.length === 1 ? "" : "s"}</div></div>
       <div class="panel kpi good"><div class="k-label">D-1 call made</div><div class="k-value">${fmtPct(d1)}</div>
-        <div class="k-sub">${all.d1.toLocaleString("en-GB")} jobs${all.total ? ` &middot; target ${state.target}%` : ""}</div></div>
+        <div class="k-sub">${all.d1.toLocaleString("en-GB")} jobs${all.total ? ` &middot; target ${state.target}%` : ""}${kdHtml ? "<br>" + kdHtml : ""}</div></div>
       <div class="panel kpi warn"><div class="k-label">Called on the day</div><div class="k-value">${fmtPct(same)}</div>
         <div class="k-sub">${all.same.toLocaleString("en-GB")} jobs</div></div>
       <div class="panel kpi bad"><div class="k-label">Never called</div><div class="k-value">${fmtPct(never)}</div>
         <div class="k-sub">${all.never.toLocaleString("en-GB")} jobs</div></div>
       <div class="panel kpi"><div class="k-label">Below D-1 target</div><div class="k-value">${below}</div>
         <div class="k-sub">${engs.length ? `of ${engs.length} engineers` : "no data"}${best ? ` &middot; best ${fmtPct(best.d1)}` : ""}</div></div>`;
+  }
+
+  // Completion by call type: date range only (status filter ignored); booked jobs excluded as they have no outcome yet
+  function renderCompletion() {
+    const rows = state.rows.filter(r => (!state.from || r.date >= state.from) && (!state.to || r.date <= state.to) && r.status !== "BOOKED");
+    const g = { d1: [], same: [], never: [] };
+    rows.forEach(r => g[callClass(r.days)].push(r));
+    const meta = [["d1", "D-1 call made", "good"], ["same", "Called on the day", "warn"], ["never", "Never called", "bad"]];
+    const rate = {};
+    $("cmpGrid").innerHTML = meta.map(([k, label, sw]) => {
+      const list = g[k], n = list.length;
+      const comp = list.filter(r => r.status === "COMPLETE").length;
+      const ab = list.filter(r => r.status === "ABORTED").length;
+      const rs = list.filter(r => r.status === "RESCHEDULED").length;
+      rate[k] = n ? pct(comp, n) : null;
+      return `<div class="cmp"><div class="c-label"><i class="sw ${sw}"></i>${label}</div>
+        <div class="c-value">${n ? fmtPct(rate[k]) : "n/a"}</div>
+        <div class="meter" role="img" aria-label="${n ? fmtPct(rate[k]) + " completed" : "no jobs"}"><div class="ok" style="width:${n ? pct(comp, n) : 0}%"></div><div class="ab" style="width:${n ? pct(ab, n) : 0}%"></div></div>
+        <div class="c-sub">${comp} of ${n} completed<br>${ab} aborted (${n ? fmtPct(pct(ab, n)) : "0.0%"})${rs ? ` &middot; ${rs} rescheduled` : ""}</div></div>`;
+    }).join("");
+    let ins = "";
+    if (rate.d1 !== null && rate.never !== null && g.never.length >= 5) {
+      const diff = Math.round((rate.d1 - rate.never) * 10) / 10;
+      ins = diff > 0 ? `Jobs with a D-1 call were completed <b>${diff.toFixed(1)} points more often</b> than jobs that were never called.`
+        : diff < 0 ? `Jobs that were never called were completed ${Math.abs(diff).toFixed(1)} points more often than jobs with a D-1 call in this period.`
+        : `Completion rates are the same for D-1 calls and no calls in this period.`;
+    } else if (rate.d1 !== null && rate.same !== null && g.same.length >= 5) {
+      const diff = Math.round((rate.d1 - rate.same) * 10) / 10;
+      ins = diff > 0 ? `Jobs with a D-1 call were completed <b>${diff.toFixed(1)} points more often</b> than jobs called only on the day.`
+        : diff < 0 ? `Jobs called only on the day were completed ${Math.abs(diff).toFixed(1)} points more often than D-1 jobs in this period.` : "";
+    }
+    $("cmpInsight").innerHTML = ins;
+    $("cmpNote").textContent = rows.length ? `Based on ${rows.length.toLocaleString("en-GB")} jobs with an outcome (booked jobs excluded). Uses the selected date range for all engineers; the status filter does not apply here.` : "No jobs in the selected range.";
   }
 
   function renderTrend(rows) {
@@ -590,9 +682,10 @@
 
   const CARET = `<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>`;
 
-  function renderTable(engs, all) {
+  function renderTable(engs, all, prevAll) {
     const body = $("engBody"), foot = $("engFoot"), empty = $("emptyState");
-    $("engSub").textContent = engs.length ? `${engs.length} engineer${engs.length === 1 ? "" : "s"} · select a name to view job-level detail` : "";
+    const pr = prevRange();
+    $("engSub").textContent = engs.length ? `${engs.length} engineer${engs.length === 1 ? "" : "s"} · select a name to view job-level detail` + (pr ? ` · compared with ${fmtDate(pr.from)} to ${fmtDate(pr.to)}` : "") : "";
     if (!state.rows.length) {
       body.innerHTML = ""; foot.innerHTML = "";
       empty.style.display = "block";
@@ -618,6 +711,7 @@
         <td class="num"><span class="pct ${tone}">${fmtPct(e.d1)}<small>${e.nd1} of ${e.total}</small></span></td>
         <td class="num"><span class="pct">${fmtPct(e.same)}<small>${e.nsame} of ${e.total}</small></span></td>
         <td class="num"><span class="pct ${e.nnever ? "bad" : ""}">${fmtPct(e.never)}<small>${e.nnever} of ${e.total}</small></span></td>
+        <td class="num">${deltaHtml(e.delta, e.prevD1)}</td>
         <td class="dist"><div class="stack" role="img" aria-label="D-1 ${fmtPct(e.d1)}, on the day ${fmtPct(e.same)}, never ${fmtPct(e.never)}">
           <div class="g" style="width:${e.d1}%"></div><div class="w" style="width:${e.same}%"></div><div class="r" style="width:${e.never}%"></div></div></td>
       </tr>`;
@@ -630,6 +724,7 @@
       <td class="num">${fmtPct(pct(all.d1, all.total))}</td>
       <td class="num">${fmtPct(pct(all.same, all.total))}</td>
       <td class="num">${fmtPct(pct(all.never, all.total))}</td>
+      <td class="num">${prevAll && prevAll.total ? deltaHtml(pct(all.d1, all.total) - pct(prevAll.d1, prevAll.total), pct(prevAll.d1, prevAll.total)) : ""}</td>
       <td class="dist"></td></tr>`;
   }
 
@@ -651,7 +746,7 @@
         <td>${notice}</td>
         <td>${notes}</td></tr>`;
     }).join("");
-    return `<tr class="detail"><td colspan="6"><div class="detail-inner"><div class="table-scroll"><table class="jobs">
+    return `<tr class="detail"><td colspan="7"><div class="detail-inner"><div class="table-scroll"><table class="jobs">
       <thead><tr><th>Job reference</th><th>Job date</th><th>Job status</th><th>D-1 call</th><th>Notice given</th><th>Abort notes</th></tr></thead>
       <tbody>${rowsHtml}</tbody></table></div></div></td></tr>`;
   }
