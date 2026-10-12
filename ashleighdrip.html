@@ -58,12 +58,15 @@
     margin: 28px auto 8px;
   }
   .drop {
+    background: none; border: 0; padding: 0; border-radius: 0; cursor: pointer;
     position: relative;
     width: 210px;
     height: 280px;
     transform-origin: 50% 0;
     animation: wobble 1.8s ease-out 1;
   }
+  .drop.splash { animation: wobble 0.9s ease-out 1; }
+  .hint { margin: 6px 0 0; font-size: 0.85rem; color: var(--ink-soft); }
   .drop svg { width: 100%; height: 100%; display: block; }
   .drop-text {
     position: absolute;
@@ -220,10 +223,10 @@
 <div class="wrap">
   <header>
     <h1>The Drip<br>Tracker</h1>
-    <p class="owner">Official cycle surveillance for <strong>Ashleigh Ginks</strong></p>
+    <p class="owner">Keeping tabs on <strong>Ashleigh Ginks</strong>' monthly visitor. Aunt Flo has no secrets here.</p>
 
     <div class="countdown" aria-live="polite">
-      <div class="drop">
+      <button type="button" class="drop" id="dropBtn" aria-label="Poke the drop for a fun fact">
         <svg viewBox="0 0 210 280" aria-hidden="true">
           <path d="M105 6 C 105 6, 200 130, 200 180 A 95 95 0 0 1 10 180 C 10 130, 105 6, 105 6 Z" fill="var(--drip)" stroke="var(--berry)" stroke-width="6"/>
           <ellipse cx="62" cy="165" rx="14" ry="30" fill="#fff" opacity="0.35" transform="rotate(18 62 165)"/>
@@ -232,7 +235,8 @@
           <span class="drop-num" id="dropNum">…</span>
           <span class="drop-label" id="dropLabel">loading the drip</span>
         </div>
-      </div>
+      </button>
+      <p class="hint">Poke the drop</p>
       <p class="verdict" id="verdict">Consulting the uterus oracle…</p>
       <p class="predicted" id="predicted"></p>
     </div>
@@ -240,23 +244,23 @@
 
   <section class="stats" aria-label="Stats">
     <div class="stat"><b id="statTitle">—</b><span>Punctuality rating</span></div>
-    <div class="stat"><b id="statAvg">—</b><span>Average arrival</span></div>
-    <div class="stat"><b id="statCycle">—</b><span>Cycle length</span></div>
-    <div class="stat"><b id="statCount">—</b><span>Drips on record</span></div>
+    <div class="stat"><b id="statAvg">—</b><span>Typical entrance</span></div>
+    <div class="stat"><b id="statCycle">—</b><span>Days between drips</span></div>
+    <div class="stat"><b id="statCount">—</b><span>Drips survived</span></div>
   </section>
 
   <main>
     <section>
-      <h2>Log a drip</h2>
+      <h2>Report a sighting</h2>
       <form id="dripForm" novalidate>
         <p class="editing-note hidden" id="editingNote"></p>
         <label class="field">
-          <span>When was it due?</span>
+          <span>When was she expected?</span>
           <input type="date" id="dueDate" required>
         </label>
 
         <fieldset>
-          <legend>How did it go?</legend>
+          <legend>Did she show up?</legend>
           <div class="choices">
             <input type="radio" name="status" id="st-pending" value="pending" checked><label for="st-pending">⏳ Still waiting</label>
             <input type="radio" name="status" id="st-early" value="early"><label for="st-early">🏃‍♀️ Early</label>
@@ -270,21 +274,8 @@
           <input type="number" id="days" min="1" max="60" value="1" inputmode="numeric">
         </label>
 
-        <label class="field">
-          <span>Vibe check</span>
-          <select id="mood">
-            <option>🤷 Unknown</option>
-            <option>😇 Angelic</option>
-            <option>😤 Hangry</option>
-            <option>🍫 Chocolate-powered</option>
-            <option>🛋️ Couch-bound</option>
-            <option>🔥 Fight me</option>
-            <option>😭 Cried at an advert</option>
-          </select>
-        </label>
-
         <div class="btn-row">
-          <button type="submit" class="primary" id="saveBtn">Save drip</button>
+          <button type="submit" class="primary" id="saveBtn">Log the drip 🩸</button>
           <button type="button" class="ghost hidden" id="cancelBtn">Cancel edit</button>
         </div>
       </form>
@@ -292,14 +283,14 @@
 
     <section>
       <div class="log-head">
-        <h2>The drip log</h2>
+        <h2>The case files</h2>
         <button type="button" class="ghost" id="exportBtn">Export to Excel</button>
       </div>
       <div id="log"><p class="empty">Fetching the drip log…</p></div>
     </section>
   </main>
 
-  <footer>Data is kept in Firebase, so everyone with the link sees the same drips.</footer>
+  <footer>Powered by Firebase, chocolate and pure nosiness. Everyone with the link sees the same drips.</footer>
 </div>
 
 <div class="toast" id="toast" role="status"></div>
@@ -324,18 +315,43 @@
 
   // Historic data, written once if the collection is empty
   const SEED = [
-    { id: "2026-05", month: "2026-05", dueDate: null,         status: "early",   days: 2, mood: "🤷 Unknown" },
-    { id: "2026-06", month: "2026-06", dueDate: null,         status: "late",    days: 1, mood: "🤷 Unknown" },
-    { id: "2026-07", month: "2026-07", dueDate: "2026-07-10", status: "late",    days: 1, mood: "🤷 Unknown" },
-    { id: "2026-08", month: "2026-08", dueDate: "2026-08-07", status: "pending", days: 0, mood: "🤷 Unknown" }
+    { id: "2026-05", month: "2026-05", dueDate: null,         status: "early",   days: 2 },
+    { id: "2026-06", month: "2026-06", dueDate: null,         status: "late",    days: 1 },
+    { id: "2026-07", month: "2026-07", dueDate: "2026-07-10", status: "late",    days: 1 },
+    { id: "2026-08", month: "2026-08", dueDate: "2026-08-07", status: "pending", days: 0 }
   ];
 
   const STATUS = {
-    early:   { color: "var(--early)",   verdict: "Turned up uninvited" },
-    ontime:  { color: "var(--ontime)",  verdict: "Swiss precision" },
-    late:    { color: "var(--late)",    verdict: "Fashionably late" },
-    pending: { color: "var(--pending)", verdict: "Awaiting the drip" }
+    early:   { color: "var(--early)",   verdict: "Turned up uninvited", lines: ["Turned up uninvited", "Didn't even text first", "Arrived before the snacks did", "Gate-crashed the party", "Keen. Too keen."] },
+    ontime:  { color: "var(--ontime)",  verdict: "Swiss precision", lines: ["Swiss precision", "Bang on time, suspiciously", "You could set your watch by it", "Better timekeeping than Southern Rail"] },
+    late:    { color: "var(--late)",    verdict: "Fashionably late", lines: ["Fashionably late", "Stuck in traffic on the M25", "Stopped for a Greggs on the way", "Running on Ashleigh Standard Time", "Missed the bus, caught the next one"] },
+    pending: { color: "var(--pending)", verdict: "Awaiting the drip", lines: ["Whereabouts unknown", "Last seen: nowhere", "Still lost in the post", "Awaiting further intel"] }
   };
+
+  const COUNTDOWN = {
+    today: ["It's D-Day. Godspeed, Ash. 🫡", "The eagle has landed. Probably.", "Clear the schedule. Cancel the plans. Fetch the duvet."],
+    close: ["Code red imminent. Deploy emergency snacks.", "Shark Week is circling. 🦈", "Hot water bottle to the launch pad.", "Do NOT ask if she's on her period. Not today."],
+    soon:  ["Stock up on chocolate. This is not a drill.", "Aunt Flo has booked her train.", "Approach with snacks held out in front of you.", "Give her the last biscuit. Trust me."],
+    clear: ["Coast is clear. Wear the white jeans.", "Peace in our time. Enjoy it while it lasts.", "Aunt Flo is still packing her suitcase.", "Low threat level. Hugs are permitted."],
+    overdue: ["She's late. Nobody panic. Everybody panic.", "Aunt Flo has missed her train.", "Running on Ashleigh Standard Time again."]
+  };
+
+  const FACTS = [
+    "Fun fact: 'Shark Week' is not a nature documentary in this house. 🦈",
+    "Aunt Flo has never once RSVP'd.",
+    "Scientists confirm chocolate is medicinal. Source: Ashleigh.",
+    "This tracker is more reliable than the Northern line.",
+    "No uteruses were harmed in the making of this app.",
+    "Reminder: 'calm down' has never calmed anyone down.",
+    "A hot water bottle is legally a best friend for 5 days.",
+    "Splash! 💦 Rude.",
+    "Ow. Don't poke the drop.",
+    "If found, please return Aunt Flo to Ashleigh Ginks."
+  ];
+  const SAVED = ["Drip documented. Science thanks you. 🩸", "Logged. Aunt Flo has been noted.", "Saved to the case files. 🕵️‍♀️", "Recorded for future generations."];
+
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const stablePick = (arr, key) => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return arr[h % arr.length]; };
 
   let records = [];
   let editingId = null;
@@ -400,13 +416,9 @@
     const p = predict();
     if (p) {
       $("dropNum").textContent = p.days;
-      $("dropLabel").textContent = p.days === 1 ? "day to go" : "days to go";
-      let line;
-      if (p.days === 0) line = "It's D-Day. Godspeed, Ash. 🫡";
-      else if (p.days <= 3) line = "Code red imminent. Deploy emergency snacks.";
-      else if (p.days <= 10) line = "Stock up on chocolate. This is not a drill.";
-      else line = "Coast is clear. Wear the white jeans.";
-      $("verdict").textContent = line;
+      $("dropLabel").textContent = p.days === 0 ? "it's go time" : p.days === 1 ? "day of freedom left" : "days of freedom left";
+      const bucket = p.days === 0 ? "today" : p.days <= 3 ? "close" : p.days <= 10 ? "soon" : "clear";
+      $("verdict").textContent = pick(COUNTDOWN[bucket]);
       $("predicted").textContent = `Next drip predicted ${prettyDate(p.date)}`;
       $("statCycle").textContent = `${p.gap} days${p.measured ? "" : "*"}`;
     } else {
@@ -427,6 +439,7 @@
       $("statAvg").textContent = rounded < 0.5 ? "On the dot" : `${rounded} ${rounded === 1 ? "day" : "days"} ${avg < 0 ? "early" : "late"}`;
       $("statTitle").textContent =
         Math.abs(avg) < 0.5 ? "Swiss train 🚆" :
+        avg < -3 ? "Over-eager 🐕" :
         avg < 0 ? "Eager beaver 🦫" :
         avg <= 3 ? "Fashionably late 💅" : "Ashleigh Standard Time ⏰";
     } else {
@@ -436,7 +449,7 @@
 
     // Timeline
     if (!records.length) {
-      $("log").innerHTML = `<p class="empty">No drips logged yet. Add the first due date on the left.</p>`;
+      $("log").innerHTML = `<p class="empty">No drips logged. Suspiciously quiet… Add the first due date to get started.</p>`;
       return;
     }
     $("log").innerHTML = `<ol class="timeline">${records.map(r => {
@@ -449,9 +462,9 @@
             <span class="entry-month">${esc(monthLabel(r.month))}</span>
             <span class="chip" style="background:${s.color}">${esc(chipText(r))}</span>
           </div>
-          <p class="entry-meta">${esc(due)}. ${esc(s.verdict)}. Vibe: ${esc(r.mood || "🤷 Unknown")}</p>
+          <p class="entry-meta">${esc(due)}. ${esc(stablePick(s.lines, r.id + r.status))}.</p>
           <div class="entry-actions">
-            <button type="button" class="ghost" data-edit="${esc(r.id)}">${r.status === "pending" ? "Log result" : "Edit"}</button>
+            <button type="button" class="ghost" data-edit="${esc(r.id)}">${r.status === "pending" ? "She's arrived!" : "Edit"}</button>
             <button type="button" class="ghost" data-del="${esc(r.id)}">Delete</button>
           </div>
         </div>
@@ -464,7 +477,7 @@
     const status = document.querySelector('input[name="status"]:checked').value;
     const show = status === "early" || status === "late";
     $("daysField").classList.toggle("hidden", !show);
-    $("daysLabel").textContent = status === "early" ? "How many days early?" : "How many days late?";
+    $("daysLabel").textContent = status === "early" ? "How many days early? (the audacity)" : "How many days late? (no judgement… some judgement)";
   }
   document.querySelectorAll('input[name="status"]').forEach(r => r.addEventListener("change", syncDays));
 
@@ -473,7 +486,7 @@
     $("dripForm").reset();
     $("editingNote").classList.add("hidden");
     $("cancelBtn").classList.add("hidden");
-    $("saveBtn").textContent = "Save drip";
+    $("saveBtn").textContent = "Log the drip 🩸";
     syncDays();
   }
 
@@ -484,8 +497,7 @@
     $("dueDate").value = r.dueDate || "";
     document.getElementById(`st-${r.status}`).checked = true;
     $("days").value = r.days || 1;
-    $("mood").value = r.mood || "🤷 Unknown";
-    $("editingNote").textContent = `Editing ${monthLabel(r.month)}${r.dueDate ? "" : ". Add the due date if you know it."}`;
+    $("editingNote").textContent = `Reopening the ${monthLabel(r.month)} case file${r.dueDate ? "" : ". Add the due date if you know it."}`;
     $("editingNote").classList.remove("hidden");
     $("cancelBtn").classList.remove("hidden");
     $("saveBtn").textContent = "Save changes";
@@ -502,10 +514,10 @@
     if (editId) startEdit(editId);
     if (delId) {
       const r = records.find(x => x.id === delId);
-      if (!confirm(`Delete the ${monthLabel(r.month)} drip? This can't be undone.`)) return;
+      if (!confirm(`Delete the ${monthLabel(r.month)} drip? It'll be like it never happened (she wishes). This can't be undone.`)) return;
       try {
         await deleteDoc(doc(db, COL, delId));
-        toast("Deleted. That drip never happened.");
+        toast("Deleted. That drip never happened. 🫥");
         if (editingId === delId) resetForm();
         load();
       } catch (err) {
@@ -518,16 +530,16 @@
   $("dripForm").addEventListener("submit", async e => {
     e.preventDefault();
     const dueDate = $("dueDate").value;
-    if (!dueDate) { toast("Pick the due date first."); $("dueDate").focus(); return; }
+    if (!dueDate) { toast("When was she expected? Pick a due date first."); $("dueDate").focus(); return; }
     const status = document.querySelector('input[name="status"]:checked').value;
     const days = (status === "early" || status === "late") ? Math.max(1, parseInt($("days").value, 10) || 1) : 0;
     const month = dueDate.slice(0, 7);
     const btn = $("saveBtn");
     btn.disabled = true;
     try {
-      await setDoc(doc(db, COL, month), { month, dueDate, status, days, mood: $("mood").value, updatedAt: serverTimestamp() });
+      await setDoc(doc(db, COL, month), { month, dueDate, status, days, updatedAt: serverTimestamp() });
       if (editingId && editingId !== month) await deleteDoc(doc(db, COL, editingId));
-      toast("Saved. The drip has been documented. 🩸");
+      toast(pick(SAVED));
       resetForm();
       await load();
     } catch (err) {
@@ -545,8 +557,7 @@
       Month: monthLabel(r.month),
       "Due date": r.dueDate || "",
       Result: chipText(r),
-      Verdict: (STATUS[r.status] || STATUS.pending).verdict,
-      Vibe: r.mood || ""
+      Verdict: stablePick((STATUS[r.status] || STATUS.pending).lines, r.id + r.status)
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -562,6 +573,12 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
   }
+
+  $("dropBtn").addEventListener("click", () => {
+    const d = $("dropBtn");
+    d.classList.remove("splash"); void d.offsetWidth; d.classList.add("splash");
+    toast(pick(FACTS));
+  });
 
   syncDays();
   load();
