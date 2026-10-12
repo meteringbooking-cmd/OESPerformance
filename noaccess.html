@@ -116,6 +116,9 @@
         .attempt-box.no-answer { border-color: rgba(245,158,11,0.3); }
         .attempt-box.rebooked { border-color: rgba(52,211,153,0.3); }
         .attempt-box.customer-rearrange { border-color: rgba(167,139,250,0.35); }
+        .attempt-box.customer-unaware { border-color: rgba(251,113,133,0.3); }
+        .attempt-box.customer-cancelled { border-color: rgba(251,113,133,0.3); }
+        .attempt-box.customer-rebooked { border-color: rgba(52,211,153,0.3); }
         .attempt-number { font-size: 0.75em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 14px; }
         .attempt-number span { color: var(--accent-cyan); }
 
@@ -131,6 +134,8 @@
         .outcome-badge.no-answer { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35); color: var(--accent-amber); }
         .outcome-badge.rebooked { background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.35); color: var(--success); }
         .outcome-badge.customer-rearrange { background: rgba(167,139,250,0.15); border: 1px solid rgba(167,139,250,0.35); color: var(--accent-violet); }
+        .outcome-badge.customer-unaware, .outcome-badge.customer-cancelled { background: rgba(251,113,133,0.15); border: 1px solid rgba(251,113,133,0.35); color: var(--accent-rose); }
+        .outcome-badge.customer-rebooked { background: rgba(52,211,153,0.15); border: 1px solid rgba(52,211,153,0.35); color: var(--success); }
 
         .attempt-saved { display: flex; flex-direction: column; gap: 8px; }
         .attempt-row { display: flex; justify-content: space-between; align-items: center; }
@@ -155,6 +160,8 @@
         .overall-status.rebooked { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
         .overall-status.exhausted { background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.3); color: var(--accent-rose); }
         .overall-status.customer-rearrange { background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.3); color: var(--accent-violet); }
+        .overall-status.customer-unaware, .overall-status.customer-cancelled { background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.3); color: var(--accent-rose); }
+        .overall-status.customer-rebooked { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
 
         /* Sub-section divider inside attempt box */
         .sub-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
@@ -249,6 +256,9 @@
                             <option value="no-answer">No Answer</option>
                             <option value="rebooked">Rebooked</option>
                             <option value="customer-rearrange">Customer Rearranged</option>
+                            <option value="customer-unaware">Customer Unaware</option>
+                            <option value="customer-cancelled">Cancelled In-Day</option>
+                            <option value="customer-rebooked">Rebooked via OES</option>
                             <option value="exhausted">3 Attempts Made</option>
                         </select>
                     </div>
@@ -318,6 +328,21 @@ window._expandedId = null;
 
 const DISPOSITIONS = ['Rang out', 'Straight to voicemail', 'Wrong number', 'Dead line'];
 
+/* Outcomes that close the job (no further attempts needed) */
+const RESOLVED_OUTCOMES = ['rebooked', 'customer-rearrange', 'customer-unaware', 'customer-cancelled', 'customer-rebooked'];
+
+/* Display labels for every outcome / status */
+const OUTCOME_LABELS = {
+    'open': 'Open',
+    'no-answer': 'No Answer',
+    'rebooked': 'Rebooked',
+    'customer-rearrange': 'Customer Rearranged',
+    'customer-unaware': 'Customer Unaware',
+    'customer-cancelled': 'Cancelled In-Day',
+    'customer-rebooked': 'Rebooked via OES',
+    'exhausted': '3 Attempts'
+};
+
 /* ── HELPERS ── */
 function toast(msg, type='success') {
     const t = document.getElementById('toast');
@@ -361,8 +386,7 @@ function getOverallStatus(doc) {
     const filled = attempts.filter(a => a && a.outcome);
     if (!filled.length) return 'open';
     const last = filled[filled.length - 1];
-    if (last.outcome === 'rebooked') return 'rebooked';
-    if (last.outcome === 'customer-rearrange') return 'customer-rearrange';
+    if (RESOLVED_OUTCOMES.includes(last.outcome)) return last.outcome;
     if (filled.length >= 3) return 'exhausted';
     return 'no-answer';
 }
@@ -391,7 +415,7 @@ function updateDuplicateSidebar() {
     container.innerHTML = duplicates.map(([key, arr]) => {
         const [pc, status] = key.split('|');
         const jobs = arr.map(a => a.jobNumber).filter(Boolean).join(', ');
-        const displayStatus = status.replace('-', ' ');
+        const displayStatus = OUTCOME_LABELS[status] || status.replace(/-/g, ' ');
         return `
             <div class="dup-item">
                 <div class="dup-header">
@@ -467,11 +491,15 @@ function renderCards() {
     if (filterStatus) data = data.filter(r => getOverallStatus(r) === filterStatus);
 
     const total  = data.length;
-    const open   = data.filter(r => getOverallStatus(r) === 'open').length;
-    const noan   = data.filter(r => getOverallStatus(r) === 'no-answer').length;
-    const rebook = data.filter(r => getOverallStatus(r) === 'rebooked').length;
-    const custr  = data.filter(r => getOverallStatus(r) === 'customer-rearrange').length;
-    const exh    = data.filter(r => getOverallStatus(r) === 'exhausted').length;
+    const countOf = s => data.filter(r => getOverallStatus(r) === s).length;
+    const open   = countOf('open');
+    const noan   = countOf('no-answer');
+    const rebook = countOf('rebooked');
+    const custr  = countOf('customer-rearrange');
+    const unaware = countOf('customer-unaware');
+    const cancel = countOf('customer-cancelled');
+    const oesReb = countOf('customer-rebooked');
+    const exh    = countOf('exhausted');
 
     document.getElementById('summaryRow').innerHTML = `
         <div class="chip">📋 ${total} Record${total!==1?'s':''}</div>
@@ -479,6 +507,9 @@ function renderCards() {
         ${noan   ? `<div class="chip amber">⚠️ ${noan} No Answer</div>` : ''}
         ${rebook ? `<div class="chip green">✅ ${rebook} Rebooked</div>` : ''}
         ${custr  ? `<div class="chip violet">🔁 ${custr} Customer Rearranged</div>` : ''}
+        ${unaware ? `<div class="chip rose">❓ ${unaware} Customer Unaware</div>` : ''}
+        ${cancel ? `<div class="chip rose">✖️ ${cancel} Cancelled In-Day</div>` : ''}
+        ${oesReb ? `<div class="chip green">✅ ${oesReb} Rebooked via OES</div>` : ''}
         ${exh    ? `<div class="chip rose">🚫 ${exh} 3 Attempts Made</div>` : ''}
     `;
 
@@ -497,13 +528,7 @@ window.renderCards = renderCards;
 function buildCard(r) {
     const expanded = window._expandedId === r.id;
     const status = getOverallStatus(r);
-    const statusBadge = {
-        'open':      `<span class="overall-status open">Open</span>`,
-        'no-answer': `<span class="overall-status no-answer">No Answer</span>`,
-        'rebooked':  `<span class="overall-status rebooked">Rebooked</span>`,
-        'customer-rearrange': `<span class="overall-status customer-rearrange">Customer Rearranged</span>`,
-        'exhausted': `<span class="overall-status exhausted">3 Attempts</span>`
-    }[status] || '';
+    const statusBadge = `<span class="overall-status ${status}">${OUTCOME_LABELS[status] || 'No Answer'}</span>`;
 
     const attempts = r.attempts || [{},{},{}];
     const attHtml = attempts.map((att, i) => buildAttemptBox(r.id, att, i, attempts)).join('');
@@ -556,7 +581,7 @@ function dispositionOptions(selected) {
 /* ── BUILD ATTEMPT BOX ── */
 function buildAttemptBox(docId, att, index, allAttempts) {
     const prevFilled = index === 0 || (allAttempts[index-1] && allAttempts[index-1].outcome);
-    const anyResolved = allAttempts.slice(0, index).some(a => a && (a.outcome === 'rebooked' || a.outcome === 'customer-rearrange'));
+    const anyResolved = allAttempts.slice(0, index).some(a => a && RESOLVED_OUTCOMES.includes(a.outcome));
     const locked = (index > 0 && !prevFilled) || anyResolved;
     const filled = att && att.outcome;
 
@@ -608,7 +633,7 @@ function buildAttemptBox(docId, att, index, allAttempts) {
             ${att.newJobNumber ? `<div class="attempt-row"><span class="attempt-row-label">New Job No.</span><span class="attempt-row-val">${esc(att.newJobNumber)}</span></div>` : ''}
         ` : '';
 
-        const badgeLabel = att.outcome === 'rebooked' ? 'Rebooked' : att.outcome === 'customer-rearrange' ? 'Customer Rearranged' : 'No Answer';
+        const badgeLabel = OUTCOME_LABELS[att.outcome] || att.outcome;
 
         return `<div class="${boxClass}">
             <div class="attempt-number">Attempt <span>${index+1}</span></div>
@@ -664,8 +689,8 @@ function buildAttemptBox(docId, att, index, allAttempts) {
                     <option value="rebooked" ${selVal==='rebooked'?'selected':''}>Rebooked</option>
                     <option value="customer-rearrange" ${selVal==='customer-rearrange'?'selected':''}>Customer Requested Rearrange</option>
                     <option value="customer-unaware" ${selVal==='customer-unaware'?'selected':''}>Customer unaware of appointment</option>
-  <option value="customer-cancelled" ${selVal==='customer-cancelled'?'selected':''}>Customer cancelled inday</option>
-<option value="customer-rebooked" ${selVal==='customer-rebooked'?'selected':''}>Customer rebooked through OES</option>
+                    <option value="customer-cancelled" ${selVal==='customer-cancelled'?'selected':''}>Customer cancelled inday</option>
+                    <option value="customer-rebooked" ${selVal==='customer-rebooked'?'selected':''}>Customer rebooked through OES</option>
                 </select>
             </div>
 
