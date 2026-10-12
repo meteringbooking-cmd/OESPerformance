@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Drip Tracker 🩸</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #3A0F2B;
+    --ink-soft: #6E4560;
+    --paper: #FFE8EE;
+    --card: #FFF7F9;
+    --drip: #D7193F;
+    --berry: #8E1442;
+    --early: #E8961E;
+    --late: #7B4DD8;
+    --ontime: #2E9C6E;
+    --pending: #B98AA0;
+    --display: "Bagel Fat One", "Arial Black", Impact, sans-serif;
+    --body: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px 64px; }
+
+  /* Hero */
+  header {
+    text-align: center;
+    padding: 40px 0 16px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(3rem, 11vw, 6.5rem);
+    line-height: 0.9;
+    margin: 0;
+    color: var(--drip);
+    letter-spacing: -0.02em;
+    text-shadow: 0 6px 0 var(--berry);
+  }
+  .owner { margin: 18px 0 0; color: var(--ink-soft); font-size: 1.05rem; }
+  .owner strong { color: var(--ink); }
+
+  .countdown {
+    display: grid;
+    justify-items: center;
+    margin: 28px auto 8px;
+  }
+  .drop {
+    position: relative;
+    width: 210px;
+    height: 280px;
+    transform-origin: 50% 0;
+    animation: wobble 1.8s ease-out 1;
+  }
+  .drop svg { width: 100%; height: 100%; display: block; }
+  .drop-text {
+    position: absolute;
+    inset: 42% 0 0 0;
+    text-align: center;
+    color: #fff;
+  }
+  .drop-num { font-family: var(--display); font-size: 4.2rem; line-height: 1; display: block; }
+  .drop-label { font-weight: 600; font-size: 0.95rem; opacity: 0.92; }
+  .verdict {
+    font-family: var(--display);
+    font-size: clamp(1.3rem, 3.6vw, 1.8rem);
+    margin: 14px 0 4px;
+    max-width: 22ch;
+    line-height: 1.15;
+  }
+  .predicted { color: var(--ink-soft); margin: 0; }
+
+  @keyframes wobble {
+    0% { transform: translateY(-40px) scaleY(1.15); }
+    35% { transform: translateY(0) scaleY(0.88) scaleX(1.08); }
+    55% { transform: scaleY(1.05) scaleX(0.97); }
+    75% { transform: scaleY(0.98); }
+    100% { transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .drop { animation: none; } }
+
+  /* Stats */
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px 40px;
+    margin: 32px 0 40px;
+    padding: 18px 0;
+    border-top: 3px dotted var(--drip);
+    border-bottom: 3px dotted var(--drip);
+  }
+  .stat { text-align: center; }
+  .stat b { display: block; font-family: var(--display); font-weight: 400; font-size: 1.6rem; color: var(--berry); line-height: 1.2; }
+  .stat span { font-size: 0.92rem; color: var(--ink-soft); }
+
+  /* Main grid */
+  main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 36px; align-items: start; }
+  @media (max-width: 780px) { main { grid-template-columns: 1fr; } }
+  h2 { font-family: var(--display); font-weight: 400; font-size: 1.9rem; margin: 0 0 14px; line-height: 1.1; }
+
+  /* Form */
+  form {
+    background: var(--card);
+    border: 3px solid var(--ink);
+    border-radius: 22px;
+    padding: 22px;
+    box-shadow: 6px 6px 0 var(--drip);
+  }
+  label.field { display: block; font-weight: 600; margin-bottom: 16px; }
+  label.field > span { display: block; margin-bottom: 6px; }
+  input[type="date"], input[type="number"], select {
+    width: 100%;
+    font: inherit;
+    padding: 10px 12px;
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--ink);
+  }
+  fieldset { border: 0; padding: 0; margin: 0 0 16px; }
+  legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+  .choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .choices input { position: absolute; opacity: 0; pointer-events: none; }
+  .choices label {
+    display: block;
+    text-align: center;
+    padding: 10px 6px;
+    border: 2px solid var(--ink);
+    border-radius: 12px;
+    cursor: pointer;
+    background: #fff;
+    font-weight: 600;
+    user-select: none;
+  }
+  .choices input:checked + label { color: #fff; border-color: transparent; }
+  .choices input[value="pending"]:checked + label { background: var(--pending); }
+  .choices input[value="early"]:checked + label { background: var(--early); }
+  .choices input[value="ontime"]:checked + label { background: var(--ontime); }
+  .choices input[value="late"]:checked + label { background: var(--late); }
+  .choices input:focus-visible + label { outline: 3px solid var(--drip); outline-offset: 2px; }
+  .hidden { display: none !important; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 12px 22px;
+    border: 2px solid var(--ink);
+  }
+  .primary { background: var(--drip); color: #fff; border-color: var(--drip); flex: 1; }
+  .primary:hover { background: var(--berry); border-color: var(--berry); }
+  .ghost { background: transparent; color: var(--ink); }
+  .ghost:hover { background: #fff; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--drip); outline-offset: 2px; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .editing-note { background: #fff; border-radius: 12px; padding: 8px 12px; margin: 0 0 14px; font-size: 0.95rem; }
+
+  /* Timeline */
+  .log-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .log-head button { padding: 8px 16px; font-size: 0.9rem; }
+  ol.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+  ol.timeline::before {
+    content: "";
+    position: absolute;
+    left: 19px; top: 10px; bottom: 10px;
+    width: 4px;
+    background: repeating-linear-gradient(var(--drip) 0 10px, transparent 10px 18px);
+    border-radius: 2px;
+  }
+  .entry { position: relative; display: grid; grid-template-columns: 42px 1fr; gap: 14px; padding: 10px 0; }
+  .entry-drop { width: 42px; height: 54px; position: relative; z-index: 1; }
+  .entry-body {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 12px 16px;
+    border: 2px solid transparent;
+  }
+  .entry-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .entry-month { font-family: var(--display); font-size: 1.4rem; line-height: 1.1; }
+  .chip { font-weight: 800; font-size: 0.85rem; color: #fff; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .entry-meta { color: var(--ink-soft); font-size: 0.95rem; margin: 4px 0 0; }
+  .entry-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .entry-actions button { padding: 5px 14px; font-size: 0.85rem; font-weight: 600; }
+  .empty, .error { background: var(--card); border-radius: 16px; padding: 18px; }
+  .error { border: 2px solid var(--drip); }
+
+  .toast {
+    position: fixed;
+    left: 50%; bottom: 24px;
+    transform: translateX(-50%) translateY(120px);
+    background: var(--ink);
+    color: #fff;
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-weight: 600;
+    transition: transform 0.3s ease;
+    z-index: 10;
+    max-width: calc(100% - 32px);
+    text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  footer { text-align: center; color: var(--ink-soft); font-size: 0.9rem; margin-top: 48px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>The Drip<br>Tracker</h1>
+    <p class="owner">Official cycle surveillance for <strong>Ashleigh Ginks</strong></p>
+
+    <div class="countdown" aria-live="polite">
+      <div class="drop">
+        <svg viewBox="0 0 210 280" aria-hidden="true">
+          <path d="M105 6 C 105 6, 200 130, 200 180 A 95 95 0 0 1 10 180 C 10 130, 105 6, 105 6 Z" fill="var(--drip)" stroke="var(--berry)" stroke-width="6"/>
+          <ellipse cx="62" cy="165" rx="14" ry="30" fill="#fff" opacity="0.35" transform="rotate(18 62 165)"/>
+        </svg>
+        <div class="drop-text">
+          <span class="drop-num" id="dropNum">…</span>
+          <span class="drop-label" id="dropLabel">loading the drip</span>
+        </div>
+      </div>
+      <p class="verdict" id="verdict">Consulting the uterus oracle…</p>
+      <p class="predicted" id="predicted"></p>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Stats">
+    <div class="stat"><b id="statTitle">—</b><span>Punctuality rating</span></div>
+    <div class="stat"><b id="statAvg">—</b><span>Average arrival</span></div>
+    <div class="stat"><b id="statCycle">—</b><span>Cycle length</span></div>
+    <div class="stat"><b id="statCount">—</b><span>Drips on record</span></div>
+  </section>
+
+  <main>
+    <section>
+      <h2>Log a drip</h2>
+      <form id="dripForm" novalidate>
+        <p class="editing-note hidden" id="editingNote"></p>
+        <label class="field">
+          <span>When was it due?</span>
+          <input type="date" id="dueDate" required>
+        </label>
+
+        <fieldset>
+          <legend>How did it go?</legend>
+          <div class="choices">
+            <input type="radio" name="status" id="st-pending" value="pending" checked><label for="st-pending">⏳ Still waiting</label>
+            <input type="radio" name="status" id="st-early" value="early"><label for="st-early">🏃‍♀️ Early</label>
+            <input type="radio" name="status" id="st-ontime" value="ontime"><label for="st-ontime">⌚ On time</label>
+            <input type="radio" name="status" id="st-late" value="late"><label for="st-late">💅 Late</label>
+          </div>
+        </fieldset>
+
+        <label class="field hidden" id="daysField">
+          <span id="daysLabel">How many days?</span>
+          <input type="number" id="days" min="1" max="60" value="1" inputmode="numeric">
+        </label>
+
+        <label class="field">
+          <span>Vibe check</span>
+          <select id="mood">
+            <option>🤷 Unknown</option>
+            <option>😇 Angelic</option>
+            <option>😤 Hangry</option>
+            <option>🍫 Chocolate-powered</option>
+            <option>🛋️ Couch-bound</option>
+            <option>🔥 Fight me</option>
+            <option>😭 Cried at an advert</option>
+          </select>
+        </label>
+
+        <div class="btn-row">
+          <button type="submit" class="primary" id="saveBtn">Save drip</button>
+          <button type="button" class="ghost hidden" id="cancelBtn">Cancel edit</button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <div class="log-head">
+        <h2>The drip log</h2>
+        <button type="button" class="ghost" id="exportBtn">Export to Excel</button>
+      </div>
+      <div id="log"><p class="empty">Fetching the drip log…</p></div>
+    </section>
+  </main>
+
+  <footer>Data is kept in Firebase, so everyone with the link sees the same drips.</footer>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717",
+    measurementId: "G-R56BGZYV8N"
+  };
+
+  const db = getFirestore(initializeApp(firebaseConfig));
+  const COL = "drip tracker";
+
+  // Historic data, written once if the collection is empty
+  const SEED = [
+    { id: "2026-05", month: "2026-05", dueDate: null,         status: "early",   days: 2, mood: "🤷 Unknown" },
+    { id: "2026-06", month: "2026-06", dueDate: null,         status: "late",    days: 1, mood: "🤷 Unknown" },
+    { id: "2026-07", month: "2026-07", dueDate: "2026-07-10", status: "late",    days: 1, mood: "🤷 Unknown" },
+    { id: "2026-08", month: "2026-08", dueDate: "2026-08-07", status: "pending", days: 0, mood: "🤷 Unknown" }
+  ];
+
+  const STATUS = {
+    early:   { color: "var(--early)",   verdict: "Turned up uninvited" },
+    ontime:  { color: "var(--ontime)",  verdict: "Swiss precision" },
+    late:    { color: "var(--late)",    verdict: "Fashionably late" },
+    pending: { color: "var(--pending)", verdict: "Awaiting the drip" }
+  };
+
+  let records = [];
+  let editingId = null;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const parseDate = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+  const monthLabel = m => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" }); };
+  const prettyDate = d => d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long" });
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+  function chipText(r) {
+    if (r.status === "early") return `${plural(r.days, "day")} early`;
+    if (r.status === "late") return `${plural(r.days, "day")} late`;
+    if (r.status === "ontime") return "Bang on time";
+    return "Pending";
+  }
+
+  function dropSvg(color) {
+    return `<svg class="entry-drop" viewBox="0 0 42 54" aria-hidden="true">
+      <path d="M21 2 C21 2 39 25 39 35 A18 18 0 0 1 3 35 C3 25 21 2 21 2Z" fill="${color}" stroke="var(--ink)" stroke-width="2.5"/>
+    </svg>`;
+  }
+
+  async function load() {
+    try {
+      let snap = await getDocs(collection(db, COL));
+      if (snap.empty) {
+        await Promise.all(SEED.map(({ id, ...data }) => setDoc(doc(db, COL, id), { ...data, updatedAt: serverTimestamp() })));
+        snap = await getDocs(collection(db, COL));
+      }
+      records = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.month || "").localeCompare(a.month || ""));
+      render();
+    } catch (err) {
+      console.error(err);
+      $("log").innerHTML = `<p class="error"><strong>Couldn't reach Firebase.</strong> Check your internet connection and that Firestore rules allow reading the "drip tracker" collection, then refresh.<br><small>${esc(err.message)}</small></p>`;
+      $("verdict").textContent = "The oracle is offline.";
+      $("dropNum").textContent = "?";
+      $("dropLabel").textContent = "no signal";
+    }
+  }
+
+  function predict() {
+    const known = records.filter(r => r.dueDate).map(r => parseDate(r.dueDate)).sort((a, b) => a - b);
+    if (!known.length) return null;
+    const gaps = [];
+    for (let i = 1; i < known.length; i++) {
+      const g = Math.round((known[i] - known[i - 1]) / 864e5);
+      if (g >= 18 && g <= 45) gaps.push(g);
+    }
+    const gap = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 28;
+    const next = new Date(known[known.length - 1]);
+    const t = today();
+    while (next < t) next.setDate(next.getDate() + gap);
+    return { date: next, gap, days: Math.round((next - t) / 864e5), measured: gaps.length > 0 };
+  }
+
+  function render() {
+    // Countdown
+    const p = predict();
+    if (p) {
+      $("dropNum").textContent = p.days;
+      $("dropLabel").textContent = p.days === 1 ? "day to go" : "days to go";
+      let line;
+      if (p.days === 0) line = "It's D-Day. Godspeed, Ash. 🫡";
+      else if (p.days <= 3) line = "Code red imminent. Deploy emergency snacks.";
+      else if (p.days <= 10) line = "Stock up on chocolate. This is not a drill.";
+      else line = "Coast is clear. Wear the white jeans.";
+      $("verdict").textContent = line;
+      $("predicted").textContent = `Next drip predicted ${prettyDate(p.date)}`;
+      $("statCycle").textContent = `${p.gap} days${p.measured ? "" : "*"}`;
+    } else {
+      $("dropNum").textContent = "?";
+      $("dropLabel").textContent = "add a due date";
+      $("verdict").textContent = "The oracle needs a due date to work with.";
+      $("predicted").textContent = "";
+      $("statCycle").textContent = "—";
+    }
+
+    // Stats
+    const settled = records.filter(r => r.status !== "pending");
+    $("statCount").textContent = records.length;
+    if (settled.length) {
+      const offsets = settled.map(r => r.status === "early" ? -r.days : r.status === "late" ? r.days : 0);
+      const avg = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+      const rounded = Math.round(Math.abs(avg) * 10) / 10;
+      $("statAvg").textContent = rounded < 0.5 ? "On the dot" : `${rounded} ${rounded === 1 ? "day" : "days"} ${avg < 0 ? "early" : "late"}`;
+      $("statTitle").textContent =
+        Math.abs(avg) < 0.5 ? "Swiss train 🚆" :
+        avg < 0 ? "Eager beaver 🦫" :
+        avg <= 3 ? "Fashionably late 💅" : "Ashleigh Standard Time ⏰";
+    } else {
+      $("statAvg").textContent = "—";
+      $("statTitle").textContent = "Unrated";
+    }
+
+    // Timeline
+    if (!records.length) {
+      $("log").innerHTML = `<p class="empty">No drips logged yet. Add the first due date on the left.</p>`;
+      return;
+    }
+    $("log").innerHTML = `<ol class="timeline">${records.map(r => {
+      const s = STATUS[r.status] || STATUS.pending;
+      const due = r.dueDate ? `Due ${prettyDate(parseDate(r.dueDate))}` : "Due date not recorded";
+      return `<li class="entry">
+        ${dropSvg(s.color)}
+        <div class="entry-body">
+          <div class="entry-top">
+            <span class="entry-month">${esc(monthLabel(r.month))}</span>
+            <span class="chip" style="background:${s.color}">${esc(chipText(r))}</span>
+          </div>
+          <p class="entry-meta">${esc(due)}. ${esc(s.verdict)}. Vibe: ${esc(r.mood || "🤷 Unknown")}</p>
+          <div class="entry-actions">
+            <button type="button" class="ghost" data-edit="${esc(r.id)}">${r.status === "pending" ? "Log result" : "Edit"}</button>
+            <button type="button" class="ghost" data-del="${esc(r.id)}">Delete</button>
+          </div>
+        </div>
+      </li>`;
+    }).join("")}</ol>`;
+  }
+
+  // Form behaviour
+  function syncDays() {
+    const status = document.querySelector('input[name="status"]:checked').value;
+    const show = status === "early" || status === "late";
+    $("daysField").classList.toggle("hidden", !show);
+    $("daysLabel").textContent = status === "early" ? "How many days early?" : "How many days late?";
+  }
+  document.querySelectorAll('input[name="status"]').forEach(r => r.addEventListener("change", syncDays));
+
+  function resetForm() {
+    editingId = null;
+    $("dripForm").reset();
+    $("editingNote").classList.add("hidden");
+    $("cancelBtn").classList.add("hidden");
+    $("saveBtn").textContent = "Save drip";
+    syncDays();
+  }
+
+  function startEdit(id) {
+    const r = records.find(x => x.id === id);
+    if (!r) return;
+    editingId = id;
+    $("dueDate").value = r.dueDate || "";
+    document.getElementById(`st-${r.status}`).checked = true;
+    $("days").value = r.days || 1;
+    $("mood").value = r.mood || "🤷 Unknown";
+    $("editingNote").textContent = `Editing ${monthLabel(r.month)}${r.dueDate ? "" : ". Add the due date if you know it."}`;
+    $("editingNote").classList.remove("hidden");
+    $("cancelBtn").classList.remove("hidden");
+    $("saveBtn").textContent = "Save changes";
+    syncDays();
+    $("dripForm").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("dueDate").focus({ preventScroll: true });
+  }
+
+  $("cancelBtn").addEventListener("click", resetForm);
+
+  $("log").addEventListener("click", async e => {
+    const editId = e.target.dataset.edit;
+    const delId = e.target.dataset.del;
+    if (editId) startEdit(editId);
+    if (delId) {
+      const r = records.find(x => x.id === delId);
+      if (!confirm(`Delete the ${monthLabel(r.month)} drip? This can't be undone.`)) return;
+      try {
+        await deleteDoc(doc(db, COL, delId));
+        toast("Deleted. That drip never happened.");
+        if (editingId === delId) resetForm();
+        load();
+      } catch (err) {
+        toast("Couldn't delete. Check your connection and try again.");
+        console.error(err);
+      }
+    }
+  });
+
+  $("dripForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const dueDate = $("dueDate").value;
+    if (!dueDate) { toast("Pick the due date first."); $("dueDate").focus(); return; }
+    const status = document.querySelector('input[name="status"]:checked').value;
+    const days = (status === "early" || status === "late") ? Math.max(1, parseInt($("days").value, 10) || 1) : 0;
+    const month = dueDate.slice(0, 7);
+    const btn = $("saveBtn");
+    btn.disabled = true;
+    try {
+      await setDoc(doc(db, COL, month), { month, dueDate, status, days, mood: $("mood").value, updatedAt: serverTimestamp() });
+      if (editingId && editingId !== month) await deleteDoc(doc(db, COL, editingId));
+      toast("Saved. The drip has been documented. 🩸");
+      resetForm();
+      await load();
+    } catch (err) {
+      toast("Couldn't save. Check your connection and try again.");
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Export
+  $("exportBtn").addEventListener("click", () => {
+    if (!records.length) { toast("Nothing to export yet."); return; }
+    const rows = records.map(r => ({
+      Month: monthLabel(r.month),
+      "Due date": r.dueDate || "",
+      Result: chipText(r),
+      Verdict: (STATUS[r.status] || STATUS.pending).verdict,
+      Vibe: r.mood || ""
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Drip Tracker");
+    XLSX.writeFile(wb, "drip-tracker.xlsx");
+  });
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
+  }
+
+  syncDays();
+  load();
+</script>
+</body>
+</html>
