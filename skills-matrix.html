@@ -415,6 +415,20 @@
     .summary-head, .summary-body { padding-left: 18px; padding-right: 18px; }
 }
 
+/* ── SUMMARY EMAIL ── */
+.summary-foot {
+    display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+    padding: 14px 28px 18px; border-top: 1px solid var(--border);
+    background: var(--surface); border-radius: 0 0 14px 14px;
+}
+.summary-foot .ctrl-group { flex: 1; min-width: 220px; }
+.summary-foot .ctrl-input { width: 100%; }
+.summary-foot .modal-btn { padding: 0.62rem 1.2rem; }
+.foot-status { width: 100%; font-family: 'DM Mono', monospace; font-size: 0.72rem; min-height: 1em; }
+.foot-status.ok { color: var(--cyan); }
+.foot-status.err { color: var(--danger); }
+@media (max-width: 768px) { .summary-foot { padding-left: 18px; padding-right: 18px; } }
+
         @media (max-width: 768px) {
             .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
             .hero { padding-top: 32px; }
@@ -519,9 +533,18 @@
             <div class="summary-chips" id="summaryChips"></div>
         </div>
         <div class="summary-body" id="summaryBody"></div>
+        <div class="summary-foot">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Email this summary to</span>
+                <input type="text" id="summaryEmailTo" class="ctrl-input" placeholder="name@company.com (separate several with commas)">
+            </div>
+            <button class="modal-btn success" id="summaryEmailBtn">✉️ Send Email</button>
+            <div class="foot-status" id="summaryEmailStatus"></div>
+        </div>
     </div>
 </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import {
@@ -1148,6 +1171,7 @@ function buildSummary() {
 
 function openSummary() {
     buildSummary();
+    setEmailStatus('', '');
     document.getElementById('summaryOverlay').classList.add('show');
     document.getElementById('summaryBody').scrollTop = 0;
 }
@@ -1161,6 +1185,153 @@ document.getElementById('summaryOverlay').addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeSummary();
 });
+
+// ── Email summary (EmailJS) ──
+// Template variables sent: to_email, subject, message (plain text), message_html (HTML)
+const EMAILJS_SERVICE_ID  = 'service_b3nh4bo';
+const EMAILJS_TEMPLATE_ID = 'template_wvsyaeo';
+const EMAILJS_PUBLIC_KEY  = 'ziLnha91scpGjFABh';
+const EMAIL_LS_KEY = 'skillsMatrixSummaryEmail';
+
+function collectSummaryData() {
+    const expired = new Map(), soon = new Map(), booked = [];
+    engineers.forEach(eng => {
+        QUAL_COLS.forEach(q => {
+            const qual = eng.quals?.[q];
+            if (!qual) return;
+            const a = qual.assessment;
+            if (a && (a.status === 'booked' || a.status === 'attended')) booked.push({ eng, q, qual, a });
+            const st = qualStatus(qual.expiry);
+            if (st !== 'overdue' && st !== 'soon') return;
+            const map = st === 'overdue' ? expired : soon;
+            if (!map.has(eng.id)) map.set(eng.id, { eng, items: [] });
+            map.get(eng.id).items.push({ q, expiry: qual.expiry, days: daysFromToday(qual.expiry), a, st });
+        });
+    });
+    const groups = map => [...map.values()]
+        .map(g => { g.items.sort((x, y) => x.days - y.days); return g; })
+        .sort((x, y) => x.items[0].days - y.items[0].days);
+    booked.sort((x, y) => (x.a.date || '').localeCompare(y.a.date || ''));
+    return { expired: groups(expired), soon: groups(soon), booked };
+}
+
+function buildEmailContent() {
+    const { expired, soon, booked } = collectSummaryData();
+    const count = gs => gs.reduce((n, g) => n + g.items.length, 0);
+    const todayLong = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const bookTxt = a => a.status === 'attended'
+        ? `Attended ${formatDisplay(a.date)}, awaiting result`
+        : `Booked ${formatDisplay(a.date)}`;
+
+    // ---- plain text ----
+    const L = [];
+    L.push(`SKILLS MATRIX SUMMARY - ${todayLong}`, '');
+    L.push(`Expired: ${count(expired)} qualification(s) across ${expired.length} engineer(s)`);
+    L.push(`Expiring within 6 months: ${count(soon)} qualification(s) across ${soon.length} engineer(s)`);
+    L.push(`Assessments booked / awaiting result: ${booked.length}`, '');
+    L.push('ASSESSMENTS BOOKED');
+    if (!booked.length) L.push('  None');
+    booked.forEach(b => L.push(`  ${b.eng.engineerName} - ${b.q}: ${bookTxt(b.a)} (current expiry ${b.qual.expiry ? formatDisplay(b.qual.expiry) : 'none on file'})`));
+    const textGroup = (title, gs) => {
+        L.push('', title);
+        if (!gs.length) L.push('  None');
+        gs.forEach(g => {
+            L.push(`  ${g.eng.engineerName}`);
+            g.items.forEach(it => L.push(`    - ${it.q}: ${formatDisplay(it.expiry)} (${relLabel(it.days)})${it.a ? ' [' + bookTxt(it.a) + ']' : ''}`));
+        });
+    };
+    textGroup('EXPIRED', expired);
+    textGroup('EXPIRING WITHIN 6 MONTHS', soon);
+
+    // ---- HTML (inline styles only, for email clients) ----
+    const h2 = (t, col) => `<h2 style="margin:26px 0 8px;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:${col};font-family:Arial,sans-serif;">${t}</h2>`;
+    const pill = (txt, col, bg) => `<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 8px;border-radius:5px;background:${bg};color:${col};font-size:12px;font-family:Arial,sans-serif;">${txt}</span>`;
+    const card = (name, sub, inner, border) => `
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;border:1px solid #e1e6ec;border-left:4px solid ${border};border-radius:6px;font-family:Arial,sans-serif;">
+          <tr><td style="padding:9px 12px;width:170px;vertical-align:top;font-size:14px;font-weight:bold;color:#1a2433;">${esc(name)}<div style="font-weight:normal;font-size:11px;color:#7a8a9c;">EUSR ${esc(sub || '-')}</div></td>
+          <td style="padding:7px 8px;vertical-align:top;">${inner}</td></tr></table>`;
+
+    let H = `<div style="max-width:720px;margin:0 auto;font-family:Arial,sans-serif;color:#1a2433;">
+      <h1 style="margin:0 0 4px;font-size:22px;">Skills Matrix Summary</h1>
+      <div style="font-size:13px;color:#5c6f84;">${todayLong} &middot; "expiring" = within the next 6 months</div>
+      <table cellpadding="0" cellspacing="0" style="margin:16px 0 0;"><tr>
+        <td style="padding:10px 16px;background:#fdecec;border-radius:6px;font-size:12px;color:#b42318;"><b style="font-size:20px;">${count(expired)}</b><br>Expired (${expired.length} eng.)</td><td width="10"></td>
+        <td style="padding:10px 16px;background:#fff4e0;border-radius:6px;font-size:12px;color:#a35f00;"><b style="font-size:20px;">${count(soon)}</b><br>Expiring &le; 6 mo (${soon.length} eng.)</td><td width="10"></td>
+        <td style="padding:10px 16px;background:#e3f8f4;border-radius:6px;font-size:12px;color:#0b7a68;"><b style="font-size:20px;">${booked.length}</b><br>Assessments booked</td>
+      </tr></table>`;
+
+    H += h2('Assessments booked', '#0b7a68');
+    H += booked.length ? booked.map(b => {
+        const att = b.a.status === 'attended';
+        const st = qualStatus(b.qual.expiry);
+        const expPill = pill(`Expiry ${b.qual.expiry ? formatDisplay(b.qual.expiry) : 'none on file'}${st === 'overdue' ? ' (expired)' : st === 'soon' ? ' (expiring soon)' : ''}`,
+            st === 'overdue' ? '#b42318' : st === 'soon' ? '#a35f00' : '#44566b', st === 'overdue' ? '#fdecec' : st === 'soon' ? '#fff4e0' : '#eef2f6');
+        return card(b.eng.engineerName, b.eng.eusr,
+            pill(`<b>${esc(b.q)}</b>`, '#1a2433', '#eef2f6') +
+            pill(`${att ? '&#9203;' : '&#128197;'} ${esc(bookTxt(b.a))}`, att ? '#6b3fb5' : '#0b7a68', att ? '#f1e8ff' : '#e3f8f4') + expPill,
+            att ? '#9b6bdc' : '#2BE4C3');
+    }).join('') : '<div style="font-size:13px;color:#7a8a9c;">No assessments are currently booked.</div>';
+
+    const htmlGroup = (title, col, border, gs, bg, empty) => {
+        let out = h2(title, col);
+        out += gs.length ? gs.map(g => card(g.eng.engineerName, g.eng.eusr,
+            g.items.map(it => pill(`<b>${esc(it.q)}</b> &middot; ${formatDisplay(it.expiry)} &middot; ${relLabel(it.days)}${it.a ? ' &middot; &#128197; ' + esc(bookTxt(it.a)) : ''}`, col, bg)).join(''),
+            border)).join('') : `<div style="font-size:13px;color:#7a8a9c;">${empty}</div>`;
+        return out;
+    };
+    H += htmlGroup('Expired', '#b42318', '#FF5757', expired, '#fdecec', 'Nothing has expired.');
+    H += htmlGroup('Expiring within 6 months', '#a35f00', '#F5A623', soon, '#fff4e0', 'Nothing is expiring in the next 6 months.');
+    H += '<div style="margin-top:24px;font-size:11px;color:#9aa8b8;">Sent from OES Performance &ndash; Skills Matrix</div></div>';
+
+    return {
+        subject: `Skills Matrix Summary - ${count(expired)} expired, ${count(soon)} expiring soon, ${booked.length} booked (${new Date().toLocaleDateString('en-GB')})`,
+        text: L.join('\n'),
+        html: H
+    };
+}
+
+function setEmailStatus(msg, type) {
+    const el = document.getElementById('summaryEmailStatus');
+    el.textContent = msg;
+    el.className = 'foot-status ' + (type || '');
+}
+
+async function sendSummaryEmail() {
+    const input = document.getElementById('summaryEmailTo');
+    const btn = document.getElementById('summaryEmailBtn');
+    const to = input.value.trim();
+    const valid = to && to.split(',').every(a => /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(a.trim()));
+    if (!valid) { setEmailStatus('Please enter a valid email address.', 'err'); return; }
+    if (!window.emailjs) { setEmailStatus('Email service failed to load - check your connection and refresh.', 'err'); return; }
+
+    btn.disabled = true;
+    setEmailStatus('Sending…', '');
+    try {
+        const c = buildEmailContent();
+        await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_email: to,
+            subject: c.subject,
+            message: c.text,
+            message_html: c.html
+        }, { publicKey: EMAILJS_PUBLIC_KEY });
+        try { localStorage.setItem(EMAIL_LS_KEY, to); } catch (e) {}
+        setEmailStatus(`Summary sent to ${to}.`, 'ok');
+    } catch (err) {
+        console.error('EmailJS error:', err);
+        setEmailStatus('Could not send: ' + (err?.text || err?.message || 'unknown error'), 'err');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.getElementById('summaryEmailBtn').addEventListener('click', sendSummaryEmail);
+document.getElementById('summaryEmailTo').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendSummaryEmail();
+});
+try {
+    const saved = localStorage.getItem(EMAIL_LS_KEY);
+    if (saved) document.getElementById('summaryEmailTo').value = saved;
+} catch (e) {}
 
         // ── Search ──
         document.getElementById('searchInput').addEventListener('input', (e) => {
