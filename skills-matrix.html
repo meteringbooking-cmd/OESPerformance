@@ -362,6 +362,59 @@
             color: var(--text-dim); padding: 3px 0;
         }
 
+/* ── SUMMARY MODAL ── */
+.summary-box { max-width: 860px; max-height: 88vh; display: flex; flex-direction: column; padding: 0; }
+.summary-head { padding: 26px 28px 16px; border-bottom: 1px solid var(--border); }
+.summary-body { padding: 20px 28px 28px; overflow-y: auto; }
+.summary-chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.summary-chips .stat-chip { padding: 8px 14px; }
+.sum-section { margin-bottom: 26px; }
+.sum-section:last-child { margin-bottom: 0; }
+.sum-title {
+    font-family: 'Barlow Condensed', sans-serif; font-size: 1.1rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.sum-title .count { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--text-dim); font-weight: 400; letter-spacing: 0; }
+.sum-title.t-booked { color: var(--cyan); }
+.sum-title.t-overdue { color: var(--danger); }
+.sum-title.t-soon { color: var(--amber); }
+.sum-empty { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--text-dim); padding: 10px 0; }
+.sum-card {
+    display: flex; gap: 16px; align-items: flex-start;
+    background: var(--bg); border: 1px solid var(--border); border-left-width: 3px;
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;
+}
+.sum-card.c-overdue { border-left-color: var(--danger); }
+.sum-card.c-soon { border-left-color: var(--amber); }
+.sum-card.c-booked { border-left-color: var(--cyan); background: rgba(43,228,195,0.05); }
+.sum-card.c-attended { border-left-color: #C89BFF; background: rgba(200,155,255,0.06); }
+.sum-name { min-width: 150px; font-weight: 600; font-size: 0.9rem; padding-top: 3px; }
+.sum-name small { display: block; font-family: 'DM Mono', monospace; font-weight: 400; font-size: 0.65rem; color: var(--text-dim); }
+.sum-items { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.sum-chip {
+    font-family: 'DM Mono', monospace; font-size: 0.72rem;
+    padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border-hi);
+    color: var(--text-mid); white-space: nowrap;
+}
+.sum-chip b { color: var(--text); font-weight: 500; }
+.sum-chip.overdue { border-color: rgba(255,87,87,0.45); background: rgba(255,87,87,0.08); color: var(--danger); }
+.sum-chip.overdue b { color: var(--danger); }
+.sum-chip.soon { border-color: rgba(245,166,35,0.45); background: rgba(245,166,35,0.08); color: var(--amber); }
+.sum-chip.soon b { color: var(--amber); }
+.sum-chip .bk {
+    margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+    background: rgba(43,228,195,0.15); color: var(--cyan);
+}
+.sum-chip .at {
+    margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+    background: rgba(200,155,255,0.18); color: #C89BFF;
+}
+@media (max-width: 768px) {
+    .sum-card { flex-direction: column; gap: 8px; }
+    .summary-head, .summary-body { padding-left: 18px; padding-right: 18px; }
+}
+
         @media (max-width: 768px) {
             .topbar, .hero, .content { padding-left: 20px; padding-right: 20px; }
             .hero { padding-top: 32px; }
@@ -398,6 +451,9 @@
                 <span class="ctrl-label">Search</span>
                 <input type="text" id="searchInput" class="ctrl-input" placeholder="Filter by engineer name…">
             </div>
+<div class="ctrl-actions">
+    <button class="modal-btn primary" id="summaryBtn" style="padding:0.6rem 1.2rem;">📋 Summary</button>
+</div>
         </div>
 
         <div class="table-wrap">
@@ -451,6 +507,20 @@
             </div>
         </div>
     </div>
+
+<!-- SUMMARY MODAL -->
+<div class="modal-overlay" id="summaryOverlay">
+    <div class="modal-box summary-box">
+        <button class="modal-close" onclick="closeSummary()">✕</button>
+        <div class="summary-head">
+            <div class="modal-eyebrow">Compliance overview</div>
+            <div class="modal-title">Skills Summary</div>
+            <div class="modal-sub" id="summaryAsOf" style="margin-bottom:0;">—</div>
+            <div class="summary-chips" id="summaryChips"></div>
+        </div>
+        <div class="summary-body" id="summaryBody"></div>
+    </div>
+</div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -977,6 +1047,120 @@
                 showMessage('Error saving — please try again.', 'error');
             }
         }
+
+// ── Summary ──
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function daysFromToday(iso) {
+    const d = parseISO(iso);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    return Math.round((d - now) / 86400000);
+}
+function relLabel(days) {
+    if (days < 0) { const n = -days; return `${n} day${n === 1 ? '' : 's'} overdue`; }
+    if (days === 0) return 'expires today';
+    return `${days} day${days === 1 ? '' : 's'} left`;
+}
+function assessTag(a) {
+    if (!a) return '';
+    if (a.status === 'booked') return `<span class="bk">📅 Booked ${formatDisplay(a.date)}</span>`;
+    if (a.status === 'attended') return `<span class="at">⏳ Attended ${formatDisplay(a.date)}, awaiting result</span>`;
+    return '';
+}
+
+function buildSummary() {
+    const expired = new Map(), soon = new Map(), booked = [];
+
+    engineers.forEach(eng => {
+        QUAL_COLS.forEach(q => {
+            const qual = eng.quals?.[q];
+            if (!qual) return;
+            const a = qual.assessment;
+            if (a && (a.status === 'booked' || a.status === 'attended')) booked.push({ eng, q, qual, a });
+
+            const st = qualStatus(qual.expiry);
+            if (st !== 'overdue' && st !== 'soon') return;
+            const map = st === 'overdue' ? expired : soon;
+            if (!map.has(eng.id)) map.set(eng.id, { eng, items: [] });
+            map.get(eng.id).items.push({ q, expiry: qual.expiry, days: daysFromToday(qual.expiry), a, st });
+        });
+    });
+
+    const groups = map => [...map.values()]
+        .map(g => { g.items.sort((x, y) => x.days - y.days); return g; })
+        .sort((x, y) => x.items[0].days - y.items[0].days);
+
+    const expiredGroups = groups(expired);
+    const soonGroups = groups(soon);
+    booked.sort((x, y) => (x.a.date || '').localeCompare(y.a.date || ''));
+
+    const countItems = gs => gs.reduce((n, g) => n + g.items.length, 0);
+
+    document.getElementById('summaryAsOf').textContent =
+        `As of ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · "soon" = within 6 months`;
+
+    document.getElementById('summaryChips').innerHTML = `
+        <div class="stat-chip overdue"><span class="n">${countItems(expiredGroups)}</span><span class="l">Expired · ${expiredGroups.length} eng.</span></div>
+        <div class="stat-chip soon"><span class="n">${countItems(soonGroups)}</span><span class="l">Expiring ≤ 6 mo · ${soonGroups.length} eng.</span></div>
+        <div class="stat-chip booked"><span class="n">${booked.length}</span><span class="l">Assessments booked / pending</span></div>`;
+
+    const chipHTML = it => `<span class="sum-chip ${it.st}"><b>${esc(it.q)}</b> · ${formatDisplay(it.expiry)} · ${relLabel(it.days)}${assessTag(it.a)}</span>`;
+
+    const groupSection = (title, cls, cardCls, gs, emptyMsg) => `
+        <div class="sum-section">
+            <div class="sum-title ${cls}">${title}<span class="count">${gs.length} engineer${gs.length === 1 ? '' : 's'} · ${countItems(gs)} qualification${countItems(gs) === 1 ? '' : 's'}</span></div>
+            ${gs.length ? gs.map(g => `
+                <div class="sum-card ${cardCls}">
+                    <div class="sum-name">${esc(g.eng.engineerName)}<small>EUSR ${esc(g.eng.eusr || '—')}</small></div>
+                    <div class="sum-items">${g.items.map(chipHTML).join('')}</div>
+                </div>`).join('') : `<div class="sum-empty">${emptyMsg}</div>`}
+        </div>`;
+
+    const bookedSection = `
+        <div class="sum-section">
+            <div class="sum-title t-booked">Assessments booked<span class="count">${booked.length}</span></div>
+            ${booked.length ? booked.map(b => {
+                const st = qualStatus(b.qual.expiry);
+                const expTxt = b.qual.expiry
+                    ? `Current expiry ${formatDisplay(b.qual.expiry)}${st === 'overdue' ? ' (expired)' : st === 'soon' ? ' (expiring soon)' : ''}`
+                    : 'No expiry on file';
+                const attended = b.a.status === 'attended';
+                return `
+                <div class="sum-card ${attended ? 'c-attended' : 'c-booked'}">
+                    <div class="sum-name">${esc(b.eng.engineerName)}<small>EUSR ${esc(b.eng.eusr || '—')}</small></div>
+                    <div class="sum-items">
+                        <span class="sum-chip"><b>${esc(b.q)}</b></span>
+                        ${attended
+                            ? `<span class="sum-chip" style="color:#C89BFF;border-color:rgba(200,155,255,0.4);">⏳ Attended ${formatDisplay(b.a.date)}, awaiting result</span>`
+                            : `<span class="sum-chip" style="color:var(--cyan);border-color:rgba(43,228,195,0.4);">📅 Booked ${formatDisplay(b.a.date)}</span>`}
+                        <span class="sum-chip ${st === 'overdue' ? 'overdue' : st === 'soon' ? 'soon' : ''}">${expTxt}</span>
+                    </div>
+                </div>`;
+            }).join('') : '<div class="sum-empty">No assessments are currently booked.</div>'}
+        </div>`;
+
+    document.getElementById('summaryBody').innerHTML =
+        bookedSection +
+        groupSection('Expired', 't-overdue', 'c-overdue', expiredGroups, 'Nothing has expired. 🎉') +
+        groupSection('Expiring within 6 months', 't-soon', 'c-soon', soonGroups, 'Nothing is expiring in the next 6 months.');
+}
+
+function openSummary() {
+    buildSummary();
+    document.getElementById('summaryOverlay').classList.add('show');
+    document.getElementById('summaryBody').scrollTop = 0;
+}
+window.closeSummary = function () {
+    document.getElementById('summaryOverlay').classList.remove('show');
+};
+document.getElementById('summaryBtn').addEventListener('click', openSummary);
+document.getElementById('summaryOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'summaryOverlay') closeSummary();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSummary();
+});
 
         // ── Search ──
         document.getElementById('searchInput').addEventListener('input', (e) => {
