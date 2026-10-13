@@ -1223,70 +1223,44 @@ function buildEmailContent() {
         ? `Attended ${formatDisplay(a.date)}, awaiting result`
         : `Booked ${formatDisplay(a.date)}`;
 
-    // ---- plain text ----
-    const L = [];
-    L.push(`SKILLS MATRIX SUMMARY - ${todayLong}`, '');
-    L.push(`Expired: ${count(expired)} qualification(s) across ${expired.length} engineer(s)`);
-    L.push(`Expiring within 6 months: ${count(soon)} qualification(s) across ${soon.length} engineer(s)`);
-    L.push(`Assessments booked / awaiting result: ${booked.length}`, '');
-    L.push('ASSESSMENTS BOOKED');
-    if (!booked.length) L.push('  None');
-    booked.forEach(b => L.push(`  ${b.eng.engineerName} - ${b.q}: ${bookTxt(b.a)} (current expiry ${b.qual.expiry ? formatDisplay(b.qual.expiry) : 'none on file'})`));
-    const textGroup = (title, gs) => {
-        L.push('', title);
-        if (!gs.length) L.push('  None');
-        gs.forEach(g => {
-            L.push(`  ${g.eng.engineerName}`);
-            g.items.forEach(it => L.push(`    - ${it.q}: ${formatDisplay(it.expiry)} (${relLabel(it.days)})${it.a ? ' [' + bookTxt(it.a) + ']' : ''}`));
-        });
-    };
-    textGroup('EXPIRED', expired);
-    textGroup('EXPIRING WITHIN 6 MONTHS', soon);
+    // Compact HTML: keep repeated markup minimal so the payload stays well under EmailJS's 50KB limit.
+    const TD = 'padding:6px 10px;border-bottom:1px solid #e6eaef;vertical-align:top;font-size:13px;';
+    const h2 = (t, col) => `<h2 style="margin:22px 0 6px;font-size:15px;text-transform:uppercase;color:${col};">${t}</h2>`;
+    const wrap = (rows, col) => `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;color:${col};">${rows}</table>`;
+    const none = msg => `<div style="font-size:13px;color:#7a8a9c;">${msg}</div>`;
 
-    // ---- HTML (inline styles only, for email clients) ----
-    const h2 = (t, col) => `<h2 style="margin:26px 0 8px;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:${col};font-family:Arial,sans-serif;">${t}</h2>`;
-    const pill = (txt, col, bg) => `<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 8px;border-radius:5px;background:${bg};color:${col};font-size:12px;font-family:Arial,sans-serif;">${txt}</span>`;
-    const card = (name, sub, inner, border) => `
-        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;border:1px solid #e1e6ec;border-left:4px solid ${border};border-radius:6px;font-family:Arial,sans-serif;">
-          <tr><td style="padding:9px 12px;width:170px;vertical-align:top;font-size:14px;font-weight:bold;color:#1a2433;">${esc(name)}<div style="font-weight:normal;font-size:11px;color:#7a8a9c;">EUSR ${esc(sub || '-')}</div></td>
-          <td style="padding:7px 8px;vertical-align:top;">${inner}</td></tr></table>`;
+    const groupTable = (gs, col, emptyMsg) => !gs.length ? none(emptyMsg) : wrap(gs.map(g =>
+        `<tr><td style="${TD}width:170px;color:#1a2433;"><b>${esc(g.eng.engineerName)}</b></td><td style="${TD}">` +
+        g.items.map(it => `${esc(it.q)} - ${formatDisplay(it.expiry)} (${relLabel(it.days)})${it.a ? ' &#128197; ' + esc(bookTxt(it.a)) : ''}`).join('<br>') +
+        `</td></tr>`).join(''), col);
 
-    let H = `<div style="max-width:720px;margin:0 auto;font-family:Arial,sans-serif;color:#1a2433;">
-      <h1 style="margin:0 0 4px;font-size:22px;">Skills Matrix Summary</h1>
-      <div style="font-size:13px;color:#5c6f84;">${todayLong} &middot; "expiring" = within the next 6 months</div>
-      <table cellpadding="0" cellspacing="0" style="margin:16px 0 0;"><tr>
-        <td style="padding:10px 16px;background:#fdecec;border-radius:6px;font-size:12px;color:#b42318;"><b style="font-size:20px;">${count(expired)}</b><br>Expired (${expired.length} eng.)</td><td width="10"></td>
-        <td style="padding:10px 16px;background:#fff4e0;border-radius:6px;font-size:12px;color:#a35f00;"><b style="font-size:20px;">${count(soon)}</b><br>Expiring &le; 6 mo (${soon.length} eng.)</td><td width="10"></td>
-        <td style="padding:10px 16px;background:#e3f8f4;border-radius:6px;font-size:12px;color:#0b7a68;"><b style="font-size:20px;">${booked.length}</b><br>Assessments booked</td>
-      </tr></table>`;
-
-    H += h2('Assessments booked', '#0b7a68');
-    H += booked.length ? booked.map(b => {
-        const att = b.a.status === 'attended';
+    const bookedTable = !booked.length ? none('No assessments are currently booked.') : wrap(booked.map(b => {
         const st = qualStatus(b.qual.expiry);
-        const expPill = pill(`Expiry ${b.qual.expiry ? formatDisplay(b.qual.expiry) : 'none on file'}${st === 'overdue' ? ' (expired)' : st === 'soon' ? ' (expiring soon)' : ''}`,
-            st === 'overdue' ? '#b42318' : st === 'soon' ? '#a35f00' : '#44566b', st === 'overdue' ? '#fdecec' : st === 'soon' ? '#fff4e0' : '#eef2f6');
-        return card(b.eng.engineerName, b.eng.eusr,
-            pill(`<b>${esc(b.q)}</b>`, '#1a2433', '#eef2f6') +
-            pill(`${att ? '&#9203;' : '&#128197;'} ${esc(bookTxt(b.a))}`, att ? '#6b3fb5' : '#0b7a68', att ? '#f1e8ff' : '#e3f8f4') + expPill,
-            att ? '#9b6bdc' : '#2BE4C3');
-    }).join('') : '<div style="font-size:13px;color:#7a8a9c;">No assessments are currently booked.</div>';
+        const exp = b.qual.expiry
+            ? `Expiry ${formatDisplay(b.qual.expiry)}${st === 'overdue' ? ' (expired)' : st === 'soon' ? ' (expiring soon)' : ''}`
+            : 'No expiry on file';
+        return `<tr><td style="${TD}width:170px;color:#1a2433;"><b>${esc(b.eng.engineerName)}</b></td><td style="${TD}">${esc(b.q)}</td><td style="${TD}">${esc(bookTxt(b.a))}</td><td style="${TD}color:${st === 'overdue' ? '#b42318' : st === 'soon' ? '#a35f00' : '#5c6f84'};">${exp}</td></tr>`;
+    }).join(''), '#0b7a68');
 
-    const htmlGroup = (title, col, border, gs, bg, empty) => {
-        let out = h2(title, col);
-        out += gs.length ? gs.map(g => card(g.eng.engineerName, g.eng.eusr,
-            g.items.map(it => pill(`<b>${esc(it.q)}</b> &middot; ${formatDisplay(it.expiry)} &middot; ${relLabel(it.days)}${it.a ? ' &middot; &#128197; ' + esc(bookTxt(it.a)) : ''}`, col, bg)).join(''),
-            border)).join('') : `<div style="font-size:13px;color:#7a8a9c;">${empty}</div>`;
-        return out;
-    };
-    H += htmlGroup('Expired', '#b42318', '#FF5757', expired, '#fdecec', 'Nothing has expired.');
-    H += htmlGroup('Expiring within 6 months', '#a35f00', '#F5A623', soon, '#fff4e0', 'Nothing is expiring in the next 6 months.');
-    H += '<div style="margin-top:24px;font-size:11px;color:#9aa8b8;">Sent from OES Performance &ndash; Skills Matrix</div></div>';
+    const html = `<div style="max-width:720px;margin:0 auto;font-family:Arial,sans-serif;color:#1a2433;">
+<h1 style="margin:0 0 4px;font-size:22px;">Skills Matrix Summary</h1>
+<div style="font-size:13px;color:#5c6f84;">${todayLong} - "expiring" = within the next 6 months</div>
+<p style="font-size:14px;margin:14px 0 0;"><b style="color:#b42318;">${count(expired)} expired</b> (${expired.length} engineers) &nbsp;|&nbsp; <b style="color:#a35f00;">${count(soon)} expiring within 6 months</b> (${soon.length} engineers) &nbsp;|&nbsp; <b style="color:#0b7a68;">${booked.length} assessments booked</b></p>
+${h2('Assessments booked', '#0b7a68')}${bookedTable}
+${h2('Expired', '#b42318')}${groupTable(expired, '#b42318', 'Nothing has expired.')}
+${h2('Expiring within 6 months', '#a35f00')}${groupTable(soon, '#a35f00', 'Nothing is expiring in the next 6 months.')}
+<div style="margin-top:22px;font-size:11px;color:#9aa8b8;">Sent from OES Performance - Skills Matrix</div></div>`;
+
+    // Short plain-text fallback (the full detail is in message_html)
+    const text = `Skills Matrix Summary - ${todayLong}\n` +
+        `Expired: ${count(expired)} qualification(s), ${expired.length} engineer(s)\n` +
+        `Expiring within 6 months: ${count(soon)} qualification(s), ${soon.length} engineer(s)\n` +
+        `Assessments booked / awaiting result: ${booked.length}`;
 
     return {
         subject: `Skills Matrix Summary - ${count(expired)} expired, ${count(soon)} expiring soon, ${booked.length} booked (${new Date().toLocaleDateString('en-GB')})`,
-        text: L.join('\n'),
-        html: H
+        text,
+        html
     };
 }
 
@@ -1308,12 +1282,13 @@ async function sendSummaryEmail() {
     setEmailStatus('Sending…', '');
     try {
         const c = buildEmailContent();
-        await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-            to_email: to,
-            subject: c.subject,
-            message: c.text,
-            message_html: c.html
-        }, { publicKey: EMAILJS_PUBLIC_KEY });
+        const params = { to_email: to, subject: c.subject, message: c.text, message_html: c.html };
+        const kb = Math.round(new Blob([JSON.stringify(params)]).size / 1024);
+        if (kb > 48) {
+            setEmailStatus(`Summary is too large to email (${kb}KB; EmailJS limit is 50KB).`, 'err');
+            return;
+        }
+        await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params, { publicKey: EMAILJS_PUBLIC_KEY });
         try { localStorage.setItem(EMAIL_LS_KEY, to); } catch (e) {}
         setEmailStatus(`Summary sent to ${to}.`, 'ok');
     } catch (err) {
