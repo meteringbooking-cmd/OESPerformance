@@ -2069,6 +2069,16 @@
     </div>
 </div>
 
+<div id="referralModal" class="modal-overlay">
+    <div class="capacity-modal-box">
+        <div class="modal-head">
+            <div class="modal-head-title blue">🤝 Submit a Referral</div>
+            <button class="modal-close" onclick="closeReferralModal()">×</button>
+        </div>
+        <iframe id="referralIframe" class="capacity-iframe" src="" title="Submit a Referral"></iframe>
+    </div>
+</div>
+
 <div id="capacityModal" class="modal-overlay">
     <div class="capacity-modal-box">
         <div class="modal-head">
@@ -2298,8 +2308,21 @@ window.togglePw = function() {
     else { inp.type = 'password'; btn.textContent = '👁️'; }
 };
 
+// Opens the candidate referral form in a pop-up window on the portal (same as Capacity).
 window.openReferralPortal = function() {
-    window.open('https://ngu-recruitment-portal.vercel.app/candidate-referral-bonus.html', '_blank');
+    const modal  = document.getElementById('referralModal');
+    const iframe = document.getElementById('referralIframe');
+    if (!iframe.getAttribute('data-loaded')) {
+        iframe.src = 'https://ngu-recruitment-portal.vercel.app/candidate-referral-bonus.html';
+        iframe.setAttribute('data-loaded', '1');
+    }
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+};
+window.closeReferralModal = function() {
+    const modal = document.getElementById('referralModal');
+    if (modal) modal.classList.remove('open');
+    document.body.style.overflow = '';
 };
 
 function goToEnergiseOrdering() {
@@ -2484,19 +2507,38 @@ document.addEventListener('keypress', e => {
     if (e.key === 'Enter' && document.getElementById('loginScreen').classList.contains('active')) handleLogin();
 });
 
+// ── Portal documents: fetched ONCE and shared by the hub badges and the document folders ──
+// (Previously every folder click ran its own filtered + sorted query, which was slow on the
+// first open. Now the hub loads the whole list in the background as soon as you log in, and a
+// folder simply filters that list, so it opens instantly.)
+let portalDocsCache = null, portalDocsFetchedAt = 0, portalDocsPromise = null;
+const PORTAL_DOCS_FRESH_MS = 60 * 1000;
+function loadPortalDocs(force) {
+    if (!force && portalDocsCache && (Date.now() - portalDocsFetchedAt) < PORTAL_DOCS_FRESH_MS) return Promise.resolve(portalDocsCache);
+    if (portalDocsPromise) return portalDocsPromise;
+    portalDocsPromise = db.collection("portal_documents").get().then(snap => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        portalDocsCache = list;
+        portalDocsFetchedAt = Date.now();
+        return list;
+    }).finally(() => { portalDocsPromise = null; });
+    return portalDocsPromise;
+}
+
 async function refreshDocumentStatus() {
     if (!currentEngineer) return;
     
     try {
-        const snapshot = await db.collection("portal_documents").get();
+        const allDocs = await loadPortalDocs(false);
         const viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
         
         let hasNewToolbox = false, hasNewVehicle = false, hasNewDNO = false, hasNewTechnical = false;
         let lockableUnreadCount = 0; // Only Vehicle Docs and Toolbox Talks lock the portal
 
-        snapshot.forEach(doc => {
+        allDocs.forEach(doc => {
             if (!viewedDocs.includes(doc.id)) {
-                const cat = doc.data().category;
+                const cat = doc.category;
                 if (cat === "Toolbox Talks") { hasNewToolbox = true; lockableUnreadCount++; }
                 if (cat === "Vehicle Documents") { hasNewVehicle = true; lockableUnreadCount++; }
                 if (cat === "DNO Guides") hasNewDNO = true;
@@ -2675,6 +2717,7 @@ window.closeCapacityModal = function() {
 };
 
 document.getElementById('capacityModal').addEventListener('click', e => { if (e.target === document.getElementById('capacityModal')) closeCapacityModal(); });
+document.getElementById('referralModal').addEventListener('click', e => { if (e.target === document.getElementById('referralModal')) closeReferralModal(); });
 
 // ── ENERGISE ORDERING ──
 window.openEnergiseModal = function() {
@@ -3491,41 +3534,55 @@ window.openDocsModal = async function(category) {
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
 
-    try {
-        const snapshot = await db.collection("portal_documents")
-                                 .where("category", "==", category)
-                                 .orderBy("uploadedAt", "desc")
-                                 .get();
+    const render = (all) => {
+        // Filter + sort in the browser (newest first) - no Firestore index needed.
+        const docs = all.filter(d => d.category === category).sort((x, y) => {
+            const xt = x.uploadedAt && x.uploadedAt.toDate ? x.uploadedAt.toDate().getTime() : 0;
+            const yt = y.uploadedAt && y.uploadedAt.toDate ? y.uploadedAt.toDate().getTime() : 0;
+            return yt - xt;
+        });
+        if (currentDocsCategory !== category) return; // user has switched folder meanwhile
 
-        if (snapshot.empty) {
+        if (!docs.length) {
             container.innerHTML = '<div class="loading-msg" style="color:var(--text3)">// NO DOCUMENTS FOUND IN THIS FOLDER.</div>';
             return;
         }
 
+        const viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
         let html = '';
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const dateStr = data.uploadedAt ? data.uploadedAt.toDate().toLocaleDateString('en-GB') : 'Unknown Date';
-            const viewedDocs = JSON.parse(localStorage.getItem(`viewed_${currentEngineer}`) || "[]");
-            const isUnread = !viewedDocs.includes(doc.id);
-            const safeName = data.name.replace(/'/g, "\\'");
+        docs.forEach(data => {
+            const dateStr = data.uploadedAt && data.uploadedAt.toDate ? data.uploadedAt.toDate().toLocaleDateString('en-GB') : 'Unknown Date';
+            const isUnread = !viewedDocs.includes(data.id);
+            const safeName = String(data.name || 'Untitled').replace(/'/g, "\\'");
 
             html += `
                 <a href="#" 
-                   onclick="handleDocClick(event, '${doc.id}', '${safeName}', ${isUnread}, '${data.url}', '${category}')"
+                   onclick="handleDocClick(event, '${data.id}', '${safeName}', ${isUnread}, '${data.url}', '${category}')"
                    class="job-entry-block" 
                    style="display:flex; align-items:center; justify-content:space-between; text-decoration:none; cursor:pointer; transition: background 0.2s; border-left: 3px solid ${isUnread ? 'var(--danger)' : 'var(--accent)'};">
                     <div>
-                        <div class="job-entry-title" style="margin-bottom:4px; color:var(--text);">${data.name} ${isUnread ? '<span style="color:var(--danger); font-size:0.7em;">[NEW]</span>' : ''}</div>
+                        <div class="job-entry-title" style="margin-bottom:4px; color:var(--text);">${data.name || 'Untitled'} ${isUnread ? '<span style="color:var(--danger); font-size:0.7em;">[NEW]</span>' : ''}</div>
                         <div style="font-family:'JetBrains Mono', monospace; font-size:0.65em; color:var(--text3);">ADDED: ${dateStr}</div>
                     </div>
                     <span style="color:var(--accent); font-size:1.2em;">↓</span>
                 </a>
             `;
         });
-
         container.innerHTML = html;
+    };
 
+    try {
+        if (portalDocsCache) {
+            // Show what we already have straight away...
+            render(portalDocsCache);
+            // ...and quietly pick up any newly uploaded documents if the list is a bit old.
+            if ((Date.now() - portalDocsFetchedAt) >= PORTAL_DOCS_FRESH_MS) {
+                loadPortalDocs(true).then(render).catch(e => console.warn('Background refresh failed', e));
+            }
+        } else {
+            // Not loaded yet (e.g. opened straight after login) - join the load already in flight.
+            render(await loadPortalDocs(false));
+        }
     } catch (error) {
         console.error(error);
         container.innerHTML = `<div class="loading-msg" style="color:var(--danger);">⚠ Error loading documents: ${error.message}</div>`;
@@ -3909,6 +3966,7 @@ document.getElementById('quarterlyBonusModal').addEventListener('click', e => {
 window.addEventListener('load', () => loadEngineers());
 document.addEventListener('keydown', e => {
     if(e.key==='Escape'){
+        closeReferralModal();
         closeCapacityModal();
         closeRotaModal();
         closeChecklistModal();
