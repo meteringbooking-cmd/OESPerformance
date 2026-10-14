@@ -2370,8 +2370,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 // Some company / mobile networks and proxies block or stall Firestore's default streaming
 // connection, which leaves queries hanging forever ("Loading data..." that never finishes).
-// Letting Firestore detect that and fall back to long-polling fixes it.
-try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch (e) { console.warn('Firestore settings not applied', e); }
+// Long-polling works on every network (the streaming connection is what stalls on mobile data),
+// and skips the delay Firestore otherwise spends waiting for streaming to fail first.
+try { db.settings({ experimentalForceLongPolling: true, merge: true }); } catch (e) { console.warn('Firestore settings not applied', e); }
 
 // Never wait forever on the database: after `ms` the request fails with a clear message instead.
 function withTimeout(promise, ms, what) {
@@ -3194,7 +3195,22 @@ window.loadDailyBreakdown = async function() {
     document.getElementById('bonusFooter').style.display  = 'none';
 
     try {
-        const pmSnap = await withTimeout(db.collection("additionalPayments").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data');
+        // Fire ALL the database requests at the same moment (they used to run one after another,
+        // which on a mobile connection meant waiting for 7 round trips in a row).
+        const byEng = (coll, field) => withTimeout(db.collection(coll).where(field,"==",currentEngineer).get(), 25000, 'Loading your data');
+        const Q = {
+            pm:   byEng("additionalPayments","engineerName"),
+            perf: byEng("performance","engineerName"),
+            en:   byEng("performance - Energise","engineerName"),
+            att:  byEng("attendance","engineerName"),
+            bon:  byEng("bonuses","engineerName"),
+            jobs: byEng("jobsData","engineerName"),
+            avg:  byEng("Average Bonuses","name"),
+            fin:  byEng("Bonus Deductions Final","engineerName"),
+            rev:  byEng("Bonus Deductions Reviewed","engineerName"),
+        };
+        Object.values(Q).forEach(pr => pr.catch(() => {})); // avoid unhandled-rejection noise; each is awaited below
+        const pmSnap = await Q.pm;
         additionalPayments = {};
         const weekendWithPay = new Set();
         pmSnap.forEach(doc => {
@@ -3208,11 +3224,7 @@ window.loadDailyBreakdown = async function() {
             }
         });
 
-        const [perfSnap, energisePerfSnap, attSnap] = await Promise.all([
-            withTimeout(db.collection("performance").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'),
-            withTimeout(db.collection("performance - Energise").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'),
-            withTimeout(db.collection("attendance").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data')
-        ]);
+        const [perfSnap, energisePerfSnap, attSnap] = await Promise.all([Q.perf, Q.en, Q.att]);
 
         const perfData={}, attData={};
         const processPerfDoc = doc => {
@@ -3248,19 +3260,19 @@ window.loadDailyBreakdown = async function() {
         const allDates = [...allDatesSet].filter(ds=>ds>=startDate&&ds<=endDate).sort();
 
         let bonusData={}, jobsData={}, avgBonusByMonth={};
-        try { const bSnap=await withTimeout(db.collection("bonuses").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
-        try { const jSnap=await withTimeout(db.collection("jobsData").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
-        try { const avgSnap=await withTimeout(db.collection("Average Bonuses").where("name","==",currentEngineer).get(), 25000, 'Loading your data'); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const bSnap=await Q.bon; bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const jSnap=await Q.jobs; jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const avgSnap=await Q.avg; avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){ if(e && e.isTimeout) throw e; }
 
         // New structure (example) — completion rate, attendance and the Customer Service / Fleet /
         // Housekeeping / Compliance flags, but only once a month has been through both review stages:
         // bonus-deduction-ftm-review.html, then bonus-deduction-carl-review.html (collection
         // "Bonus Deductions Final" — the final, authoritative figures for the engineer portal).
         let finalDataByMonth = {};
-        try { const finSnap=await withTimeout(db.collection("Bonus Deductions Final").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); finSnap.forEach(doc=>{const d=doc.data();if(d.month&&!d.weekStart)finalDataByMonth[d.month]=d;}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const finSnap=await Q.fin; finSnap.forEach(doc=>{const d=doc.data();if(d.month&&!d.weekStart)finalDataByMonth[d.month]=d;}); } catch(e){ if(e && e.isTimeout) throw e; }
         // FTM weekly reviews — shown as PROVISIONAL figures for any month not yet through the month-end review.
         let ftmReviews = [];
-        try { const revSnap=await withTimeout(db.collection("Bonus Deductions Reviewed").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); revSnap.forEach(doc=>{const d=doc.data();if(d.weekStart)ftmReviews.push(d);}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const revSnap=await Q.rev; revSnap.forEach(doc=>{const d=doc.data();if(d.weekStart)ftmReviews.push(d);}); } catch(e){ if(e && e.isTimeout) throw e; }
         // Split weeks (crossing two months) are reviewed per month; ignore an older whole-week review once the split parts exist.
         { const split=new Set(ftmReviews.filter(r=>r.weekSpansMonths).map(r=>r.weekStart)); ftmReviews=ftmReviews.filter(r=>r.weekSpansMonths||!split.has(r.weekStart)); }
 
