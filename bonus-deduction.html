@@ -238,6 +238,31 @@
         .dates-input:focus { outline: none; border-color: var(--purple); }
         .dates-input::placeholder { color: var(--text-dim); }
 
+        /* ── JOB REFUSALS (Housekeeping) ── */
+        .ref-wrap { width: 100%; max-width: 210px; }
+        .ref-item {
+            position: relative; display: flex; flex-direction: column; gap: 4px;
+            background: rgba(187,140,255,0.06); border: 1px solid var(--border-hi);
+            border-radius: 6px; padding: 8px 8px 8px; margin-bottom: 6px; text-align: left;
+        }
+        .ref-item .dates-input { max-width: none; }
+        .ref-item textarea.dates-input { resize: vertical; min-height: 44px; font-family: 'Barlow', sans-serif; font-size: 0.78rem; }
+        .ref-item-label {
+            font-family: 'DM Mono', monospace; font-size: 0.58rem; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--purple);
+        }
+        .ref-remove {
+            position: absolute; top: 3px; right: 5px; background: none; border: none;
+            color: var(--text-dim); font-size: 0.95rem; line-height: 1; cursor: pointer; padding: 2px 4px;
+        }
+        .ref-remove:hover { color: var(--danger); }
+        .ref-add-btn {
+            background: transparent; border: 1px dashed var(--border-hi); color: var(--purple);
+            font-family: 'DM Mono', monospace; font-size: 0.66rem; letter-spacing: 0.04em;
+            padding: 4px 9px; border-radius: 5px; cursor: pointer; transition: all 0.15s;
+        }
+        .ref-add-btn:hover { border-color: var(--purple); background: rgba(187,140,255,0.1); }
+
         /* ── VEHICLE CHECK AUTO-FILL ── */
         .vc-hint {
             max-width: 170px; font-family: 'DM Mono', monospace; font-size: 0.64rem;
@@ -346,7 +371,7 @@
             <div class="codes-grid">
                 <div class="code-item"><span class="code-badge">Customer Service</span> Persistent failure to make D-1 calls, and/or any upheld customer complaint. <span class="pct">−5%</span></div>
                 <div class="code-item"><span class="code-badge">Fleet</span> Failure to complete Daily Vehicle Checks before starting work, and/or any unreasonable recorded speeding incident. <span class="pct">−5%</span></div>
-                <div class="code-item"><span class="code-badge">Housekeeping</span> Starting work after 8am on a working day, and/or refusing work in day. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Housekeeping</span> Starting work after 8am on a working day, and/or refusing work in day (record each job refusal with its date, job number and reason). <span class="pct">−5%</span></div>
                 <div class="code-item"><span class="code-badge">Compliance — Cat 1</span> Any Cat 1 failure in the month. <span class="pct">−20%</span></div>
                 <div class="code-item"><span class="code-badge">Compliance — Cat 2</span> Two or more Cat 2 failures in the month. <span class="pct">−10%</span></div>
                 <div class="code-item"><span class="code-badge">Compliance — Cat 3</span> Five or more Cat 3 failures in the month. <span class="pct">−10%</span></div>
@@ -355,7 +380,8 @@
                 Cat 2 + Cat 3 together still deduct 20% (10%+10%) — Compliance is capped at a maximum of <span style="color:var(--purple);font-weight:600;">20%</span> deduction regardless of how many Compliance boxes are ticked.<br>
                 Ticking <strong style="color:var(--text);">Fleet</strong> or <strong style="color:var(--text);">Housekeeping</strong> reveals a box for the incident date(s) — enter day numbers (e.g. <span style="color:var(--text);">3, 15, 22</span>) or full dates, comma-separated.<br>
                 <strong style="color:var(--text);">Fleet</strong> is filled in automatically from the vehicle check data uploaded on Gareth Stats: any day an engineer was marked <strong style="color:var(--text);">X (In)</strong> or <strong style="color:var(--text);">H/H (Half Day)</strong> but their check wasn't complete is ticked and added to the dates. Add speeding dates alongside them, or remove any you don't want — a missed check you remove and save won't be added back.<br>
-                <strong style="color:var(--text);">Housekeeping</strong> is filled in the same way from the Van Start &amp; End data: any working day an engineer's first journey started at <strong style="color:var(--text);">08:00 or later</strong>, or their last journey ended <strong style="color:var(--text);">before 16:30</strong>. Holiday, half-day (H/H) and absence days are skipped. Add refused-work dates alongside them.
+                <strong style="color:var(--text);">Housekeeping</strong> is filled in the same way from the Van Start &amp; End data: any working day an engineer's first journey started at <strong style="color:var(--text);">08:00 or later</strong>, or their last journey ended <strong style="color:var(--text);">before 16:30</strong>. Holiday, half-day (H/H) and absence days are skipped.<br>
+                <strong style="color:var(--text);">Job refusals:</strong> click <strong style="color:var(--text);">+ Job refusal</strong> under Housekeeping to record a refused job — the date (within the selected week), the job number and the reason. Adding one ticks Housekeeping for you. It still counts as a single −5% for the week, and every refusal is shown to the FTM and in the final review.
             </div>
         </div>
 
@@ -509,6 +535,7 @@
                 fleetDates: fleet ? parseDatesInput(document.getElementById(`flDates_${i}`)?.value, wk) : [],
                 housekeeping,
                 housekeepingDates: housekeeping ? parseDatesInput(document.getElementById(`hkDates_${i}`)?.value, wk) : [],
+                jobRefusals: housekeeping ? readRefusals(i) : [],
                 complianceCat1: document.getElementById(`c1_${i}`)?.checked || false,
                 complianceCat2: document.getElementById(`c2_${i}`)?.checked || false,
                 complianceCat3: document.getElementById(`c3_${i}`)?.checked || false,
@@ -519,7 +546,66 @@
         function toggleDatesField(prefix, i, checked, focus = true) {
             const wrap = document.getElementById(`${prefix}DatesWrap_${i}`);
             if (wrap) wrap.hidden = !checked;
+            if (prefix === 'hk') {
+                const refWrap = document.getElementById(`hkRefWrap_${i}`);
+                if (refWrap) refWrap.hidden = !checked;
+            }
             if (checked && focus) document.getElementById(`${prefix}Dates_${i}`)?.focus();
+        }
+
+        // ── Job refusals (Housekeeping): each has a date, job number and reason ──
+        const escAttr = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        function addRefusalRow(i, data = {}, focus = true) {
+            const list = document.getElementById(`hkRefList_${i}`);
+            if (!list) return;
+            const wk = document.getElementById('weekStart').value;
+            const item = document.createElement('div');
+            item.className = 'ref-item';
+            item.innerHTML = `
+                <button type="button" class="ref-remove" title="Remove this job refusal">✕</button>
+                <div class="ref-item-label">Job refusal</div>
+                <input type="date" class="dates-input ref-date" title="Date of refusal" ${wk ? `min="${wk}" max="${weekEndOf(wk)}"` : ''} value="${escAttr(data.date)}">
+                <input type="text" class="dates-input ref-job" placeholder="Job number" value="${escAttr(data.jobNumber)}">
+                <textarea class="dates-input ref-reason" placeholder="Reason for refusal" rows="2">${escAttr(data.reason)}</textarea>
+            `;
+            item.querySelector('.ref-remove').addEventListener('click', () => { item.remove(); updateRowDeduction(i); });
+            list.appendChild(item);
+            if (focus) item.querySelector('.ref-date').focus();
+        }
+
+        // All refusal rows for an engineer, trimmed; rows left completely blank are ignored.
+        function readRefusals(i) {
+            const out = [];
+            document.querySelectorAll(`#hkRefList_${i} .ref-item`).forEach(item => {
+                const date = item.querySelector('.ref-date').value.trim();
+                const jobNumber = item.querySelector('.ref-job').value.trim();
+                const reason = item.querySelector('.ref-reason').value.trim();
+                if (!date && !jobNumber && !reason) return;
+                out.push({ date, jobNumber, reason });
+            });
+            return out;
+        }
+
+        function clearRefusals(i) {
+            const list = document.getElementById(`hkRefList_${i}`);
+            if (list) list.innerHTML = '';
+        }
+
+        // Returns an error message for the first incomplete / out-of-week refusal, or '' if all are fine.
+        function validateRefusals(wk) {
+            for (let i = 0; i < engineers.length; i++) {
+                if (!document.getElementById(`hk_${i}`)?.checked) continue;
+                for (const r of readRefusals(i)) {
+                    if (!r.date || !r.jobNumber || !r.reason) {
+                        return `${engineers[i].engineerName}: each job refusal needs a date, job number and reason.`;
+                    }
+                    if (!inWeek(r.date, wk)) {
+                        return `${engineers[i].engineerName}: job refusal date ${r.date} is outside the selected week.`;
+                    }
+                }
+            }
+            return '';
         }
 
         // "14, 16" + week w/c 2026-09-14 -> ["2026-09-14","2026-09-16"]. A day number is matched to the
@@ -619,6 +705,10 @@
                                 <input type="text" class="dates-input" id="hkDates_${index}" placeholder="e.g. 3, 15, 22" data-row-index="${index}">
                             </div>
                             <div class="vc-hint" id="hkHint_${index}" hidden></div>
+                            <div class="ref-wrap" id="hkRefWrap_${index}" hidden>
+                                <div id="hkRefList_${index}"></div>
+                            </div>
+                            <button type="button" class="ref-add-btn" id="hkRefAdd_${index}" data-row-index="${index}">+ Job refusal</button>
                         </div>
                     </td>
                     <td>
@@ -638,6 +728,14 @@
             engineers.forEach((_, i) => {
                 document.getElementById(`fl_${i}`).addEventListener('change', function () { toggleDatesField('fl', i, this.checked); });
                 document.getElementById(`hk_${i}`).addEventListener('change', function () { toggleDatesField('hk', i, this.checked); });
+                document.getElementById(`hkRefAdd_${i}`).addEventListener('click', function () {
+                    const chk = document.getElementById(`hk_${i}`);
+                    chk.checked = true;                     // a job refusal is a Housekeeping flag
+                    toggleDatesField('hk', i, true, false);
+                    addRefusalRow(i);
+                    updateRowDeduction(i);
+                    updateFooterNote();
+                });
             });
 
             document.getElementById('loadingDiv').style.display = 'none';
@@ -691,6 +789,8 @@
                         if (flInput) flInput.value = formatDatesForInput(data.fleetDates, wk);
                         const hkInput = document.getElementById(`hkDates_${idx}`);
                         if (hkInput) hkInput.value = formatDatesForInput(data.housekeepingDates, wk);
+                        clearRefusals(idx);
+                        (Array.isArray(data.jobRefusals) ? data.jobRefusals : []).forEach(r => addRefusalRow(idx, r, false));
                         updateRowDeduction(idx);
                     });
                 } else {
@@ -938,6 +1038,7 @@
                 ['cs','fl','hk','c1','c2','c3'].forEach(p => { const el = document.getElementById(`${p}_${i}`); if (el) el.checked = false; });
                 const flInput = document.getElementById(`flDates_${i}`); if (flInput) flInput.value = '';
                 const hkInput = document.getElementById(`hkDates_${i}`); if (hkInput) hkInput.value = '';
+                clearRefusals(i);
                 toggleDatesField('fl', i, false);
                 toggleDatesField('hk', i, false);
                 renderVcHint(i, []);
@@ -951,6 +1052,8 @@
         window.saveData = async function (event) {
             const wk = document.getElementById('weekStart').value;
             if (!wk) return showMessage('Please select a week', 'error');
+            const refusalError = validateRefusals(wk);
+            if (refusalError) return showMessage(refusalError, 'error');
 
             const clickedBtn = event.target;
             clickedBtn.disabled = true;

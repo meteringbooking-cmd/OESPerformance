@@ -441,6 +441,16 @@
             return `<div class="rc-evidence">${lines.join('')}</div>`;
         }
 
+        // Job refusals recorded under Housekeeping (date, job number, reason).
+        const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        function refusalEvidence(refusals) {
+            const list = (Array.isArray(refusals) ? refusals : []).filter(x => x && (x.date || x.jobNumber || x.reason))
+                .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+            if (!list.length) return '';
+            const lines = list.map(x => `<div><span class="ev-tag">🚫 Job refusal</span> ${/^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? shortDate(x.date) : escHtml(x.date || '')} · Job ${escHtml(x.jobNumber || '—')} — ${escHtml(x.reason || 'no reason given')}</div>`);
+            return `<div class="rc-evidence">${lines.join('')}</div>`;
+        }
+
         // ── Categories ──
         const CATEGORIES = [
             { key: 'attendance',      label: 'Attendance',              pct: 5,  perInstance: true, desc: 'Sick / AAUP / AWOL — −5% per accepted instance' },
@@ -471,13 +481,17 @@
                 CATEGORIES.filter(c => c.key !== 'attendance').forEach(c => {
                     if (!rv[c.key + 'Flagged']) return;
                     let dates = [];
+                    // Housekeeping job refusals are dated too — they count toward the month of their date.
+                    const refusalsAll = c.key === 'housekeeping' && Array.isArray(rv.jobRefusals) ? rv.jobRefusals.filter(x => x) : [];
+                    const refusalsInMonth = refusalsAll.filter(x => inM(x.date));
                     if (c.dated) {
                         const all = rv[c.dated] || [];
-                        if (all.length) { dates = all.filter(inM); if (!dates.length) return; }
+                        if (all.length || refusalsAll.length) { dates = all.filter(inM); if (!dates.length && !refusalsInMonth.length) return; }
                         else if ((rv.month || primaryMonthOf(wk)) !== month) return;
                     } else if ((rv.month || primaryMonthOf(wk)) !== month) return;
                     items.push({ key: `${c.key}_${wk}`, cat: c.key, weekStart: wk, dates, ftmAccepted: !!rv[c.key + 'Accepted'], ftmBy: rv.reviewedBy || '',
-                        vehicleCheckMissedDates: rv.vehicleCheckMissedDates, vanTimesFlagged: rv.vanTimesFlagged });
+                        vehicleCheckMissedDates: rv.vehicleCheckMissedDates, vanTimesFlagged: rv.vanTimesFlagged,
+                        jobRefusals: refusalsInMonth });
                 });
             });
             return items;
@@ -708,7 +722,7 @@
             } else {
                 detail = catByKey[it.cat].desc + (it.dates.length ? ' — ' + fmtDateList(it.dates) : '');
                 if (it.cat === 'fleet') detail += fleetEvidence(it.dates, it.vehicleCheckMissedDates);
-                if (it.cat === 'housekeeping') detail += housekeepingEvidence(it.dates, it.vanTimesFlagged);
+                if (it.cat === 'housekeeping') detail += housekeepingEvidence(it.dates, it.vanTimesFlagged) + refusalEvidence(it.jobRefusals);
             }
             row.innerHTML = `
                 <div class="rc-row-info">
@@ -833,6 +847,8 @@
                     vehicleCheckMissedDates: union('vehicleCheckMissedDates').filter(d => String(d).startsWith(month)),
                     housekeepingFlagged: itemsOf('housekeeping').length > 0,
                     housekeepingDates: acceptedDates('housekeeping'),
+                    // Job refusals (date, job number, reason) from the accepted Housekeeping items — for audit.
+                    jobRefusals: itemsOf('housekeeping').filter(acc).flatMap(it => it.jobRefusals || []),
                     housekeepingAccepted: m.catOn('housekeeping'),
                     vanTimesFlagged: union('vanTimesFlagged').filter(x => x && String(x.date || '').startsWith(month)),
                     complianceCat1Flagged: itemsOf('complianceCat1').length > 0,

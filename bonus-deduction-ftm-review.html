@@ -514,6 +514,16 @@
             return `<div class="rc-evidence">${lines.join('')}</div>`;
         }
 
+        // Job refusals recorded under Housekeeping on bonus-deduction.html (date, job number, reason).
+        const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        function refusalEvidence(refusals) {
+            const list = (Array.isArray(refusals) ? refusals : []).filter(x => x && (x.date || x.jobNumber || x.reason))
+                .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+            if (!list.length) return '';
+            const lines = list.map(x => `<div><span class="ev-tag">🚫 Job refusal</span> ${/^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? shortDate(x.date) : escHtml(x.date || '')} · Job ${escHtml(x.jobNumber || '—')} — ${escHtml(x.reason || 'no reason given')}</div>`);
+            return `<div class="rc-evidence">${lines.join('')}</div>`;
+        }
+
         // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission.
         // `bonusInfo` reflects the FTM's current abort confirm/overturn choices for this engineer. ──
         function buildRowDefs(ctx, submission, bonusInfo) {
@@ -543,7 +553,7 @@
                 if (submission.fleet) rows.push({ key: 'fleet', label: 'Fleet', pct: 5,
                     detail: `Failed vehicle check and/or speeding incident${submission.fleetDates?.length ? ' — ' + fmtDateList(submission.fleetDates) : ''}` + fleetEvidence(submission) });
                 if (submission.housekeeping) rows.push({ key: 'housekeeping', label: 'Housekeeping', pct: 5,
-                    detail: `Late start, early finish and/or refused work${submission.housekeepingDates?.length ? ' — ' + fmtDateList(submission.housekeepingDates) : ''}` + housekeepingEvidence(submission) });
+                    detail: `Late start, early finish and/or refused work${submission.housekeepingDates?.length ? ' — ' + fmtDateList(submission.housekeepingDates) : ''}${submission.jobRefusals?.length ? ` — ${submission.jobRefusals.length} job refusal${submission.jobRefusals.length === 1 ? '' : 's'} (below)` : ''}` + housekeepingEvidence(submission) + refusalEvidence(submission.jobRefusals) });
                 if (submission.complianceCat1) rows.push({ key: 'complianceCat1', label: 'Compliance — Cat 1', pct: 20, detail: 'Any Cat 1 failure recorded this month.' });
                 if (submission.complianceCat2) rows.push({ key: 'complianceCat2', label: 'Compliance — Cat 2 (2+)', pct: 10, detail: '2 or more Cat 2 failures recorded this month.' });
                 if (submission.complianceCat3) rows.push({ key: 'complianceCat3', label: 'Compliance — Cat 3 (5+)', pct: 10, detail: '5 or more Cat 3 failures recorded this month.' });
@@ -607,8 +617,12 @@
             const fd = (sub.fleetDates || []).filter(inM), hd = (sub.housekeepingDates || []).filter(inM);
             out.fleet = !!sub.fleet && ((sub.fleetDates || []).length ? fd.length > 0 : ownsUndated);
             out.fleetDates = out.fleet ? fd : [];
-            out.housekeeping = !!sub.housekeeping && ((sub.housekeepingDates || []).length ? hd.length > 0 : ownsUndated);
+            // Job refusals are dated too: they count toward the month their date falls in.
+            const allRefusals = Array.isArray(sub.jobRefusals) ? sub.jobRefusals : [];
+            const refM = allRefusals.filter(x => x && inM(x.date));
+            out.housekeeping = !!sub.housekeeping && (((sub.housekeepingDates || []).length || allRefusals.length) ? (hd.length > 0 || refM.length > 0) : ownsUndated);
             out.housekeepingDates = out.housekeeping ? hd : [];
+            out.jobRefusals = out.housekeeping ? refM : [];
             ['customerService', 'complianceCat1', 'complianceCat2', 'complianceCat3'].forEach(k => { out[k] = !!sub[k] && ownsUndated; });
             if (Array.isArray(sub.vehicleCheckMissedDates)) out.vehicleCheckMissedDates = sub.vehicleCheckMissedDates.filter(inM);
             if (Array.isArray(sub.vanTimesFlagged)) out.vanTimesFlagged = sub.vanTimesFlagged.filter(x => x && inM(x.date));
@@ -757,6 +771,9 @@
             }
             if (!datesEqual(s.fleet ? s.fleetDates : [], reviewed.fleetFlagged ? reviewed.fleetDates : [])) return true;
             if (!datesEqual(s.housekeeping ? s.housekeepingDates : [], reviewed.housekeepingFlagged ? reviewed.housekeepingDates : [])) return true;
+            // Job refusals (date | job | reason) — a new, removed or edited refusal reopens the week.
+            const refKey = list => (Array.isArray(list) ? list : []).map(x => `${x.date}|${x.jobNumber}|${x.reason}`).sort().join('\n');
+            if (refKey(s.housekeeping ? s.jobRefusals : []) !== refKey(reviewed.housekeepingFlagged ? reviewed.jobRefusals : [])) return true;
             return false;
         }
         // True if any CURRENT abort (this month, for this engineer) isn't one the FTM's last
@@ -1203,6 +1220,7 @@
                     fleetAccepted: !!(r.submission?.fleet && r._accepted.fleet),
                     housekeepingFlagged: !!r.submission?.housekeeping,
                     housekeepingDates: r.submission?.housekeeping ? (r.submission.housekeepingDates || []) : [],
+                    jobRefusals: r.submission?.housekeeping ? (r.submission.jobRefusals || []) : [],
                     vanTimesFlagged: r.submission?.vanTimesFlagged || [],
                     housekeepingAccepted: !!(r.submission?.housekeeping && r._accepted.housekeeping),
                     complianceCat1Flagged: !!r.submission?.complianceCat1,
