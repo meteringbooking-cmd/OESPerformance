@@ -2368,6 +2368,19 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+// Some company / mobile networks and proxies block or stall Firestore's default streaming
+// connection, which leaves queries hanging forever ("Loading data..." that never finishes).
+// Letting Firestore detect that and fall back to long-polling fixes it.
+try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch (e) { console.warn('Firestore settings not applied', e); }
+
+// Never wait forever on the database: after `ms` the request fails with a clear message instead.
+function withTimeout(promise, ms, what) {
+    let t;
+    const timeout = new Promise((_, reject) => {
+        t = setTimeout(() => { const e = new Error((what || 'The database') + ' is taking too long to respond - please check your connection and try again.'); e.isTimeout = true; reject(e); }, ms || 20000);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
 
 const BONUS_RESTRICTED_ENGINEERS = [
     'Billy McDonough','Dinis Cruz','Johnson Allepot',
@@ -2516,7 +2529,7 @@ const PORTAL_DOCS_FRESH_MS = 60 * 1000;
 function loadPortalDocs(force) {
     if (!force && portalDocsCache && (Date.now() - portalDocsFetchedAt) < PORTAL_DOCS_FRESH_MS) return Promise.resolve(portalDocsCache);
     if (portalDocsPromise) return portalDocsPromise;
-    portalDocsPromise = db.collection("portal_documents").get().then(snap => {
+    portalDocsPromise = withTimeout(db.collection("portal_documents").get(), 20000, 'Loading documents').then(snap => {
         const list = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() }));
         portalDocsCache = list;
@@ -3181,7 +3194,7 @@ window.loadDailyBreakdown = async function() {
     document.getElementById('bonusFooter').style.display  = 'none';
 
     try {
-        const pmSnap = await db.collection("additionalPayments").where("engineerName","==",currentEngineer).get();
+        const pmSnap = await withTimeout(db.collection("additionalPayments").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data');
         additionalPayments = {};
         const weekendWithPay = new Set();
         pmSnap.forEach(doc => {
@@ -3196,9 +3209,9 @@ window.loadDailyBreakdown = async function() {
         });
 
         const [perfSnap, energisePerfSnap, attSnap] = await Promise.all([
-            db.collection("performance").where("engineerName","==",currentEngineer).get(),
-            db.collection("performance - Energise").where("engineerName","==",currentEngineer).get(),
-            db.collection("attendance").where("engineerName","==",currentEngineer).get()
+            withTimeout(db.collection("performance").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'),
+            withTimeout(db.collection("performance - Energise").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'),
+            withTimeout(db.collection("attendance").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data')
         ]);
 
         const perfData={}, attData={};
@@ -3235,19 +3248,19 @@ window.loadDailyBreakdown = async function() {
         const allDates = [...allDatesSet].filter(ds=>ds>=startDate&&ds<=endDate).sort();
 
         let bonusData={}, jobsData={}, avgBonusByMonth={};
-        try { const bSnap=await db.collection("bonuses").where("engineerName","==",currentEngineer).get(); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){}
-        try { const jSnap=await db.collection("jobsData").where("engineerName","==",currentEngineer).get(); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){}
-        try { const avgSnap=await db.collection("Average Bonuses").where("name","==",currentEngineer).get(); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){}
+        try { const bSnap=await withTimeout(db.collection("bonuses").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); bSnap.forEach(doc=>{const d=doc.data();if(d.dailyBonuses)Object.keys(d.dailyBonuses).forEach(date=>{if(date>=startDate&&date<=endDate)bonusData[date]=d.dailyBonuses[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const jSnap=await withTimeout(db.collection("jobsData").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); jSnap.forEach(doc=>{const d=doc.data();if(d.dailyJobs)Object.keys(d.dailyJobs).forEach(date=>{if(date>=startDate&&date<=endDate)jobsData[date]=d.dailyJobs[date];});}); } catch(e){ if(e && e.isTimeout) throw e; }
+        try { const avgSnap=await withTimeout(db.collection("Average Bonuses").where("name","==",currentEngineer).get(), 25000, 'Loading your data'); avgSnap.forEach(doc=>{const d=doc.data();if(d.month)avgBonusByMonth[d.month]=parseFloat(d.fullDay)||0;}); } catch(e){ if(e && e.isTimeout) throw e; }
 
         // New structure (example) — completion rate, attendance and the Customer Service / Fleet /
         // Housekeeping / Compliance flags, but only once a month has been through both review stages:
         // bonus-deduction-ftm-review.html, then bonus-deduction-carl-review.html (collection
         // "Bonus Deductions Final" — the final, authoritative figures for the engineer portal).
         let finalDataByMonth = {};
-        try { const finSnap=await db.collection("Bonus Deductions Final").where("engineerName","==",currentEngineer).get(); finSnap.forEach(doc=>{const d=doc.data();if(d.month&&!d.weekStart)finalDataByMonth[d.month]=d;}); } catch(e){}
+        try { const finSnap=await withTimeout(db.collection("Bonus Deductions Final").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); finSnap.forEach(doc=>{const d=doc.data();if(d.month&&!d.weekStart)finalDataByMonth[d.month]=d;}); } catch(e){ if(e && e.isTimeout) throw e; }
         // FTM weekly reviews — shown as PROVISIONAL figures for any month not yet through the month-end review.
         let ftmReviews = [];
-        try { const revSnap=await db.collection("Bonus Deductions Reviewed").where("engineerName","==",currentEngineer).get(); revSnap.forEach(doc=>{const d=doc.data();if(d.weekStart)ftmReviews.push(d);}); } catch(e){}
+        try { const revSnap=await withTimeout(db.collection("Bonus Deductions Reviewed").where("engineerName","==",currentEngineer).get(), 25000, 'Loading your data'); revSnap.forEach(doc=>{const d=doc.data();if(d.weekStart)ftmReviews.push(d);}); } catch(e){ if(e && e.isTimeout) throw e; }
         // Split weeks (crossing two months) are reviewed per month; ignore an older whole-week review once the split parts exist.
         { const split=new Set(ftmReviews.filter(r=>r.weekSpansMonths).map(r=>r.weekStart)); ftmReviews=ftmReviews.filter(r=>r.weekSpansMonths||!split.has(r.weekStart)); }
 
