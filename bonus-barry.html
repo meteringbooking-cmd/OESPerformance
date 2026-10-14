@@ -198,6 +198,31 @@
         .chip.done { background: rgba(52,211,153,0.12); color: var(--success); border: 1px solid rgba(52,211,153,0.4); }
         .chip.todo { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.5); }
         .chip.changed { background: rgba(187,140,255,0.12); color: var(--purple); border: 1px solid rgba(187,140,255,0.45); }
+        button.chip { cursor: pointer; font-family: 'DM Mono', monospace; transition: all 0.15s; }
+        button.chip.done:hover { background: rgba(52,211,153,0.25); }
+        button.chip.changed:hover { background: rgba(187,140,255,0.25); }
+        button.chip .go { opacity: 0.8; margin-left: 4px; }
+        tr.clickrow { cursor: pointer; }
+        tr.clickrow:hover td { background: rgba(91,156,255,0.06); }
+        .hint { font-size: 0.95rem; color: var(--text-dim); margin: -4px 0 12px; }
+        .overlay { position: fixed; inset: 0; background: rgba(5,8,14,0.78); z-index: 100; display: none; align-items: flex-start; justify-content: center; padding: 48px 18px; overflow-y: auto; }
+        .overlay.show { display: flex; }
+        .modal { background: var(--surface); border: 1px solid var(--border-hi); border-radius: 14px; width: 100%; max-width: 820px; padding: 26px 30px 28px; position: relative; }
+        .modal-close { position: absolute; top: 14px; right: 16px; background: none; border: 1px solid var(--border-hi); color: var(--text); border-radius: 6px; font-size: 1.1rem; padding: 2px 12px; cursor: pointer; }
+        .modal-close:hover { border-color: var(--brand); color: var(--brand); }
+        .modal h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 1.8rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+        .modal .meta { font-family: 'DM Mono', monospace; font-size: 0.92rem; color: var(--text-mid); margin-bottom: 18px; line-height: 1.6; }
+        .dec-group { margin-bottom: 8px; }
+        .dec { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); }
+        .dec:last-child { border-bottom: none; }
+        .dec-main { flex: 1; }
+        .dec-title { font-weight: 700; font-size: 1.1rem; }
+        .dec-detail { font-size: 1rem; color: var(--text-mid); margin-top: 3px; line-height: 1.5; }
+        .verdict { font-family: 'DM Mono', monospace; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; padding: 4px 12px; border-radius: 10px; white-space: nowrap; }
+        .verdict.applied { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.5); }
+        .verdict.removed { background: rgba(52,211,153,0.12); color: var(--success); border: 1px solid rgba(52,211,153,0.4); }
+        .verdict.info { background: rgba(91,156,255,0.12); color: var(--brand); border: 1px solid rgba(91,156,255,0.4); }
+        .dec-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-hi); font-family: 'Barlow Condensed', sans-serif; font-size: 1.5rem; font-weight: 700; text-transform: uppercase; }
         .dim { color: var(--text-dim); }
         .empty { padding: 28px; text-align: center; color: var(--text-dim); }
         .footnote { font-size: 0.95rem; color: var(--text-dim); line-height: 1.5; max-width: 110ch; }
@@ -254,6 +279,7 @@
             <div class="panel" id="detail" hidden></div>
 
             <div class="section-title">Latest submissions</div>
+            <div class="section-note">Click any row to see what the FTM chose.</div>
             <div class="panel"><table class="list" id="feed"></table></div>
 
             <p class="footnote">
@@ -261,6 +287,8 @@
             </p>
         </div>
     </main>
+
+    <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -361,6 +389,10 @@
         }
 
         // ── State ──
+        // Engineers left out of the bonus deduction process altogether.
+        const EXCLUDED_ENGINEERS = ['Billy McDonough', 'Dinis Cruz', 'Ryan Beekawa', 'Samim Miah', 'Sammim Miah', 'Stephen Lawless']
+            .map(n => n.toLowerCase().replace(/\s+/g, ' ').trim());
+        const isExcludedEngineer = e => EXCLUDED_ENGINEERS.includes(String((e && e.engineerName) || '').toLowerCase().replace(/\s+/g, ' ').trim());
         let engineers = [];
         let weeks = [];
         let rows = [];            // one per engineer-week that has something to review or was reviewed
@@ -372,6 +404,7 @@
             const snap = await getDocs(collection(db, "engineers"));
             engineers = [];
             snap.forEach(d => engineers.push({ id: d.id, ...d.data() }));
+            engineers = engineers.filter(e => !isExcludedEngineer(e));
             const teams = [...new Set(engineers.map(e => e.teamLeader).filter(Boolean))].sort((a, b) => a.localeCompare(b));
             const sel = document.getElementById('teamFilter');
             teams.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o); });
@@ -533,9 +566,13 @@
                 const c = cellOf(selected.team, selected.wk);
                 const sorted = c.list.slice().sort((a, b) => (a.status === 'done') - (b.status === 'done') || a.eng.engineerName.localeCompare(b.eng.engineerName));
                 detail.innerHTML = `<div class="section-title" style="margin-top:0">${esc(selected.team)} — w/c ${shortDate(selected.wk)}</div>
+                    <div class="hint">Click ✓ Submitted to see exactly what the FTM chose for that engineer.</div>
                     <table class="list"><thead><tr><th>Engineer</th><th>Flagged</th><th>Status</th><th>Submitted</th><th>By</th><th>Deduction</th></tr></thead><tbody>
                     ${sorted.map(r => {
-                        const chip = r.status === 'done' ? '<span class="chip done">✓ Submitted</span>' : r.status === 'changed' ? '<span class="chip changed">Changed since review</span>' : '<span class="chip todo">Outstanding</span>';
+                        const ri = rows.indexOf(r);
+                        const chip = r.status === 'done' ? `<button type="button" class="chip done" data-open="row" data-i="${ri}" title="See what the FTM chose">✓ Submitted <span class="go">▸ view</span></button>`
+                            : r.status === 'changed' ? `<button type="button" class="chip changed" data-open="row" data-i="${ri}" title="See what the FTM chose">Changed since review <span class="go">▸ view</span></button>`
+                            : '<span class="chip todo">Outstanding</span>';
                         return `<tr><td><b>${esc(r.eng.engineerName)}</b></td><td>${esc(flagSummary(r.sub, r.attCount)) || '<span class="dim">—</span>'}</td><td>${chip}</td>
                             <td class="mono">${r.rv ? esc(fmtWhen(r.rv.reviewedAt)) : '<span class="dim">—</span>'}</td>
                             <td>${r.rv ? (r.rv.reviewedBy ? esc(r.rv.reviewedBy) : '<span class="dim">name not entered</span>') : '<span class="dim">—</span>'}</td>
@@ -551,13 +588,68 @@
             const feedRows = feed.filter(f => !teamFilter || f.team === teamFilter).slice(0, 30);
             document.getElementById('feed').innerHTML = feedRows.length
                 ? `<thead><tr><th>Submitted</th><th>FTM / Team</th><th>Engineer</th><th>Week</th><th>Reviewed by</th><th>Deduction</th></tr></thead><tbody>` +
-                  feedRows.map(f => `<tr><td class="mono">${esc(fmtWhen(f.rv.reviewedAt))}</td><td>${esc(f.team)}</td><td><b>${esc(f.eng.engineerName)}</b></td>
+                  feedRows.map(f => `<tr class="clickrow" data-open="feed" data-i="${feed.indexOf(f)}" title="See what the FTM chose"><td class="mono">${esc(fmtWhen(f.rv.reviewedAt))}</td><td>${esc(f.team)}</td><td><b>${esc(f.eng.engineerName)}</b></td>
                     <td class="mono">w/c ${shortDate(f.wk)}</td><td>${f.rv.reviewedBy ? esc(f.rv.reviewedBy) : '<span class="dim">name not entered</span>'}</td>
                     <td class="mono">${f.rv.totalDeductPct !== undefined ? '−' + esc(f.rv.totalDeductPct) + '%' : '—'}</td></tr>`).join('') + `</tbody>`
                 : `<tbody><tr><td class="empty">No FTM submissions in ${formatMonth(month)} yet.</td></tr></tbody>`;
 
             document.getElementById('output').style.display = 'block';
         }
+
+
+        // ── "What did the FTM choose?" popup ──
+        function verdict(flagged, accepted) { return !flagged ? '' : accepted ? '<span class="verdict applied">Deduction applied</span>' : '<span class="verdict removed">Removed by FTM</span>'; }
+        function datesText(list) { return (list || []).length ? (list || []).slice().sort().map(shortDate).join(', ') : ''; }
+        function showReview(eng, team, wk, rv) {
+            const items = [];
+            const add = (title, detail, badge) => items.push(`<div class="dec"><div class="dec-main"><div class="dec-title">${title}</div>${detail ? `<div class="dec-detail">${detail}</div>` : ''}</div>${badge || ''}</div>`);
+
+            (rv.completionByMonth || []).filter(m => m.jobs > 0 || m.deductPct > 0).forEach(m => {
+                const rate = m.bonusRate !== undefined ? m.bonusRate : m.rawRate;
+                const added = (Number(m.priorOverturned) || 0) + (Number(m.overturnedThisWeek) || 0);
+                add(`Completion rate — ${formatMonth(m.month + '-01').replace(/ \d{4}$/, '')} to date`,
+                    `${m.completed ?? '?'} of ${m.jobs ?? '?'} jobs · ${rate !== undefined ? Number(rate).toFixed(1) + '%' : '—'} for bonus` + (added ? ` (+${added} overturned abort job${added === 1 ? '' : 's'} added back)` : ''),
+                    m.deductPct > 0 ? `<span class="verdict applied">−${esc(m.deductPct)}% for the month</span>` : '<span class="verdict info">Target met</span>');
+            });
+            (rv.abortsDetail || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(a => {
+                add(`Abort — ${esc(a.label || a.reason || 'Abort')}`,
+                    `${/^\d{4}-\d{2}-\d{2}$/.test(a.date || '') ? shortDate(a.date) : esc(a.date || '')}${a.explanation ? ' · ' + esc(a.explanation) : ''}${a.source ? ' · ' + esc(a.source) : ''}`,
+                    a.overturned ? '<span class="verdict removed">Overturned</span>' : '<span class="verdict applied">Confirmed</span>');
+            });
+            (rv.attendanceDetail || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(a => {
+                add(`Attendance — ${esc(a.code)}`, parseIso(a.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) + ' · 5%',
+                    a.accepted ? '<span class="verdict applied">Deduction applied</span>' : '<span class="verdict removed">Removed by FTM</span>');
+            });
+            if (rv.customerServiceFlagged) add('Customer Service', '', verdict(true, rv.customerServiceAccepted));
+            if (rv.fleetFlagged) add('Fleet', datesText(rv.fleetDates) ? 'Dates: ' + datesText(rv.fleetDates) : '', verdict(true, rv.fleetAccepted));
+            if (rv.housekeepingFlagged) {
+                const refs = (rv.jobRefusals || []).map(x => `<div>🚫 Job refusal · ${/^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? shortDate(x.date) : esc(x.date || '')} · Job ${esc(x.jobNumber || '—')} — ${esc(x.reason || 'no reason given')}</div>`).join('');
+                add('Housekeeping', (datesText(rv.housekeepingDates) ? 'Dates: ' + datesText(rv.housekeepingDates) : '') + refs, verdict(true, rv.housekeepingAccepted));
+            }
+            if (rv.complianceCat1Flagged) add('Compliance — Category 1', '', verdict(true, rv.complianceCat1Accepted));
+            if (rv.complianceCat2Flagged) add('Compliance — Category 2', '', verdict(true, rv.complianceCat2Accepted));
+            if (rv.complianceCat3Flagged) add('Compliance — Category 3', '', verdict(true, rv.complianceCat3Accepted));
+
+            document.getElementById('modal').innerHTML = `<button type="button" class="modal-close" id="modalClose">✕</button>
+                <h2>${esc(eng.engineerName)}</h2>
+                <div class="meta">${esc(team)} · w/c ${shortDate(wk)}${weekSpansMonths(wk) ? ' (' + formatMonth(rv.month + '-01').replace(/ \d{4}$/, '') + ' part)' : ''}<br>
+                    Submitted ${esc(fmtWhen(rv.reviewedAt)) || '—'}${rv.reviewedBy ? ' by <b style="color:var(--text)">' + esc(rv.reviewedBy) + '</b>' : ' (reviewer name not entered)'}</div>
+                <div class="dec-group">${items.length ? items.join('') : '<div class="empty">Nothing was recorded against this engineer.</div>'}</div>
+                <div class="dec-total"><span>Total weekly deduction</span><span>${rv.totalDeductPct !== undefined ? '−' + esc(rv.totalDeductPct) + '%' : '—'}</span></div>
+                <div class="hint" style="margin:10px 0 0">The monthly completion deduction is applied once to the month's bonus and isn't part of the weekly total.</div>`;
+            document.getElementById('overlay').classList.add('show');
+            document.getElementById('modalClose').addEventListener('click', closeReview);
+        }
+        function closeReview() { document.getElementById('overlay').classList.remove('show'); }
+        document.getElementById('overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeReview(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeReview(); });
+        document.addEventListener('click', e => {
+            const t = e.target.closest('[data-open]');
+            if (!t) return;
+            const i = Number(t.dataset.i);
+            const src = t.dataset.open === 'row' ? rows[i] : feed[i];
+            if (src && src.rv) showReview(src.eng, src.team, src.wk, src.rv);
+        });
 
         document.getElementById('dataMonth').addEventListener('change', () => { selected = null; loadMonth(); });
         document.getElementById('teamFilter').addEventListener('change', () => render(document.getElementById('dataMonth').value));
