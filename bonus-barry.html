@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bonus Tracker - OES Performance</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:        #141A26;
+            --surface:   #1B2333;
+            --surface2:  #212B3F;
+            --border:    #2C3B4F;
+            --border-hi: #415771;
+            --amber:     #F5A623;
+            --cyan:      #2BE4C3;
+            --purple:    #BB8CFF;
+            --brand:     #5B9CFF;
+            --success:   #34D399;
+            --text:      #F7F9FC;
+            --text-mid:  #C3CEDE;
+            --text-dim:  #93A4BA;
+            --danger:    #FF7A7A;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { height: 100%; }
+
+        body {
+            font-family: 'Barlow', sans-serif; font-size: 1.05rem;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; flex-direction: column;
+        }
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background-image:
+                linear-gradient(rgba(91,156,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(91,156,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -200px; left: 50%;
+            transform: translateX(-50%); width: 800px; height: 600px;
+            background: radial-gradient(ellipse, rgba(91,156,255,0.08) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+
+        .topbar {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 48px; height: 64px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.9); backdrop-filter: blur(12px);
+        }
+        .topbar-brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark {
+            width: 32px; height: 32px; background: var(--brand);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .brand-name {
+            font-family: 'Barlow Condensed', sans-serif; font-size: 1.35rem; font-weight: 700;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+        }
+        .brand-name span { color: var(--brand); }
+        .back-link {
+            font-family: 'DM Mono', monospace; font-size: 0.95rem;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text); text-decoration: none;
+            border: 1px solid var(--border-hi); padding: 0.35rem 0.8rem;
+            border-radius: 4px; transition: all 0.2s;
+        }
+        .back-link:hover { color: var(--brand); border-color: var(--brand); }
+
+        .hero { position: relative; z-index: 10; padding: 48px 48px 28px; }
+        .hero-label {
+            font-family: 'DM Mono', monospace; font-size: 0.95rem;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: var(--brand); margin-bottom: 12px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--brand); }
+        .hero-title {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2rem, 4vw, 3.2rem); font-weight: 900;
+            line-height: 0.95; text-transform: uppercase; color: var(--text); margin-bottom: 12px;
+        }
+        .hero-title em { font-style: normal; color: var(--brand); }
+        .hero-sub { font-size: 1.1rem; color: var(--text-mid); max-width: 78ch; line-height: 1.5; }
+
+        .content { position: relative; z-index: 10; padding: 0 48px 64px; flex: 1; }
+
+        .controls-bar {
+            display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+        }
+        .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+        .ctrl-label {
+            font-family: 'DM Mono', monospace; font-size: 0.9rem;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mid);
+        }
+        .ctrl-input, .ctrl-select {
+            background: var(--bg); border: 1px solid var(--border);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 6px;
+            font-family: 'DM Mono', monospace; font-size: 1rem; transition: border 0.2s;
+        }
+        .ctrl-input:focus, .ctrl-select:focus { outline: none; border-color: var(--brand); }
+        .btn {
+            background: var(--brand); border: none; color: #0A1220;
+            padding: 0.65rem 1.3rem; border-radius: 6px;
+            font-family: 'Barlow Condensed', sans-serif; font-size: 1.05rem; font-weight: 700;
+            letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+        }
+        .btn:hover { background: #7CAEFF; transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .updated { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 0.9rem; color: var(--text-dim); align-self: center; }
+
+        .message {
+            padding: 12px 16px; border-radius: 8px; font-family: 'DM Mono', monospace; font-size: 0.95rem;
+            margin-bottom: 16px; display: none;
+            background: rgba(255,122,122,0.1); color: var(--danger); border: 1px solid rgba(255,122,122,0.3);
+        }
+        .message.show { display: block; }
+
+        .loading-state { padding: 60px; text-align: center; color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 1.05rem; }
+        .spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2px solid var(--border); border-top-color: var(--brand);
+            border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Summary tiles ── */
+        .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; }
+        .tile.ok   { border-color: rgba(52,211,153,0.45); }
+        .tile.warn { border-color: rgba(245,166,35,0.55); }
+        .tile-label { font-family: 'DM Mono', monospace; font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+        .tile-value { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 2.3rem; line-height: 1.05; color: var(--text); }
+        .tile.ok .tile-value { color: var(--success); }
+        .tile.warn .tile-value { color: var(--amber); }
+        .tile-sub { font-size: 1rem; color: var(--text-mid); margin-top: 6px; line-height: 1.45; }
+        .chase { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .chase span {
+            font-family: 'DM Mono', monospace; font-size: 0.88rem; padding: 3px 10px; border-radius: 12px;
+            background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.45); color: var(--amber);
+        }
+
+        .section-title {
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1.4rem;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); margin: 8px 0 12px;
+        }
+        .section-note { font-size: 0.98rem; color: var(--text-dim); margin: -6px 0 14px; max-width: 95ch; line-height: 1.45; }
+
+        /* ── FTM × week matrix ── */
+        .matrix-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; margin-bottom: 24px; }
+        table.matrix { width: 100%; border-collapse: collapse; min-width: 760px; }
+        .matrix th {
+            background: var(--surface2); padding: 14px 16px; text-align: left; white-space: nowrap;
+            font-family: 'DM Mono', monospace; font-size: 0.9rem; letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--text); border-bottom: 1px solid var(--border-hi);
+        }
+        .matrix th.due { color: var(--amber); }
+        .matrix td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .matrix tr:last-child td { border-bottom: none; }
+        .matrix td.team { font-weight: 700; font-size: 1.1rem; white-space: nowrap; padding-left: 16px; }
+        .matrix td.team small { display: block; font-family: 'DM Mono', monospace; font-weight: 400; font-size: 0.82rem; color: var(--text-dim); margin-top: 2px; }
+        .matrix td.last { font-family: 'DM Mono', monospace; font-size: 0.92rem; color: var(--text-mid); white-space: nowrap; }
+
+        .cell {
+            width: 100%; min-width: 150px; text-align: left; cursor: pointer;
+            background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
+            color: var(--text-mid); font-family: 'Barlow', sans-serif; font-size: 1rem; line-height: 1.4; transition: all 0.15s;
+        }
+        .cell:hover { border-color: var(--brand); }
+        .cell.sel { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+        .cell b { display: block; font-size: 1.05rem; }
+        .cell small { display: block; font-family: 'DM Mono', monospace; font-size: 0.82rem; color: var(--text-dim); margin-top: 2px; }
+        .cell.done { background: rgba(52,211,153,0.08); border-color: rgba(52,211,153,0.4); }
+        .cell.done b { color: var(--success); }
+        .cell.todo { background: rgba(245,166,35,0.09); border-color: rgba(245,166,35,0.55); }
+        .cell.todo b { color: var(--amber); }
+        .cell.none { cursor: default; color: var(--text-dim); }
+        .cell.none:hover { border-color: var(--border); }
+
+        /* ── Detail + feed tables ── */
+        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 24px; }
+        .panel[hidden] { display: none; }
+        table.list { width: 100%; border-collapse: collapse; }
+        .list th {
+            text-align: left; padding: 10px 12px; font-family: 'DM Mono', monospace; font-size: 0.85rem;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); border-bottom: 1px solid var(--border-hi); white-space: nowrap;
+        }
+        .list td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 1.02rem; vertical-align: top; }
+        .list tr:last-child td { border-bottom: none; }
+        .list .mono { font-family: 'DM Mono', monospace; font-size: 0.92rem; color: var(--text-mid); white-space: nowrap; }
+        .chip { font-family: 'DM Mono', monospace; font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 10px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+        .chip.done { background: rgba(52,211,153,0.12); color: var(--success); border: 1px solid rgba(52,211,153,0.4); }
+        .chip.todo { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.5); }
+        .chip.changed { background: rgba(187,140,255,0.12); color: var(--purple); border: 1px solid rgba(187,140,255,0.45); }
+        .dim { color: var(--text-dim); }
+        .empty { padding: 28px; text-align: center; color: var(--text-dim); }
+        .footnote { font-size: 0.95rem; color: var(--text-dim); line-height: 1.5; max-width: 110ch; }
+
+        @media (max-width: 800px) {
+            .topbar, .hero, .content { padding-left: 18px; padding-right: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="brand-mark"></div>
+            <div class="brand-name">OES <span>Performance</span></div>
+        </div>
+        <a href="index.html" class="back-link">← Home</a>
+    </header>
+
+    <section class="hero">
+        <div class="hero-label">Overview</div>
+        <h1 class="hero-title">Bonus <em>Tracker</em></h1>
+        <p class="hero-sub">See when each FTM has submitted their weekly bonus deduction reviews, who has reviewed what, and which engineers are still outstanding.</p>
+    </section>
+
+    <main class="content">
+
+        <div class="controls-bar">
+            <div class="ctrl-group">
+                <span class="ctrl-label">Month</span>
+                <input type="month" id="dataMonth" class="ctrl-input">
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">FTM / Team</span>
+                <select id="teamFilter" class="ctrl-select"><option value="">All FTMs</option></select>
+            </div>
+            <div class="ctrl-group">
+                <span class="ctrl-label">&nbsp;</span>
+                <button class="btn" id="refreshBtn" type="button">↻ Refresh</button>
+            </div>
+            <div class="updated" id="updated"></div>
+        </div>
+
+        <div id="message" class="message"></div>
+        <div id="loadingDiv" class="loading-state"><span class="spinner"></span>Loading submissions…</div>
+
+        <div id="output" style="display:none;">
+            <div class="tiles" id="tiles"></div>
+
+            <div class="section-title">FTM submissions by week</div>
+            <div class="section-note">Each box is one FTM and one week. Green means every engineer with something to review has been submitted; amber means some are still outstanding. Click a box to see the engineers, who submitted and when.</div>
+            <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>
+
+            <div class="panel" id="detail" hidden></div>
+
+            <div class="section-title">Latest submissions</div>
+            <div class="panel"><table class="list" id="feed"></table></div>
+
+            <p class="footnote">
+                "Outstanding" counts engineers who were flagged on the Bonus Deductions page for the week (Customer Service, Fleet, Housekeeping or Compliance) or have a Sick / AAUP / AWOL day, and have not yet been submitted on the FTM Review page. Engineers whose only item is an abort under the completion target are not counted until they've been reviewed. Only weeks up to and including last week are shown — this week isn't due yet.
+            </p>
+        </div>
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+            authDomain: "oesperformance-a54c0.firebaseapp.com",
+            projectId: "oesperformance-a54c0",
+            storageBucket: "oesperformance-a54c0.firebasestorage.app",
+            messagingSenderId: "484894102454",
+            appId: "1:484894102454:web:17535ee497eac2d90d6717",
+            measurementId: "G-R56BGZYV8N"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const SUBMISSIONS = "Bonus Deductions";
+        const REVIEWED = "Bonus Deductions Reviewed";
+        const META_ID = '__vehicle_check_meta__';
+        const ATT_CODES = ['Sick', 'AAUP', 'AWOL'];
+
+        // ── Dates (weeks run Monday–Sunday) ──
+        const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const parseIso = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+        const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+        const addDays = (iso, n) => { const d = parseIso(iso); d.setDate(d.getDate() + n); return isoDate(d); };
+        const weekEndOf = wk => addDays(wk, 6);
+        const inWeek = (date, wk) => !!date && date >= wk && date <= weekEndOf(wk);
+        const primaryMonthOf = wk => addDays(wk, 3).slice(0, 7);
+        const monthEndOf = m => { const [y, mo] = m.split('-').map(Number); return isoDate(new Date(y, mo, 0, 12)); };
+        const weekSpansMonths = wk => wk.slice(0, 7) !== weekEndOf(wk).slice(0, 7);
+        const shortDate = iso => parseIso(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const formatMonth = m => parseIso(m + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        const THIS_MONDAY = isoDate(mondayOf(new Date()));
+        const LAST_MONDAY = addDays(THIS_MONDAY, -7);
+        function weeksOfMonth(m) {
+            const out = [];
+            for (let wk = isoDate(mondayOf(parseIso(m + '-01'))); wk <= monthEndOf(m) && wk <= LAST_MONDAY; wk = addDays(wk, 7)) out.push(wk);
+            return out;
+        }
+        function fmtWhen(ts) {
+            if (!ts) return '';
+            try {
+                const d = ts.toDate ? ts.toDate() : new Date(ts);
+                if (isNaN(d.getTime())) return '';
+                return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' +
+                       d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            } catch (e) { return ''; }
+        }
+        const tsMs = ts => { try { return ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : 0; } catch (e) { return 0; } };
+        const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        document.getElementById('dataMonth').value = primaryMonthOf(LAST_MONDAY);
+
+        // ── Submission trimmed to the selected month (same rules as the FTM review page) ──
+        function submissionForMonth(sub, wk, month) {
+            if (!sub || !weekSpansMonths(wk)) return sub;
+            const inM = d => typeof d === 'string' && d.startsWith(month);
+            const ownsUndated = primaryMonthOf(wk) === month;
+            const out = { ...sub };
+            const fd = (sub.fleetDates || []).filter(inM), hd = (sub.housekeepingDates || []).filter(inM);
+            out.fleet = !!sub.fleet && ((sub.fleetDates || []).length ? fd.length > 0 : ownsUndated);
+            out.fleetDates = out.fleet ? fd : [];
+            const allRefusals = Array.isArray(sub.jobRefusals) ? sub.jobRefusals : [];
+            const refM = allRefusals.filter(x => x && inM(x.date));
+            out.housekeeping = !!sub.housekeeping && (((sub.housekeepingDates || []).length || allRefusals.length) ? (hd.length > 0 || refM.length > 0) : ownsUndated);
+            out.housekeepingDates = out.housekeeping ? hd : [];
+            out.jobRefusals = out.housekeeping ? refM : [];
+            ['customerService', 'complianceCat1', 'complianceCat2', 'complianceCat3'].forEach(k => { out[k] = !!sub[k] && ownsUndated; });
+            const any = out.fleet || out.housekeeping || out.customerService || out.complianceCat1 || out.complianceCat2 || out.complianceCat3;
+            return any ? out : null;
+        }
+        const datesEqual = (a, b) => { const x = [...(a || [])].sort(), y = [...(b || [])].sort(); return x.length === y.length && x.every((v, i) => v === y[i]); };
+        // Has Barry's submission changed since the FTM last reviewed it?
+        function submissionChanged(sub, rv) {
+            const s = sub || {};
+            const pairs = [['customerService', 'customerServiceFlagged'], ['fleet', 'fleetFlagged'], ['housekeeping', 'housekeepingFlagged'],
+                           ['complianceCat1', 'complianceCat1Flagged'], ['complianceCat2', 'complianceCat2Flagged'], ['complianceCat3', 'complianceCat3Flagged']];
+            for (const [a, b] of pairs) if (!!s[a] !== !!rv[b]) return true;
+            if (!datesEqual(s.fleet ? s.fleetDates : [], rv.fleetFlagged ? rv.fleetDates : [])) return true;
+            if (!datesEqual(s.housekeeping ? s.housekeepingDates : [], rv.housekeepingFlagged ? rv.housekeepingDates : [])) return true;
+            const refKey = l => (Array.isArray(l) ? l : []).map(x => `${x.date}|${x.jobNumber}|${x.reason}`).sort().join('\n');
+            return refKey(s.housekeeping ? s.jobRefusals : []) !== refKey(rv.housekeepingFlagged ? rv.jobRefusals : []);
+        }
+        function flagSummary(sub, attCount) {
+            const bits = [];
+            if (attCount) bits.push(`Attendance ×${attCount}`);
+            if (sub) {
+                if (sub.customerService) bits.push('Customer Service');
+                if (sub.fleet) bits.push('Fleet');
+                if (sub.housekeeping) bits.push('Housekeeping' + (sub.jobRefusals && sub.jobRefusals.length ? ` (${sub.jobRefusals.length} refusal${sub.jobRefusals.length === 1 ? '' : 's'})` : ''));
+                if (sub.complianceCat1) bits.push('Cat 1');
+                if (sub.complianceCat2) bits.push('Cat 2');
+                if (sub.complianceCat3) bits.push('Cat 3');
+            }
+            return bits.join(', ');
+        }
+
+        // ── State ──
+        let engineers = [];
+        let weeks = [];
+        let rows = [];            // one per engineer-week that has something to review or was reviewed
+        let feed = [];            // reviews in the month, newest first
+        let selected = null;      // { team, wk }
+        let loadToken = 0;
+
+        async function loadEngineers() {
+            const snap = await getDocs(collection(db, "engineers"));
+            engineers = [];
+            snap.forEach(d => engineers.push({ id: d.id, ...d.data() }));
+            const teams = [...new Set(engineers.map(e => e.teamLeader).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const sel = document.getElementById('teamFilter');
+            teams.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o); });
+        }
+
+        async function loadMonth() {
+            const month = document.getElementById('dataMonth').value;
+            const token = ++loadToken;
+            document.getElementById('loadingDiv').style.display = 'block';
+            document.getElementById('output').style.display = 'none';
+            document.getElementById('message').classList.remove('show');
+            document.getElementById('refreshBtn').disabled = true;
+            try {
+                weeks = weeksOfMonth(month);
+                if (!weeks.length) { rows = []; feed = []; render(month); return; }
+                const first = weeks[0], last = weeks[weeks.length - 1];
+                const [subSnap, revSnap, attSnap] = await Promise.all([
+                    getDocs(query(collection(db, SUBMISSIONS), where("weekStart", ">=", first), where("weekStart", "<=", last))),
+                    getDocs(query(collection(db, REVIEWED), where("weekStart", ">=", first), where("weekStart", "<=", last))),
+                    getDocs(query(collection(db, "attendance"), where("date", ">=", first), where("date", "<=", weekEndOf(last)))),
+                ]);
+                if (token !== loadToken) return;
+
+                const subOf = {}, reviewOf = {};
+                subSnap.forEach(d => { const x = d.data(); if (x.engineerId && x.engineerId !== META_ID && x.weekStart) subOf[`${x.engineerId}_${x.weekStart}`] = x; });
+                revSnap.forEach(d => {
+                    const x = d.data();
+                    if (!x.engineerId || !x.weekStart) return;
+                    const key = `${x.engineerId}_${x.weekStart}`;
+                    // A split week is reviewed per month; only this month's part counts here.
+                    if (weekSpansMonths(x.weekStart)) { if (x.weekSpansMonths && x.month === month) reviewOf[key] = x; }
+                    else reviewOf[key] = x;
+                });
+                const attByName = {};
+                attSnap.forEach(d => {
+                    const x = d.data();
+                    if (!ATT_CODES.includes(x.attendance) || !String(x.date || '').startsWith(month)) return;
+                    (attByName[x.engineerName] = attByName[x.engineerName] || []).push(x.date);
+                });
+
+                rows = [];
+                for (const eng of engineers) {
+                    for (const wk of weeks) {
+                        const key = `${eng.id}_${wk}`;
+                        const sub = submissionForMonth(subOf[key] || null, wk, month);
+                        const attCount = (attByName[eng.engineerName] || []).filter(dt => inWeek(dt, wk)).length;
+                        const rv = reviewOf[key] || null;
+                        if (!sub && !attCount && !rv) continue;
+                        const status = !rv ? 'todo' : (submissionChanged(sub, rv) ? 'changed' : 'done');
+                        rows.push({ eng, team: eng.teamLeader || '(No team leader)', wk, sub, attCount, rv, status });
+                    }
+                }
+                feed = [];
+                revSnap.forEach(d => {
+                    const x = d.data();
+                    const eng = engineers.find(e => e.id === x.engineerId);
+                    if (!eng || !x.reviewedAt) return;
+                    if (weekSpansMonths(x.weekStart) ? !(x.weekSpansMonths && x.month === month) : false) return;
+                    feed.push({ eng, team: eng.teamLeader || '(No team leader)', wk: x.weekStart, rv: x });
+                });
+                feed.sort((a, b) => tsMs(b.rv.reviewedAt) - tsMs(a.rv.reviewedAt));
+                if (!selected || !weeks.includes(selected.wk)) selected = null;
+                render(month);
+                document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            } catch (err) {
+                console.error(err);
+                const m = document.getElementById('message');
+                m.textContent = 'Error loading data: ' + err.message;
+                m.classList.add('show');
+            } finally {
+                if (token === loadToken) {
+                    document.getElementById('loadingDiv').style.display = 'none';
+                    document.getElementById('refreshBtn').disabled = false;
+                }
+            }
+        }
+
+        // Team-by-week roll-up
+        function cellOf(team, wk) {
+            const list = rows.filter(r => r.team === team && r.wk === wk);
+            const done = list.filter(r => r.status === 'done'), todo = list.filter(r => r.status === 'todo'), changed = list.filter(r => r.status === 'changed');
+            const reviewed = list.filter(r => r.rv);
+            const last = reviewed.reduce((m, r) => Math.max(m, tsMs(r.rv.reviewedAt)), 0);
+            const lastRow = reviewed.find(r => tsMs(r.rv.reviewedAt) === last);
+            return { list, done, todo, changed, reviewed, last, lastRow, outstanding: todo.length + changed.length };
+        }
+
+        function render(month) {
+            const teamFilter = document.getElementById('teamFilter').value;
+            let teams = [...new Set(engineers.map(e => e.teamLeader || '(No team leader)'))].sort((a, b) => a.localeCompare(b));
+            if (teamFilter) teams = teams.filter(t => t === teamFilter);
+            const hasLast = weeks.includes(LAST_MONDAY);
+
+            // ── Tiles (for last week, the one due now) ──
+            const tiles = [];
+            if (hasLast) {
+                const cells = teams.map(t => ({ t, c: cellOf(t, LAST_MONDAY) })).filter(x => x.c.list.length);
+                const complete = cells.filter(x => x.c.outstanding === 0).length;
+                const engTotal = cells.reduce((n, x) => n + x.c.list.length, 0);
+                const engDone = cells.reduce((n, x) => n + x.c.done.length, 0);
+                const pending = cells.filter(x => x.c.outstanding > 0);
+                const allIn = cells.length > 0 && pending.length === 0;
+                tiles.push(`<div class="tile ${allIn ? 'ok' : 'warn'}">
+                    <div class="tile-label">Last week · w/c ${shortDate(LAST_MONDAY)}</div>
+                    <div class="tile-value">${complete} of ${cells.length} FTMs submitted</div>
+                    <div class="tile-sub">${engDone} of ${engTotal} engineers reviewed${allIn ? ' — all in.' : '.'}</div></div>`);
+                tiles.push(`<div class="tile ${pending.length ? 'warn' : 'ok'}">
+                    <div class="tile-label">Still to submit</div>
+                    <div class="tile-value">${pending.length ? pending.reduce((n, x) => n + x.c.outstanding, 0) + ' engineer' + (pending.reduce((n, x) => n + x.c.outstanding, 0) === 1 ? '' : 's') : 'Nobody'}</div>
+                    ${pending.length ? `<div class="chase">${pending.map(x => `<span>${esc(x.t)} · ${x.c.outstanding}</span>`).join('')}</div>` : '<div class="tile-sub">Every FTM is up to date for last week.</div>'}</div>`);
+            } else {
+                tiles.push(`<div class="tile"><div class="tile-label">Last week</div><div class="tile-value">Not in ${formatMonth(month)}</div><div class="tile-sub">w/c ${shortDate(LAST_MONDAY)} falls in another month — switch month to see it.</div></div>`);
+            }
+            const newest = feed.find(f => !teamFilter || f.team === teamFilter);
+            tiles.push(`<div class="tile"><div class="tile-label">Latest submission</div>
+                ${newest ? `<div class="tile-value">${esc(fmtWhen(newest.rv.reviewedAt))}</div>
+                <div class="tile-sub">${esc(newest.team)} — ${esc(newest.eng.engineerName)} (w/c ${shortDate(newest.wk)})${newest.rv.reviewedBy ? ' · by ' + esc(newest.rv.reviewedBy) : ''}</div>`
+                : `<div class="tile-value dim">None yet</div><div class="tile-sub">No FTM submissions in ${formatMonth(month)}.</div>`}</div>`);
+            document.getElementById('tiles').innerHTML = tiles.join('');
+
+            // ── Matrix ──
+            const matrix = document.getElementById('matrix');
+            if (!weeks.length) {
+                matrix.innerHTML = `<tbody><tr><td class="empty">No weeks due for review in ${formatMonth(month)} yet.</td></tr></tbody>`;
+            } else {
+                // FTMs with outstanding work for the due week first, then alphabetical.
+                const outstandingNow = t => (hasLast ? cellOf(t, LAST_MONDAY).outstanding : 0);
+                teams.sort((a, b) => (outstandingNow(b) > 0) - (outstandingNow(a) > 0) || a.localeCompare(b));
+                const head = `<thead><tr><th>FTM / Team</th>${weeks.map(wk => `<th class="${wk === LAST_MONDAY ? 'due' : ''}">w/c ${shortDate(wk)}${wk === LAST_MONDAY ? ' · due' : ''}</th>`).join('')}<th>Last submitted</th></tr></thead>`;
+                const body = teams.map(t => {
+                    const cells = weeks.map(wk => ({ wk, c: cellOf(t, wk) }));
+                    const lastAll = cells.reduce((best, x) => (x.c.last > (best ? best.c.last : 0) ? x : best), null);
+                    const engCount = engineers.filter(e => (e.teamLeader || '(No team leader)') === t).length;
+                    return `<tr><td class="team">${esc(t)}<small>${engCount} engineer${engCount === 1 ? '' : 's'}</small></td>` +
+                        cells.map(({ wk, c }) => {
+                            const isSel = selected && selected.team === t && selected.wk === wk;
+                            if (!c.list.length) return `<td><div class="cell none">Nothing to review</div></td>`;
+                            const cls = c.outstanding ? 'todo' : 'done';
+                            const title = c.outstanding ? `${c.outstanding} outstanding` : '✓ All submitted';
+                            const sub = [];
+                            if (c.reviewed.length) sub.push(`${c.reviewed.length} of ${c.list.length} reviewed`);
+                            else sub.push(`${c.list.length} to review`);
+                            if (c.last) sub.push(`${fmtWhen(c.lastRow.rv.reviewedAt)}${c.lastRow.rv.reviewedBy ? ' · ' + esc(c.lastRow.rv.reviewedBy) : ''}`);
+                            return `<td><button type="button" class="cell ${cls}${isSel ? ' sel' : ''}" data-team="${esc(t)}" data-wk="${wk}"><b>${title}</b>${sub.map(s => `<small>${s}</small>`).join('')}</button></td>`;
+                        }).join('') +
+                        `<td class="last">${lastAll && lastAll.c.last ? esc(fmtWhen(lastAll.c.lastRow.rv.reviewedAt)) : '<span class="dim">—</span>'}</td></tr>`;
+                }).join('');
+                matrix.innerHTML = head + `<tbody>${body}</tbody>`;
+                matrix.querySelectorAll('button.cell').forEach(b => b.addEventListener('click', () => {
+                    selected = { team: b.dataset.team, wk: b.dataset.wk };
+                    render(month);
+                    document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }));
+            }
+
+            // ── Detail panel ──
+            const detail = document.getElementById('detail');
+            if (selected && (!teamFilter || selected.team === teamFilter)) {
+                const c = cellOf(selected.team, selected.wk);
+                const sorted = c.list.slice().sort((a, b) => (a.status === 'done') - (b.status === 'done') || a.eng.engineerName.localeCompare(b.eng.engineerName));
+                detail.innerHTML = `<div class="section-title" style="margin-top:0">${esc(selected.team)} — w/c ${shortDate(selected.wk)}</div>
+                    <table class="list"><thead><tr><th>Engineer</th><th>Flagged</th><th>Status</th><th>Submitted</th><th>By</th><th>Deduction</th></tr></thead><tbody>
+                    ${sorted.map(r => {
+                        const chip = r.status === 'done' ? '<span class="chip done">✓ Submitted</span>' : r.status === 'changed' ? '<span class="chip changed">Changed since review</span>' : '<span class="chip todo">Outstanding</span>';
+                        return `<tr><td><b>${esc(r.eng.engineerName)}</b></td><td>${esc(flagSummary(r.sub, r.attCount)) || '<span class="dim">—</span>'}</td><td>${chip}</td>
+                            <td class="mono">${r.rv ? esc(fmtWhen(r.rv.reviewedAt)) : '<span class="dim">—</span>'}</td>
+                            <td>${r.rv ? (r.rv.reviewedBy ? esc(r.rv.reviewedBy) : '<span class="dim">name not entered</span>') : '<span class="dim">—</span>'}</td>
+                            <td class="mono">${r.rv && r.rv.totalDeductPct !== undefined ? '−' + esc(r.rv.totalDeductPct) + '%' : '<span class="dim">—</span>'}</td></tr>`;
+                    }).join('')}</tbody></table>`;
+                detail.hidden = false;
+            } else {
+                detail.hidden = true;
+                if (selected && teamFilter) selected = null;
+            }
+
+            // ── Feed ──
+            const feedRows = feed.filter(f => !teamFilter || f.team === teamFilter).slice(0, 30);
+            document.getElementById('feed').innerHTML = feedRows.length
+                ? `<thead><tr><th>Submitted</th><th>FTM / Team</th><th>Engineer</th><th>Week</th><th>Reviewed by</th><th>Deduction</th></tr></thead><tbody>` +
+                  feedRows.map(f => `<tr><td class="mono">${esc(fmtWhen(f.rv.reviewedAt))}</td><td>${esc(f.team)}</td><td><b>${esc(f.eng.engineerName)}</b></td>
+                    <td class="mono">w/c ${shortDate(f.wk)}</td><td>${f.rv.reviewedBy ? esc(f.rv.reviewedBy) : '<span class="dim">name not entered</span>'}</td>
+                    <td class="mono">${f.rv.totalDeductPct !== undefined ? '−' + esc(f.rv.totalDeductPct) + '%' : '—'}</td></tr>`).join('') + `</tbody>`
+                : `<tbody><tr><td class="empty">No FTM submissions in ${formatMonth(month)} yet.</td></tr></tbody>`;
+
+            document.getElementById('output').style.display = 'block';
+        }
+
+        document.getElementById('dataMonth').addEventListener('change', () => { selected = null; loadMonth(); });
+        document.getElementById('teamFilter').addEventListener('change', () => render(document.getElementById('dataMonth').value));
+        document.getElementById('refreshBtn').addEventListener('click', loadMonth);
+        setInterval(loadMonth, 5 * 60 * 1000);
+
+        (async function init() {
+            try { await loadEngineers(); } catch (err) {
+                console.error(err);
+                const m = document.getElementById('message');
+                m.textContent = 'Error loading engineers: ' + err.message; m.classList.add('show');
+            }
+            await loadMonth();
+        })();
+    </script>
+</body>
+</html>
