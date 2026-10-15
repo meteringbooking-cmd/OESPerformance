@@ -159,12 +159,89 @@ const drop = $('drop');
 ['dragleave', 'drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
 document.addEventListener('drop', e => e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]));
 
+// ---- Password-protected workbook support (Excel "Encrypt with Password", Agile encryption) ----
+const FILE_PASSWORD = 'Password123';
+const HASHES = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA384: 'SHA-384', SHA512: 'SHA-512' };
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const u32 = n => new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]);
+function cat(...arrs) {
+  const out = new Uint8Array(arrs.reduce((s, a) => s + a.length, 0));
+  let o = 0; for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+}
+function fit(buf, len) { // truncate, or pad with 0x36, per MS-OFFCRYPTO
+  if (buf.length >= len) return buf.slice(0, len);
+  const out = new Uint8Array(len).fill(0x36); out.set(buf); return out;
+}
+const isCFB = d => d.length > 8 && d[0] === 0xD0 && d[1] === 0xCF && d[2] === 0x11 && d[3] === 0xE0;
+
+// AES-CBC decrypt without padding using Web Crypto (append a synthetic PKCS#7 block)
+async function aesNoPad(key, iv, data) {
+  const last = data.slice(data.length - 16);
+  const extra = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: last }, key, new Uint8Array(16).fill(16))).slice(0, 16);
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, cat(data, extra)));
+}
+
+async function decryptWorkbook(data, password) {
+  if (!crypto || !crypto.subtle) throw new Error('This browser cannot decrypt files here. Try opening the dashboard in Chrome or Edge.');
+  const cfb = XLSX.CFB.read(data, { type: 'array' });
+  const infoE = XLSX.CFB.find(cfb, 'EncryptionInfo'), pkgE = XLSX.CFB.find(cfb, 'EncryptedPackage');
+  if (!infoE || !pkgE) return data; // not encrypted (e.g. legacy .xls)
+  const info = new Uint8Array(infoE.content), pkg = new Uint8Array(pkgE.content);
+  if (!(info[0] === 4 && info[2] === 4)) throw new Error('This file uses an older encryption type that is not supported. Re-save it in a current version of Excel.');
+
+  const xml = new DOMParser().parseFromString(new TextDecoder().decode(info.slice(8)), 'application/xml');
+  const kd = xml.getElementsByTagNameNS('*', 'keyData')[0];
+  const ek = xml.getElementsByTagNameNS('*', 'encryptedKey')[0];
+  const kdSalt = b64(kd.getAttribute('saltValue')), kdBlock = +kd.getAttribute('blockSize'), kdBits = +kd.getAttribute('keyBits');
+  const kdHash = HASHES[kd.getAttribute('hashAlgorithm')];
+  const ekSalt = b64(ek.getAttribute('saltValue')), ekBits = +ek.getAttribute('keyBits'), ekBlock = +ek.getAttribute('blockSize');
+  const ekHash = HASHES[ek.getAttribute('hashAlgorithm')], spin = +ek.getAttribute('spinCount');
+  const H = async (alg, b) => new Uint8Array(await crypto.subtle.digest(alg, b));
+
+  // Derive the password key
+  const pw = new Uint8Array(password.length * 2);
+  for (let i = 0; i < password.length; i++) { const c = password.charCodeAt(i); pw[2 * i] = c & 255; pw[2 * i + 1] = c >> 8; }
+  let h = await H(ekHash, cat(ekSalt, pw));
+  const buf = new Uint8Array(4 + h.length);
+  for (let i = 0; i < spin; i++) { buf.set(u32(i)); buf.set(h, 4); h = await H(ekHash, buf); }
+  const blockKey = new Uint8Array([0x14, 0x6e, 0x0b, 0xe7, 0xab, 0xac, 0xd0, 0xd6]);
+  const pwKey = await crypto.subtle.importKey('raw', fit(await H(ekHash, cat(h, blockKey)), ekBits / 8), 'AES-CBC', false, ['encrypt', 'decrypt']);
+
+  // Unwrap the file key
+  let fileKeyBytes;
+  try { fileKeyBytes = await aesNoPad(pwKey, fit(ekSalt, ekBlock), b64(ek.getAttribute('encryptedKeyValue'))); }
+  catch (e) { throw new Error('Wrong password for this file.'); }
+  const fileKey = await crypto.subtle.importKey('raw', fileKeyBytes.slice(0, kdBits / 8), 'AES-CBC', false, ['encrypt', 'decrypt']);
+
+  // Decrypt the package in 4096-byte segments
+  const size = pkg[0] + pkg[1] * 2 ** 8 + pkg[2] * 2 ** 16 + pkg[3] * 2 ** 24 + (pkg[4] + pkg[5] * 2 ** 8) * 2 ** 32;
+  const out = new Uint8Array(Math.ceil((pkg.length - 8) / 16) * 16);
+  let o = 0;
+  for (let i = 0, p = 8; p < pkg.length; i++, p += 4096) {
+    let seg = pkg.subarray(p, Math.min(p + 4096, pkg.length));
+    if (seg.length % 16) seg = seg.subarray(0, seg.length - (seg.length % 16));
+    if (!seg.length) break;
+    const iv = fit(await H(kdHash, cat(kdSalt, u32(i))), kdBlock);
+    const plain = await aesNoPad(fileKey, iv, seg);
+    out.set(plain, o); o += plain.length;
+  }
+  const result = out.slice(0, size);
+  if (!(result[0] === 0x50 && result[1] === 0x4B)) throw new Error('Wrong password for this file.');
+  return result;
+}
+
 function loadFile(file) {
   $('err').textContent = '';
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = async ev => {
     try {
-      workbook = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: false });
+      let bytes = new Uint8Array(ev.target.result);
+      if (isCFB(bytes)) {
+        $('fileInfo').textContent = 'Unlocking ' + file.name + '…';
+        bytes = await decryptWorkbook(bytes, FILE_PASSWORD);
+      }
+      workbook = XLSX.read(bytes, { type: 'array', cellDates: false });
       const sel = $('sheetSel');
       sel.innerHTML = workbook.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
       sel.classList.toggle('hidden', workbook.SheetNames.length < 2);
