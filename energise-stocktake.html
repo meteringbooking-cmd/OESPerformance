@@ -204,45 +204,6 @@
     .count-input::-webkit-outer-spin-button,
     .count-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
-    /* Photo button */
-    .photo-wrap { flex-shrink: 0; }
-    .photo-label {
-      position: relative;
-      width: 52px; height: 52px;
-      display: flex; align-items: center; justify-content: center;
-      border: 1.5px dashed #b6c2d4;
-      border-radius: 12px;
-      cursor: pointer;
-      background: #fff;
-      color: var(--muted);
-      overflow: hidden;
-      transition: border-color .18s, background .18s;
-    }
-    .photo-label:active { background: var(--accent-lt); }
-    .photo-label.has-photo { border: 1.5px solid var(--accent); }
-    .photo-input { display: none; }
-    .photo-preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
-    .photo-state {
-      position: absolute; inset: 0;
-      display: none; align-items: center; justify-content: center;
-      background: rgba(15,23,42,.55); color: #fff;
-    }
-    .photo-label.uploading .photo-state,
-    .photo-label.uploaded  .photo-state,
-    .photo-label.failed    .photo-state { display: flex; }
-    .photo-label.uploaded  .photo-state { background: rgba(5,150,105,.0); align-items: flex-end; justify-content: flex-end; padding: 3px; }
-    .photo-label.uploaded  .photo-state .chip { background: var(--success); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
-    .photo-label.failed    .photo-state { background: rgba(220,38,38,.8); }
-    .mini-spin {
-      width: 20px; height: 20px;
-      border: 2.5px solid rgba(255,255,255,.4); border-top-color: #fff;
-      border-radius: 50%; animation: spin .7s linear infinite;
-    }
-    .photo-label:not(.uploading) .mini-spin { display: none; }
-    .photo-label:not(.uploaded) .chip { display: none; }
-    .photo-label:not(.failed) .fail-mark { display: none; }
-    .fail-mark { font-weight: 800; font-size: 20px; }
-
     /* ── Summary bar ── */
     .summary-bar {
       position: fixed; bottom: 0; left: 0; right: 0;
@@ -390,8 +351,6 @@
   import { initializeApp }            from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
   import { getFirestore, collection, getDocs, addDoc, serverTimestamp }
     from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-  import { getStorage, ref, uploadBytes, getDownloadURL }
-    from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 
   const firebaseConfig = {
     apiKey:            'AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g',
@@ -402,15 +361,12 @@
     appId:             '1:123456789:web:abc123'
   };
 
-  const app     = initializeApp(firebaseConfig);
-  const db      = getFirestore(app);
-  const storage = getStorage(app);
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
 
   const MIN_PRICE = 5.00;
 
-  let items     = [];
-  let photoUrls = {};   // { sku: downloadURL }
-  let uploading = 0;    // photos currently uploading
+  let items = [];
 
   const $ = id => document.getElementById(id);
   const skuOf = item => item.sku || item.id;
@@ -510,21 +466,6 @@
                  inputmode="numeric" pattern="[0-9]*" aria-label="Quantity" />
           <button class="count-btn" data-act="inc" aria-label="Increase quantity" type="button">+</button>
         </div>
-        <div class="photo-wrap">
-          <label class="photo-label" aria-label="Add photo">
-            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
-            </svg>
-            <img class="photo-preview" alt="" />
-            <span class="photo-state">
-              <span class="mini-spin"></span>
-              <span class="chip"><svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
-              <span class="fail-mark">!</span>
-            </span>
-            <input class="photo-input" type="file" accept="image/*" capture="environment" />
-          </label>
-        </div>
       </div>
     `;
     return card;
@@ -547,10 +488,6 @@
 
   container.addEventListener('input', e => {
     if (e.target.classList.contains('count-input')) refreshCard(e.target.closest('.item-card'));
-  });
-
-  container.addEventListener('change', e => {
-    if (e.target.classList.contains('photo-input')) handlePhoto(e.target.closest('.item-card'), e.target);
   });
 
   function refreshCard(card) {
@@ -584,39 +521,6 @@
     const nm = $('noMatch'); if (nm) nm.style.display = shown === 0 ? 'block' : 'none';
   });
 
-  // ── Photo — upload immediately on selection ──
-  async function handlePhoto(card, input) {
-    if (!input.files || !input.files[0]) return;
-    const sku     = card.dataset.sku;
-    const file    = input.files[0];
-    const label   = card.querySelector('.photo-label');
-    const preview = card.querySelector('.photo-preview');
-
-    const reader = new FileReader();
-    reader.onload = ev => { preview.src = ev.target.result; preview.style.display = 'block'; };
-    reader.readAsDataURL(file);
-
-    label.classList.remove('uploaded', 'failed');
-    label.classList.add('has-photo', 'uploading');
-    delete photoUrls[sku];
-    uploading++;
-
-    try {
-      const storageRef = ref(storage, `stocktake/${Date.now()}_${sku}`);
-      const snap = await uploadBytes(storageRef, file);
-      photoUrls[sku] = await getDownloadURL(snap.ref);
-      label.classList.remove('uploading');
-      label.classList.add('uploaded');
-    } catch (err) {
-      console.warn(`Photo upload failed for ${sku}:`, err);
-      label.classList.remove('uploading', 'has-photo');
-      label.classList.add('failed');
-      showToast('Photo upload failed. Tap the camera to retry.', 'error');
-    } finally {
-      uploading--;
-    }
-  }
-
   // ── Submit ──
   window.submitStocktake = async function() {
     const nameEl = $('staffName');
@@ -630,8 +534,6 @@
     }
     $('namePrompt').classList.remove('show');
     nameEl.classList.remove('invalid');
-
-    if (uploading > 0) { showToast('Photos are still uploading — one moment.', 'error'); return; }
 
     const btn = $('btnSubmit');
     btn.disabled = true;
@@ -652,8 +554,7 @@
         category: item.category || '',
         price:    parseFloat(item.price),
         uom:      item.uom || '',
-        qty,
-        photoUrl: photoUrls[sku] || null
+        qty
       });
     }
 
@@ -689,7 +590,6 @@
   window.resetForm = function() {
     $('staffName').value = '';
     $('searchBox').value = '';
-    photoUrls = {};
     $('submittedOverlay').classList.remove('show');
     $('mainContent').style.display = 'block';
     $('summaryBar').style.display = 'block';
