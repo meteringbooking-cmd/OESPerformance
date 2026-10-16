@@ -1219,17 +1219,24 @@ function getDuration(jobType, engineerName) {
   }
   return 1;
 }
-function getStartHour(job){const v=job.startHour;if(v===null||v===undefined||v==="")return null;const n=+v;return isNaN(n)?null:n;}
+function getStartHour(job){if(parseSlotWindow(job.timeSlot))return null; /* appointment window rules - ignore any saved start time */ const v=job.startHour;if(v===null||v===undefined||v==="")return null;const n=+v;return isNaN(n)?null:n;}
 /* Appointment window (Appointment_Time such as "08:00 - 12:00") -> {start,end} in decimal hours, or null */
 function parseSlotWindow(v){
   if(v===null||v===undefined)return null;
-  const m=String(v).match(/(\d{1,2})[:.](\d{2})\s*(?:-|\u2013|\u2014|to)\s*(\d{1,2})[:.](\d{2})/i);
-  if(!m)return null;
-  const start=+m[1]+(+m[2])/60,end=+m[3]+(+m[4])/60;
-  return(end>start&&start<24&&end<=24)?{start,end}:null;
+  const str=String(v);
+  function conv(h,mi,ap){h=+h;mi=+(mi||0);if(ap){ap=ap.toLowerCase();if(ap==="pm"&&h<12)h+=12;if(ap==="am"&&h===12)h=0;}return h+mi/60;}
+  let a,b,m=str.match(/(?:^|[^\d])(\d{2})(\d{2})\s*(?:-|\u2013|\u2014|to)\s*(\d{2})(\d{2})(?!\d)/i); /* 0800-1200 */
+  if(m){a=conv(m[1],m[2]);b=conv(m[3],m[4]);}
+  else{
+    const T="(\\d{1,2})(?:[:.](\\d{2})(?:[:.]\\d{2})?)?\\s*(am|pm)?";
+    m=str.match(new RegExp(T+"\\s*(?:-|\\u2013|\\u2014|to)\\s*"+T,"i"));
+    if(!m)return null;
+    a=conv(m[1],m[2],m[3]);b=conv(m[4],m[5],m[6]);
+  }
+  return(a<b&&a>=0&&b<=24)?{start:a,end:b}:null;
 }
 /* A job with no exact start time but an appointment window is shown spread across that window */
-function getJobWindow(job){return getStartHour(job)===null?parseSlotWindow(job.timeSlot):null;}
+function getJobWindow(job){return parseSlotWindow(job.timeSlot);}
 function calcDayEnd(jobs){let end=DAY_END_MIN;jobs.forEach(j=>{const sh=getStartHour(j);let fin;if(sh!==null)fin=sh+getDuration(j.jobType,j.engineerName);else{const w=parseSlotWindow(j.timeSlot);if(!w)return;fin=w.end;}if(fin>end)end=Math.ceil(fin)+0.5;});return end;}
 
 const COLOURS=["#16A34A","#0EA5E9","#E08A0B","#E5484D","#7C5CE0","#0EA5E9","#f97316","#16A34A"];
@@ -1506,7 +1513,10 @@ function commitDrop(job,zoneEl){
   const updates={};
   if(eng!==job.engineerName)updates.engineerName=eng;
   if(date!==job.dateOfJob)updates.dateOfJob=date;
-  if(type==="slot"){updates.startHour=hour;if(hour===getStartHour(job)&&eng===job.engineerName&&date===job.dateOfJob)return;}
+  if(parseSlotWindow(job.timeSlot)){ /* appointment window rules: moving a job only changes engineer / date, never its time */
+    if(Object.keys(updates).length===0)return;
+  }
+  else if(type==="slot"){updates.startHour=hour;if(hour===getStartHour(job)&&eng===job.engineerName&&date===job.dateOfJob)return;}
   else if(type==="staging"){updates.startHour=null;}
   else if(type==="week"){if(date!==job.dateOfJob)updates.startHour=null;if(Object.keys(updates).length===0)return;}
   persistUpdate(job._id,updates,job);
@@ -2108,14 +2118,15 @@ function renderAllDriveTimeBadges(col, dayEnd){
 
 /* ─── Card builders ─────────────────────────────────────────── */
 function isJobOverTime(job, sh) {
-  if (sh === null) return false;
+  const w = parseSlotWindow(job.timeSlot);
+  if (sh === null && !w) return false;
   const d = parseDate(job.dateOfJob);
   if (!d || !sameDay(d, new Date())) return false;
   if (normaliseStatus(job.jobStatus || job.status) !== 'in-progress') return false;
   const dur = getDuration(job.jobType, job.engineerName);
   const now = new Date();
   const currentHour = now.getHours() + now.getMinutes() / 60;
-  return currentHour > (sh + dur);
+  return currentHour > (w ? w.end : sh + dur);
 }
 
 function makeStatusBadge(job){
@@ -2318,7 +2329,7 @@ function openModal(job,updateTracker=true){
       <div class="df"><label>Engineer</label><span>${esc(job.engineerName)}</span></div>
       <div class="df"><label>Date</label><span>${esc(job.dateOfJob)}</span></div>
       <div class="df"><label>Time Slot</label><span>${esc(job.timeSlot||"—")}</span></div>
-      <div class="df"><label>Scheduled</label><span>${sh!==null?fmtTime(sh)+" – "+fmtTime(sh+dur)+" ("+dur+"h)":"Unscheduled"}</span></div>
+      <div class="df"><label>Scheduled</label><span>${sh!==null?fmtTime(sh)+" – "+fmtTime(sh+dur)+" ("+dur+"h)":(parseSlotWindow(job.timeSlot)?fmtTime(parseSlotWindow(job.timeSlot).start)+" – "+fmtTime(parseSlotWindow(job.timeSlot).end)+" (appointment window)":"Unscheduled")}</span></div>
       <div class="df"><label>Job ID</label><span style="color:var(--accent-green);font-weight:700">${esc(job.jobId||job._id)}</span></div>
       <div class="ddiv"></div>
       <div class="df"><label>Status</label><span style="color:${getStatusColour(job)};font-weight:600">${meta.label}</span></div>
