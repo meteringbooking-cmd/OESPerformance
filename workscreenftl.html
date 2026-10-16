@@ -1839,7 +1839,8 @@
                 const spD = new Date(dateStr + 'T12:00:00');
                 const spLabel = spD.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
                 const nowHour = new Date().getHours();
-                const spNote = nowHour < 11 ? 'before 11am — still showing the previous day' : 'updated from 11am';
+                const spNextLabel = getPreviousWorkingDay().toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+                const spNote = nowHour < 11 ? `before 11am — switches to ${spNextLabel} at 11am` : 'updated from 11am';
                 const labelEl = document.getElementById('spCompletionDateLabel');
                 if (labelEl) labelEl.textContent = `${spLabel} · ${spNote}`;
 
@@ -1929,17 +1930,21 @@
                     else if (x.attendance === 'H/H') heads += 0.5;
                 });
                 const yFig = yFigSnap.exists() ? yFigSnap.data() : {};
+                // A headcount typed on submitdata-SP.html for this date wins; otherwise use the SP attendance.
                 let headSource = 'attendance';
-                if (!attRows && Number(yFig.headcount) > 0) { heads = Number(yFig.headcount); headSource = 'submitted'; }
+                if (Number(yFig.headcount) > 0) { heads = Number(yFig.headcount); headSource = 'submitted'; }
                 const yMeters = Number(yFig.meters);
                 const yMphEl = document.getElementById('spYMph'), yNoteEl = document.getElementById('spYMphNote');
                 if (yMeters >= 0 && yFig.meters !== undefined && heads > 0) {
                     yMphEl.textContent = fmtNum(yMeters / heads);
-                    yNoteEl.textContent = `${Math.round(yMeters).toLocaleString()} m ÷ ${fmtNum(heads)} heads${headSource === 'submitted' ? ' (submitted)' : ''}`;
+                    yNoteEl.textContent = `${Math.round(yMeters).toLocaleString()} m ÷ ${fmtNum(heads)} heads (${headSource === 'submitted' ? 'submitted' : 'from attendance'})`;
                 } else {
                     yMphEl.textContent = '—';
-                    yNoteEl.textContent = yFig.meters === undefined ? 'Waiting for yesterday\'s meters' : 'No attendance for this date';
+                    yNoteEl.textContent = yFig.meters === undefined ? `Waiting for meters for ${yesterdayStr.split('-').reverse().slice(0, 2).join('/')}` : 'No headcount or attendance for this date';
                 }
+
+                // Jobs: a jobs volume typed on submitdata-SP.html for this date wins over the upload count.
+                if (yFig.jobs !== undefined && Number(yFig.jobs) >= 0) document.getElementById('spYJobs').textContent = Number(yFig.jobs).toLocaleString();
 
                 // ---- Today ----
                 const t = tFigSnap.exists() ? tFigSnap.data() : {};
