@@ -94,7 +94,7 @@ details.notes ul { margin: 6px 0 0; padding-left: 18px; }
     <h2>Today's Figures</h2>
     <div class="sub">Heads, jobs and meters for the workscreen and office screen</div>
     <div class="infobox">
-      <strong>Today</strong> feeds the Today side of the Calisen tile; the previous working day feeds <strong>Yesterday</strong> (which switches over at 11am). Yesterday's <strong>MPH</strong> = meters &divide; heads.
+      <strong>Today</strong> feeds the Today side of the Calisen tile; the previous working day feeds <strong>Yesterday</strong> (which switches over at 11am). Yesterday's <strong>MPH</strong> = meters &divide; heads, and the <strong>Completion %</strong> you enter is what shows for Yesterday's Comp %.
       If you leave Jobs or Meters blank for a past day, the completed jobs and meters from your uploaded spreadsheet are used once you press <em>Publish day stats</em>.
     </div>
     <div class="field" style="max-width:220px">
@@ -105,6 +105,7 @@ details.notes ul { margin: 6px 0 0; padding-left: 18px; }
     <div class="figures-grid">
       <div class="field"><label for="figHeads">Heads</label><input type="number" id="figHeads" min="0" step="0.5" inputmode="decimal" placeholder="e.g. 12"><div class="hint">People working that day</div></div>
       <div class="field"><label for="figJobs">Jobs</label><input type="number" id="figJobs" min="0" step="1" inputmode="numeric" placeholder="e.g. 60"><div class="hint">Today: jobs for the day. Yesterday: completed jobs</div></div>
+      <div class="field"><label for="figComp">Completion %</label><input type="number" id="figComp" min="0" max="100" step="0.1" inputmode="decimal" placeholder="e.g. 85.5"><div class="hint">Shown as Yesterday's Comp %. Leave blank to use the uploaded sheet</div></div>
       <div class="field"><label for="figMeters">Meters</label><input type="number" id="figMeters" min="0" step="1" inputmode="numeric" placeholder="e.g. 85"><div class="hint">Meter count (used for meters per head)</div></div>
     </div>
     <div class="sub" id="figExisting"></div>
@@ -303,7 +304,7 @@ const addDays = (s, n) => { const d = utc(s); d.setUTCDate(d.getUTCDate() + n); 
 
 function normResult(v) {
   const s = String(v).trim().toLowerCase();
-  if (s === 'completed' || s === 'assigned deprog') return 'Completed';
+  if (s === 'completed' || s === 'assigned deprog' || s === 'pending deprog') return 'Completed';
   if (s === 'failed') return 'Failed';
   if (s === 'aborted') return 'Aborted';
   return 'Other';
@@ -408,7 +409,7 @@ function render() {
   $('kpis').innerHTML =
     kpi('Total jobs', fmt(t.jobs), 'Dual-linked jobs counted once') +
     kpi('Completion rate', rate(t), 'Completed ÷ (Completed + Failed + Aborted)') +
-    kpi('Meters completed', fmt(t.mCompleted), `${fmt(t.Completed)} jobs completed · incl. Assigned Deprog`, css('--good')) +
+    kpi('Meters completed', fmt(t.mCompleted), `${fmt(t.Completed)} jobs completed · incl. Assigned / Pending Deprog`, css('--good')) +
     kpi('Total failed', fmt(t.Failed), 'jobs', css('--critical')) +
     kpi('Total aborted', fmt(t.Aborted), 'jobs', css('--serious'));
 
@@ -423,7 +424,7 @@ function render() {
   $('notes').innerHTML = `<summary>Data notes</summary>
     <div style="margin-top:8px">Sheet used: <strong>${esc(meta.sheet)}</strong> · ${fmt(meta.rows)} rows read · ${fmt(meta.dupes)} duplicate dual-link rows removed · ${fmt(records.length)} jobs counted (${fmt(rows.length)} after filters).</div>
     ${meta.conflicts ? `<div style="margin-top:6px">${fmt(meta.conflicts)} dual-link rows had a different result from their partner; the job was counted using the best result (Completed &gt; Failed &gt; Aborted).</div>` : ''}
-    ${meta.otherResults.size ? `<div style="margin-top:6px">Results not Completed / Failed / Aborted / Assigned Deprog (counted in Total jobs only):<ul>${list(meta.otherResults)}</ul></div>` : ''}`;
+    ${meta.otherResults.size ? `<div style="margin-top:6px">Results not Completed / Failed / Aborted / Assigned Deprog / Pending Deprog (counted in Total jobs only):<ul>${list(meta.otherResults)}</ul></div>` : ''}`;
 }
 
 const COLS = [
@@ -529,7 +530,7 @@ const db = getFirestore(app);
 //  "Calisen Daily Stats":   worked out from the uploaded sheet     -> completion %, completed jobs, meters
 const FIGURES = 'Calisen Daily Figures', STATS = 'Calisen Daily Stats';
 const $ = id => document.getElementById(id);
-const figDate = $('figDate'), figHeads = $('figHeads'), figJobs = $('figJobs'), figMeters = $('figMeters');
+const figDate = $('figDate'), figHeads = $('figHeads'), figJobs = $('figJobs'), figMeters = $('figMeters'), figComp = $('figComp');
 const figSave = $('figSave'), figStatus = $('figStatus'), figExisting = $('figExisting'), pubStats = $('pubStats');
 
 const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -538,7 +539,7 @@ function prevWorkingDay() { const d = new Date(); do { d.setDate(d.getDate() - 1
 function status(type, msg) { figStatus.className = 'status ' + type; figStatus.textContent = msg; }
 
 async function loadExisting() {
-  figHeads.value = ''; figJobs.value = ''; figMeters.value = ''; figExisting.textContent = '';
+  figHeads.value = ''; figJobs.value = ''; figMeters.value = ''; figComp.value = ''; figExisting.textContent = '';
   const wanted = figDate.value; if (!wanted) return;
   try {
     const snap = await getDoc(doc(db, FIGURES, wanted));
@@ -548,6 +549,7 @@ async function loadExisting() {
       if (d.headcount !== undefined) figHeads.value = d.headcount;
       if (d.jobs !== undefined) figJobs.value = d.jobs;
       if (d.meters !== undefined) figMeters.value = d.meters;
+      if (d.completion !== undefined) figComp.value = d.completion;
       figExisting.textContent = `Figures already saved for ${uk(wanted)} - loaded above. Change a value and save to update it.`;
     } else figExisting.textContent = `Nothing saved yet for ${uk(wanted)}.`;
   } catch (e) { console.error('Could not load existing figures', e); }
@@ -562,17 +564,18 @@ figSave.addEventListener('click', async () => {
   const date = figDate.value;
   if (!date) return status('bad', 'Please select a date.');
   const data = {};
-  for (const [key, el] of [['headcount', figHeads], ['jobs', figJobs], ['meters', figMeters]]) {
+  for (const [key, el] of [['headcount', figHeads], ['jobs', figJobs], ['meters', figMeters], ['completion', figComp]]) {
     if (el.value.trim() === '') continue;
     const n = Number(el.value);
-    if (!isFinite(n) || n < 0) return status('bad', `${el === figHeads ? 'Heads' : el === figJobs ? 'Jobs' : 'Meters'} must be a number of 0 or more.`);
+    if (!isFinite(n) || n < 0) return status('bad', `${el === figHeads ? 'Heads' : el === figJobs ? 'Jobs' : el === figComp ? 'Completion %' : 'Meters'} must be a number of 0 or more.`);
+    if (key === 'completion' && n > 100) return status('bad', 'Completion % cannot be more than 100.');
     data[key] = n;
   }
   if (!Object.keys(data).length) return status('warn', 'Enter at least one figure to save.');
   figSave.disabled = true; figSave.textContent = 'Saving...';
   try {
     await setDoc(doc(db, FIGURES, date), { date, ...data, updatedAt: serverTimestamp() }, { merge: true });
-    const parts = []; if (data.headcount !== undefined) parts.push(`heads ${data.headcount}`); if (data.jobs !== undefined) parts.push(`jobs ${data.jobs}`); if (data.meters !== undefined) parts.push(`meters ${data.meters}`);
+    const parts = []; if (data.headcount !== undefined) parts.push(`heads ${data.headcount}`); if (data.jobs !== undefined) parts.push(`jobs ${data.jobs}`); if (data.meters !== undefined) parts.push(`meters ${data.meters}`); if (data.completion !== undefined) parts.push(`completion ${data.completion}%`);
     status('ok', `Saved for ${uk(date)}: ${parts.join(', ')}.`);
     loadExisting().then(() => { figExisting.textContent = `Saved - ${figExisting.textContent}`; });
   } catch (e) { console.error(e); status('bad', 'Error saving figures: ' + e.message); }

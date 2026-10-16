@@ -2033,7 +2033,7 @@
         // plus the per-day stats published from the uploaded sheet ("Calisen Daily Stats": completed / failed / aborted, meters completed).
         //  - Yesterday: Completed Jobs = submitted jobs, else completed jobs from the upload.
         //               MPH = meters (submitted, else meters completed in the upload) ÷ submitted heads.
-        //               Comp % = completed ÷ (completed + failed + aborted) from the upload.
+        //               Comp % = the completion % typed in, else completed ÷ (completed + failed + aborted) from the upload.
         //  - Today:     Jobs and MPH from today's submitted figures.
         async function loadCalisen(yesterdayStr) {
             const g = id => document.getElementById(id);
@@ -2057,9 +2057,11 @@
                 const yFig = yFigSnap.exists() ? yFigSnap.data() : {};
                 const yStat = yStatSnap.exists() ? yStatSnap.data() : null;
                 const yTotal = yStat ? (yStat.completed || 0) + (yStat.failed || 0) + (yStat.aborted || 0) : 0;
-                const yPct = yTotal > 0 ? ((yStat.completed / yTotal) * 100).toFixed(1) : null;
+                // A completion % typed on Calisen-Dashboard.html for this date wins over the one worked out from the upload.
+                const subPct = (yFig.completion !== undefined && Number(yFig.completion) >= 0) ? Number(yFig.completion) : null;
+                const yPct = subPct !== null ? subPct.toFixed(1) : (yTotal > 0 ? ((yStat.completed / yTotal) * 100).toFixed(1) : null);
                 g('calCompletionActual').textContent = yPct !== null ? yPct : '—';
-                g('calCompletionProgressText').textContent = yPct !== null ? `${yStat.completed} completed of ${yTotal} jobs` : 'No upload published for this date';
+                g('calCompletionProgressText').textContent = subPct !== null ? 'submitted' : (yPct !== null ? `${yStat.completed} completed of ${yTotal} jobs` : 'Waiting for completion %');
                 updateProgressBar('calCompletionProgress', yPct !== null ? +yPct : 0);
 
                 let yJobs = '—';
