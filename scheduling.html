@@ -1830,30 +1830,45 @@ function renderHeader(cols,dayEnd){
   }
 }
 
-const LANE_PITCH=88, WINDOW_MIN_W=96;
-/* Lays out one engineer's day.
-   - Jobs with an exact start time keep it (start -> start + duration).
-   - Jobs with only an appointment window are spread across that window. Jobs sharing the same window sit side by side
-     inside it (sharing the width equally; if that would be too narrow they wrap onto extra lines).
-   - Anything that overlaps in time with something else goes on its own line, and the row grows to fit. */
+const LANE_PITCH=88;
+/* Lays out one engineer's day on a SINGLE line.
+   - Jobs with an exact start time keep it (start -> start + duration) and act as fixed blocks.
+   - Jobs with only an appointment window (e.g. 08:00-12:00, 10:00-14:00) are sequenced so that every job sits inside its own
+     window, no two jobs overlap, and the day is shared out as evenly as possible. Every window job gets the same length of time
+     (the longest that still lets everything fit), jobs are taken earliest-deadline-first, and the whole run is spread across the
+     windows. Job-type durations are NOT used. */
 function layoutDayCards(scheduled,windowed){
   const blocks=[];
-  scheduled.forEach(j=>{const st=getStartHour(j);blocks.push({start:st,end:st+getDuration(j.jobType,j.engineerName),jobs:[j],exact:true});});
-  const groups=new Map();
-  windowed.forEach(j=>{const w=parseSlotWindow(j.timeSlot);const k=w.start+"-"+w.end;if(!groups.has(k))groups.set(k,{start:w.start,end:w.end,jobs:[]});groups.get(k).jobs.push(j);});
-  groups.forEach(g=>{g.jobs.sort((a,b)=>String(a._id||"").localeCompare(String(b._id||"")));blocks.push(g);});
-  blocks.sort((a,b)=>a.start-b.start||a.end-b.end);
-  const laneEnd=[];let total=1;
-  blocks.forEach(b=>{
-    const s0=Math.max(b.start,DAY_START),wpx=Math.max(1,(b.end-s0)*HOUR_W);
-    const perRow=b.exact?1:Math.max(1,Math.floor(wpx/WINDOW_MIN_W));
-    b.rows=Math.ceil(b.jobs.length/perRow);b.cols=Math.ceil(b.jobs.length/b.rows);
-    let lane=0;
-    for(;;){let ok=true;for(let i=lane;i<lane+b.rows;i++){if((laneEnd[i]===undefined?-1:laneEnd[i])>b.start+1e-9){ok=false;break;}}if(ok)break;lane++;}
-    for(let i=lane;i<lane+b.rows;i++)laneEnd[i]=b.end;
-    b.lane=lane;total=Math.max(total,lane+b.rows);
-  });
-  return{blocks,lanes:total};
+  const fixed=[];
+  scheduled.forEach(j=>{const st=getStartHour(j),en=st+getDuration(j.jobType,j.engineerName);fixed.push({s:st,e:en});blocks.push({start:st,end:en,jobs:[j],exact:true,cols:1,rows:1,lane:0});});
+  fixed.sort((x,y)=>x.s-y.s);
+  const items=windowed.map(j=>{const w=parseSlotWindow(j.timeSlot);return{job:j,s:Math.max(w.start,DAY_START),e:Math.max(w.end,Math.max(w.start,DAY_START)+0.25),id:String(j._id||"")};})
+    .sort((x,y)=>x.s-y.s||x.e-y.e||x.id.localeCompare(y.id));
+  const EPS=1e-6;
+  function attempt(D,force){
+    const rem=items.slice(),out=[];let t=-Infinity;
+    while(rem.length){
+      let avail=rem.filter(it=>it.s<=t+EPS);
+      if(!avail.length){t=Math.min(...rem.map(it=>it.s));avail=rem.filter(it=>it.s<=t+EPS);}
+      avail.sort((x,y)=>x.e-y.e||x.s-y.s||x.id.localeCompare(y.id));
+      const it=avail[0];
+      let st=Math.max(t,it.s);
+      for(let moved=true;moved;){moved=false;for(const f of fixed){if(st<f.e-EPS&&st+D>f.s+EPS){st=f.e;moved=true;}}}
+      if(st+D>it.e+EPS&&!force)return null;
+      out.push({it,start:st,end:force?Math.min(st+D,Math.max(it.e,st+0.25)):st+D});
+      rem.splice(rem.indexOf(it),1);t=st+D;
+    }
+    return out;
+  }
+  if(items.length){
+    let lo=0.05,hi=Math.max(...items.map(it=>it.e-it.s)),best=attempt(lo,false);
+    if(best){
+      for(let k=0;k<40;k++){const mid=(lo+hi)/2,r=attempt(mid,false);if(r){lo=mid;best=r;}else hi=mid;}
+      if(attempt(hi,false)){best=attempt(hi,false);}
+    }else best=attempt(0.25,true); /* cannot honour every window (e.g. blocked by fixed jobs) - best effort */
+    best.forEach(o=>blocks.push({start:o.start,end:o.end,jobs:[o.it.job],exact:false,cols:1,rows:1,lane:0}));
+  }
+  return{blocks,lanes:1};
 }
 
 function renderRows(cols,dayEnd){
