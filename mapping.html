@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"><script src="calisen-theme.js"></script>
+<meta charset="UTF-8">
+<title>Calisen — Field Mapping</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+    :root {
+        --accent-green: var(--ds-accent);
+        --accent-blue: var(--ds-info);
+        --text-main: var(--ds-text);
+        --text-muted: var(--ds-muted);
+        --danger: var(--ds-danger);
+        --border-glow: 0 0 18px rgb(var(--ds-accent-rgb) / 0.45);
+        --transition-fast: 0.18s ease-out;
+        --transition-med: 0.28s ease-out;
+        --sidebar-w-collapsed: 64px;
+        --sidebar-w-expanded: 210px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        font-family:var(--ds-font);
+        background: radial-gradient(circle at top left, var(--ds-surface-3) 0, var(--ds-bg) 45%, var(--ds-bg) 100%);
+        color: var(--text-main);
+        min-height: 100vh;
+        display: flex;
+        overflow: hidden;
+    }
+
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(rgb(var(--ds-fg-rgb) / 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgb(var(--ds-fg-rgb) / 0.03) 1px, transparent 1px);
+        background-size: 40px 40px;
+        opacity: 0.35;
+        pointer-events: none;
+        animation: gridMove 40s linear infinite;
+        z-index: 0;
+    }
+
+    @keyframes gridMove {
+        from { transform: translate3d(0,0,0); }
+        to { transform: translate3d(-40px,-40px,0); }
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+        width: var(--sidebar-w-collapsed);
+        min-height: 100vh;
+        background: rgb(var(--ds-surface-rgb) / 0.95);
+        border-right: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        transition: width var(--transition-med);
+        overflow: hidden;
+        position: relative;
+        z-index: 100;
+        box-shadow:var(--ds-shadow-sm);
+    }
+
+    #sidebar.expanded { width: var(--sidebar-w-expanded); }
+
+    .sidebar-header {
+        height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        flex-shrink: 0;
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .sidebar-logo-collapsed {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        filter:none;
+        display: block;
+        cursor: pointer;
+        transition: filter var(--transition-fast), transform var(--transition-fast);
+        flex-shrink: 0;
+    }
+
+    .sidebar-logo-collapsed:hover {
+        filter:none;
+        transform: scale(1.03);
+    }
+
+    .sidebar-logo-expanded {
+        height: 40px;
+        object-fit: contain;
+        filter:none;
+        border-radius: 8px;
+        opacity: 0;
+        max-width: 0;
+        overflow: hidden;
+        transition: opacity var(--transition-med), max-width var(--transition-med);
+        display: block;
+        margin-left: 14px;
+        flex-shrink: 0;
+    }
+
+    #sidebar.expanded .sidebar-logo-collapsed { display: none; }
+
+    #sidebar.expanded .sidebar-header {
+        padding: 0 12px;
+        justify-content: space-between;
+    }
+
+    #sidebar.expanded .sidebar-logo-expanded {
+        opacity: 1;
+        max-width: 150px;
+    }
+
+    .sidebar-toggle {
+        width: 30px;
+        height: 30px;
+        border-radius: 7px;
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.1);
+        background: rgb(var(--ds-fg-rgb) / 0.04);
+        color: var(--text-muted);
+        cursor: pointer;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: all var(--transition-fast);
+    }
+
+    #sidebar.expanded .sidebar-toggle { display: flex; }
+    .sidebar-toggle:hover { background: rgb(var(--ds-fg-rgb) / 0.08); color: var(--text-main); }
+
+    .sidebar-nav {
+        flex: 1;
+        padding: 14px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        height: 46px;
+        text-decoration: none;
+        color: var(--text-muted);
+        transition: all var(--transition-fast);
+        white-space: nowrap;
+        border-left: 2px solid transparent;
+        flex-shrink: 0;
+        position: relative;
+    }
+
+    .sidebar-link:hover { background: rgb(var(--ds-fg-rgb) / 0.05); color: var(--text-main); }
+
+    .sidebar-link.active {
+        background: rgb(var(--ds-accent-rgb) / 0.08);
+        color: var(--accent-green);
+        border-left-color: var(--accent-green);
+    }
+
+    .sidebar-icon {
+        width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; border-radius: 8px;
+    }
+
+    .sidebar-link.active .sidebar-icon { background: rgb(var(--ds-accent-rgb) / 0.10); }
+
+    .sidebar-label {
+        font-size: 13px; font-weight: 500;
+        opacity: 0; max-width: 0; overflow: hidden;
+        transition: opacity var(--transition-med), max-width var(--transition-med);
+        pointer-events: none;
+    }
+
+    #sidebar.expanded .sidebar-label { opacity: 1; max-width: 140px; }
+
+    .sidebar-link::after {
+        content: attr(data-label);
+        position: absolute;
+        left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+        background: rgb(var(--ds-surface-rgb) / 0.97);
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.08);
+        color: var(--text-main);
+        font-size: 12px; font-weight: 500;
+        padding: 6px 12px; border-radius: 8px;
+        white-space: nowrap; opacity: 0; pointer-events: none;
+        transition: opacity 0.15s; z-index: 200;
+        box-shadow: 4px 4px 16px rgba(0,0,0,0.5);
+    }
+
+    #sidebar:not(.expanded) .sidebar-link:hover::after { opacity: 1; }
+
+    .sidebar-footer {
+        padding: 14px;
+        border-top: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        flex-shrink: 0;
+    }
+
+    .sidebar-version {
+        font-size: 10px;
+        color: rgba(143,160,184,0.35);
+        text-align: center; letter-spacing: 0.5px;
+        opacity: 0; transition: opacity var(--transition-med);
+    }
+
+    #sidebar.expanded .sidebar-version { opacity: 1; }
+
+    /* ── MAIN ── */
+    #main-content {
+        flex: 1; display: flex; flex-direction: column;
+        min-width: 0; overflow-y: auto;
+        position: relative; z-index: 1;
+        height: 100vh;
+    }
+
+    /* TOPBAR */
+    #topbar {
+        width: 100%; padding: 14px 26px;
+        background: rgb(var(--ds-surface-rgb) / 0.9);
+        border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        display: flex; justify-content: space-between; align-items: center;
+        position: sticky; top: 0; z-index: 5;
+        box-shadow:var(--ds-shadow-sm);
+    }
+
+    #topbar-title { font-size: 16px; text-transform: uppercase; letter-spacing: 0.12em; }
+    #topbar-subtitle { font-size: 12px; color: var(--text-muted); }
+
+    #topbar-right {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 12px; color: var(--text-muted);
+    }
+
+    #status-dot {
+        width: 10px; height: 10px;
+        background: var(--accent-green); border-radius: 50%;
+        box-shadow:none;
+        display: inline-block;
+    }
+
+    /* ── PAGE ── */
+    #page-inner {
+        padding: 28px;
+        max-width: 1400px;
+        margin: 0 auto;
+        width: 100%;
+    }
+
+    .page-header { margin-bottom: 26px; }
+
+    .page-header h1 {
+        font-size: 22px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        margin-bottom: 4px;
+    }
+
+    .page-header p { font-size: 13px; color: var(--text-muted); }
+
+    /* SUMMARY BAR */
+    .summary-bar {
+        display: flex; align-items: center; gap: 16px;
+        flex-wrap: wrap; margin-bottom: 22px;
+    }
+
+    .summary-pill {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 16px; border-radius: 999px;
+        background: rgb(var(--ds-surface-rgb) / 0.9);
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        font-size: 12px; color: var(--text-muted);
+        backdrop-filter: blur(10px);
+    }
+
+    .summary-pill strong { color: var(--accent-green); font-size: 15px; font-weight: 600; }
+    .summary-pill.blue strong { color: var(--accent-blue); }
+
+    /* ACTION BUTTONS */
+    .action-bar {
+        display: flex; align-items: center; gap: 10px;
+        margin-bottom: 26px; flex-wrap: wrap;
+    }
+
+    .btn-save {
+        padding: 10px 22px; border-radius: 999px; border: none;
+        background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+        color: var(--ds-bg); font-weight: 600; font-size: 13px;
+        letter-spacing: 0.08em; text-transform: uppercase;
+        cursor: pointer;
+        box-shadow:var(--ds-shadow-sm);
+        transition: var(--transition-fast);
+        display: flex; align-items: center; gap: 8px;
+    }
+
+    .btn-save:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .btn-save:active { transform: translateY(1px) scale(0.99); }
+
+    .btn-secondary {
+        padding: 10px 18px; border-radius: 999px;
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.12);
+        background: rgb(var(--ds-bg-rgb) / 0.9); color: var(--text-muted);
+        font-size: 13px; cursor: pointer;
+        transition: var(--transition-fast);
+        letter-spacing: 0.06em; text-transform: uppercase;
+        font-family:var(--ds-font);
+        display: flex; align-items: center; gap: 8px;
+    }
+
+    .btn-secondary:hover {
+        background: rgb(var(--ds-info-rgb) / 0.1);
+        border-color: rgb(var(--ds-info-rgb) / 0.4);
+        color: var(--text-main);
+    }
+
+    .btn-danger-soft {
+        padding: 10px 18px; border-radius: 999px;
+        border: 1px solid rgb(var(--ds-danger-rgb) / 0.35);
+        background: rgb(var(--ds-bg-rgb) / 0.9); color: rgb(var(--ds-danger-rgb) / 0.8);
+        font-size: 13px; cursor: pointer;
+        transition: var(--transition-fast);
+        letter-spacing: 0.06em; text-transform: uppercase;
+        font-family:var(--ds-font);
+        display: flex; align-items: center; gap: 8px;
+    }
+
+    .btn-danger-soft:hover {
+        background: rgb(var(--ds-danger-rgb) / 0.12);
+        border-color: rgb(var(--ds-danger-rgb) / 0.7);
+        color: var(--danger);
+        box-shadow:none;
+    }
+
+    /* STATUS TAG after save */
+    .save-status {
+        font-size: 12px; padding: 6px 14px;
+        border-radius: 999px;
+        display: none; align-items: center; gap: 6px;
+    }
+
+    .save-status.ok {
+        display: flex;
+        background: rgb(var(--ds-accent-rgb) / 0.1);
+        border: 1px solid rgb(var(--ds-accent-rgb) / 0.3);
+        color: var(--accent-green);
+    }
+
+    .save-status.err {
+        display: flex;
+        background: rgb(var(--ds-danger-rgb) / 0.1);
+        border: 1px solid rgb(var(--ds-danger-rgb) / 0.3);
+        color: var(--danger);
+    }
+
+    /* SEARCH */
+    .search-bar {
+        position: relative; margin-bottom: 22px;
+    }
+
+    .search-bar svg {
+        position: absolute; left: 14px; top: 50%;
+        transform: translateY(-50%); pointer-events: none; opacity: 0.45;
+    }
+
+    .search-input {
+        width: 100%; height: 44px;
+        background: rgb(var(--ds-bg-rgb) / 0.9);
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.08);
+        border-radius: 12px; color: var(--text-main);
+        font-size: 13px; font-family:var(--ds-font);
+        padding: 0 16px 0 42px; outline: none;
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .search-input:focus {
+        border-color: var(--accent-blue);
+        box-shadow:none;
+    }
+
+    .search-input::placeholder { color: var(--text-muted); }
+
+    /* GRID */
+    .categories-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 18px;
+    }
+
+    /* CATEGORY CARD */
+    .cat-card {
+        border-radius: 16px;
+        background: rgb(var(--ds-surface-rgb) / 0.9);
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        padding: 0;
+        backdrop-filter: blur(18px);
+        box-shadow:var(--ds-shadow-sm);
+        position: relative;
+        overflow: hidden;
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .cat-card::before {
+        content: "";
+        position: absolute; inset: -40%;
+        background: radial-gradient(circle at top left, rgb(var(--ds-accent-rgb) / 0.07), transparent 55%),
+                    radial-gradient(circle at bottom right, rgb(var(--ds-info-rgb) / 0.07), transparent 55%);
+        opacity: 0.8; z-index: 0; pointer-events: none;
+    }
+
+    .cat-card:hover {
+        border-color: rgb(var(--ds-accent-rgb) / 0.15);
+        box-shadow:var(--ds-shadow-sm);
+    }
+
+    .cat-card.has-active {
+        border-color: rgb(var(--ds-accent-rgb) / 0.18);
+    }
+
+    /* CARD HEADER */
+    .cat-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 18px 14px;
+        border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.05);
+        position: relative; z-index: 1;
+        gap: 10px;
+    }
+
+    .cat-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+    .cat-icon {
+        width: 34px; height: 34px; border-radius: 9px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .cat-icon svg {
+        width: 16px; height: 16px;
+        flex-shrink: 0;
+    }
+
+    .cat-title {
+        font-size: 12px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        color: var(--text-main); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .cat-count {
+        font-size: 11px; color: var(--text-muted);
+        margin-top: 1px;
+    }
+
+    .cat-count strong { color: var(--accent-green); }
+
+    /* Toggle all button */
+    .cat-toggle-all {
+        padding: 4px 10px; border-radius: 999px;
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.1);
+        background: transparent; color: var(--text-muted);
+        font-size: 10px; cursor: pointer;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        transition: var(--transition-fast); flex-shrink: 0;
+        font-family:var(--ds-font);
+        white-space: nowrap;
+    }
+
+    .cat-toggle-all:hover {
+        background: rgb(var(--ds-accent-rgb) / 0.08);
+        border-color: rgb(var(--ds-accent-rgb) / 0.3);
+        color: var(--accent-green);
+    }
+
+    /* FIELDS LIST */
+    .cat-fields {
+        padding: 10px 14px 14px;
+        display: flex; flex-direction: column; gap: 4px;
+        position: relative; z-index: 1;
+    }
+
+    /* FIELD ROW */
+    .field-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 10px; border-radius: 9px;
+        cursor: pointer;
+        transition: background var(--transition-fast);
+        user-select: none;
+        border: 1px solid transparent;
+    }
+
+    .field-row:hover { background: rgb(var(--ds-fg-rgb) / 0.04); }
+
+    .field-row.active {
+        background: rgb(var(--ds-accent-rgb) / 0.07);
+        border-color: rgb(var(--ds-accent-rgb) / 0.12);
+    }
+
+    .field-row.hidden-row { display: none; }
+
+    /* TOGGLE SWITCH */
+    .toggle-switch {
+        position: relative; width: 36px; height: 20px; flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+        opacity: 0; width: 0; height: 0; position: absolute;
+    }
+
+    .toggle-track {
+        position: absolute; inset: 0;
+        background: rgb(var(--ds-fg-rgb) / 0.08);
+        border-radius: 999px;
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.1);
+        transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+        cursor: pointer;
+    }
+
+    .toggle-track::after {
+        content: "";
+        position: absolute; top: 2px; left: 2px;
+        width: 14px; height: 14px;
+        background: var(--text-muted);
+        border-radius: 50%;
+        transition: transform var(--transition-fast), background var(--transition-fast);
+    }
+
+    .toggle-switch input:checked + .toggle-track {
+        background: rgb(var(--ds-accent-rgb) / 0.2);
+        border-color: rgb(var(--ds-accent-rgb) / 0.5);
+        box-shadow:none;
+    }
+
+    .toggle-switch input:checked + .toggle-track::after {
+        transform: translateX(16px);
+        background: var(--accent-green);
+    }
+
+    .field-name {
+        font-size: 13px; color: var(--text-muted);
+        flex: 1; transition: color var(--transition-fast);
+    }
+
+    .field-row.active .field-name { color: var(--text-main); }
+
+    .field-tag {
+        font-size: 10px; padding: 2px 7px; border-radius: 999px;
+        background: rgb(var(--ds-info-rgb) / 0.08);
+        border: 1px solid rgb(var(--ds-info-rgb) / 0.15);
+        color: var(--accent-blue);
+        font-weight: 500; letter-spacing: 0.04em;
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+    }
+
+    .field-row.active .field-tag { opacity: 1; }
+
+    /* TOAST */
+    #toast {
+        position: fixed; bottom: 28px; right: 28px;
+        padding: 12px 20px; border-radius: 12px;
+        font-size: 13px; font-weight: 500;
+        display: flex; align-items: center; gap: 10px;
+        z-index: 9999;
+        transform: translateY(20px); opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+        pointer-events: none;
+    }
+
+    #toast.show {
+        transform: translateY(0); opacity: 1;
+    }
+
+    #toast.success {
+        background: rgb(var(--ds-surface-rgb) / 0.97);
+        border: 1px solid rgb(var(--ds-accent-rgb) / 0.4);
+        color: var(--accent-green);
+        box-shadow:var(--ds-shadow-md);
+    }
+
+    #toast.error {
+        background: rgba(20,10,12,0.97);
+        border: 1px solid rgb(var(--ds-danger-rgb) / 0.4);
+        color: var(--danger);
+        box-shadow:var(--ds-shadow-md);
+    }
+
+    /* LOADING OVERLAY */
+    #loading-overlay {
+        position: fixed; inset: 0;
+        background: rgb(var(--ds-bg-rgb) / 0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9998; backdrop-filter: blur(6px);
+    }
+
+    #loading-overlay.hidden { display: none; }
+
+    .loading-box {
+        padding: 30px 40px; border-radius: 18px;
+        background: rgb(var(--ds-surface-rgb) / 0.98);
+        border: 1px solid rgb(var(--ds-fg-rgb) / 0.06);
+        text-align: center;
+        box-shadow:var(--ds-shadow-sm);
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-spinner {
+        width: 36px; height: 36px;
+        border: 3px solid rgb(var(--ds-fg-rgb) / 0.06);
+        border-top-color: var(--accent-green);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 14px;
+    }
+
+    .loading-text { font-size: 13px; color: var(--text-muted); }
+
+    @media (max-width: 768px) {
+        .categories-grid { grid-template-columns: 1fr; }
+        #page-inner { padding: 18px; }
+    }
+</style>
+<link rel="stylesheet" href="calisen-ds.css"><link rel="stylesheet" href="calisen-icons.css"><script defer src="calisen-icons.js"></script></head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+    <div class="loading-box">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading configuration…</div>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+    <div class="sidebar-header">
+        <img class="sidebar-logo-collapsed" id="logoCollapsed"
+             src="https://www.dropbox.com/scl/fi/z1uitujubjdw2wtoedh0k/Gecko-tech-logo-design.png?rlkey=btn0fgjn6b1s8odpc5saghhgo&st=zm9wjxvr&dl=1"
+             alt="Geko" title="Expand sidebar">
+        <img class="sidebar-logo-expanded"
+             src="https://www.dropbox.com/scl/fi/90alqdk8bozulywe2c8bw/Tech-inspired-Geko-logo-design.png?rlkey=tcagro1dwoelqxfmxqldrp178&st=xh5pubjr&dl=1"
+             alt="Geko">
+        <button class="sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+    </div>
+
+    <nav class="sidebar-nav">
+        <a href="dashboard.html" class="sidebar-link" data-label="Dashboard">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+            <span class="sidebar-label">Dashboard</span>
+        </a>
+        <a href="scheduling.html" class="sidebar-link" data-label="Scheduling">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span>
+            <span class="sidebar-label">Scheduling</span>
+        </a>
+        <a href="dataupload-calisen.html" class="sidebar-link" data-label="Database">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v4c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 9v4c0 1.66 4.03 3 9 3s9-1.34 9-3V9"/><path d="M3 13v4c0 1.66 4.03 3 9 3s9-1.34 9-3v-4"/></svg></span>
+            <span class="sidebar-label">Database</span>
+        </a>
+        <a href="viewdata.html" class="sidebar-link" data-label="View Data">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>
+            <span class="sidebar-label">View Data</span>
+        </a>
+        <a href="userdatabase.html" class="sidebar-link" data-label="Users">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
+            <span class="sidebar-label">Users</span>
+        </a>
+        <a href="mapping.html" class="sidebar-link active" data-label="Mapping">
+            <span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/></svg></span>
+            <span class="sidebar-label">Mapping</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="sidebar-version">v1.0.0</div>
+    </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div id="main-content">
+    <header id="topbar">
+        <div id="topbar-left">
+            <div>
+                <div id="topbar-title">Field Mapping</div>
+                <div id="topbar-subtitle">Configure which data fields are active for import matching</div>
+            </div>
+        </div>
+        <div id="topbar-right">
+            <span id="status-dot"></span>
+            <span id="status-text">Admin</span>
+        </div>
+    </header>
+
+    <div id="page-inner">
+        <div class="page-header">
+            <h1>Field Mapping Configuration</h1>
+            <p>Toggle fields on or off. Only enabled fields will be matched when data is loaded or imported.</p>
+            <div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-radius:10px;background:rgb(var(--ds-accent-rgb) / 0.05);border:1px solid rgb(var(--ds-accent-rgb) / 0.18);font-size:12px;color:rgb(var(--ds-accent-rgb) / 0.8);line-height:1.6">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+                <span>Each field shows the <strong>Firestore key</strong> it saves as (in italic). These match the keys <strong>scheduling.html</strong> reads — enabling a field here makes it available in the Data Upload column mapper.</span>
+            </div>
+        </div>
+
+        <!-- Summary + Actions -->
+        <div class="summary-bar">
+            <div class="summary-pill">
+                <strong id="count-enabled">0</strong> fields enabled
+            </div>
+            <div class="summary-pill blue">
+                <strong id="count-total">0</strong> total fields
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <button class="btn-save" id="saveBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Save Configuration
+            </button>
+            <button class="btn-secondary" id="enableAllBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                Enable All
+            </button>
+            <button class="btn-danger-soft" id="disableAllBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Disable All
+            </button>
+            <div class="save-status" id="saveStatus"></div>
+        </div>
+
+        <!-- Search -->
+        <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="text" class="search-input" id="searchInput" placeholder="Search fields across all categories…">
+        </div>
+
+        <!-- Categories Grid -->
+        <div class="categories-grid" id="categoriesGrid"></div>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ── SVG Icon definitions per category ─────────────────────────────────────────
+const CATEGORY_ICONS = {
+    identifiers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><circle cx="12" cy="15" r="1.5"/></svg>`,
+    personal:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`,
+    address:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>`,
+    contact:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.06 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 5.99 5.99l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16l.92.92z"/></svg>`,
+    datetime:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>`,
+    job:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
+    assignment:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    status:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+    financial:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+};
+
+// ── Field Definitions ──────────────────────────────────────────────────────────
+const CATEGORIES = [
+    {
+        id: "identifiers",
+        label: "Unique Identifiers",
+        color: "rgba(22,163,74,0.12)",
+        strokeColor: "rgba(22,163,74,0.5)",
+        iconColor: "rgba(22,163,74,0.85)",
+        fields: ["ID", "Record_ID", "Customer_ID", "Job_ID", "Employee_ID", "Reference_Number"]
+    },
+    {
+        id: "personal",
+        label: "Personal / Customer Info",
+        color: "rgba(14,165,233,0.12)",
+        strokeColor: "rgba(14,165,233,0.5)",
+        iconColor: "rgba(14,165,233,0.85)",
+        fields: ["Title", "First_Name", "Last_Name", "Full_Name", "Company_Name"]
+    },
+    {
+        id: "address",
+        label: "Address & Location",
+        color: "rgba(224,138,11,0.12)",
+        strokeColor: "rgba(224,138,11,0.4)",
+        iconColor: "rgba(224,138,11,0.85)",
+        fields: ["Address_Line1", "Address_Line2", "City_Town", "County", "Postcode", "Country"]
+    },
+    {
+        id: "contact",
+        label: "Contact Information",
+        color: "rgba(150,100,255,0.12)",
+        strokeColor: "rgba(150,100,255,0.45)",
+        iconColor: "rgba(170,130,255,0.85)",
+        fields: ["Phone", "Mobile", "Email", "Alternative_Contact"]
+    },
+    {
+        id: "datetime",
+        label: "Date & Time Fields",
+        color: "rgba(22,163,74,0.10)",
+        strokeColor: "rgba(22,163,74,0.4)",
+        iconColor: "rgba(22,163,74,0.75)",
+        fields: ["Date", "Appointment_Date", "Appointment_Time", "Created_Date", "Updated_Date", "Completed_Date", "Job_Length"]
+    },
+    {
+        id: "job",
+        label: "Job / Service Details",
+        color: "rgba(224,138,11,0.12)",
+        strokeColor: "rgba(224,138,11,0.45)",
+        iconColor: "rgba(224,138,11,0.9)",
+        fields: ["Job_Type", "Job_Description", "Service_Type", "Priority", "Duration", "Notes"]
+    },
+    {
+        id: "assignment",
+        label: "Assignment / Staff",
+        color: "rgba(14,165,233,0.10)",
+        strokeColor: "rgba(14,165,233,0.4)",
+        iconColor: "rgba(14,165,233,0.75)",
+        fields: ["Engineer", "Assigned_To", "Team", "Starting_Postcode", "Vehicle_ID"]
+    },
+    {
+        id: "status",
+        label: "Status & Workflow",
+        color: "rgba(229,72,77,0.10)",
+        strokeColor: "rgba(229,72,77,0.4)",
+        iconColor: "rgba(229,72,77,0.9)",
+        fields: ["Status", "Progress", "Stage", "Cancellation_Reason"]
+    },
+    {
+        id: "financial",
+        label: "Financial Fields",
+        color: "rgba(22,163,74,0.08)",
+        strokeColor: "rgba(22,163,74,0.35)",
+        iconColor: "rgba(22,163,74,0.7)",
+        fields: ["Price", "Cost", "Invoice_Number", "Payment_Status", "Discount", "VAT"]
+    }
+];
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let mapping = {};
+
+const ALL_FIELDS = CATEGORIES.flatMap(c => c.fields);
+
+// ── Firebase ───────────────────────────────────────────────────────────────────
+const MAPPING_DOC = doc(db, "Calisen Mapping", "config");
+
+async function loadMapping() {
+    try {
+        const snap = await getDoc(MAPPING_DOC);
+        if (snap.exists()) {
+            const saved = snap.data() || {};
+            ALL_FIELDS.forEach(f => {
+                mapping[f] = f in saved ? saved[f] : true;
+            });
+        } else {
+            ALL_FIELDS.forEach(f => { mapping[f] = true; });
+        }
+    } catch (err) {
+        console.error("Load error:", err);
+        ALL_FIELDS.forEach(f => { mapping[f] = true; });
+    }
+    document.getElementById("loading-overlay").classList.add("hidden");
+    renderGrid();
+    updateCounts();
+}
+
+async function saveMapping() {
+    const btn = document.getElementById("saveBtn");
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Saving…`;
+    btn.disabled = true;
+
+    const fullMapping = {};
+    ALL_FIELDS.forEach(f => {
+        fullMapping[f] = mapping[f] === true;
+    });
+
+    try {
+        await setDoc(MAPPING_DOC, fullMapping);
+        mapping = fullMapping;
+        showToast("Configuration saved successfully", "success");
+    } catch (err) {
+        console.error("Save error:", err);
+        showToast("Failed to save — check connection", "error");
+    }
+
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration`;
+    btn.disabled = false;
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function renderGrid() {
+    const grid = document.getElementById("categoriesGrid");
+    grid.innerHTML = "";
+
+    CATEGORIES.forEach(cat => {
+        const enabledCount = cat.fields.filter(f => mapping[f]).length;
+
+        const card = document.createElement("div");
+        card.className = "cat-card" + (enabledCount > 0 ? " has-active" : "");
+        card.dataset.catId = cat.id;
+
+        const iconSvg = CATEGORY_ICONS[cat.id] || '';
+
+        card.innerHTML = `
+            <div class="cat-header">
+                <div class="cat-header-left">
+                    <div class="cat-icon" style="background:${cat.color};border:1px solid ${cat.strokeColor};color:${cat.iconColor};">
+                        ${iconSvg}
+                    </div>
+                    <div>
+                        <div class="cat-title">${cat.label}</div>
+                        <div class="cat-count"><strong id="count-${cat.id}">${enabledCount}</strong> / ${cat.fields.length} enabled</div>
+                    </div>
+                </div>
+                <button class="cat-toggle-all" data-cat="${cat.id}">
+                    ${enabledCount === cat.fields.length ? "Disable All" : "Enable All"}
+                </button>
+            </div>
+            <div class="cat-fields" id="fields-${cat.id}">
+                ${cat.fields.map(field => buildFieldRow(field)).join("")}
+            </div>
+        `;
+
+        grid.appendChild(card);
+    });
+
+    grid.querySelectorAll(".cat-toggle-all").forEach(btn => {
+        btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const catId = btn.dataset.cat;
+            const cat = CATEGORIES.find(c => c.id === catId);
+            const allOn = cat.fields.every(f => mapping[f]);
+            cat.fields.forEach(f => { mapping[f] = !allOn; });
+            refreshCategory(catId);
+            updateCounts();
+        });
+    });
+
+    CATEGORIES.forEach(cat => {
+        const container = document.getElementById(`fields-${cat.id}`);
+        if (container) attachFieldListeners(container, cat.id);
+    });
+}
+
+const SCHEDULER_KEYS = {
+    ID:'jobId', Record_ID:'recordId', Customer_ID:'customerId', Job_ID:'jobId',
+    Employee_ID:'employeeId', Reference_Number:'referenceNumber',
+    Title:'title', First_Name:'firstName', Last_Name:'lastName',
+    Full_Name:'customerName', Company_Name:'companyName',
+    Address_Line1:'addressLine1', Address_Line2:'addressLine2',
+    City_Town:'cityTown', County:'county', Postcode:'postcode', Country:'country',
+    Phone:'contactNumber', Mobile:'mobile', Email:'email',
+    Alternative_Contact:'alternativeContact',
+    Date:'dateOfJob', Appointment_Date:'dateOfJob', Appointment_Time:'timeSlot',
+    Created_Date:'createdDate', Updated_Date:'updatedDate', Completed_Date:'completedDate', Job_Length:'jobLength',
+    Job_Type:'jobType', Job_Description:'jobDescription', Service_Type:'serviceType',
+    Priority:'priority', Duration:'duration', Notes:'notes',
+    Engineer:'engineerName', Assigned_To:'engineerName', Team:'team',
+    Starting_Postcode:'startingPostcode', Vehicle_ID:'vehicleId',
+    Status:'jobStatus', Progress:'progress', Stage:'stage',
+    Cancellation_Reason:'cancellationReason',
+    Price:'price', Cost:'cost', Invoice_Number:'invoiceNumber',
+    Payment_Status:'paymentStatus', Discount:'discount', VAT:'vat',
+};
+
+function buildFieldRow(field) {
+    const on = !!mapping[field];
+    const displayName = field.replace(/_/g, " ");
+    const schedulerKey = SCHEDULER_KEYS[field] || field.toLowerCase();
+    return `
+        <div class="field-row${on ? " active" : ""}" data-field="${field}">
+            <label class="toggle-switch">
+                <input type="checkbox" ${on ? "checked" : ""} data-field="${field}">
+                <span class="toggle-track"></span>
+            </label>
+            <div style="flex:1;min-width:0">
+                <span class="field-name">${displayName}</span>
+                <div style="font-size:10px;color:var(--text-muted);opacity:0.6;margin-top:1px">→ <em>${schedulerKey}</em></div>
+            </div>
+            <span class="field-tag">ON</span>
+        </div>
+    `;
+}
+
+function attachFieldListeners(container, catId) {
+    container.querySelectorAll("input[type=checkbox]").forEach(cb => {
+        cb.addEventListener("change", e => {
+            const field = e.target.dataset.field;
+            mapping[field] = e.target.checked;
+            const row = e.target.closest(".field-row");
+            if (row) row.classList.toggle("active", e.target.checked);
+            refreshCategoryCount(catId);
+            updateCounts();
+        });
+    });
+}
+
+function refreshCategory(catId) {
+    const cat = CATEGORIES.find(c => c.id === catId);
+    const container = document.getElementById(`fields-${catId}`);
+    if (!container) return;
+
+    container.innerHTML = cat.fields.map(f => buildFieldRow(f)).join("");
+    attachFieldListeners(container, catId);
+    refreshCategoryCount(catId);
+}
+
+function refreshCategoryCount(catId) {
+    const cat = CATEGORIES.find(c => c.id === catId);
+    if (!cat) return;
+    const enabledCount = cat.fields.filter(f => mapping[f]).length;
+    const countEl = document.getElementById(`count-${catId}`);
+    if (countEl) countEl.textContent = enabledCount;
+
+    const card = document.querySelector(`.cat-card[data-cat-id="${catId}"]`);
+    if (card) card.classList.toggle("has-active", enabledCount > 0);
+
+    const btn = document.querySelector(`.cat-toggle-all[data-cat="${catId}"]`);
+    if (btn) btn.textContent = enabledCount === cat.fields.length ? "Disable All" : "Enable All";
+}
+
+function updateCounts() {
+    const total = ALL_FIELDS.length;
+    const enabled = ALL_FIELDS.filter(f => mapping[f]).length;
+    document.getElementById("count-enabled").textContent = enabled;
+    document.getElementById("count-total").textContent = total;
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────────
+document.getElementById("searchInput").addEventListener("input", function() {
+    const q = this.value.trim().toLowerCase();
+    document.querySelectorAll(".field-row").forEach(row => {
+        const name = (row.dataset.field || "").toLowerCase().replace(/_/g, " ");
+        row.classList.toggle("hidden-row", q !== "" && !name.includes(q));
+    });
+
+    document.querySelectorAll(".cat-card").forEach(card => {
+        const visible = card.querySelectorAll(".field-row:not(.hidden-row)").length > 0;
+        card.style.display = visible ? "" : "none";
+    });
+});
+
+// ── Enable / Disable All ───────────────────────────────────────────────────────
+document.getElementById("enableAllBtn").addEventListener("click", () => {
+    ALL_FIELDS.forEach(f => { mapping[f] = true; });
+    renderGrid();
+    updateCounts();
+    showToast("All fields enabled", "success");
+});
+
+document.getElementById("disableAllBtn").addEventListener("click", () => {
+    ALL_FIELDS.forEach(f => { mapping[f] = false; });
+    renderGrid();
+    updateCounts();
+    showToast("All fields disabled", "success");
+});
+
+// ── Save ───────────────────────────────────────────────────────────────────────
+document.getElementById("saveBtn").addEventListener("click", saveMapping);
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = "success") {
+    const t = document.getElementById("toast");
+    const icon = type === "success"
+        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    t.className = `${type} show`;
+    t.innerHTML = icon + msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.classList.remove("show"); }, 3200);
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────────────
+const sidebar = document.getElementById("sidebar");
+const toggleBtn = document.getElementById("sidebarToggle");
+const logoCollapsed = document.getElementById("logoCollapsed");
+
+function toggleSidebar() {
+    sidebar.classList.toggle("expanded");
+    localStorage.setItem("calisen-sidebar", sidebar.classList.contains("expanded") ? "expanded" : "collapsed");
+}
+
+toggleBtn.addEventListener("click", toggleSidebar);
+logoCollapsed.addEventListener("click", toggleSidebar);
+
+if (localStorage.getItem("calisen-sidebar") === "expanded") {
+    sidebar.classList.add("expanded");
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadMapping();
+</script>
+</body>
+</html>

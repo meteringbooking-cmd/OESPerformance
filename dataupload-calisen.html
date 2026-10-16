@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"><script src="calisen-theme.js"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calisen — Data Upload</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root {
+        --accent-green: var(--ds-accent);
+        --accent-blue: var(--ds-info);
+        --text-main: var(--ds-text);
+        --text-muted: var(--ds-muted);
+        --danger: var(--ds-danger);
+        --warning: var(--ds-warn);
+        --transition-fast: 0.18s ease-out;
+        --transition-med: 0.28s ease-out;
+        --sidebar-w-collapsed: 64px;
+        --sidebar-w-expanded: 210px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family:var(--ds-font); background: radial-gradient(circle at top left, var(--ds-surface-3) 0, var(--ds-bg) 45%, var(--ds-bg) 100%); color: var(--text-main); min-height: 100vh; display: flex; overflow: hidden; }
+    body::before { content: ""; position: fixed; inset: 0; background-image: linear-gradient(rgb(var(--ds-fg-rgb) / 0.03) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--ds-fg-rgb) / 0.03) 1px, transparent 1px); background-size: 40px 40px; opacity: 0.35; pointer-events: none; animation: gridMove 40s linear infinite; z-index: 0; }
+    @keyframes gridMove { from{transform:translate3d(0,0,0)} to{transform:translate3d(-40px,-40px,0)} }
+
+    #sidebar { width: var(--sidebar-w-collapsed); height: 100vh; background: rgb(var(--ds-surface-rgb) / 0.95); border-right: 1px solid rgb(var(--ds-fg-rgb) / 0.06); display: flex; flex-direction: column; flex-shrink: 0; transition: width var(--transition-med); overflow: hidden; position: relative; z-index: 100; box-shadow:var(--ds-shadow-sm); }
+    #sidebar.expanded { width: var(--sidebar-w-expanded); }
+    .sidebar-header { height: 70px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06); flex-shrink: 0; padding: 0; overflow: hidden; }
+    .sidebar-logo-collapsed { width: 100%; height: 100%; object-fit: cover; object-position: center; filter:none; display: block; cursor: pointer; transition: filter var(--transition-fast), transform var(--transition-fast); }
+    .sidebar-logo-collapsed:hover { filter:none; transform: scale(1.03); }
+    .sidebar-logo-expanded { height: 40px; object-fit: contain; filter:none; border-radius: 8px; opacity: 0; max-width: 0; overflow: hidden; transition: opacity var(--transition-med), max-width var(--transition-med); display: block; margin-left: 14px; flex-shrink: 0; }
+    #sidebar.expanded .sidebar-logo-collapsed { display: none; }
+    #sidebar.expanded .sidebar-header { padding: 0 12px; justify-content: space-between; }
+    #sidebar.expanded .sidebar-logo-expanded { opacity: 1; max-width: 150px; }
+    .sidebar-toggle { width: 30px; height: 30px; border-radius: 7px; border: 1px solid rgb(var(--ds-fg-rgb) / 0.1); background: rgb(var(--ds-fg-rgb) / 0.04); color: var(--text-muted); cursor: pointer; display: none; align-items: center; justify-content: center; flex-shrink: 0; transition: all var(--transition-fast); }
+    #sidebar.expanded .sidebar-toggle { display: flex; }
+    .sidebar-toggle:hover { background: rgb(var(--ds-fg-rgb) / 0.08); color: var(--text-main); }
+    .sidebar-nav { flex: 1; padding: 14px 0; display: flex; flex-direction: column; gap: 2px; }
+    .sidebar-link { display: flex; align-items: center; gap: 12px; padding: 0 14px; height: 46px; text-decoration: none; color: var(--text-muted); transition: all var(--transition-fast); white-space: nowrap; border-left: 2px solid transparent; flex-shrink: 0; position: relative; }
+    .sidebar-link:hover { background: rgb(var(--ds-fg-rgb) / 0.05); color: var(--text-main); }
+    .sidebar-link.active { background: rgb(var(--ds-accent-rgb) / 0.08); color: var(--accent-green); border-left-color: var(--accent-green); }
+    .sidebar-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 8px; }
+    .sidebar-link.active .sidebar-icon { background: rgb(var(--ds-accent-rgb) / 0.10); }
+    .sidebar-label { font-size: 13px; font-weight: 500; opacity: 0; max-width: 0; overflow: hidden; transition: opacity var(--transition-med), max-width var(--transition-med); pointer-events: none; }
+    #sidebar.expanded .sidebar-label { opacity: 1; max-width: 140px; }
+    .sidebar-link::after { content: attr(data-label); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: rgb(var(--ds-surface-rgb) / 0.97); border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); color: var(--text-main); font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 8px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 200; box-shadow: 4px 4px 16px rgba(0,0,0,0.5); }
+    #sidebar:not(.expanded) .sidebar-link:hover::after { opacity: 1; }
+    .sidebar-footer { padding: 14px; border-top: 1px solid rgb(var(--ds-fg-rgb) / 0.06); flex-shrink: 0; }
+    .sidebar-version { font-size: 10px; color: rgba(143,160,184,0.35); text-align: center; letter-spacing: 0.5px; opacity: 0; transition: opacity var(--transition-med); }
+    #sidebar.expanded .sidebar-version { opacity: 1; }
+
+    #main-content { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; position: relative; z-index: 1; height: 100vh; }
+    #topbar { width: 100%; padding: 14px 26px; background: rgb(var(--ds-surface-rgb) / 0.9); border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 5; box-shadow:var(--ds-shadow-sm); }
+    #topbar-title { font-size: 16px; text-transform: uppercase; letter-spacing: 0.12em; }
+    #topbar-subtitle { font-size: 12px; color: var(--text-muted); }
+    #topbar-right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+    #status-dot { width: 10px; height: 10px; background: var(--accent-green); border-radius: 50%; box-shadow:none; display: inline-block; }
+
+    main { max-width: 1100px; margin: 0 auto; padding: 36px 28px; width: 100%; flex: 1; }
+    .page-header { margin-bottom: 32px; }
+    .page-header h1 { font-size: 22px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+    .page-header p { color: var(--text-muted); font-size: 13px; }
+
+    .steps { display: flex; gap: 0; margin-bottom: 32px; }
+    .step { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); background: rgb(var(--ds-surface-rgb) / 0.9); font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: default; transition: all 0.2s; }
+    .step:first-child { border-radius: 10px 0 0 10px; }
+    .step:last-child  { border-radius: 0 10px 10px 0; }
+    .step.active { background: rgb(var(--ds-accent-rgb) / 0.08); border-color: rgb(var(--ds-accent-rgb) / 0.35); color: var(--accent-green); }
+    .step.done   { background: rgb(var(--ds-accent-rgb) / 0.05); border-color: rgb(var(--ds-accent-rgb) / 0.2); color: var(--accent-green); }
+    .step-num { width: 22px; height: 22px; border-radius: 50%; background: rgb(var(--ds-fg-rgb) / 0.08); color: var(--text-muted); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .step.active .step-num, .step.done .step-num { background: var(--accent-green); color: var(--ds-bg); }
+
+    .card { border-radius: 16px; background: rgb(var(--ds-surface-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.06); padding: 26px 28px; margin-bottom: 20px; backdrop-filter: blur(18px); box-shadow:var(--ds-shadow-sm); position: relative; overflow: hidden; }
+    .card::before { content: ""; position: absolute; inset: -40%; background: radial-gradient(circle at top left, rgb(var(--ds-accent-rgb) / 0.07), transparent 55%), radial-gradient(circle at bottom right, rgb(var(--ds-info-rgb) / 0.07), transparent 55%); opacity: 0.7; z-index: 0; pointer-events: none; }
+    .card > * { position: relative; z-index: 1; }
+    .card h2 { font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+    .card-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+
+    .drop-zone { border: 2px dashed rgb(var(--ds-fg-rgb) / 0.1); border-radius: 12px; padding: 56px 32px; text-align: center; cursor: pointer; transition: all 0.25s; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent-green); background: rgb(var(--ds-accent-rgb) / 0.05); }
+    .drop-zone-icon { font-size: 40px; margin-bottom: 14px; }
+    .drop-zone h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+    .drop-zone p { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+    #fileInput { display: none; }
+
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all var(--transition-fast); font-family:var(--ds-font); letter-spacing: 0.04em; text-transform: uppercase; }
+    .btn-primary { background: linear-gradient(90deg, var(--accent-green), var(--accent-blue)); color: var(--ds-bg); box-shadow:var(--ds-shadow-sm); }
+    .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-outline { background: rgb(var(--ds-bg-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.12); color: var(--text-muted); }
+    .btn-outline:hover { background: rgb(var(--ds-info-rgb) / 0.1); border-color: rgb(var(--ds-info-rgb) / 0.4); color: var(--text-main); }
+    .btn-warning { background: rgb(var(--ds-warn-rgb) / 0.15); border: 1px solid rgb(var(--ds-warn-rgb) / 0.4); color: var(--warning); }
+    .btn-warning:hover { background: rgb(var(--ds-warn-rgb) / 0.25); }
+    .btn-danger { background: rgb(var(--ds-danger-rgb) / 0.15); border: 1px solid rgb(var(--ds-danger-rgb) / 0.4); color: var(--danger); }
+    .btn-danger:hover { background: rgb(var(--ds-danger-rgb) / 0.25); }
+
+    .mapping-grid { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 8px 0; align-items: center; }
+    .mapping-group-header { grid-column: 1 / -1; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 16px 4px 6px; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06); margin-bottom: 2px; }
+    .mapping-label { font-size: 12px; font-weight: 500; color: var(--text-main); padding: 8px 12px; background: rgb(var(--ds-bg-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); border-radius: 10px 0 0 10px; border-right: none; min-height: 42px; display: flex; flex-direction: column; justify-content: center; }
+    .mapping-label-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; opacity: 0.7; }
+    .mapping-arrow { background: rgb(var(--ds-fg-rgb) / 0.06); display: flex; align-items: center; justify-content: center; height: 42px; color: var(--text-muted); font-size: 14px; }
+    .mapping-select { height: 42px; background: rgb(var(--ds-bg-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); border-left: none; border-radius: 0 10px 10px 0; color: var(--text-main); font-size: 13px; padding: 0 12px; font-family:var(--ds-font); cursor: pointer; outline: none; width: 100%; transition: border-color var(--transition-fast); }
+    .mapping-select:focus { border-color: var(--accent-blue); }
+    .mapping-required { color: var(--danger); margin-left: 3px; }
+
+    /* ── Dupe Checker ─────────────────────────────────────────────────────── */
+    .dupe-card { border-color: rgb(var(--ds-warn-rgb) / 0.25); }
+    .dupe-card::before { background: radial-gradient(circle at top left, rgb(var(--ds-warn-rgb) / 0.06), transparent 55%), radial-gradient(circle at bottom right, rgb(var(--ds-danger-rgb) / 0.06), transparent 55%); }
+    .dupe-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .dupe-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 100px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: rgb(var(--ds-warn-rgb) / 0.12); color: var(--warning); border: 1px solid rgb(var(--ds-warn-rgb) / 0.3); }
+    .dupe-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+    .toggle-track { width: 36px; height: 20px; background: rgb(var(--ds-fg-rgb) / 0.08); border-radius: 100px; border: 1px solid rgb(var(--ds-fg-rgb) / 0.12); position: relative; transition: background 0.2s; flex-shrink: 0; }
+    .toggle-track.on { background: rgb(var(--ds-warn-rgb) / 0.4); border-color: rgb(var(--ds-warn-rgb) / 0.6); }
+    .toggle-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+    .toggle-track.on .toggle-thumb { left: 18px; }
+    .toggle-label { font-size: 12px; color: var(--text-muted); }
+    .toggle-track.on + .toggle-label { color: var(--warning); }
+
+    .dupe-fields-wrap { margin-top: 16px; display: none; }
+    .dupe-fields-wrap.visible { display: block; }
+    .dupe-fields-intro { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+    .dupe-fields-intro strong { color: var(--text-main); }
+
+    .dupe-fields-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+    .dupe-field-chip { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); background: rgb(var(--ds-bg-rgb) / 0.8); cursor: pointer; transition: all 0.15s; user-select: none; }
+    .dupe-field-chip:hover { border-color: rgb(var(--ds-warn-rgb) / 0.35); background: rgb(var(--ds-warn-rgb) / 0.05); }
+    .dupe-field-chip.selected { border-color: rgb(var(--ds-warn-rgb) / 0.5); background: rgb(var(--ds-warn-rgb) / 0.1); }
+    .dupe-field-chip.selected .dfc-box { background: var(--warning); border-color: var(--warning); }
+    .dupe-field-chip.selected .dfc-box::after { opacity: 1; }
+    .dfc-box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid rgb(var(--ds-fg-rgb) / 0.2); background: transparent; flex-shrink: 0; position: relative; transition: all 0.15s; }
+    .dfc-box::after { content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--ds-bg); opacity: 0; transition: opacity 0.15s; }
+    .dfc-text { flex: 1; }
+    .dfc-label { font-size: 12px; font-weight: 500; color: var(--text-main); }
+    .dfc-key { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+    .dupe-field-chip.selected .dfc-label { color: var(--warning); }
+
+    .dupe-mode-wrap { margin-top: 12px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+    .dupe-mode-wrap strong { color: var(--text-main); }
+
+    .dupe-selection-summary { margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: rgb(var(--ds-warn-rgb) / 0.07); border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); font-size: 12px; color: var(--warning); display: none; }
+    .dupe-selection-summary.visible { display: block; }
+
+    /* ── Dupe Results ─────────────────────────────────────────────────────── */
+    .dupe-results-banner { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 12px; margin-bottom: 20px; background: rgb(var(--ds-warn-rgb) / 0.07); border: 1px solid rgb(var(--ds-warn-rgb) / 0.3); }
+    .dupe-results-banner .drb-icon { font-size: 24px; flex-shrink: 0; }
+    .drb-info h3 { font-size: 14px; font-weight: 600; color: var(--warning); margin-bottom: 4px; }
+    .drb-info p { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+    .drb-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+    .dupe-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); margin-top: 16px; }
+    .dupe-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .dupe-table thead { background: rgb(var(--ds-warn-rgb) / 0.1); }
+    .dupe-table th { padding: 9px 12px; text-align: left; font-weight: 600; color: var(--warning); white-space: nowrap; border-bottom: 1px solid rgb(var(--ds-warn-rgb) / 0.15); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .dupe-table td { padding: 8px 12px; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.04); color: var(--text-main); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+    .dupe-table tr:last-child td { border-bottom: none; }
+    .dupe-table tr.existing-row td { background: rgb(var(--ds-danger-rgb) / 0.06); color: rgba(230,247,255,0.7); }
+    .dupe-table tr.incoming-row td { background: rgb(var(--ds-warn-rgb) / 0.06); }
+    .dupe-table .match-cell { color: var(--accent-green); font-weight: 600; }
+    .dupe-tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 100px; font-size: 10px; font-weight: 600; }
+    .dupe-tag.existing { background: rgb(var(--ds-danger-rgb) / 0.12); color: var(--danger); border: 1px solid rgb(var(--ds-danger-rgb) / 0.2); }
+    .dupe-tag.incoming { background: rgb(var(--ds-warn-rgb) / 0.12); color: var(--warning); border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); }
+
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid rgb(var(--ds-fg-rgb) / 0.06); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead { background: linear-gradient(90deg, rgb(var(--ds-accent-rgb) / 0.1), rgb(var(--ds-info-rgb) / 0.1)); }
+    th { padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text-muted); white-space: nowrap; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 9px 12px; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.05); color: var(--text-main); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgb(var(--ds-accent-rgb) / 0.04); }
+
+    .progress-bar-wrap { background: rgb(var(--ds-fg-rgb) / 0.06); border-radius: 100px; height: 8px; overflow: hidden; margin: 16px 0; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent-green), var(--accent-blue)); border-radius: 100px; transition: width 0.3s ease; width: 0%; }
+
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 500; }
+    .chip-success { background: rgb(var(--ds-accent-rgb) / 0.1); color: var(--accent-green); border: 1px solid rgb(var(--ds-accent-rgb) / 0.2); }
+    .chip-warning { background: rgb(var(--ds-warn-rgb) / 0.1); color: var(--warning); border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); }
+    .chip-danger  { background: rgb(var(--ds-danger-rgb) / 0.1); color: var(--danger); border: 1px solid rgb(var(--ds-danger-rgb) / 0.2); }
+
+    .firebase-status { display: flex; align-items: center; gap: 10px; font-size: 12px; padding: 10px 14px; border-radius: 10px; margin-bottom: 16px; background: rgb(var(--ds-bg-rgb) / 0.8); border: 1px solid rgb(var(--ds-fg-rgb) / 0.06); color: var(--text-muted); }
+    .status-dot-sm { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex-shrink: 0; animation: pulse 1.5s infinite; }
+    .status-dot-sm.connected { background: var(--accent-green); animation: none; }
+    .status-dot-sm.error { background: var(--danger); animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+    .summary-item { background: rgb(var(--ds-bg-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); border-radius: 10px; padding: 18px; text-align: center; }
+    .summary-val { font-size: 28px; font-weight: 600; }
+    .summary-val.green { color: var(--accent-green); }
+    .summary-val.yellow { color: var(--warning); }
+    .summary-val.red { color: var(--danger); }
+    .summary-val.orange { color: #f97316; }
+    .summary-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+
+    .file-info { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: rgb(var(--ds-accent-rgb) / 0.07); border: 1px solid rgb(var(--ds-accent-rgb) / 0.2); border-radius: 10px; margin-bottom: 20px; }
+    .file-info-name { font-weight: 500; font-size: 13px; }
+    .file-info-meta { font-size: 11px; color: var(--text-muted); }
+
+    .error-box { background: rgb(var(--ds-danger-rgb) / 0.08); border: 1px solid rgb(var(--ds-danger-rgb) / 0.3); border-radius: 10px; padding: 14px 18px; margin-top: 14px; font-size: 12px; color: var(--danger); line-height: 1.6; display: none; }
+    .error-box.show { display: block; }
+
+    .info-box { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-radius: 10px; margin-bottom: 18px; font-size: 12px; line-height: 1.6; }
+    .info-box.blue { background: rgb(var(--ds-info-rgb) / 0.07); border: 1px solid rgb(var(--ds-info-rgb) / 0.2); color: var(--accent-blue); }
+    .info-box.green { background: rgb(var(--ds-accent-rgb) / 0.06); border: 1px solid rgb(var(--ds-accent-rgb) / 0.2); color: rgb(var(--ds-accent-rgb) / 0.85); }
+    .info-box strong { font-weight: 600; }
+
+    #toast { position: fixed; bottom: 28px; right: 28px; z-index: 9999; padding: 12px 20px; border-radius: 12px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 10px; transform: translateY(20px); opacity: 0; transition: transform 0.3s ease, opacity 0.3s ease; pointer-events: none; }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { background: rgb(var(--ds-surface-rgb) / 0.97); border: 1px solid rgb(var(--ds-accent-rgb) / 0.4); color: var(--accent-green); box-shadow:var(--ds-shadow-md); }
+    #toast.error   { background: rgba(20,10,12,0.97); border: 1px solid rgb(var(--ds-danger-rgb) / 0.4); color: var(--danger); box-shadow:var(--ds-shadow-md); }
+    #toast.warning { background: rgba(20,15,5,0.97); border: 1px solid rgb(var(--ds-warn-rgb) / 0.4); color: var(--warning); box-shadow:var(--ds-shadow-md); }
+    .hidden { display: none !important; }
+
+    /* Dupe checker modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgb(var(--ds-fg-rgb) / 0.07); backdrop-filter: blur(6px); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+    .modal-overlay.visible { opacity: 1; pointer-events: all; }
+    .modal-box { background: var(--ds-surface); border: 1px solid rgb(var(--ds-warn-rgb) / 0.3); border-radius: 20px; padding: 28px 30px; max-width: 700px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow:var(--ds-shadow-md); position: relative; }
+    .modal-title { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; color: var(--warning); display: flex; align-items: center; gap: 10px; }
+    .modal-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.6; }
+    .modal-close { position: absolute; top: 18px; right: 18px; width: 28px; height: 28px; border-radius: 50%; background: rgb(var(--ds-fg-rgb) / 0.06); border: 1px solid rgb(var(--ds-fg-rgb) / 0.1); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }
+    .modal-close:hover { background: rgb(var(--ds-danger-rgb) / 0.2); color: var(--danger); border-color: rgb(var(--ds-danger-rgb) / 0.4); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+
+    .dupe-group { margin-bottom: 20px; padding: 14px 16px; border-radius: 12px; border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); background: rgb(var(--ds-warn-rgb) / 0.04); }
+    .dupe-group-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warning); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .dupe-group-key { font-size: 10px; color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .dupe-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.04); font-size: 12px; }
+    .dupe-row:last-child { border-bottom: none; }
+    .dupe-row-source { flex-shrink: 0; }
+    .dupe-row-data { flex: 1; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dupe-row-data strong { color: var(--text-main); }
+  </style>
+<link rel="stylesheet" href="calisen-ds.css"><link rel="stylesheet" href="calisen-icons.css"><script defer src="calisen-icons.js"></script></head>
+<body>
+<div id="toast"></div>
+
+<!-- DUPE REVIEW MODAL -->
+<div class="modal-overlay" id="dupeModal">
+  <div class="modal-box">
+    <button class="modal-close" id="modalClose">✕</button>
+    <div class="modal-title">⚠ Duplicate Records Found</div>
+    <div class="modal-sub" id="modalSubText"></div>
+    <div id="modalDupeList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="modalSkipAll">Skip All Duplicates</button>
+      <button class="btn btn-warning" id="modalUploadAll">Upload All Anyway</button>
+      <button class="btn btn-outline" id="modalCancel">Cancel Upload</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+    <div class="sidebar-header">
+        <img class="sidebar-logo-collapsed" id="logoCollapsed" src="https://www.dropbox.com/scl/fi/z1uitujubjdw2wtoedh0k/Gecko-tech-logo-design.png?rlkey=btn0fgjn6b1s8odpc5saghhgo&st=zm9wjxvr&dl=1" alt="Geko">
+        <img class="sidebar-logo-expanded" src="https://www.dropbox.com/scl/fi/90alqdk8bozulywe2c8bw/Tech-inspired-Geko-logo-design.png?rlkey=tcagro1dwoelqxfmxqldrp178&st=xh5pubjr&dl=1" alt="Geko">
+        <button class="sidebar-toggle" id="sidebarToggle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="dashboard.html" class="sidebar-link" data-label="Dashboard"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><span class="sidebar-label">Dashboard</span></a>
+        <a href="scheduling.html" class="sidebar-link" data-label="Scheduling"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg></span><span class="sidebar-label">Scheduling</span></a>
+        <a href="dataupload-calisen.html" class="sidebar-link active" data-label="Database"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v4c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 9v4c0 1.66 4.03 3 9 3s9-1.34 9-3V9"/><path d="M3 13v4c0 1.66 4.03 3 9 3s9-1.34 9-3v-4"/></svg></span><span class="sidebar-label">Database</span></a>
+        <a href="viewdata.html" class="sidebar-link" data-label="View Data"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span><span class="sidebar-label">View Data</span></a>
+        <a href="userdatabase.html" class="sidebar-link" data-label="Users"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg></span><span class="sidebar-label">Users</span></a>
+        <a href="mapping.html" class="sidebar-link" data-label="Mapping"><span class="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/></svg></span><span class="sidebar-label">Mapping</span></a>
+    </nav>
+    <div class="sidebar-footer"><div class="sidebar-version">v1.0.0</div></div>
+</div>
+
+<!-- MAIN -->
+<div id="main-content">
+    <header id="topbar">
+        <div>
+            <div id="topbar-title">Data Upload</div>
+            <div id="topbar-subtitle">Import job records from Excel — fields saved ready for scheduling</div>
+        </div>
+        <div id="topbar-right"><span id="status-dot"></span><span>Admin</span></div>
+    </header>
+
+    <main>
+        <div class="page-header">
+            <h1>Data Upload</h1>
+            <p>Import job records from Excel. Uploaded data is automatically saved with the field names that scheduling.html expects.</p>
+        </div>
+
+        <div class="steps">
+            <div class="step active" id="step1"><div class="step-num">1</div> Upload File</div>
+            <div class="step" id="step2"><div class="step-num">2</div> Map Columns</div>
+            <div class="step" id="step3"><div class="step-num">3</div> Preview &amp; Upload</div>
+        </div>
+
+        <!-- STEP 1 -->
+        <div id="section-upload">
+            <div class="card">
+                <h2>Upload Excel File</h2>
+                <p class="card-sub">Supports .xlsx and .xls files.</p>
+                <div class="firebase-status">
+                    <div class="status-dot-sm" id="fbDot"></div>
+                    <span id="fbStatusText">Connecting to Firebase…</span>
+                </div>
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📊</div>
+                    <h3>Drop your Excel file here</h3>
+                    <p>or click to browse your files</p>
+                    <label for="fileInput" class="btn btn-outline" style="cursor:pointer;">Choose File</label>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls"/>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 2 -->
+        <div id="section-map" class="hidden">
+            <div class="card" id="fileInfoCard"></div>
+
+            <!-- ── DUPE CHECKER CARD ── -->
+            <div class="card dupe-card">
+                <div class="dupe-header">
+                    <div>
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+                            <h2 style="margin-bottom:0">Duplicate Checker</h2>
+                            <span class="dupe-badge">⚡ Smart Filter</span>
+                        </div>
+                        <p class="card-sub" style="margin-bottom:0">Check incoming records against existing Firestore data before uploading.</p>
+                    </div>
+                    <label class="dupe-toggle" id="dupeToggleLabel">
+                        <div class="toggle-track" id="dupeTrack"><div class="toggle-thumb"></div></div>
+                        <span class="toggle-label" id="dupeToggleTxt">Disabled</span>
+                    </label>
+                </div>
+
+                <div class="dupe-fields-wrap" id="dupeFieldsWrap">
+                    <div class="dupe-fields-intro">
+                        Select the fields to match on. A record is only considered a <strong>duplicate</strong> when <strong>all selected fields match</strong> an existing record. Choose at least one field.
+                    </div>
+                    <div class="dupe-fields-grid" id="dupeFieldsGrid">
+                        <!-- populated by JS -->
+                    </div>
+                    <div class="dupe-selection-summary" id="dupeSelectionSummary"></div>
+                </div>
+            </div>
+            <!-- ── END DUPE CHECKER CARD ── -->
+
+            <div class="card">
+                <h2>Map Your Columns</h2>
+                <p class="card-sub">Match your spreadsheet columns to Geko fields. Fields marked <span class="mapping-required">*</span> are required.</p>
+                <div class="info-box green">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+                    <span>Each field shows the <strong>Firestore key</strong> it will be saved as (e.g. <strong>engineerName</strong>, <strong>dateOfJob</strong>, <strong>jobType</strong>). These match exactly what <strong>scheduling.html</strong> reads, so jobs appear on the scheduler immediately.</span>
+                </div>
+                <div class="info-box blue" id="mappingNotice" style="display:none;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span id="mappingNoticeText"></span>
+                </div>
+                <div class="mapping-grid" id="mappingGrid"></div>
+                <div class="actions">
+                    <button class="btn btn-primary" id="previewBtn">Preview Data →</button>
+                    <button class="btn btn-outline" id="resetBtn1">← Start Over</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div id="section-preview" class="hidden">
+            <div class="card">
+                <h2>Preview</h2>
+                <p class="card-sub">First 10 rows — columns shown are the Firestore keys that will be saved.</p>
+                <div class="table-wrap"><table id="previewTable"></table></div>
+            </div>
+            <div class="card">
+                <h2>Upload to Firebase</h2>
+                <p class="card-sub">Ready to upload <strong id="totalCount">0</strong> records to <strong>Calisen Forecast Data</strong>.</p>
+
+                <!-- Dupe check status banner (shown after check runs) -->
+                <div id="dupeResultsBanner" class="hidden" style="margin-bottom:16px;"></div>
+
+                <div class="firebase-status">
+                    <div class="status-dot-sm" id="fbDot2"></div>
+                    <span id="fbStatusText2">Checking Firebase…</span>
+                </div>
+                <div class="progress-bar-wrap hidden" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+                <p id="progressLabel" style="font-size:12px;color:var(--text-muted);margin-top:8px;min-height:18px;"></p>
+                <div class="error-box" id="errorBox"></div>
+                <div class="summary-grid hidden" id="summaryGrid">
+                    <div class="summary-item"><div class="summary-val green" id="sumUploaded">0</div><div class="summary-lbl">Uploaded</div></div>
+                    <div class="summary-item"><div class="summary-val orange" id="sumDupes">0</div><div class="summary-lbl">Duplicates Skipped</div></div>
+                    <div class="summary-item"><div class="summary-val yellow" id="sumSkipped">0</div><div class="summary-lbl">Skipped</div></div>
+                    <div class="summary-item"><div class="summary-val red" id="sumFailed">0</div><div class="summary-lbl">Failed</div></div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" id="uploadBtn">🚀 Upload All Records</button>
+                    <button class="btn btn-outline" id="backBtn">← Remap Columns</button>
+                    <button class="btn btn-outline" id="resetBtn2">Start Over</button>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, getDocs, setDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+    authDomain: "oesperformance-a54c0.firebaseapp.com",
+    projectId: "oesperformance-a54c0",
+    storageBucket: "oesperformance-a54c0.firebasestorage.app",
+    messagingSenderId: "484894102454",
+    appId: "1:484894102454:web:17535ee497eac2d90d6717"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ─── Field definitions ────────────────────────────────────────────────────────
+const ALL_FIELDS = [
+    { key:'ID',                  label:'ID',                  schedulerKey:'jobId',             required:false, cat:'identifiers' },
+    { key:'Record_ID',           label:'Record ID',           schedulerKey:'recordId',           required:false, cat:'identifiers' },
+    { key:'Customer_ID',         label:'Customer ID',         schedulerKey:'customerId',         required:false, cat:'identifiers' },
+    { key:'Job_ID',              label:'Job ID',              schedulerKey:'jobId',              required:false, cat:'identifiers' },
+    { key:'Employee_ID',         label:'Employee ID',         schedulerKey:'employeeId',         required:false, cat:'identifiers' },
+    { key:'Reference_Number',    label:'Reference Number',    schedulerKey:'referenceNumber',    required:false, cat:'identifiers' },
+    { key:'Title',               label:'Title',               schedulerKey:'title',              required:false, cat:'personal' },
+    { key:'First_Name',          label:'First Name',          schedulerKey:'firstName',          required:false, cat:'personal' },
+    { key:'Last_Name',           label:'Last Name',           schedulerKey:'lastName',           required:false, cat:'personal' },
+    { key:'Full_Name',           label:'Full Name',           schedulerKey:'customerName',       required:false, cat:'personal' },
+    { key:'Company_Name',        label:'Company Name',        schedulerKey:'companyName',        required:false, cat:'personal' },
+    { key:'Address_Line1',       label:'Address Line 1',      schedulerKey:'addressLine1',       required:false, cat:'address' },
+    { key:'Address_Line2',       label:'Address Line 2',      schedulerKey:'addressLine2',       required:false, cat:'address' },
+    { key:'City_Town',           label:'City / Town',         schedulerKey:'cityTown',           required:false, cat:'address' },
+    { key:'County',              label:'County',              schedulerKey:'county',             required:false, cat:'address' },
+    { key:'Postcode',            label:'Postcode',            schedulerKey:'postcode',           required:true,  cat:'address' },
+    { key:'Country',             label:'Country',             schedulerKey:'country',            required:false, cat:'address' },
+    { key:'Phone',               label:'Phone',               schedulerKey:'contactNumber',      required:false, cat:'contact' },
+    { key:'Mobile',              label:'Mobile',              schedulerKey:'mobile',             required:false, cat:'contact' },
+    { key:'Email',               label:'Email',               schedulerKey:'email',              required:false, cat:'contact' },
+    { key:'Alternative_Contact', label:'Alternative Contact', schedulerKey:'alternativeContact', required:false, cat:'contact' },
+    { key:'Date',                label:'Date',                schedulerKey:'dateOfJob',          required:false, cat:'datetime' },
+    { key:'Appointment_Date',    label:'Appointment Date',    schedulerKey:'dateOfJob',          required:false, cat:'datetime' },
+    { key:'Appointment_Time',    label:'Appointment Time',    schedulerKey:'timeSlot',           required:false, cat:'datetime' },
+    { key:'Created_Date',        label:'Created Date',        schedulerKey:'createdDate',        required:false, cat:'datetime' },
+    { key:'Updated_Date',        label:'Updated Date',        schedulerKey:'updatedDate',        required:false, cat:'datetime' },
+    { key:'Completed_Date',      label:'Completed Date',      schedulerKey:'completedDate',      required:false, cat:'datetime' },
+    { key:'Job_Length',          label:'Job Length',          schedulerKey:'jobLength',          required:false, cat:'datetime' },
+    { key:'Job_Type',            label:'Job Type',            schedulerKey:'jobType',            required:true,  cat:'job' },
+    { key:'Job_Description',     label:'Job Description',     schedulerKey:'jobDescription',     required:false, cat:'job' },
+    { key:'Service_Type',        label:'Service Type',        schedulerKey:'serviceType',        required:false, cat:'job' },
+    { key:'Priority',            label:'Priority',            schedulerKey:'priority',           required:false, cat:'job' },
+    { key:'Duration',            label:'Duration',            schedulerKey:'duration',           required:false, cat:'job' },
+    { key:'Notes',               label:'Notes',               schedulerKey:'notes',              required:false, cat:'job' },
+    { key:'Engineer',            label:'Engineer',            schedulerKey:'engineerName',       required:false, cat:'assignment' },
+    { key:'Assigned_To',         label:'Assigned To',         schedulerKey:'engineerName',       required:false, cat:'assignment' },
+    { key:'Team',                label:'Team',                schedulerKey:'team',               required:false, cat:'assignment' },
+    { key:'Starting_Postcode',   label:'Starting Postcode',   schedulerKey:'startingPostcode',   required:false, cat:'assignment' },
+    { key:'Vehicle_ID',          label:'Vehicle ID',          schedulerKey:'vehicleId',          required:false, cat:'assignment' },
+    { key:'Status',              label:'Status',              schedulerKey:'jobStatus',          required:false, cat:'status' },
+    { key:'Progress',            label:'Progress',            schedulerKey:'progress',           required:false, cat:'status' },
+    { key:'Stage',               label:'Stage',               schedulerKey:'stage',              required:false, cat:'status' },
+    { key:'Cancellation_Reason', label:'Cancellation Reason', schedulerKey:'cancellationReason', required:false, cat:'status' },
+    { key:'Price',               label:'Price',               schedulerKey:'price',              required:false, cat:'financial' },
+    { key:'Cost',                label:'Cost',                schedulerKey:'cost',               required:false, cat:'financial' },
+    { key:'Invoice_Number',      label:'Invoice Number',      schedulerKey:'invoiceNumber',      required:false, cat:'financial' },
+    { key:'Payment_Status',      label:'Payment Status',      schedulerKey:'paymentStatus',      required:false, cat:'financial' },
+    { key:'Discount',            label:'Discount',            schedulerKey:'discount',           required:false, cat:'financial' },
+    { key:'VAT',                 label:'VAT',                 schedulerKey:'vat',                required:false, cat:'financial' },
+];
+
+const CAT_LABELS = {
+    identifiers:'🔑 Unique Identifiers', personal:'👤 Personal / Customer Info',
+    address:'📍 Address & Location',      contact:'📞 Contact Information',
+    datetime:'📅 Date & Time',            job:'🔧 Job / Service Details',
+    assignment:'👷 Assignment / Staff',   status:'⚡ Status & Workflow',
+    financial:'💷 Financial',
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let rawData=[], headerMap={}, displayHeaders=[], mappedData=[], activeFields=[];
+let dupeEnabled=false, selectedDupeKeys=new Set();
+// uploadQueue: after dupe check, stores which records to upload and which to skip
+let uploadQueue=[], duplicateRecords=[], existingDocs=[];
+let uploadMode='clean'; // 'clean' | 'all' | 'skip'
+
+// ─── Firebase status ──────────────────────────────────────────────────────────
+function setFbDot(id,state){ const el=document.getElementById(id); if(!el)return; el.className='status-dot-sm'+(state!=='connecting'?' '+state:''); }
+function friendlyError(err){ if(!err)return'Unknown error'; const c=err.code||''; if(c==='permission-denied')return'Permission denied — check Firestore rules.'; if(c==='unavailable')return'Firebase unavailable.'; return err.message||c||String(err); }
+
+getDocs(collection(db,'Calisen Forecast Data')).then(()=>{
+    setFbDot('fbDot','connected'); document.getElementById('fbStatusText').textContent='Firebase connected ✓';
+    setFbDot('fbDot2','connected'); document.getElementById('fbStatusText2').textContent='Firebase connected — ready to upload';
+}).catch(err=>{
+    const msg=friendlyError(err);
+    setFbDot('fbDot','error'); document.getElementById('fbStatusText').textContent='Error: '+msg;
+    setFbDot('fbDot2','error'); document.getElementById('fbStatusText2').textContent='Error: '+msg;
+});
+
+// ─── Load mapping config ──────────────────────────────────────────────────────
+async function loadMappingConfig(){
+    try{
+        const snap=await getDoc(doc(db,'Calisen Mapping','config'));
+        if(snap.exists()){
+            const config=snap.data();
+            activeFields=ALL_FIELDS.filter(f=>config[f.key]!==false);
+            if(!activeFields.length) activeFields=ALL_FIELDS;
+        } else { activeFields=ALL_FIELDS; }
+    } catch(e){ console.warn('Mapping config load failed:',e); activeFields=ALL_FIELDS; }
+}
+
+// ─── File handling ────────────────────────────────────────────────────────────
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
+
+async function handleFile(file){
+    if(!file) return;
+    showToast('Reading file…','success');
+    await loadMappingConfig();
+    const reader=new FileReader();
+    reader.onerror=()=>showToast('Could not read file.','error');
+    reader.onload=e=>{
+        try{
+            const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
+            const ws=wb.Sheets[wb.SheetNames[0]];
+            rawData=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'dd/mm/yyyy'});
+            if(rawData.length<2){ showToast('File empty — needs header row + data.','error'); return; }
+
+            headerMap={}; displayHeaders=[];
+            rawData[0].forEach((h,idx)=>{
+                const name=String(h||'').trim();
+                if(name && !(name in headerMap)){ headerMap[name]=idx; displayHeaders.push(name); }
+            });
+
+            buildMappingSection(file.name, rawData.length-1);
+        } catch(err){ showToast('Parse failed: '+err.message,'error'); }
+    };
+    reader.readAsBinaryString(file);
+}
+
+// ─── Dupe Checker UI ──────────────────────────────────────────────────────────
+const dupeTrack=document.getElementById('dupeTrack');
+const dupeToggleTxt=document.getElementById('dupeToggleTxt');
+const dupeFieldsWrap=document.getElementById('dupeFieldsWrap');
+const dupeFieldsGrid=document.getElementById('dupeFieldsGrid');
+const dupeSelSummary=document.getElementById('dupeSelectionSummary');
+
+document.getElementById('dupeToggleLabel').addEventListener('click',()=>{
+    dupeEnabled=!dupeEnabled;
+    dupeTrack.classList.toggle('on',dupeEnabled);
+    dupeToggleTxt.textContent=dupeEnabled?'Enabled':'Disabled';
+    dupeFieldsWrap.classList.toggle('visible',dupeEnabled);
+});
+
+function buildDupeFieldChips(){
+    // De-duplicate by schedulerKey so we only show each key once
+    const seen=new Set();
+    const uniqueFields=activeFields.filter(f=>{
+        if(seen.has(f.schedulerKey)) return false;
+        seen.add(f.schedulerKey); return true;
+    });
+
+    dupeFieldsGrid.innerHTML='';
+    selectedDupeKeys.clear();
+    updateDupeSelectionSummary();
+
+    uniqueFields.forEach(f=>{
+        const chip=document.createElement('div');
+        chip.className='dupe-field-chip';
+        chip.dataset.key=f.schedulerKey;
+        chip.innerHTML=`
+            <div class="dfc-box"></div>
+            <div class="dfc-text">
+                <div class="dfc-label">${f.label}</div>
+                <div class="dfc-key">${f.schedulerKey}</div>
+            </div>`;
+        chip.addEventListener('click',()=>{
+            const key=f.schedulerKey;
+            if(selectedDupeKeys.has(key)){
+                selectedDupeKeys.delete(key);
+                chip.classList.remove('selected');
+            } else {
+                selectedDupeKeys.add(key);
+                chip.classList.add('selected');
+            }
+            updateDupeSelectionSummary();
+        });
+        dupeFieldsGrid.appendChild(chip);
+    });
+}
+
+function updateDupeSelectionSummary(){
+    if(selectedDupeKeys.size===0){
+        dupeSelSummary.classList.remove('visible');
+        return;
+    }
+    dupeSelSummary.classList.add('visible');
+    const keys=[...selectedDupeKeys];
+    if(keys.length===1){
+        dupeSelSummary.innerHTML=`Matching on <strong>${keys[0]}</strong>. A record is a duplicate if this field matches an existing record.`;
+    } else {
+        const joined=keys.map(k=>`<strong>${k}</strong>`).join(' + ');
+        dupeSelSummary.innerHTML=`Matching on ${joined}. All ${keys.length} fields must match for a record to be flagged as a duplicate.`;
+    }
+}
+
+// ─── Build Mapping Section ─────────────────────────────────────────────────────
+function buildMappingSection(fileName, rowCount){
+    setStep(2);
+    document.getElementById('section-upload').classList.add('hidden');
+    document.getElementById('section-map').classList.remove('hidden');
+
+    document.getElementById('fileInfoCard').innerHTML=`
+        <div class="file-info">
+            <span style="font-size:22px">📄</span>
+            <div>
+                <div class="file-info-name">${fileName}</div>
+                <div class="file-info-meta">${rowCount} rows &bull; ${displayHeaders.length} columns: ${displayHeaders.join(', ')}</div>
+            </div>
+            <span class="chip chip-success" style="margin-left:auto">✓ Loaded</span>
+        </div>`;
+
+    document.getElementById('mappingNoticeText').textContent=
+        `${activeFields.length} fields are enabled in your Mapping configuration. Visit Mapping to add or remove fields.`;
+    document.getElementById('mappingNotice').style.display='flex';
+
+    // Build dupe field chips based on active fields
+    buildDupeFieldChips();
+
+    const grid=document.getElementById('mappingGrid');
+    grid.innerHTML='';
+
+    const cats=[...new Set(activeFields.map(f=>f.cat))];
+    cats.forEach(cat=>{
+        const fieldsInCat=activeFields.filter(f=>f.cat===cat);
+        if(!fieldsInCat.length) return;
+
+        const hdr=document.createElement('div');
+        hdr.className='mapping-group-header';
+        hdr.textContent=CAT_LABELS[cat]||cat;
+        grid.appendChild(hdr);
+
+        fieldsInCat.forEach(f=>{
+            const lbl=document.createElement('div');
+            lbl.className='mapping-label';
+            lbl.innerHTML=`<span>${f.label}${f.required?'<span class="mapping-required"> *</span>':''}</span><span class="mapping-label-sub">saves as → <strong>${f.schedulerKey}</strong></span>`;
+
+            const arrow=document.createElement('div');
+            arrow.className='mapping-arrow';
+            arrow.textContent='→';
+
+            const sel=document.createElement('select');
+            sel.className='mapping-select';
+            sel.id=`map_${f.key}`;
+
+            const blank=document.createElement('option');
+            blank.value=''; blank.textContent='— Select column —';
+            sel.appendChild(blank);
+
+            displayHeaders.forEach(h=>{
+                const opt=document.createElement('option');
+                opt.value=h; opt.textContent=h;
+                const hN=h.toLowerCase().replace(/[\s_\-\/]/g,'');
+                const kN=f.key.toLowerCase().replace(/[\s_\-\/]/g,'');
+                const lN=f.label.toLowerCase().replace(/[\s_\-\/]/g,'');
+                const sN=f.schedulerKey.toLowerCase().replace(/[\s_\-\/]/g,'');
+                if(hN===kN||hN===lN||hN===sN||hN.includes(kN)||kN.includes(hN)||hN.includes(lN)||hN.includes(sN)){
+                    opt.selected=true;
+                }
+                sel.appendChild(opt);
+            });
+
+            grid.appendChild(lbl);
+            grid.appendChild(arrow);
+            grid.appendChild(sel);
+        });
+    });
+}
+
+// ─── Preview ──────────────────────────────────────────────────────────────────
+document.getElementById('previewBtn').addEventListener('click', buildPreview);
+document.getElementById('resetBtn1').addEventListener('click', resetAll);
+document.getElementById('resetBtn2').addEventListener('click', resetAll);
+document.getElementById('backBtn').addEventListener('click',()=>{
+    setStep(2);
+    document.getElementById('section-preview').classList.add('hidden');
+    document.getElementById('section-map').classList.remove('hidden');
+});
+document.getElementById('uploadBtn').addEventListener('click', handleUploadClick);
+
+function buildPreview(){
+    const fieldToColumn={};
+    let valid=true;
+    activeFields.forEach(f=>{
+        const sel=document.getElementById(`map_${f.key}`);
+        const chosen=sel?sel.value:'';
+        if(f.required&&!chosen){ showToast(`Please map required field: ${f.label}`,'error'); valid=false; }
+        fieldToColumn[f.key]=chosen;
+    });
+    if(!valid) return;
+
+    if(dupeEnabled && selectedDupeKeys.size===0){
+        showToast('Select at least one field to check duplicates against, or disable the checker.','error');
+        return;
+    }
+
+    mappedData=rawData.slice(1)
+        .filter(row=>row.some(c=>c!==''&&c!=null))
+        .map(row=>{
+            const obj={};
+            activeFields.forEach(f=>{
+                const colName=fieldToColumn[f.key];
+                const idx=(colName!==undefined&&colName!=='')?headerMap[colName]:undefined;
+                let val=(idx!==undefined&&idx>=0)?String(row[idx]??'').trim():'';
+                if(f.schedulerKey==='dateOfJob'||f.key.toLowerCase().includes('date')) val=toUKDate(val);
+                if(f.schedulerKey==='timeSlot') val=normaliseSlot(val);
+                if(val!==''&&!obj[f.schedulerKey]) obj[f.schedulerKey]=val;
+            });
+            return obj;
+        });
+
+    mappedData=mappedData.map(obj=>{
+        if(!obj.customerName){
+            const parts=[obj.title,obj.firstName,obj.lastName].filter(Boolean);
+            obj.customerName=parts.length?parts.join(' '):(obj.companyName||'');
+        }
+        if(!obj.address){
+            obj.address=[obj.addressLine1,obj.addressLine2,obj.cityTown,obj.county].filter(Boolean).join(', ');
+        }
+        if(!obj.jobStatus) obj.jobStatus='unassigned';
+        if(!obj.contactNumber&&obj.mobile) obj.contactNumber=obj.mobile;
+        return obj;
+    });
+
+    setStep(3);
+    document.getElementById('section-map').classList.add('hidden');
+    document.getElementById('section-preview').classList.remove('hidden');
+
+    const previewFields=activeFields.filter((f,i,arr)=>arr.findIndex(x=>x.schedulerKey===f.schedulerKey)===i);
+    const tbl=document.getElementById('previewTable');
+    tbl.innerHTML=`
+        <thead><tr><th>#</th>${previewFields.map(f=>`<th>${f.label}<br><span style="color:var(--accent-green);font-size:9px">${f.schedulerKey}</span></th>`).join('')}<th>Job ID</th></tr></thead>
+        <tbody>${mappedData.slice(0,10).map((r,i)=>`
+            <tr><td>${i+1}</td>
+            ${previewFields.map(f=>`<td title="${esc(r[f.schedulerKey])}">${esc(r[f.schedulerKey])}</td>`).join('')}
+            <td><span class="chip chip-warning">Auto</span></td></tr>`).join('')}
+        </tbody>`;
+
+    document.getElementById('totalCount').textContent=mappedData.length;
+    document.getElementById('progressBar').style.width='0%';
+    document.getElementById('progressLabel').textContent='';
+    document.getElementById('errorBox').className='error-box';
+    document.getElementById('summaryGrid').classList.add('hidden');
+    document.getElementById('progressWrap').classList.add('hidden');
+    document.getElementById('uploadBtn').disabled=false;
+    document.getElementById('uploadBtn').innerHTML=dupeEnabled ? '🔍 Check Duplicates & Upload' : '🚀 Upload All Records';
+    document.getElementById('dupeResultsBanner').classList.add('hidden');
+
+    // Reset upload state
+    uploadQueue=[]; duplicateRecords=[]; existingDocs=[]; uploadMode='clean';
+}
+
+// ─── Dupe Check ───────────────────────────────────────────────────────────────
+async function runDupeCheck(){
+    document.getElementById('progressLabel').textContent='Fetching existing records for duplicate check…';
+    document.getElementById('progressWrap').classList.remove('hidden');
+    document.getElementById('progressBar').style.width='20%';
+
+    const snap=await getDocs(collection(db,'Calisen Forecast Data'));
+    existingDocs=[];
+    snap.forEach(d=>existingDocs.push(d.data()));
+
+    document.getElementById('progressBar').style.width='60%';
+    document.getElementById('progressLabel').textContent=`Checking ${mappedData.length} records against ${existingDocs.length} existing…`;
+
+    duplicateRecords=[];
+    uploadQueue=[];
+
+    const dupeKeys=[...selectedDupeKeys];
+
+    mappedData.forEach((incoming,idx)=>{
+        const match=existingDocs.find(existing=>{
+            return dupeKeys.every(key=>{
+                const a=String(incoming[key]||'').trim().toLowerCase();
+                const b=String(existing[key]||'').trim().toLowerCase();
+                return a!==''&&b!==''&&a===b;
+            });
+        });
+        if(match){
+            duplicateRecords.push({ incoming, existingMatch: match, rowIdx: idx });
+        } else {
+            uploadQueue.push(incoming);
+        }
+    });
+
+    document.getElementById('progressBar').style.width='100%';
+    document.getElementById('progressWrap').classList.add('hidden');
+
+    return { dupes: duplicateRecords.length, clean: uploadQueue.length };
+}
+
+async function handleUploadClick(){
+    if(!dupeEnabled){
+        // No dupe check — just upload everything
+        uploadQueue=mappedData;
+        duplicateRecords=[];
+        uploadMode='all';
+        await startUpload();
+        return;
+    }
+
+    // Run dupe check first
+    document.getElementById('uploadBtn').disabled=true;
+    document.getElementById('uploadBtn').textContent='Checking…';
+    try{
+        const { dupes, clean }=await runDupeCheck();
+
+        if(dupes===0){
+            // No dupes found — proceed
+            showDupeResultsBanner(0, clean, true);
+            showToast(`No duplicates found! Uploading ${clean} records.`,'success');
+            uploadMode='clean';
+            await startUpload();
+        } else {
+            // Show modal for user decision
+            showDupeModal(dupes, clean);
+        }
+    } catch(err){
+        showToast('Dupe check failed: '+friendlyError(err),'error');
+        document.getElementById('uploadBtn').disabled=false;
+        document.getElementById('uploadBtn').innerHTML='🔍 Check Duplicates & Upload';
+    }
+}
+
+function showDupeResultsBanner(dupeCount, cleanCount, noDupes){
+    const banner=document.getElementById('dupeResultsBanner');
+    if(noDupes){
+        banner.innerHTML=`<div class="info-box green" style="margin-bottom:0">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span><strong>No duplicates found.</strong> All ${cleanCount} records are new and ready to upload.</span>
+        </div>`;
+    } else {
+        banner.innerHTML=`<div class="dupe-results-banner">
+            <div class="drb-icon">⚠</div>
+            <div class="drb-info">
+                <h3>${dupeCount} duplicate${dupeCount!==1?'s':''} detected</h3>
+                <p>${cleanCount} records are new &bull; ${dupeCount} match existing records on: <strong>${[...selectedDupeKeys].join(' + ')}</strong></p>
+            </div>
+        </div>`;
+    }
+    banner.classList.remove('hidden');
+}
+
+function showDupeModal(dupeCount, cleanCount){
+    document.getElementById('modalSubText').innerHTML=
+        `<strong style="color:var(--warning)">${dupeCount} record${dupeCount!==1?'s':''}</strong> in your file match existing Firestore records on: <strong>${[...selectedDupeKeys].join(' + ')}</strong>.<br>
+        <strong style="color:var(--accent-green)">${cleanCount} record${cleanCount!==1?'s':''}</strong> are new. Choose how to proceed:`;
+
+    // Build dupe groups list (show up to 20)
+    const list=document.getElementById('modalDupeList');
+    const shown=duplicateRecords.slice(0,20);
+    list.innerHTML=shown.map((d,i)=>{
+        const keys=[...selectedDupeKeys];
+        const keyDisplay=keys.map(k=>`<span style="color:var(--accent-green)">${k}:</span> <strong>${esc(d.incoming[k])}</strong>`).join(' &bull; ');
+        return `<div class="dupe-group">
+            <div class="dupe-group-header">
+                Duplicate #${i+1} <span class="dupe-group-key">row ${d.rowIdx+2} in file</span>
+            </div>
+            <div class="dupe-row">
+                <span class="dupe-tag existing">EXISTING</span>
+                <span class="dupe-row-data">${keyDisplay}</span>
+            </div>
+            <div class="dupe-row">
+                <span class="dupe-tag incoming">INCOMING</span>
+                <span class="dupe-row-data">${keyDisplay}</span>
+            </div>
+        </div>`;
+    }).join('');
+    if(duplicateRecords.length>20){
+        list.innerHTML+=`<p style="font-size:12px;color:var(--text-muted);margin-top:8px">…and ${duplicateRecords.length-20} more duplicates not shown.</p>`;
+    }
+
+    document.getElementById('dupeModal').classList.add('visible');
+    document.getElementById('uploadBtn').disabled=false;
+    document.getElementById('uploadBtn').innerHTML='🔍 Check Duplicates & Upload';
+    showDupeResultsBanner(dupeCount, cleanCount, false);
+}
+
+// ─── Modal buttons ─────────────────────────────────────────────────────────────
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalCancel').addEventListener('click', closeModal);
+
+document.getElementById('modalSkipAll').addEventListener('click',async()=>{
+    closeModal();
+    uploadMode='skip';
+    // uploadQueue already has only clean records from runDupeCheck
+    showToast(`Skipping ${duplicateRecords.length} duplicates. Uploading ${uploadQueue.length} new records.`,'warning');
+    await startUpload();
+});
+
+document.getElementById('modalUploadAll').addEventListener('click',async()=>{
+    closeModal();
+    uploadMode='all';
+    uploadQueue=mappedData; // include everything
+    showToast(`Uploading all ${mappedData.length} records including duplicates.`,'warning');
+    await startUpload();
+});
+
+function closeModal(){
+    document.getElementById('dupeModal').classList.remove('visible');
+}
+
+// ─── Upload ───────────────────────────────────────────────────────────────────
+async function startUpload(){
+    const btn=document.getElementById('uploadBtn');
+    const progressWrap=document.getElementById('progressWrap');
+    const progressBar=document.getElementById('progressBar');
+    const progressLabel=document.getElementById('progressLabel');
+    const errorBox=document.getElementById('errorBox');
+    const summaryGrid=document.getElementById('summaryGrid');
+
+    btn.disabled=true; btn.textContent='Uploading…';
+    progressWrap.classList.remove('hidden');
+    summaryGrid.classList.add('hidden');
+    errorBox.className='error-box';
+    progressBar.style.width='0%';
+
+    try{
+        progressLabel.textContent='Fetching existing Job IDs…';
+        const snap=await getDocs(collection(db,'Calisen Forecast Data'));
+        let maxNum=0;
+        snap.forEach(d=>{ const n=parseInt((d.id||'').replace('JOB-','')); if(!isNaN(n)&&n>maxNum)maxNum=n; });
+
+        let uploaded=0,failed=0;
+        const errors=[];
+        const total=uploadQueue.length;
+        const skippedDupes=duplicateRecords.length;
+
+        if(total===0){
+            document.getElementById('sumUploaded').textContent=0;
+            document.getElementById('sumDupes').textContent=skippedDupes;
+            document.getElementById('sumSkipped').textContent=0;
+            document.getElementById('sumFailed').textContent=0;
+            summaryGrid.classList.remove('hidden');
+            progressLabel.textContent=`✓ Done! All ${skippedDupes} records were duplicates and skipped.`;
+            btn.textContent='✓ Complete';
+            showToast(`All records were duplicates — nothing uploaded.`,'warning');
+            return;
+        }
+
+        for(let i=0;i<total;i++){
+            // Use the job number from the spreadsheet if present, otherwise auto-generate
+            const suppliedJobId = uploadQueue[i].jobId ? String(uploadQueue[i].jobId).trim() : '';
+            if(!suppliedJobId) maxNum++;
+            const jobId = suppliedJobId || `JOB-${String(maxNum).padStart(5,'0')}`;
+            const record={
+                ...uploadQueue[i],
+                jobId,
+                uploadedAt: new Date().toISOString(),
+                jobStatus: uploadQueue[i].jobStatus||'unassigned',
+            };
+
+            try{
+                await setDoc(doc(db,'Calisen Forecast Data',jobId),record);
+                uploaded++;
+            } catch(err){ failed++; errors.push(`Row ${i+1} (${jobId}): ${friendlyError(err)}`); }
+
+            const pct=Math.round(((i+1)/total)*100);
+            progressBar.style.width=pct+'%';
+            progressLabel.textContent=`Uploading record ${i+1} of ${total}…`;
+        }
+
+        document.getElementById('sumUploaded').textContent=uploaded;
+        document.getElementById('sumDupes').textContent=uploadMode==='all'?0:skippedDupes;
+        document.getElementById('sumSkipped').textContent=0;
+        document.getElementById('sumFailed').textContent=failed;
+        summaryGrid.classList.remove('hidden');
+
+        if(errors.length){ errorBox.className='error-box show'; errorBox.innerHTML='<strong>Some records failed:</strong><br>'+errors.join('<br>'); }
+
+        if(uploaded>0){
+            const skipMsg=skippedDupes&&uploadMode!=='all'?` (${skippedDupes} duplicates skipped)`:'';
+            progressLabel.textContent=`✓ Done! ${uploaded} of ${total} records uploaded${skipMsg}.`;
+            btn.textContent='✓ Upload Complete';
+            showToast(`${uploaded} records uploaded!`,'success');
+        } else {
+            progressLabel.textContent='Upload failed. See errors above.';
+            btn.disabled=false; btn.innerHTML='🚀 Retry Upload';
+            showToast('Upload failed.','error');
+        }
+    } catch(err){
+        const msg=friendlyError(err);
+        errorBox.className='error-box show'; errorBox.textContent='❌ '+msg;
+        progressLabel.textContent='Upload failed.';
+        btn.disabled=false; btn.innerHTML='🚀 Retry Upload';
+        showToast('Upload failed: '+msg,'error');
+    }
+}
+
+function resetAll(){
+    setStep(1);
+    document.getElementById('section-map').classList.add('hidden');
+    document.getElementById('section-preview').classList.add('hidden');
+    document.getElementById('section-upload').classList.remove('hidden');
+    document.getElementById('fileInput').value='';
+    rawData=[]; headerMap={}; displayHeaders=[]; mappedData=[]; activeFields=[];
+    uploadQueue=[]; duplicateRecords=[]; existingDocs=[];
+    // Reset dupe toggle
+    dupeEnabled=false;
+    dupeTrack.classList.remove('on');
+    dupeToggleTxt.textContent='Disabled';
+    dupeFieldsWrap.classList.remove('visible');
+    selectedDupeKeys.clear();
+}
+
+function setStep(n){
+    [1,2,3].forEach(i=>{
+        const el=document.getElementById(`step${i}`);
+        el.classList.remove('active','done');
+        if(i<n) el.classList.add('done');
+        if(i===n) el.classList.add('active');
+    });
+}
+
+function toUKDate(val){
+    if(!val) return '';
+    const s=String(val).trim();
+    if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+    const us=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if(us){ let[,m,d,y]=us; if(y.length===2)y='20'+y; return`${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`; }
+    const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso) return`${iso[3]}/${iso[2]}/${iso[1]}`;
+    const dt=new Date(s);
+    if(!isNaN(dt.getTime())) return`${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+    return s;
+}
+
+function normaliseSlot(val){
+    if(!val) return '';
+    const s=String(val).trim().toUpperCase();
+    if(s==='AM'||s.includes('AM')||s==='MORNING') return 'AM';
+    if(s==='PM'||s.includes('PM')||s==='AFTERNOON') return 'PM';
+    return val;
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')||'—'; }
+
+let toastTimer;
+function showToast(msg,type='success'){
+    const t=document.getElementById('toast');
+    t.className=`${type} show`; t.textContent=msg;
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>{t.className='';},4000);
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+const sidebar=document.getElementById('sidebar');
+document.getElementById('sidebarToggle').addEventListener('click',toggleSidebar);
+document.getElementById('logoCollapsed').addEventListener('click',toggleSidebar);
+function toggleSidebar(){ sidebar.classList.toggle('expanded'); localStorage.setItem('calisen-sidebar',sidebar.classList.contains('expanded')?'expanded':'collapsed'); }
+if(localStorage.getItem('calisen-sidebar')==='expanded') sidebar.classList.add('expanded');
+</script>
+</body>
+</html>
