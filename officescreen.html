@@ -430,14 +430,49 @@
                         </div>
                     </div>
 
-                    <!-- Calisen (coming soon) -->
-                    <div class="kpi-card" style="border: 1px solid rgba(16,185,129,0.4); background: linear-gradient(135deg, rgba(20,26,35,0.95), rgba(30,50,40,0.95));">
+                    <!-- Calisen (Yesterday | Today) -->
+                    <div class="kpi-card" style="
+                        background: linear-gradient(135deg, rgba(20,26,35,0.95), rgba(30,50,40,0.95));
+                        border: 1px solid rgba(16,185,129,0.4);
+                    ">
                         <div class="kpi-header" style="border-bottom: 1px solid rgba(16,185,129,0.35);">
-                            <span class="kpi-title" style="color:#34d399;">Calisen</span>
+                            <span class="kpi-title" style="color: #34d399;">Calisen</span>
                         </div>
-                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-                            <div style="font-size:2.2em;font-weight:900;letter-spacing:1px;background:linear-gradient(135deg,#ffffff 0%,#34d399 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Coming Soon</div>
-                            <div style="margin-top:6px;font-size:0.75em;color:#b9cbdc;letter-spacing:1px;text-transform:uppercase;font-weight:600;">Another project — in development</div>
+                        <div class="sp-split">
+                            <div class="sp-col">
+                                <div>
+                                    <div class="sp-col-head">Yesterday</div>
+                                    <div class="sp-col-sub" id="calCompletionDateLabel">Loading…</div>
+                                </div>
+                                <div>
+                                    <div class="sp-metric"><span class="sp-metric-label">Completed Jobs</span><span class="sp-metric-value" id="calYJobs">—</span></div>
+                                </div>
+                                <div>
+                                    <div class="sp-metric"><span class="sp-metric-label">MPH</span><span class="sp-metric-value" id="calYMph">—</span></div>
+                                    <div class="sp-note" id="calYMphNote"></div>
+                                </div>
+                                <div>
+                                    <div class="sp-metric"><span class="sp-metric-label">Comp %</span><span class="sp-metric-value"><span id="calCompletionActual">—</span><small>%</small></span></div>
+                                    <div class="progress-bar-container" style="margin: 2px 0;">
+                                        <div class="progress-bar" id="calCompletionProgress" style="width: 0%; background: linear-gradient(90deg, #10b981, #34d399); box-shadow: 0 0 12px rgba(16,185,129,0.6);"></div>
+                                    </div>
+                                    <div class="sp-note" id="calCompletionProgressText" style="margin-top: 0;">Loading…</div>
+                                </div>
+                            </div>
+                            <div class="sp-col">
+                                <div>
+                                    <div class="sp-col-head">Today</div>
+                                    <div class="sp-col-sub" id="calTodayLabel">Loading…</div>
+                                </div>
+                                <div>
+                                    <div class="sp-metric"><span class="sp-metric-label">Jobs</span><span class="sp-metric-value" id="calTJobs">—</span></div>
+                                </div>
+                                <div>
+                                    <div class="sp-metric"><span class="sp-metric-label">MPH</span><span class="sp-metric-value" id="calTMph">—</span></div>
+                                    <div class="sp-note" id="calTMphNote"></div>
+                                </div>
+                                <div></div>
+                            </div>
                         </div>
                     </div>
 
@@ -838,6 +873,84 @@
             }
         }
 
+        // ---- Calisen tile (same layout as Scottish Power) ----
+        // Figures typed on Calisen-Dashboard.html ("Calisen Daily Figures": headcount, jobs, meters; doc id = date)
+        // plus the per-day stats published from the uploaded sheet ("Calisen Daily Stats": completed / failed / aborted, meters completed).
+        //  - Yesterday: Completed Jobs = submitted jobs, else completed jobs from the upload.
+        //               MPH = meters (submitted, else meters completed in the upload) ÷ submitted heads.
+        //               Comp % = completed ÷ (completed + failed + aborted) from the upload.
+        //  - Today:     Jobs and MPH from today's submitted figures.
+        async function loadCalisen(yesterdayStr) {
+            const g = id => document.getElementById(id);
+            const todayStr = formatDateForQuery(new Date());
+            const short = d => d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+            try {
+                const nowHour = new Date().getHours();
+                const nextLabel = short(getPreviousWorkingDay());
+                g('calCompletionDateLabel').textContent = `${short(new Date(yesterdayStr + 'T12:00:00'))} · ${nowHour < 11 ? `before 11am — switches to ${nextLabel} at 11am` : 'updated from 11am'}`;
+
+                const histEl = g('calHistory');
+                const histDays = histEl ? getPreviousWorkingDays(5) : [];
+                const [yFigSnap, yStatSnap, tFigSnap, ...histSnaps] = await Promise.all([
+                    getDoc(doc(performanceDb, 'Calisen Daily Figures', yesterdayStr)),
+                    getDoc(doc(performanceDb, 'Calisen Daily Stats', yesterdayStr)),
+                    getDoc(doc(performanceDb, 'Calisen Daily Figures', todayStr)),
+                    ...histDays.map(d => getDoc(doc(performanceDb, 'Calisen Daily Stats', formatDateForQuery(d))))
+                ]);
+
+                // ---- Yesterday ----
+                const yFig = yFigSnap.exists() ? yFigSnap.data() : {};
+                const yStat = yStatSnap.exists() ? yStatSnap.data() : null;
+                const yTotal = yStat ? (yStat.completed || 0) + (yStat.failed || 0) + (yStat.aborted || 0) : 0;
+                const yPct = yTotal > 0 ? ((yStat.completed / yTotal) * 100).toFixed(1) : null;
+                g('calCompletionActual').textContent = yPct !== null ? yPct : '—';
+                g('calCompletionProgressText').textContent = yPct !== null ? `${yStat.completed} completed of ${yTotal} jobs` : 'No upload published for this date';
+                updateProgressBar('calCompletionProgress', yPct !== null ? +yPct : 0);
+
+                let yJobs = '—';
+                if (yFig.jobs !== undefined && Number(yFig.jobs) >= 0) yJobs = Number(yFig.jobs).toLocaleString();
+                else if (yStat) yJobs = (yStat.completed || 0).toLocaleString();
+                g('calYJobs').textContent = yJobs;
+
+                const heads = Number(yFig.headcount);
+                let meters, mSrc = 'submitted';
+                if (yFig.meters !== undefined && Number(yFig.meters) >= 0) meters = Number(yFig.meters);
+                else if (yStat && yStat.mCompleted !== undefined) { meters = Number(yStat.mCompleted); mSrc = 'from upload'; }
+                if (meters !== undefined && heads > 0) {
+                    g('calYMph').textContent = fmtNum(meters / heads);
+                    g('calYMphNote').textContent = `${Math.round(meters).toLocaleString()} m ÷ ${fmtNum(heads)} heads (${mSrc})`;
+                } else {
+                    g('calYMph').textContent = '—';
+                    g('calYMphNote').textContent = meters === undefined ? 'Waiting for meters' : 'Waiting for heads';
+                }
+
+                // ---- Today ----
+                const t = tFigSnap.exists() ? tFigSnap.data() : {};
+                g('calTodayLabel').textContent = short(new Date()) + (tFigSnap.exists() ? ' · submitted' : ' · awaiting submission');
+                g('calTJobs').textContent = (t.jobs !== undefined && Number(t.jobs) >= 0) ? Number(t.jobs).toLocaleString() : '—';
+                if (t.meters !== undefined && Number(t.headcount) > 0) {
+                    g('calTMph').textContent = fmtNum(Number(t.meters) / Number(t.headcount));
+                    g('calTMphNote').textContent = `${Math.round(Number(t.meters)).toLocaleString()} m ÷ ${fmtNum(Number(t.headcount))} heads`;
+                } else {
+                    g('calTMph').textContent = '—';
+                    g('calTMphNote').textContent = tFigSnap.exists() ? 'Needs meters and heads' : '';
+                }
+
+                // ---- Previous 5 working days (workscreen only) ----
+                if (histEl) {
+                    histEl.innerHTML = histDays.map((d, i) => {
+                        const s = histSnaps[i].exists() ? histSnaps[i].data() : null;
+                        const c = s ? (s.completed || 0) : 0, tot = s ? c + (s.failed || 0) + (s.aborted || 0) : 0;
+                        const p = tot > 0 ? ((c / tot) * 100).toFixed(1) + '%' : '—';
+                        return `<tr><td>${formatDate(d)}</td><td>${s ? c : '—'}</td><td>${s ? tot : '—'}</td><td>${p}</td></tr>`;
+                    }).join('');
+                }
+            } catch (err) {
+                console.error('Calisen load error:', err);
+                const n = document.getElementById('calCompletionProgressText'); if (n) n.textContent = 'Could not load Calisen data';
+            }
+        }
+
         function getSPCompletionDate() {
             const now = new Date();
             const hourNow = now.getHours();
@@ -1029,6 +1142,7 @@
 
                 const spDate = getSPCompletionDate();
                 await loadSPCompletion(spDate);
+                await loadCalisen(spDate);
                 await loadJobChanges(dateStr);
                 document.getElementById('lastUpdated').textContent=`Last updated: ${new Date().toLocaleTimeString()}`;
                 document.getElementById('loadingDiv').style.display='none';

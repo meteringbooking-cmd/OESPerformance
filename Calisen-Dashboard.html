@@ -60,6 +60,20 @@ details.notes { font-size: 13px; color: var(--text-2); }
 details.notes summary { cursor: pointer; font-weight: 600; color: var(--text); }
 details.notes ul { margin: 6px 0 0; padding-left: 18px; }
 .hidden { display: none !important; }
+.figures-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 12px 0; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.field input { font: inherit; font-size: 15px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; width: 100%; }
+.field .hint { color: var(--muted); font-size: 11px; }
+.chips { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.chip { cursor: pointer; font: inherit; font-size: 12px; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+.chip:hover { border-color: var(--accent); }
+.btn2 { cursor: pointer; font: inherit; font-weight: 600; color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; }
+.btn2:disabled, .btn:disabled { opacity: .5; cursor: default; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.status { font-size: 13px; margin-top: 10px; min-height: 18px; }
+.status.ok { color: var(--good); } .status.bad { color: var(--critical); } .status.warn { color: var(--serious); }
+.infobox { font-size: 12.5px; color: var(--text-2); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0 12px; }
+.sel-day td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .err { color: var(--critical); margin-top: 10px; }
 </style>
 </head>
@@ -68,13 +82,38 @@ details.notes ul { margin: 6px 0 0; padding-left: 18px; }
   <header>
     <div>
       <h1>Calisen Dashboard</h1>
-      <div class="sub" id="fileInfo">Upload an .xlsx export to see weekly job stats</div>
+      <div class="sub" id="fileInfo">Upload an .xlsx export to see daily job stats</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="sheetSel" class="hidden" title="Sheet"></select>
       <label class="btn">Upload .xlsx<input type="file" id="file" accept=".xlsx,.xlsm,.xls"></label>
     </div>
   </header>
+
+  <div class="card section" id="figCard">
+    <h2>Today's Figures</h2>
+    <div class="sub">Heads, jobs and meters for the workscreen and office screen</div>
+    <div class="infobox">
+      <strong>Today</strong> feeds the Today side of the Calisen tile; the previous working day feeds <strong>Yesterday</strong> (which switches over at 11am). Yesterday's <strong>MPH</strong> = meters &divide; heads.
+      If you leave Jobs or Meters blank for a past day, the completed jobs and meters from your uploaded spreadsheet are used once you press <em>Publish day stats</em>.
+    </div>
+    <div class="field" style="max-width:220px">
+      <label for="figDate">Date</label>
+      <input type="date" id="figDate">
+      <div class="chips"><button type="button" class="chip" id="figToday">Today</button><button type="button" class="chip" id="figYesterday">Yesterday</button></div>
+    </div>
+    <div class="figures-grid">
+      <div class="field"><label for="figHeads">Heads</label><input type="number" id="figHeads" min="0" step="0.5" inputmode="decimal" placeholder="e.g. 12"><div class="hint">People working that day</div></div>
+      <div class="field"><label for="figJobs">Jobs</label><input type="number" id="figJobs" min="0" step="1" inputmode="numeric" placeholder="e.g. 60"><div class="hint">Today: jobs for the day. Yesterday: completed jobs</div></div>
+      <div class="field"><label for="figMeters">Meters</label><input type="number" id="figMeters" min="0" step="1" inputmode="numeric" placeholder="e.g. 85"><div class="hint">Meter count (used for meters per head)</div></div>
+    </div>
+    <div class="sub" id="figExisting"></div>
+    <div class="btn-row">
+      <button class="btn" id="figSave">Save figures</button>
+      <button class="btn2" id="pubStats" disabled title="Upload a spreadsheet first">Publish day stats</button>
+    </div>
+    <div class="status" id="figStatus"></div>
+  </div>
 
   <div id="drop">
     <strong>Drop your spreadsheet here</strong>
@@ -84,17 +123,15 @@ details.notes ul { margin: 6px 0 0; padding-left: 18px; }
 
   <main id="dash" class="hidden">
     <div class="card filters">
-      <label>Week comm<select id="fWeek"></select></label>
+      <label>Day<select id="fDay"></select></label>
       <label>Engineer (OP_Name)<select id="fOp"></select></label>
-      <label>Appt date from<input type="date" id="fFrom"></label>
-      <label>Appt date to<input type="date" id="fTo"></label>
-      <button class="link" id="reset">Reset filters</button>
+      <button class="link" id="reset">Latest day</button>
     </div>
 
     <div class="kpis" id="kpis"></div>
 
-    <div class="card section"><h2>Weekly jobs by outcome</h2><div class="chart-box"><canvas id="cWeek"></canvas></div></div>
-    <div class="card section"><h2>By week comm</h2><div class="table-wrap" id="tblWeek"></div></div>
+    <div class="card section"><h2>Jobs by outcome &ndash; last 2 weeks</h2><div class="sub" id="chartRange" style="margin:-6px 0 8px"></div><div class="chart-box"><canvas id="cWeek"></canvas></div></div>
+    <div class="card section"><h2>By day</h2><div class="table-wrap" id="tblDay"></div></div>
     <div class="card section"><h2>By engineer</h2><div class="table-wrap" id="tblOp"></div></div>
 
     <details class="card notes" id="notes"></details>
@@ -103,11 +140,11 @@ details.notes ul { margin: 6px 0 0; padding-left: 18px; }
 
 <script>
 // ---- Column positions (0-based) ----
-const COL = { week: 1 /*B*/, job: 3 /*D*/, dual: 5 /*F*/, appt: 11 /*L*/, op: 20 /*U*/, result: 28 /*AC*/ };
+const COL = { week: 1 /*B (only used to spot blank rows)*/, job: 3 /*D*/, dual: 5 /*F*/, appt: 11 /*L*/, op: 20 /*U*/, result: 28 /*AC*/ };
 const PRIORITY = { Completed: 4, Failed: 3, Aborted: 2, Other: 1 };
 
 let workbook = null, records = [], meta = {}, charts = {};
-const sortState = {};
+const sortState = { day: { k: 'label', dir: -1 } };
 
 const $ = id => document.getElementById(id);
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -258,6 +295,11 @@ function toDate(v) {
 }
 const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const ukDate = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
+const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const utc = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null; };
+const dayLabel = s => { const d = utc(s); return d ? `${WD[d.getUTCDay()]} ${ukDate(s)}` : s; };
+const dayShort = s => { const d = utc(s); return d ? `${WD[d.getUTCDay()]} ${s.slice(8)}/${s.slice(5, 7)}` : s; };
+const addDays = (s, n) => { const d = utc(s); d.setUTCDate(d.getUTCDate() + n); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); };
 
 function normResult(v) {
   const s = String(v).trim().toLowerCase();
@@ -283,7 +325,7 @@ function processSheet(name) {
     meta.rows++;
 
     const rec = {
-      week: toDate(r[COL.week]) || (String(r[COL.week]).trim() || '(blank)'),
+      day: toDate(r[COL.appt]) || '(no date)',
       op: String(r[COL.op] ?? '').trim() || '(blank)',
       appt: toDate(r[COL.appt]),
       outcome: normResult(resRaw),
@@ -314,6 +356,7 @@ function processSheet(name) {
   drop.classList.add('hidden');
   $('dash').classList.remove('hidden');
   render();
+  window.dispatchEvent(new Event('caldata'));
 }
 
 // ---- Filters ----
@@ -322,25 +365,27 @@ function opts(sel, values, label, fmtFn = v => v) {
 }
 function buildFilters() {
   const uniq = k => [...new Set(records.map(r => r[k]))].sort((a, b) => String(a).localeCompare(String(b)));
-  opts($('fWeek'), uniq('week'), 'weeks', ukDate);
+  opts($('fDay'), uniq('day').reverse(), 'days', dayLabel); // newest first
   opts($('fOp'), uniq('op'), 'engineers');
-  const dates = records.map(r => r.appt).filter(Boolean).sort();
-  for (const id of ['fFrom', 'fTo']) {
-    const el = $(id);
-    el.value = '';
-    el.min = dates[0] || '';
-    el.max = dates[dates.length - 1] || '';
-  }
+  $('fDay').value = latestDay(); // day view: open on the most recent day
 }
-['fWeek', 'fOp', 'fFrom', 'fTo'].forEach(id => $(id).addEventListener('change', render));
-$('reset').addEventListener('click', () => { ['fWeek', 'fOp', 'fFrom', 'fTo'].forEach(id => $(id).value = ''); render(); });
+const latestDay = () => records.map(r => r.day).filter(d => utc(d)).sort().pop() || '';
+['fDay', 'fOp'].forEach(id => $(id).addEventListener('change', render));
+$('reset').addEventListener('click', () => { $('fDay').value = latestDay(); $('fOp').value = ''; render(); });
 
 function filtered() {
-  const w = $('fWeek').value, op = $('fOp').value, from = $('fFrom').value, to = $('fTo').value;
-  return records.filter(r =>
-    (!w || r.week === w) && (!op || r.op === op) &&
-    (!from || (r.appt && r.appt >= from)) && (!to || (r.appt && r.appt <= to)));
+  const d = $('fDay').value, op = $('fOp').value;
+  return records.filter(r => (!d || r.day === d) && (!op || r.op === op));
 }
+// Engineer filter only (used by the 2-week chart and the by-day table so they keep their context)
+const byOp = () => { const op = $('fOp').value; return records.filter(r => !op || r.op === op); };
+
+// ---- Per-day stats (published to the workscreens), ignoring the filters ----
+window.calDayStats = () => {
+  const m = groupBy(records.filter(r => utc(r.day)), 'day');
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-14).map(([date, a]) =>
+    ({ date, jobs: a.jobs, completed: a.Completed, failed: a.Failed, aborted: a.Aborted, mCompleted: a.mCompleted }));
+};
 
 // ---- Aggregation ----
 const blank = () => ({ jobs: 0, Completed: 0, Failed: 0, Aborted: 0, Other: 0, mCompleted: 0 });
@@ -367,9 +412,11 @@ function render() {
     kpi('Total failed', fmt(t.Failed), 'jobs', css('--critical')) +
     kpi('Total aborted', fmt(t.Aborted), 'jobs', css('--serious'));
 
-  const byWeek = groupBy(rows, 'week');
-  drawChart('cWeek', byWeek);
-  $('tblWeek').innerHTML = table('week', byWeek, 'Week comm', t, ukDate);
+  const opRows = byOp();
+  const opTotal = blank(); opRows.forEach(r => add(opTotal, r));
+  const byDay = groupBy(opRows, 'day');
+  drawChart('cWeek', twoWeeks(opRows));
+  $('tblDay').innerHTML = table('day', byDay, 'Day', opTotal, dayLabel);
   $('tblOp').innerHTML = table('op', groupBy(rows, 'op'), 'Engineer', t);
 
   const list = m => [...m.entries()].map(([k, v]) => `<li>${esc(k)}: ${fmt(v)}</li>`).join('');
@@ -398,7 +445,7 @@ function table(id, map, label, total, labelFmt = s => s) {
     });
   }
   const arrow = k => s && s.k === k ? (s.dir > 0 ? ' ▲' : ' ▼') : '';
-  const row = (k, a) => `<tr><td>${esc(labelFmt(k))}</td>` + COLS.slice(1).map(c => `<td>${c.f(c.v(a), a)}</td>`).join('') + '</tr>';
+  const row = (k, a) => `<tr${id === 'day' && k === $('fDay').value ? ' class="sel-day"' : ''}><td>${esc(labelFmt(k))}</td>` + COLS.slice(1).map(c => `<td>${c.f(c.v(a), a)}</td>`).join('') + '</tr>';
   return `<table><thead><tr>${COLS.map(c => `<th data-t="${id}" data-k="${c.k}">${c.h || label}${arrow(c.k)}</th>`).join('')}</tr></thead>
     <tbody>${entries.map(([k, a]) => row(k, a)).join('')}</tbody>
     <tfoot>${row('Total', total)}</tfoot></table>`;
@@ -410,8 +457,21 @@ document.addEventListener('click', e => {
   render();
 });
 
+// Last 14 calendar days ending on the latest day in the file; weekend days with no jobs are left out
+function twoWeeks(rows) {
+  const end = latestDay(), m = new Map();
+  if (!end) { $('chartRange').textContent = ''; return m; }
+  const start = addDays(end, -13);
+  const days = []; for (let d = start; d <= end; d = addDays(d, 1)) days.push(d);
+  days.forEach(d => m.set(d, blank()));
+  rows.forEach(r => { if (m.has(r.day)) add(m.get(r.day), r); });
+  for (const [d, a] of [...m]) { const w = utc(d).getUTCDay(); if ((w === 0 || w === 6) && !a.jobs) m.delete(d); }
+  $('chartRange').textContent = `${dayLabel(start)} to ${dayLabel(end)}`;
+  return m;
+}
+
 function drawChart(id, map) {
-  const labels = [...map.keys()].map(ukDate);
+  const labels = [...map.keys()].map(dayShort);
   const vals = [...map.values()];
   const colors = { Completed: css('--good'), Failed: css('--critical'), Aborted: css('--serious'), Other: css('--other') };
   const datasets = ['Completed', 'Failed', 'Aborted', 'Other']
@@ -448,6 +508,91 @@ function drawChart(id, map) {
 }
 
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => records.length && render());
+</script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, serverTimestamp, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
+  authDomain: "oesperformance-a54c0.firebaseapp.com",
+  projectId: "oesperformance-a54c0",
+  storageBucket: "oesperformance-a54c0.firebasestorage.app",
+  messagingSenderId: "484894102454",
+  appId: "1:484894102454:web:17535ee497eac2d90d6717",
+  measurementId: "G-R56BGZYV8N"
+});
+const db = getFirestore(app);
+
+// One document per date (id = YYYY-MM-DD).
+//  "Calisen Daily Figures": typed in below (heads, jobs, meters)  -> read by the workscreen / office screen
+//  "Calisen Daily Stats":   worked out from the uploaded sheet     -> completion %, completed jobs, meters
+const FIGURES = 'Calisen Daily Figures', STATS = 'Calisen Daily Stats';
+const $ = id => document.getElementById(id);
+const figDate = $('figDate'), figHeads = $('figHeads'), figJobs = $('figJobs'), figMeters = $('figMeters');
+const figSave = $('figSave'), figStatus = $('figStatus'), figExisting = $('figExisting'), pubStats = $('pubStats');
+
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const uk = s => { const [y, m, d] = String(s).split('-'); return d ? `${d}/${m}/${y}` : s; };
+function prevWorkingDay() { const d = new Date(); do { d.setDate(d.getDate() - 1); } while (d.getDay() === 0 || d.getDay() === 6); return d; }
+function status(type, msg) { figStatus.className = 'status ' + type; figStatus.textContent = msg; }
+
+async function loadExisting() {
+  figHeads.value = ''; figJobs.value = ''; figMeters.value = ''; figExisting.textContent = '';
+  const wanted = figDate.value; if (!wanted) return;
+  try {
+    const snap = await getDoc(doc(db, FIGURES, wanted));
+    if (figDate.value !== wanted) return;
+    if (snap.exists()) {
+      const d = snap.data();
+      if (d.headcount !== undefined) figHeads.value = d.headcount;
+      if (d.jobs !== undefined) figJobs.value = d.jobs;
+      if (d.meters !== undefined) figMeters.value = d.meters;
+      figExisting.textContent = `Figures already saved for ${uk(wanted)} - loaded above. Change a value and save to update it.`;
+    } else figExisting.textContent = `Nothing saved yet for ${uk(wanted)}.`;
+  } catch (e) { console.error('Could not load existing figures', e); }
+}
+figDate.value = isoLocal(new Date());
+figDate.addEventListener('change', loadExisting);
+$('figToday').addEventListener('click', () => { figDate.value = isoLocal(new Date()); loadExisting(); });
+$('figYesterday').addEventListener('click', () => { figDate.value = isoLocal(prevWorkingDay()); loadExisting(); });
+
+figSave.addEventListener('click', async () => {
+  status('', '');
+  const date = figDate.value;
+  if (!date) return status('bad', 'Please select a date.');
+  const data = {};
+  for (const [key, el] of [['headcount', figHeads], ['jobs', figJobs], ['meters', figMeters]]) {
+    if (el.value.trim() === '') continue;
+    const n = Number(el.value);
+    if (!isFinite(n) || n < 0) return status('bad', `${el === figHeads ? 'Heads' : el === figJobs ? 'Jobs' : 'Meters'} must be a number of 0 or more.`);
+    data[key] = n;
+  }
+  if (!Object.keys(data).length) return status('warn', 'Enter at least one figure to save.');
+  figSave.disabled = true; figSave.textContent = 'Saving...';
+  try {
+    await setDoc(doc(db, FIGURES, date), { date, ...data, updatedAt: serverTimestamp() }, { merge: true });
+    const parts = []; if (data.headcount !== undefined) parts.push(`heads ${data.headcount}`); if (data.jobs !== undefined) parts.push(`jobs ${data.jobs}`); if (data.meters !== undefined) parts.push(`meters ${data.meters}`);
+    status('ok', `Saved for ${uk(date)}: ${parts.join(', ')}.`);
+    loadExisting().then(() => { figExisting.textContent = `Saved - ${figExisting.textContent}`; });
+  } catch (e) { console.error(e); status('bad', 'Error saving figures: ' + e.message); }
+  finally { figSave.disabled = false; figSave.textContent = 'Save figures'; }
+});
+
+// Publish the per-day stats from the uploaded sheet (last 14 days in the file) for the screens
+window.addEventListener('caldata', () => { pubStats.disabled = false; pubStats.title = ''; });
+pubStats.addEventListener('click', async () => {
+  const stats = window.calDayStats ? window.calDayStats() : [];
+  if (!stats.length) return status('warn', 'Upload a spreadsheet first.');
+  pubStats.disabled = true; pubStats.textContent = 'Publishing...';
+  try {
+    await Promise.all(stats.map(r => setDoc(doc(db, STATS, r.date), { ...r, updatedAt: serverTimestamp() }, { merge: true })));
+    status('ok', `Published stats for ${stats.length} days (${uk(stats[0].date)} to ${uk(stats[stats.length - 1].date)}). The screens will pick them up on their next refresh.`);
+  } catch (e) { console.error(e); status('bad', 'Error publishing stats: ' + e.message); }
+  finally { pubStats.disabled = false; pubStats.textContent = 'Publish day stats'; }
+});
+
+loadExisting();
 </script>
 </body>
 </html>
