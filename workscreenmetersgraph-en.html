@@ -344,10 +344,7 @@
 
   <div id="periodSection">
     <h2>Time Period</h2>
-    <div style="display: flex; gap: 0.5rem; margin: 0.4rem 0;">
-      <button class="period-btn active" data-period="7days" style="margin: 0; flex: 1;">Last 7 days</button>
-      <input type="date" id="wcDate" class="abort-date-input" style="flex: 1;" title="Week Commencing Date">
-    </div>
+    <button class="period-btn active" data-period="7days">Last 7 days (bar)</button>
     <button class="period-btn" data-period="4weeks">4 week rolling (bar)</button>
     <button class="period-btn" data-period="6months">6 months (line)</button>
     <button class="period-btn" data-period="year">Year to date (line)</button>
@@ -355,7 +352,7 @@
 
   <h2>Team Leader</h2>
   <button class="team-btn active" data-team="all">All Teams <span class="headcount-badge" id="hc_all">…</span></button>
-  <button class="team-btn" data-team="Richard Wiecko">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
+  <button class="team-btn" data-team="Richard Wiecko" style="display:none;">Richard Wiecko <span class="headcount-badge" id="hc_richard">…</span></button>
   <button class="team-btn" data-team="Scott Carson">Scott Carson <span class="headcount-badge" id="hc_scott">…</span></button>
   <button class="team-btn" data-team="Stuart Whyte">Stuart Whyte <span class="headcount-badge" id="hc_stuart">…</span></button>
   <button class="team-btn" data-team="Tom Green">Tom Green <span class="headcount-badge" id="hc_tom">…</span></button>
@@ -436,6 +433,15 @@
   const db      = getFirestore(perfApp);
   const staffDb = getFirestore(staffApp);
 
+  const EXCLUDED_EN_ENGINEERS = new Set(['chris timm', 'ian dobson', 'jon convery']);
+  function isExcludedEnergise(teamLeader, engineerName) {
+    const tl = (teamLeader || '').trim().toLowerCase();
+    const eng = (engineerName || '').trim().toLowerCase();
+    if (tl.startsWith('richard wiecko')) return true;
+    if (EXCLUDED_EN_ENGINEERS.has(eng)) return true;
+    return false;
+  }
+
   const normTeam = val => {
     const v = (val || '').trim();
     if (/^ftl\s*4$/i.test(v)) return 'Tom Green';
@@ -471,34 +477,35 @@
       staffSnap.forEach(doc => {
         const d = doc.data();
         if (d.leaveDate) return;
-        const loc = (d.Location || d.location || '').trim();
-        if (loc !== 'OES') return;
+        const loc = (d.Location || d.location || '').trim().toUpperCase();
+        if (loc !== 'OES ENERGISE' && loc !== 'EDF') return;
         const rawTl = (d['Team Leader'] || d.teamLeader || '').trim();
+        const name = (d['Full Name'] || d.Name || d.name || '').trim();
+        if (isExcludedEnergise(rawTl, name)) return;
         const tl = /^ftl\s*4$/i.test(rawTl) ? 'Tom Green' : rawTl;
         engineerHeadcount["all"]++;
         if (engineerHeadcount[tl] !== undefined) engineerHeadcount[tl]++;
       });
       headcountLoaded = true;
 
-      engineerHeadcount["Scott Carson"]        = 13;
+      engineerHeadcount["Richard Wiecko"] = 0;
       engineerHeadcount["all"] =
-        engineerHeadcount["Richard Wiecko"] +
         engineerHeadcount["Scott Carson"] +
         engineerHeadcount["Stuart Whyte"] +
         engineerHeadcount["Tom Green"];
 
       document.getElementById('hc_all').textContent        = engineerHeadcount["all"];
-      document.getElementById('hc_richard').textContent   = engineerHeadcount["Richard Wiecko"];
+      document.getElementById('hc_richard').textContent   = 0;
       document.getElementById('hc_scott').textContent     = engineerHeadcount["Scott Carson"];
       document.getElementById('hc_stuart').textContent    = engineerHeadcount["Stuart Whyte"];
       document.getElementById('hc_tom').textContent       = engineerHeadcount["Tom Green"];
     } catch (err) {
       console.warn('Could not load dynamic headcount, using fallback values:', err);
-      engineerHeadcount["Richard Wiecko"]       = 9;
-      engineerHeadcount["Scott Carson"]         = 13;
-      engineerHeadcount["Stuart Whyte"]         = 7;
-      engineerHeadcount["Tom Green"]            = 12;
-      engineerHeadcount["all"] = 41;
+      engineerHeadcount["Richard Wiecko"]       = 0;
+      engineerHeadcount["Scott Carson"]         = 2;
+      engineerHeadcount["Stuart Whyte"]         = 5;
+      engineerHeadcount["Tom Green"]            = 6;
+      engineerHeadcount["all"] = 13;
       headcountLoaded = true;
     }
   }
@@ -530,6 +537,7 @@
     const recs = [];
     snap.forEach(doc => {
       const d = doc.data();
+      if (isExcludedEnergise(d.teamLeader, d.engineerName || d.engineer)) return;
       const normalisedTeam = normTeam(d.teamLeader);
       if (team === "all" || normalisedTeam === team) recs.push({ ...d, teamLeader: normalisedTeam });
     });
@@ -544,6 +552,7 @@
 
       snapMeters.forEach(doc => {
         const d = doc.data();
+        if (isExcludedEnergise(d.team || d.teamLeader, d.engineer)) return;
         const rawTeam = d.team || d.teamLeader || '';
         const t = normTeam(rawTeam);
         if (team === "all" || t === team) {
@@ -650,29 +659,15 @@
 
   async function fetchPeriodDataMix(periodKey, team) {
     const cfg = periods[periodKey];
-    let start = new Date(today);
-    let end = new Date(today);
-
-    if (periodKey === "7days") {
-      const wcInput = document.getElementById('wcDate');
-      if (wcInput && wcInput.value) {
-        start = new Date(wcInput.value);
-        end = new Date(start);
-        end.setDate(end.getDate() + 4);
-      } else {
-        start.setDate(today.getDate() - cfg.daysBack);
-      }
-    } else {
-      start.setDate(today.getDate() - cfg.daysBack);
-    }
-
+    const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
+    
     const startDate = toLocalIsoString(start);
-    const endDate = toLocalIsoString(end);
+    const endDate = toLocalIsoString(today);
 
     const records = await fetchRecordsForRange(startDate, endDate, team);
     const { krakenMeters, krakenHc } = await fetchKrakenMphData(startDate, endDate, team);
 
-    const weekdays = getWeekdayDates(start, end);
+    const weekdays = getWeekdayDates(start, today);
     const dateMap  = {};
     weekdays.forEach(d => dateMap[d] = 0);
     records.forEach(r => { if (dateMap[r.date]!==undefined) dateMap[r.date] += Number(r.meters||0); });
@@ -878,14 +873,6 @@
       const cfg = periods[currentPeriod];
       const data = await fetchPeriodDataMix(currentPeriod, currentTeam);
 
-      let currentLabel = cfg.label;
-      if (currentPeriod === "7days") {
-        const wcInput = document.getElementById('wcDate');
-        if (wcInput && wcInput.value) {
-          currentLabel = `WC ${wcInput.value} (5 Days)`;
-        }
-      }
-
       const total = data.values.reduce((s,v)=>s+v,0);
       const pop   = data.values.filter(v=>v>0).length;
 
@@ -898,10 +885,11 @@
       if (currentPeriod === '7days') {
         const last5  = data.values.filter(v=>v>0).slice(-5);
         const l5tot  = last5.reduce((s,v)=>s+v,0);
-        const target = hc * 4 * last5.length;
+        const DAILY_TARGET = 103; // meters per day (515 per 5-day week)
+        const target = DAILY_TARGET * last5.length;
         const pct    = target > 0 ? (l5tot/target)*100 : 0;
         const cls    = pct>=100 ? 'success' : pct>=80 ? 'warning' : 'error';
-        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
+        targetHTML = `<div class="stats-box"><div class="stats-label">vs Target (103/day)</div><div class="stats-value ${cls}" id="statTarget">${pct.toFixed(1)}%</div></div>`;
       }
 
       setStats(
@@ -915,7 +903,7 @@
       container.innerHTML = ''; container.appendChild(ctx);
       if (chart) chart.destroy();
       
-      const periodOpts = dualAxisOptions(`${currentLabel} – Meters Installed (${hc} Base Engineers)`, data.rawDates);
+      const periodOpts = dualAxisOptions(`${cfg.label} – Meters Installed (${hc} Base Engineers)`, data.rawDates);
       
       chart = new Chart(ctx, {
         type: cfg.type,
@@ -1059,29 +1047,13 @@
       isBar     = true;
     } else {
       const cfg  = periods[periodKey];
-      let start = new Date(today);
-      let end = new Date(today);
-
-      if (periodKey === "7days") {
-        const wcInput = document.getElementById('wcDate');
-        if (wcInput && wcInput.value) {
-          start = new Date(wcInput.value);
-          end = new Date(start);
-          end.setDate(end.getDate() + 4);
-          label = `WC ${wcInput.value} (5 Days)`;
-        } else {
-          start.setDate(today.getDate() - cfg.daysBack);
-          label = cfg.label;
-        }
-      } else {
-        start.setDate(today.getDate() - cfg.daysBack);
-        label = cfg.label;
-      }
-
+      const start = new Date(today); start.setDate(today.getDate() - cfg.daysBack);
+      
       startDate  = toLocalIsoString(start);
-      endDate    = toLocalIsoString(end);
-
-      weekdays   = getWeekdayDates(start, end);
+      endDate    = toLocalIsoString(today);
+      
+      weekdays   = getWeekdayDates(start, today);
+      label      = cfg.label;
       isBar      = cfg.type === 'bar';
     }
 
@@ -1386,29 +1358,9 @@
       btn.classList.add('active');
       currentPeriod = btn.dataset.period;
       currentMonth  = null;
-
-      if (currentPeriod !== '7days') {
-        const wcInput = document.getElementById('wcDate');
-        if (wcInput) wcInput.value = '';
-      }
-
       updateView();
     });
   });
-
-  const wcDateEl = document.getElementById('wcDate');
-  if (wcDateEl) {
-    wcDateEl.addEventListener('change', () => {
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('active'));
-      const btn7 = document.querySelector('.period-btn[data-period="7days"]');
-      if (btn7) btn7.classList.add('active');
-
-      currentPeriod = "7days";
-      currentMonth  = null;
-      updateView();
-    });
-  }
 
   document.querySelectorAll('.team-btn').forEach(btn => {
     btn.addEventListener('click', () => {
