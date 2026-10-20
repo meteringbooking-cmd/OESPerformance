@@ -221,6 +221,17 @@
     .modal-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.6; }
     .modal-close { position: absolute; top: 18px; right: 18px; width: 28px; height: 28px; border-radius: 50%; background: rgb(var(--ds-fg-rgb) / 0.06); border: 1px solid rgb(var(--ds-fg-rgb) / 0.1); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.15s; }
     .modal-close:hover { background: rgb(var(--ds-danger-rgb) / 0.2); color: var(--danger); border-color: rgb(var(--ds-danger-rgb) / 0.4); }
+    .rp-counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+    .rp-count { background: rgb(var(--ds-bg-rgb) / 0.9); border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); border-radius: 10px; padding: 12px; text-align: center; }
+    .rp-count b { display: block; font-size: 24px; line-height: 1.1; }
+    .rp-count span { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+    .rp-removed b { color: var(--danger, #e5484d); } .rp-added b { color: var(--accent-green, #16a34a); } .rp-kept b { color: var(--warning, #e08a0b); }
+    .rp-h { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+    .rp-list { max-height: 260px; overflow: auto; border: 1px solid rgb(var(--ds-fg-rgb) / 0.08); border-radius: 10px; }
+    .rp-list table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .rp-list th, .rp-list td { padding: 6px 10px; text-align: left; border-bottom: 1px solid rgb(var(--ds-fg-rgb) / 0.06); white-space: nowrap; }
+    .rp-list th { position: sticky; top: 0; background: var(--ds-surface); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+    .rp-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.5; }
     .modal-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
 
     .dupe-group { margin-bottom: 20px; padding: 14px 16px; border-radius: 12px; border: 1px solid rgb(var(--ds-warn-rgb) / 0.2); background: rgb(var(--ds-warn-rgb) / 0.04); }
@@ -247,6 +258,19 @@
       <button class="btn btn-primary" id="modalSkipAll">Skip All Duplicates</button>
       <button class="btn btn-warning" id="modalUploadAll">Upload All Anyway</button>
       <button class="btn btn-outline" id="modalCancel">Cancel Upload</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="replaceModal">
+  <div class="modal-box" style="max-width:860px">
+    <button class="modal-close" id="replaceClose">✕</button>
+    <div class="modal-title">Data already exists for these dates</div>
+    <div class="modal-sub" id="replaceSub"></div>
+    <div id="replaceBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="replaceConfirm">Replace &amp; Upload</button>
+      <button class="btn btn-outline" id="replaceCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -388,6 +412,7 @@
                     <div class="summary-item"><div class="summary-val yellow" id="sumSkipped">0</div><div class="summary-lbl">Skipped</div></div>
                     <div class="summary-item"><div class="summary-val red" id="sumFailed">0</div><div class="summary-lbl">Failed</div></div>
                 </div>
+                <div id="replaceResult" class="hidden" style="margin-top:22px;"></div>
                 <div class="actions">
                     <button class="btn btn-primary" id="uploadBtn">🚀 Upload All Records</button>
                     <button class="btn btn-outline" id="backBtn">← Remap Columns</button>
@@ -400,7 +425,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, getDocs, setDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -479,7 +504,8 @@ let rawData=[], headerMap={}, displayHeaders=[], mappedData=[], activeFields=[];
 let dupeEnabled=false, selectedDupeKeys=new Set();
 // uploadQueue: after dupe check, stores which records to upload and which to skip
 let uploadQueue=[], duplicateRecords=[], existingDocs=[];
-let uploadMode='clean'; // 'clean' | 'all' | 'skip'
+let uploadMode='clean'; // 'clean' | 'all' | 'skip' | 'replace'
+let replacePlan=null;
 
 // ─── Firebase status ──────────────────────────────────────────────────────────
 function setFbDot(id,state){ const el=document.getElementById(id); if(!el)return; el.className='status-dot-sm'+(state!=='connecting'?' '+state:''); }
@@ -760,7 +786,8 @@ function buildPreview(){
     document.getElementById('dupeResultsBanner').classList.add('hidden');
 
     // Reset upload state
-    uploadQueue=[]; duplicateRecords=[]; existingDocs=[]; uploadMode='clean';
+    uploadQueue=[]; duplicateRecords=[]; existingDocs=[]; uploadMode='clean'; replacePlan=null;
+    document.getElementById('replaceResult').classList.add('hidden'); document.getElementById('replaceResult').innerHTML='';
 }
 
 // ─── Dupe Check ───────────────────────────────────────────────────────────────
@@ -802,7 +829,97 @@ async function runDupeCheck(){
     return { dupes: duplicateRecords.length, clean: uploadQueue.length };
 }
 
+// ─── Replace-by-date plan ─────────────────────────────────────────────────────
+// Every date that appears in the file is replaced: existing jobs on those dates that are NOT in the new file are removed,
+// jobs that are in the file are overwritten with the new data, and brand-new job numbers are added.
+const ukSortKey=d=>{const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d);return m?m[3]+m[2]+m[1]:d;};
+async function buildReplacePlan(){
+    const snap=await getDocs(collection(db,'Calisen Forecast Data'));
+    const existing=[]; let maxNum=0;
+    snap.forEach(d=>{ const n=parseInt((d.id||'').replace('JOB-','')); if(!isNaN(n)&&n>maxNum)maxNum=n; existing.push({id:d.id,...d.data()}); });
+    const byId=new Map();
+    mappedData.forEach(r=>{
+        let id=r.jobId?String(r.jobId).trim():'';
+        if(!id){ maxNum++; id='JOB-'+String(maxNum).padStart(5,'0'); }
+        byId.set(id,{...r,jobId:id}); // same job number twice in the file: the last row wins, as before
+    });
+    const incoming=[...byId.values()];
+    const dates=new Set(incoming.map(r=>toUKDate(r.dateOfJob)).filter(Boolean));
+    const existingById=new Map(existing.map(e=>[e.id,e]));
+    const onDates=existing.filter(e=>dates.has(toUKDate(e.dateOfJob)));
+    const removed=onDates.filter(e=>!byId.has(e.id));
+    const kept=onDates.filter(e=>byId.has(e.id));
+    const added=incoming.filter(r=>!existingById.has(r.jobId));
+    const moved=incoming.filter(r=>existingById.has(r.jobId)&&!dates.has(toUKDate(existingById.get(r.jobId).dateOfJob)));
+    const sortJobs=a=>a.sort((x,y)=>ukSortKey(toUKDate(x.dateOfJob)).localeCompare(ukSortKey(toUKDate(y.dateOfJob)))||String(x.jobId||x.id).localeCompare(String(y.jobId||y.id),undefined,{numeric:true}));
+    return{ incoming, dates:[...dates].sort((a,b)=>ukSortKey(a).localeCompare(ukSortKey(b))), removed:sortJobs(removed), kept, added:sortJobs(added), moved, existingTotal:existing.length };
+}
+
+function planTable(rows,cols){
+    if(!rows.length) return '<div class="rp-note" style="padding:10px 12px">None</div>';
+    return `<div class="rp-list"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(c[1](r))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+const idOf=r=>r.jobId||r.id;
+function renderPlan(plan,done){
+    const dl=plan.dates.length>6?`${plan.dates.slice(0,6).join(', ')} +${plan.dates.length-6} more`:plan.dates.join(', ');
+    return `<div class="rp-note" style="margin:0">Dates in this file: <strong>${esc(dl)}</strong></div>
+      <div class="rp-counts">
+        <div class="rp-count rp-removed"><b>${plan.removed.length}</b><span>${done?'Removed':'Will be removed'}</span></div>
+        <div class="rp-count rp-added"><b>${plan.added.length}</b><span>New job numbers</span></div>
+        <div class="rp-count rp-kept"><b>${plan.kept.length}</b><span>${done?'Replaced':'Replaced (same job no.)'}</span></div>
+        <div class="rp-count"><b>${plan.incoming.length}</b><span>Jobs in file</span></div>
+      </div>
+      <div class="rp-h">Job IDs no longer in the file (${plan.removed.length})</div>
+      ${planTable(plan.removed,[['Job ID',idOf],['Job Type',r=>r.jobType],['Date',r=>toUKDate(r.dateOfJob)],['Engineer',r=>r.engineerName],['Postcode',r=>r.postcode]])}
+      <div class="rp-h">New job numbers (${plan.added.length})</div>
+      ${planTable(plan.added,[['Job ID',idOf],['Job Type',r=>r.jobType],['Date',r=>toUKDate(r.dateOfJob)],['Engineer',r=>r.engineerName],['Postcode',r=>r.postcode]])}
+      ${plan.moved.length?`<div class="rp-note">${plan.moved.length} job number${plan.moved.length!==1?'s':''} in this file already existed on a date that is not in the file and ${done?'were':'will be'} updated to the new date.</div>`:''}`;
+}
+function planCsv(plan){
+    const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+    const rows=[['Change','Job ID','Job Type','Date','Engineer','Postcode']];
+    plan.removed.forEach(r=>rows.push(['Removed',idOf(r),r.jobType,toUKDate(r.dateOfJob),r.engineerName,r.postcode]));
+    plan.added.forEach(r=>rows.push(['New',idOf(r),r.jobType,toUKDate(r.dateOfJob),r.engineerName,r.postcode]));
+    return rows.map(r=>r.map(q).join(',')).join('\r\n');
+}
+function showReplaceModal(plan){
+    replacePlan=plan;
+    document.getElementById('replaceSub').innerHTML=`<strong style="color:var(--warning)">${plan.removed.length+plan.kept.length} existing job${plan.removed.length+plan.kept.length!==1?'s':''}</strong> are already stored for the dates in this file. Continuing will <strong>replace all data on those dates</strong> with this file: existing jobs on those dates are overwritten, and any that are not in the new file are deleted.`;
+    document.getElementById('replaceBody').innerHTML=renderPlan(plan,false)+`<div class="rp-note">Anything added in the scheduler to a replaced job (manual time changes, attachments, status history) is overwritten with the new file's data. The Duplicate Checker is not used when replacing dates.</div>`;
+    document.getElementById('replaceModal').classList.add('visible');
+}
+const closeReplace=()=>document.getElementById('replaceModal').classList.remove('visible');
+document.getElementById('replaceClose').addEventListener('click',closeReplace);
+document.getElementById('replaceCancel').addEventListener('click',()=>{closeReplace();replacePlan=null;});
+document.getElementById('replaceConfirm').addEventListener('click',async()=>{
+    closeReplace();
+    uploadMode='replace'; uploadQueue=replacePlan.incoming; duplicateRecords=[];
+    await startUpload();
+});
+function showReplaceResult(plan,uploaded,failedUploads,failedDeletes){
+    const box=document.getElementById('replaceResult');
+    box.innerHTML=`<div class="rp-h" style="font-size:15px;margin-top:0">Replace summary</div>${renderPlan(plan,true)}
+      ${(failedUploads||failedDeletes)?`<div class="rp-note" style="color:var(--danger,#e5484d)">${failedUploads} upload${failedUploads!==1?'s':''} and ${failedDeletes} removal${failedDeletes!==1?'s':''} failed - see the errors above.</div>`:''}
+      <div class="actions" style="margin-top:12px"><button class="btn btn-outline" id="replaceCsvBtn">Download summary (CSV)</button></div>`;
+    box.classList.remove('hidden');
+    document.getElementById('replaceCsvBtn').addEventListener('click',()=>{
+        const blob=new Blob([planCsv(plan)],{type:'text/csv'});const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);a.download='calisen-upload-summary.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    });
+}
+
 async function handleUploadClick(){
+    // 1. Is there already data on the dates in this file? If so, offer to replace those dates.
+    const upBtn=document.getElementById('uploadBtn');
+    upBtn.disabled=true; upBtn.textContent='Checking existing jobs…';
+    try{
+        const plan=await buildReplacePlan();
+        upBtn.disabled=false; upBtn.innerHTML=dupeEnabled ? '🔍 Check Duplicates & Upload' : '🚀 Upload All Records';
+        if(plan.removed.length||plan.kept.length){ showReplaceModal(plan); return; }
+    } catch(err){
+        showToast('Could not check existing jobs: '+friendlyError(err),'error');
+        upBtn.disabled=false; upBtn.innerHTML='🚀 Retry Upload'; return;
+    }
     if(!dupeEnabled){
         // No dupe check — just upload everything
         uploadQueue=mappedData;
@@ -929,6 +1046,17 @@ async function startUpload(){
     progressBar.style.width='0%';
 
     try{
+        let failedDeletes=0; const delErrors=[];
+        if(uploadMode==='replace'&&replacePlan){
+            const rm=replacePlan.removed;
+            for(let i=0;i<rm.length;i++){
+                progressLabel.textContent=`Removing jobs no longer in the file (${i+1} of ${rm.length})…`;
+                progressBar.style.width=Math.round(((i+1)/rm.length)*100)+'%';
+                try{ await deleteDoc(doc(db,'Calisen Forecast Data',rm[i].id)); }
+                catch(err){ failedDeletes++; delErrors.push(`Remove ${rm[i].id}: ${friendlyError(err)}`); }
+            }
+            progressBar.style.width='0%';
+        }
         progressLabel.textContent='Fetching existing Job IDs…';
         const snap=await getDocs(collection(db,'Calisen Forecast Data'));
         let maxNum=0;
@@ -979,7 +1107,9 @@ async function startUpload(){
         document.getElementById('sumFailed').textContent=failed;
         summaryGrid.classList.remove('hidden');
 
+        errors.push(...delErrors);
         if(errors.length){ errorBox.className='error-box show'; errorBox.innerHTML='<strong>Some records failed:</strong><br>'+errors.join('<br>'); }
+        if(uploadMode==='replace'&&replacePlan) showReplaceResult(replacePlan,uploaded,failed,failedDeletes);
 
         if(uploaded>0){
             const skipMsg=skippedDupes&&uploadMode!=='all'?` (${skippedDupes} duplicates skipped)`:'';
@@ -1007,7 +1137,8 @@ function resetAll(){
     document.getElementById('section-upload').classList.remove('hidden');
     document.getElementById('fileInput').value='';
     rawData=[]; headerMap={}; displayHeaders=[]; mappedData=[]; activeFields=[];
-    uploadQueue=[]; duplicateRecords=[]; existingDocs=[];
+    uploadQueue=[]; duplicateRecords=[]; existingDocs=[]; replacePlan=null;
+    document.getElementById('replaceResult').classList.add('hidden'); document.getElementById('replaceResult').innerHTML='';
     // Reset dupe toggle
     dupeEnabled=false;
     dupeTrack.classList.remove('on');
