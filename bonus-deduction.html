@@ -489,12 +489,14 @@
         let vcMissedByIndex = [];   // per engineer row: ISO dates of missed checks this week
         let vcSeenByEngineerId = {}; // from the meta doc: engineerId -> ISO dates already acknowledged
 
-        // ── Housekeeping auto-fill (source: startendvantimes.html — "Van Start and End" journeys +
-        // "Van Attendance", which links each registration to an engineer per day). Same rules as the
-        // van page's Start of Day / Home Before 4:30 PM reports: a working day is flagged when the
-        // first journey (over 0.1 miles) started at 08:00 or later, OR the last journey ended before 16:30.
+        // ── Housekeeping auto-fill (source: startendvantimes.html — "Van Start and End" journeys).
+        // Each journey row carries "REG Driver Name" in its Registration column, so the engineer comes
+        // straight from the journey data. Same rules as the van page's Start of Day / Home Before 4:30 PM
+        // reports: a working day is flagged when the first journey started at 08:00 or later (journeys
+        // under 0.1 miles are ignored only when the upload has a Miles column), OR the last journey
+        // ended before 16:30. Absence days come from the main "attendance" collection.
         const VAN_JOURNEYS_COLLECTION = "Van Start and End";
-        const VAN_ATTENDANCE_COLLECTION = "Van Attendance";
+        const ATTENDANCE_COLLECTION = "attendance";
         const LATE_START_MINS = 8 * 60;        // 08:00
         const EARLY_FINISH_MINS = 16 * 60 + 30; // 16:30
         // Absent codes (incl. H/H half-day holiday) are skipped — a late start/early finish is expected.
@@ -892,31 +894,44 @@
             engineers.forEach((_, i) => renderHkHint(i, []));
             if (!wk) return '';
 
-            let jSnap, aSnap;
+            let jSnap, aSnap = null;
             try {
-                [jSnap, aSnap] = await Promise.all([
-                    getDocs(query(collection(db, VAN_JOURNEYS_COLLECTION),
-                        where("journeyDate", ">=", wk), where("journeyDate", "<=", weekEndOf(wk)))),
-                    getDocs(query(collection(db, VAN_ATTENDANCE_COLLECTION),
-                        where("date", ">=", wk), where("date", "<=", weekEndOf(wk))))
-                ]);
+                jSnap = await getDocs(query(collection(db, VAN_JOURNEYS_COLLECTION),
+                    where("journeyDate", ">=", wk), where("journeyDate", "<=", weekEndOf(wk))));
             } catch (error) {
                 console.error('Van times load failed:', error);
                 return `<strong>Couldn't load van start/end data</strong> — Housekeeping hasn't been auto-filled for ${formatWeek(wk)}. Tick it manually or reload the page.`;
             }
+            try {
+                aSnap = await getDocs(query(collection(db, ATTENDANCE_COLLECTION),
+                    where("date", ">=", wk), where("date", "<=", weekEndOf(wk))));
+            } catch (error) { console.warn('Attendance load failed (absence days not skipped):', error); }
             if (token !== loadToken) return null;
 
             const cleanPlate = v => String(v || '').toUpperCase().replace(/\s/g, '');
             const hm = mins => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 
-            // date -> plate -> {name, attendance}
-            const attByDatePlate = {};
-            aSnap.forEach(d => {
+            // date|engineer name -> attendance code (absence days are skipped below)
+            const attByDateName = {};
+            if (aSnap) aSnap.forEach(d => {
                 const r = d.data();
-                const p = cleanPlate(r.registration);
-                if (!r.date || !p) return;
-                (attByDatePlate[r.date] = attByDatePlate[r.date] || {})[p] = { name: r.engineerName || '', attendance: r.attendance || '' };
+                if (!r.date || !r.engineerName) return;
+                attByDateName[r.date + '|' + normName(r.engineerName)] = r.attendance || '';
             });
+
+            // "BT25UXK Jonny Thompson" -> { plate:'BT25UXK', name:'Jonny Thompson' }
+            const splitRegName = str => {
+                const s = String(str == null ? '' : str).replace(/\s+/g, ' ').trim();
+                if (!s) return { plate: '', name: '' };
+                const up = s.toUpperCase();
+                const m = up.match(/\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b/) || up.match(/\b([A-Z]{1,3}\d{2,4}[A-Z]{1,3})\b/);
+                let plate, rest;
+                if (m) { plate = m[1].replace(/\s/g, ''); rest = s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length); }
+                else { const parts = s.split(' '); plate = parts[0].toUpperCase(); rest = parts.slice(1).join(' '); }
+                rest = rest.replace(/\s+/g, ' ').replace(/^[\s\-\u2013,|:\/]+|[\s\-\u2013,|:\/]+$/g, '');
+                return { plate, name: rest };
+            };
+            const goodName = n => { n = String(n == null ? '' : n).trim(); return /^(-|\u2014|unknown|n\/a|none|null|undefined)?$/i.test(n) ? '' : n; };
 
             // date|plate -> first start / last end (minutes past midnight, local time)
             const days = {};
@@ -925,15 +940,18 @@
                 const j = d.data();
                 const date = j.journeyDate;
                 if (!inWeek(String(date || ''), wk)) return;
-                const plate = cleanPlate(j.plate || j.registration);
+                const rr = splitRegName(j.registration);
+                const plate = cleanPlate(j.plate || rr.plate);
                 if (!plate || VAN_EXCLUDED_PLATES.has(plate)) return;
+                const jName = goodName(j.driver) || goodName(rr.name);
                 if (isNonWorkingDay(date)) return;
                 journeyCount++;
                 const key = date + '|' + plate;
-                const g = days[key] = days[key] || { date, plate, firstMins: null, lastMins: null };
+                const g = days[key] = days[key] || { date, plate, name: '', firstMins: null, lastMins: null };
+                if (!g.name) g.name = jName;
                 const st = j.startTime ? new Date(j.startTime) : null;
                 const et = j.endTime ? new Date(j.endTime) : null;
-                if (st && !isNaN(st) && Number(j.miles) > 0.1) {
+                if (st && !isNaN(st) && (j.hasMiles === false || Number(j.miles) > 0.1)) {
                     const m = st.getHours() * 60 + st.getMinutes();
                     if (g.firstMins === null || m < g.firstMins) g.firstMins = m;
                 }
@@ -951,11 +969,11 @@
                 const late = g.firstMins !== null && g.firstMins >= LATE_START_MINS;
                 const early = g.lastMins !== null && g.lastMins < EARLY_FINISH_MINS;
                 if (!late && !early) return;
-                const att = (attByDatePlate[g.date] || {})[g.plate];
-                if (!att || !att.name) { unnamedVans.add(g.plate); return; }
-                if (VAN_ABSENT_CODES.has(String(att.attendance).trim().toLowerCase())) return;
-                const idx = idxByName[normName(att.name)];
-                if (idx === undefined) { unmatchedNames.add(att.name.trim()); return; }
+                if (!g.name) { unnamedVans.add(g.plate); return; }
+                const attCode = attByDateName[g.date + '|' + normName(g.name)];
+                if (attCode !== undefined && VAN_ABSENT_CODES.has(String(attCode).trim().toLowerCase())) return;
+                const idx = idxByName[normName(g.name)];
+                if (idx === undefined) { unmatchedNames.add(g.name.trim()); return; }
                 const list = hkFlaggedByIndex[idx];
                 const existing = list.find(x => x.date === g.date);
                 const entry = existing || { date: g.date, lateStart: null, earlyFinish: null };
@@ -985,8 +1003,8 @@
             return `<strong>Van times:</strong> ${totalDays} late start / early finish day${totalDays === 1 ? '' : 's'} across ` +
                 `${engineersFlagged} engineer${engineersFlagged === 1 ? '' : 's'} ${formatWeek(wk)} (started 08:00 or later, or home before 16:30)` +
                 (autoAddedEngineers ? ` — Housekeeping auto-ticked for ${autoAddedEngineers} (marked <span class="vc-new">NEW</span>). Review, then save.` : '.') +
-                (unnamedVans.size ? `<div class="vc-unmatched">Vans with no engineer on the van attendance upload for a flagged day: ${[...unnamedVans].sort().join(', ')}</div>` : '') +
-                (unmatchedNames.size ? `<div class="vc-unmatched">Van attendance names not matched to an engineer on this page: ${[...unmatchedNames].sort().join(', ')}</div>` : '');
+                (unnamedVans.size ? `<div class="vc-unmatched">Vans with no driver name in the journey data on a flagged day: ${[...unnamedVans].sort().join(', ')}</div>` : '') +
+                (unmatchedNames.size ? `<div class="vc-unmatched">Driver names in the journey data not matched to an engineer on this page: ${[...unmatchedNames].sort().join(', ')}</div>` : '');
         }
 
         function renderHkHint(i, flagged, freshSet) {
