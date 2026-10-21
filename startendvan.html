@@ -483,8 +483,9 @@ function splitRegName(str) {
     return {plate,name:rest};
 }
 function fillNames(byP,journeys){
-    journeys.forEach(j=>{const p=j._plate||'?';if(byP[p]&&!byP[p].name) byP[p].name=cleanName(j.driver);});
+    journeys.forEach(j=>{const p=j._plate||'?';if(byP[p]&&!byP[p].name) byP[p].name=journeyName(j);});
 }
+function journeyName(j){return cleanName(j.driver)||cleanName(splitRegName(j.registration||'').name);}
 function cleanName(n){n=(n==null?'':n.toString()).trim();return /^(-|\u2014|unknown|n\/a|none|null|undefined)?$/i.test(n)?'':n;}
 function fmtHMS(mins){const t=Math.round(mins*60),h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=t%60;return h+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');}
 function rawDateOf(raw) {
@@ -874,7 +875,7 @@ async function loadJourneys(){
             document.getElementById('journeyBody').innerHTML=`<tr><td colspan="6"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for selected range</p></div></td></tr>`;
         } else {
             const byP={};
-            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};if(!byP[p].name) byP[p].name=cleanName(j.driver);byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
+            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};if(!byP[p].name) byP[p].name=journeyName(j);byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
             
             window._usageData=Object.values(byP);
             const tm=journeys.reduce((s,j)=>s+j.miles,0);
@@ -892,7 +893,7 @@ async function loadJourneys(){
                 const p=j._plate||'?'; const d=j.journeyDate; const key=d+'_'+p;
                 if(!byPlateDate[key]) byPlateDate[key]={date:d, reg:p, name:'', firstTime:null, firstMins:9999, lastTime:null, lastMins:0, journeys:0, miles:0};
                 const g=byPlateDate[key]; g.journeys++; g.miles+=j.miles;
-                if(!g.name) g.name=cleanName(j.driver);
+                if(!g.name) g.name=journeyName(j);
                 const st=j.startTime?new Date(j.startTime):null; const et=j.endTime?new Date(j.endTime):null;
                 if(st&&(j.hasMiles===false||j.miles>0.1)&&(!g.firstTime||st<g.firstTime)){g.firstTime=st; g.firstMins=st.getHours()*60+st.getMinutes();}
                 if(et&&(!g.lastTime||et>g.lastTime)){g.lastTime=et; g.lastMins=et.getHours()*60+et.getMinutes();}
@@ -919,7 +920,7 @@ async function loadJourneys(){
             const byP={};
             rel.forEach(j=>{
                 const p=j._plate||'?'; if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};
-                if(!byP[p].name) byP[p].name=cleanName(j.driver);
+                if(!byP[p].name) byP[p].name=journeyName(j);
                 const g=byP[p]; g.journeys++; g.miles+=j.miles; g.durationMins+=parseDurMins(j.duration); g.idleMins+=parseDurMins(j.idle);
             });
             window._after5Data=Object.values(byP);
