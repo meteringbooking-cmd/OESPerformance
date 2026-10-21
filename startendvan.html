@@ -558,10 +558,18 @@ function splitRegName(str) {
 }
 function fillNames(byP,journeys,plateMap){
     journeys.forEach(j=>{const p=j._plate||'?';if(byP[p]&&!byP[p].name) byP[p].name=cleanName(j.driver);});
+    if(journeys.some(j=>cleanName(j.driver))) return;
     Object.keys(byP).forEach(p=>{if(!byP[p].name&&plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
 }
 function cleanName(n){n=(n==null?'':n.toString()).trim();return /^(-|\u2014|unknown|n\/a|none|null|undefined)?$/i.test(n)?'':n;}
 function fmtHMS(mins){const t=Math.round(mins*60),h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=t%60;return h+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');}
+function rawDateOf(raw) {
+    if (raw===null||raw===undefined||raw==='') return null;
+    let d=null;
+    if (typeof raw==='number') { if(raw<1) return null; const p=XLSX.SSF.parse_date_code(raw); if(!p) return null; d=[p.y,p.m,p.d]; }
+    else { const m=raw.toString().trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+\d/); if(m) d=[+m[3],+m[2],+m[1]]; }
+    return d?d[0]+'-'+String(d[1]).padStart(2,'0')+'-'+String(d[2]).padStart(2,'0'):null;
+}
 function parseTimeWithDate(raw, dateVal) {
     if (raw===null||raw===undefined||raw==='') return null;
     if (typeof raw==='number') {
@@ -977,14 +985,16 @@ async function uploadJourneyData(){
                 if(!hasMiles||mv>0.1) valid.push({row,mv,rr});
             }
             sp(12,'Removing old records…');btn.innerHTML='<span class="spinner"></span>Removing old data…';
-            const deleted=await batchDelete(dv,'Van Start and End','journeyDate');
+            valid.forEach(v=>{v.jd=rawDateOf(v.row[C.startTime])||dv;});
+            const fileDates=[...new Set(valid.map(v=>v.jd))].sort();
+            let deleted=0;for(const fd of fileDates){deleted+=await batchDelete(fd,'Van Start and End','journeyDate');}
             sp(20,deleted>0?`Removed ${deleted} old records…`:`Uploading ${valid.length} journeys…`);
             btn.innerHTML=`<span class="spinner"></span>0 / ${valid.length}`;
             let saved=0;
             for(let vi=0;vi<valid.length;vi++){
-                const {row,mv,rr}=valid[vi];
+                const {row,mv,rr,jd}=valid[vi];
                 const stR=C.startTime>=0?row[C.startTime]:null, etR=C.endTime>=0?row[C.endTime]:null;
-                const stD=parseTimeWithDate(stR,dv), etD=parseTimeWithDate(etR,dv);
+                const stD=parseTimeWithDate(stR,jd), etD=parseTimeWithDate(etR,jd);
                 const rawReg=C.reg>=0?(row[C.reg]||'').toString().trim():'';
                 const plate=rr.plate;
                 const drvCol=C.driver>=0?cleanName(row[C.driver]):'';
@@ -1005,7 +1015,7 @@ async function uploadJourneyData(){
                     miles:mv, maxSpeed:C.maxSpeed>=0?(row[C.maxSpeed]||'').toString().trim():'',
                     startPostcode:C.startPC>=0?(row[C.startPC]||'').toString().trim():'',
                     endPostcode:C.endPC>=0?(row[C.endPC]||'').toString().trim():'',
-                    journeyDate:dv, uploadDate:dv, timestamp:window._serverTimestamp()
+                    journeyDate:jd, uploadDate:dv, timestamp:window._serverTimestamp()
                 });
                 saved++;sp(20+Math.round((saved/valid.length)*78),`Uploading ${saved} of ${valid.length}…`);
                 btn.innerHTML=`<span class="spinner"></span>${saved} / ${valid.length}`;
@@ -1016,7 +1026,7 @@ async function uploadJourneyData(){
             fi.value='';
             const vf=document.getElementById('viewDateFrom').value;
             const vt=document.getElementById('viewDateTo').value;
-            if(dv>=vf && dv<=vt) loadJourneys();
+            if(fileDates.some(d=>d>=vf && d<=vt)) loadJourneys();
         }catch(err){btn.innerHTML='Upload Journeys';btn.disabled=false;pw.classList.remove('visible');showStatus('Error: '+err.message,'error','uploadStatus');console.error(err);}
     };
     reader.readAsArrayBuffer(fi.files[0]);
@@ -1061,6 +1071,7 @@ async function loadJourneys(){
             journeys.push({...j,_plate:plate});
         });
         journeys.sort((a,b)=>(a.startTime?new Date(a.startTime):0)-(b.startTime?new Date(b.startTime):0));
+        const namedDates=new Set(journeys.filter(j=>cleanName(j.driver)).map(j=>j.journeyDate));
 
         const attSnap = await window._getDocs(window._query(
             window._collection(window._db, 'Van Attendance'),
@@ -1085,7 +1096,7 @@ async function loadJourneys(){
             
             Object.keys(byP).forEach(p=>{
                 for(let d=new Date(dvTo); d>=new Date(dvFrom); d.setDate(d.getDate()-1)) {
-                    let ds=fmt(d); if(!byP[p].name && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
+                    let ds=fmt(d); if(!byP[p].name && !namedDates.has(ds) && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
                 }
             });
             window._usageData=Object.values(byP);
@@ -1111,7 +1122,7 @@ async function loadJourneys(){
             });
             
             Object.values(byPlateDate).forEach(g=>{
-                if(!g.name && allAtt[g.date] && allAtt[g.date][g.reg]) g.name=allAtt[g.date][g.reg].engineerName||'';
+                if(!g.name && !namedDates.has(g.date) && allAtt[g.date] && allAtt[g.date][g.reg]) g.name=allAtt[g.date][g.reg].engineerName||'';
             });
 
             // Save records to our master global arrays for runtime dynamic grouping
@@ -1140,7 +1151,7 @@ async function loadJourneys(){
             });
             Object.keys(byP).forEach(p=>{
                 for(let d=new Date(dvTo); d>=new Date(dvFrom); d.setDate(d.getDate()-1)) {
-                    let ds=fmt(d); if(!byP[p].name && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
+                    let ds=fmt(d); if(!byP[p].name && !namedDates.has(ds) && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
                 }
             });
             window._after5Data=Object.values(byP);
