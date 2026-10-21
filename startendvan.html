@@ -325,7 +325,7 @@
             <div class="panel-icon">🚐</div>
             <div style="flex:1;">
                 <div class="panel-title">Upload Journey Data</div>
-                <div class="panel-subtitle">CSV/Excel — Registration, Start/End Time, Location, Driver, Duration, Idle, Miles, Max Speed, Postcodes</div>
+                <div class="panel-subtitle">CSV/Excel — Registration (plate + driver name, e.g. YO26TBV Lee Parkin), Start, End. Optional: Location, Duration, Idle, Miles, Max Speed, Postcodes</div>
             </div>
             <div class="collapse-icon">▼</div>
         </div>
@@ -544,6 +544,24 @@ function extractPlate(str) {
     if (m2) return m2[1];
     return s.split(/\s+/)[0];
 }
+function splitRegName(str) {
+    // "YO26TBV Lee Parkin" -> {plate:'YO26TBV', name:'Lee Parkin'}
+    const s=(str==null?'':str.toString()).replace(/\s+/g,' ').trim();
+    if(!s) return {plate:'',name:''};
+    const up=s.toUpperCase();
+    const m=up.match(/\b([A-Z]{2}\d{2}\s?[A-Z]{3})\b/)||up.match(/\b([A-Z]{1,3}\d{2,4}[A-Z]{1,3})\b/);
+    let plate,rest;
+    if(m){plate=m[1].replace(/\s/g,'');rest=s.slice(0,m.index)+' '+s.slice(m.index+m[0].length);}
+    else{const parts=s.split(' ');plate=parts[0].toUpperCase();rest=parts.slice(1).join(' ');}
+    rest=rest.replace(/\s+/g,' ').replace(/^[\s\-\u2013,|:\/]+|[\s\-\u2013,|:\/]+$/g,'');
+    return {plate,name:rest};
+}
+function fillNames(byP,journeys,plateMap){
+    journeys.forEach(j=>{const p=j._plate||'?';if(byP[p]&&!byP[p].name) byP[p].name=cleanName(j.driver);});
+    Object.keys(byP).forEach(p=>{if(!byP[p].name&&plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+}
+function cleanName(n){n=(n==null?'':n.toString()).trim();return /^(-|\u2014|unknown|n\/a|none|null|undefined)?$/i.test(n)?'':n;}
+function fmtHMS(mins){const t=Math.round(mins*60),h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=t%60;return h+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');}
 function parseTimeWithDate(raw, dateVal) {
     if (raw===null||raw===undefined||raw==='') return null;
     if (typeof raw==='number') {
@@ -685,9 +703,9 @@ async function runExport() {
                     const st = j.startTime ? new Date(j.startTime) : null;
                     if(!byP[p]) byP[p]={reg:p,name:'',firstTime:null,firstMins:9999,journeys:0,miles:0};
                     byP[p].journeys++; byP[p].miles+=j.miles;
-                    if(st&&j.miles>0.1&&(!byP[p].firstTime||st<byP[p].firstTime)){byP[p].firstTime=st;byP[p].firstMins=st.getHours()*60+st.getMinutes();}
+                    if(st&&(j.hasMiles===false||j.miles>0.1)&&(!byP[p].firstTime||st<byP[p].firstTime)){byP[p].firstTime=st;byP[p].firstMins=st.getHours()*60+st.getMinutes();}
                 });
-                Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+                fillNames(byP,journeys,plateMap);
                 const late = Object.values(byP).filter(r=>r.firstTime&&r.firstMins>=8*60);
                 late.forEach(g=>{
                     rows.push([dv, g.reg, g.name||'', g.firstTime?timeStr(g.firstTime):'', g.firstMins>=8*60?'Yes':'No', g.firstMins>=9*60?'Yes':'No', parseFloat(g.miles.toFixed(1)), g.journeys]);
@@ -715,7 +733,7 @@ async function runExport() {
                     byP[p].journeys++; byP[p].miles+=j.miles;
                     if(et&&(!byP[p].lastTime||et>byP[p].lastTime)){byP[p].lastTime=et;byP[p].lastMins=et.getHours()*60+et.getMinutes();}
                 });
-                Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+                fillNames(byP,journeys,plateMap);
                 Object.values(byP).filter(g=>g.lastTime&&g.lastMins<cutoffMins).sort((a,b)=>a.lastMins-b.lastMins).forEach(g=>{
                     rows.push([dv, g.reg, g.name||'', g.lastTime?timeStr(g.lastTime):'', g.lastMins<14*60?'Yes':'No', parseFloat(g.miles.toFixed(1)), g.journeys]);
                     totalRows++;
@@ -740,7 +758,7 @@ async function runExport() {
                     g.journeys++; g.miles+=j.miles; g.durationMins+=parseDurMins(j.duration); g.idleMins+=parseDurMins(j.idle);
                     if(st&&(!g.latest||st>g.latest)){g.latest=st;g.latestMins=st.getHours()*60+st.getMinutes();}
                 });
-                Object.keys(byP).forEach(p=>{if(plateMap[p]) byP[p].name=plateMap[p].engineerName||'';});
+                fillNames(byP,journeys,plateMap);
                 const dayType = nwd.isNonWorkingDay ? nwd.label : 'Working Day';
                 Object.values(byP).sort((a,b)=>b.latestMins-a.latestMins).forEach(g=>{
                     rows.push([dv, dayType, g.reg, g.name||'', g.journeys, parseFloat(g.miles.toFixed(1)), minsToHM(g.durationMins), minsToHM(g.idleMins), g.latest?timeStr(g.latest):'']);
@@ -948,19 +966,31 @@ async function uploadJourneyData(){
                 for(const k of(a[name]||[name])){const i=headers.findIndex(h=>h.includes(k));if(i!==-1)return i;}return -1;
             };
             const C={reg:col('registration'),startTime:col('starttime'),endTime:col('endtime'),startLoc:col('startlocation'),endLoc:col('endlocation'),startPOI:col('startpoi'),endPOI:col('endpoi'),driver:col('driver'),duration:col('duration'),idle:col('idle'),miles:col('miles'),maxSpeed:col('maxspeed'),startPC:col('startpostcode'),endPC:col('endpostcode')};
+            if(C.reg<0||C.startTime<0){throw new Error('Could not find the Registration and Start columns. Found: '+headers.filter(Boolean).join(', '));}
+            const hasMiles=C.miles>=0;
             const valid=[];
-            for(let i=hi+1;i<rows.length;i++){const row=rows[i];if(!row||row.length<3) continue;const mv=parseMiles(C.miles>=0?row[C.miles]:0);if(mv>0.1) valid.push({row,mv});}
+            for(let i=hi+1;i<rows.length;i++){
+                const row=rows[i];if(!row||row.length<2) continue;
+                const rr=splitRegName(row[C.reg]);if(!rr.plate) continue;
+                if(row[C.startTime]===''||row[C.startTime]==null) continue;
+                const mv=parseMiles(hasMiles?row[C.miles]:0);
+                if(!hasMiles||mv>0.1) valid.push({row,mv,rr});
+            }
             sp(12,'Removing old records…');btn.innerHTML='<span class="spinner"></span>Removing old data…';
             const deleted=await batchDelete(dv,'Van Start and End','journeyDate');
             sp(20,deleted>0?`Removed ${deleted} old records…`:`Uploading ${valid.length} journeys…`);
             btn.innerHTML=`<span class="spinner"></span>0 / ${valid.length}`;
             let saved=0;
             for(let vi=0;vi<valid.length;vi++){
-                const {row,mv}=valid[vi];
+                const {row,mv,rr}=valid[vi];
                 const stR=C.startTime>=0?row[C.startTime]:null, etR=C.endTime>=0?row[C.endTime]:null;
                 const stD=parseTimeWithDate(stR,dv), etD=parseTimeWithDate(etR,dv);
                 const rawReg=C.reg>=0?(row[C.reg]||'').toString().trim():'';
-                const plate=extractPlate(rawReg);
+                const plate=rr.plate;
+                const drvCol=C.driver>=0?cleanName(row[C.driver]):'';
+                const driverName=drvCol||rr.name;
+                let durStr=C.duration>=0?(row[C.duration]||'').toString().trim():'';
+                if(!durStr&&stD&&etD&&etD>=stD) durStr=fmtHMS((etD-stD)/60000);
                 await window._addDoc(window._collection(window._db,'Van Start and End'),{
                     registration:rawReg, plate,
                     startTimeRaw:stR!=null?stR.toString():'', endTimeRaw:etR!=null?etR.toString():'',
@@ -969,8 +999,8 @@ async function uploadJourneyData(){
                     endLocation:C.endLoc>=0?(row[C.endLoc]||'').toString().trim():'',
                     startPOI:C.startPOI>=0?(row[C.startPOI]||'').toString().trim():'',
                     endPOI:C.endPOI>=0?(row[C.endPOI]||'').toString().trim():'',
-                    driver:C.driver>=0?(row[C.driver]||'').toString().trim():'',
-                    duration:C.duration>=0?(row[C.duration]||'').toString().trim():'',
+                    driver:driverName, hasMiles,
+                    duration:durStr,
                     idle:C.idle>=0?(row[C.idle]||'').toString().trim():'',
                     miles:mv, maxSpeed:C.maxSpeed>=0?(row[C.maxSpeed]||'').toString().trim():'',
                     startPostcode:C.startPC>=0?(row[C.startPC]||'').toString().trim():'',
@@ -982,7 +1012,7 @@ async function uploadJourneyData(){
             }
             sp(100,`✓ ${saved} journeys uploaded`);btn.innerHTML='Upload Journeys';btn.disabled=false;
             setTimeout(()=>{pw.classList.remove('visible');pb.style.width='0%';},3500);
-            showStatus(`✓ Uploaded ${saved} journeys${deleted>0?` (replaced ${deleted} old)`:''} — ${rows.length-1-valid.length} skipped (≤0.1 miles)`,'success','uploadStatus');
+            showStatus(`✓ Uploaded ${saved} journeys${deleted>0?` (replaced ${deleted} old)`:''} — ${rows.length-1-hi-valid.length} skipped${hasMiles?' (≤0.1 miles or blank)':' (blank rows)'}`,'success','uploadStatus');
             fi.value='';
             const vf=document.getElementById('viewDateFrom').value;
             const vt=document.getElementById('viewDateTo').value;
@@ -1051,11 +1081,11 @@ async function loadJourneys(){
             document.getElementById('journeyBody').innerHTML=`<tr><td colspan="6"><div class="empty-state"><div class="icon">📊</div><p>No journeys found for selected range</p></div></td></tr>`;
         } else {
             const byP={};
-            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
+            journeys.forEach(j=>{const p=j._plate||'?';if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};if(!byP[p].name) byP[p].name=cleanName(j.driver);byP[p].journeys++;byP[p].miles+=j.miles;byP[p].durationMins+=parseDurMins(j.duration);byP[p].idleMins+=parseDurMins(j.idle);});
             
             Object.keys(byP).forEach(p=>{
                 for(let d=new Date(dvTo); d>=new Date(dvFrom); d.setDate(d.getDate()-1)) {
-                    let ds=fmt(d); if(allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
+                    let ds=fmt(d); if(!byP[p].name && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
                 }
             });
             window._usageData=Object.values(byP);
@@ -1074,13 +1104,14 @@ async function loadJourneys(){
                 const p=j._plate||'?'; const d=j.journeyDate; const key=d+'_'+p;
                 if(!byPlateDate[key]) byPlateDate[key]={date:d, reg:p, name:'', firstTime:null, firstMins:9999, lastTime:null, lastMins:0, journeys:0, miles:0};
                 const g=byPlateDate[key]; g.journeys++; g.miles+=j.miles;
+                if(!g.name) g.name=cleanName(j.driver);
                 const st=j.startTime?new Date(j.startTime):null; const et=j.endTime?new Date(j.endTime):null;
-                if(st&&j.miles>0.1&&(!g.firstTime||st<g.firstTime)){g.firstTime=st; g.firstMins=st.getHours()*60+st.getMinutes();}
+                if(st&&(j.hasMiles===false||j.miles>0.1)&&(!g.firstTime||st<g.firstTime)){g.firstTime=st; g.firstMins=st.getHours()*60+st.getMinutes();}
                 if(et&&(!g.lastTime||et>g.lastTime)){g.lastTime=et; g.lastMins=et.getHours()*60+et.getMinutes();}
             });
             
             Object.values(byPlateDate).forEach(g=>{
-                if(allAtt[g.date] && allAtt[g.date][g.reg]) g.name=allAtt[g.date][g.reg].engineerName||'';
+                if(!g.name && allAtt[g.date] && allAtt[g.date][g.reg]) g.name=allAtt[g.date][g.reg].engineerName||'';
             });
 
             // Save records to our master global arrays for runtime dynamic grouping
@@ -1104,11 +1135,12 @@ async function loadJourneys(){
             const byP={};
             rel.forEach(j=>{
                 const p=j._plate||'?'; if(!byP[p]) byP[p]={reg:p,name:'',journeys:0,miles:0,durationMins:0,idleMins:0};
+                if(!byP[p].name) byP[p].name=cleanName(j.driver);
                 const g=byP[p]; g.journeys++; g.miles+=j.miles; g.durationMins+=parseDurMins(j.duration); g.idleMins+=parseDurMins(j.idle);
             });
             Object.keys(byP).forEach(p=>{
                 for(let d=new Date(dvTo); d>=new Date(dvFrom); d.setDate(d.getDate()-1)) {
-                    let ds=fmt(d); if(allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
+                    let ds=fmt(d); if(!byP[p].name && allAtt[ds] && allAtt[ds][p] && allAtt[ds][p].engineerName) { byP[p].name=allAtt[ds][p].engineerName; break; }
                 }
             });
             window._after5Data=Object.values(byP);
