@@ -127,7 +127,6 @@
                 <div class="view-btn-group">
                     <button type="submit" class="btn">View Data</button>
                     <button type="button" class="btn btn-export" id="exportBtn" style="display:none;">⬇ Export CSV</button>
-                    <button type="button" class="btn btn-export" id="exportMatrixBtn" style="display:none;">⬇ Export Meters Matrix</button>
                 </div>
             </form>
             
@@ -269,12 +268,6 @@
         document.getElementById('endDate').valueAsDate = today;
         document.getElementById('headcountDate').valueAsDate = yesterday;
 
-        // Show / hide both export buttons together
-        function setExportBtns(display) {
-            document.getElementById('exportBtn').style.display = display;
-            document.getElementById('exportMatrixBtn').style.display = display;
-        }
-
         // Store loaded records globally for export
         let loadedRecords = [];
 
@@ -293,7 +286,7 @@
                     displayStatistics(records);
                     displayDataTable(records);
                     document.getElementById('statsContainer').classList.add('show');
-                    setExportBtns('');
+                    document.getElementById('exportBtn').style.display = '';
                     records.forEach(r => { if (r.team) allTeams.add(r.team); });
                     updateTeamFilter();
                 }
@@ -364,63 +357,6 @@
             URL.revokeObjectURL(url);
 
             showMessage(`Exported summary for ${sortedDates.length} date(s) successfully!`, 'success');
-        });
-
-        // Meters matrix export: one row per engineer, one column per day, meters in each cell
-        document.getElementById('exportMatrixBtn').addEventListener('click', () => {
-            if (!loadedRecords || loadedRecords.length === 0) {
-                showMessage('No data loaded to export. Please view data first.', 'error');
-                return;
-            }
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const teamFilter = document.getElementById('teamFilter').value;
-
-            const dateSet = new Set();
-            const byEng = {}; // "team||engineer" -> { team, engineer, days: { date: meters } }
-            loadedRecords.forEach(r => {
-                if (!r.date) return;
-                const team = r.team || 'Unknown';
-                const eng = r.engineer || 'Unknown';
-                const key = team + '||' + eng;
-                dateSet.add(r.date);
-                if (!byEng[key]) byEng[key] = { team, engineer: eng, days: {} };
-                byEng[key].days[r.date] = (byEng[key].days[r.date] || 0) + (Number(r.totalMeters) || 0);
-            });
-            const dates = [...dateSet].sort();
-            const rows = Object.values(byEng).sort((a, b) => a.team.localeCompare(b.team) || a.engineer.localeCompare(b.engineer));
-            const fmtD = d => { const [y, m, dd] = d.split('-'); return `${dd}/${m}`; };
-            const num = v => Math.round(v * 10) / 10;
-
-            const headers = ['Team', 'Engineer', ...dates.map(fmtD), 'Total'];
-            const dayTotals = dates.map(() => 0);
-            let grand = 0;
-            const dataRows = rows.map(r => {
-                let total = 0;
-                const cells = dates.map((d, i) => {
-                    const v = r.days[d] || 0;
-                    total += v; dayTotals[i] += v;
-                    return v ? num(v) : '';
-                });
-                grand += total;
-                return [r.team, r.engineer, ...cells, num(total)];
-            });
-            dataRows.push(['', 'Total', ...dayTotals.map(num), num(grand)]);
-
-            const csvContent = [headers, ...dataRows]
-                .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-                .join('\n');
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            const fileTeamLabel = teamFilter ? `_${teamFilter.replace(/\s+/g, '_')}` : '_All_Teams';
-            link.href = url;
-            link.download = `KrakenAM_Energise_Meters_Matrix_${startDate}_to_${endDate}${fileTeamLabel}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            showMessage(`Exported meters matrix: ${rows.length} engineer(s) x ${dates.length} day(s).`, 'success');
         });
 
         document.getElementById('headcountForm').addEventListener('submit', async (e) => {
@@ -600,7 +536,7 @@
                 if (records.length === 0) {
                     showMessage('No data found for the selected date range and team', 'error');
                     document.getElementById('statsContainer').classList.remove('show');
-                    setExportBtns('none');
+                    document.getElementById('exportBtn').style.display = 'none';
                     loadedRecords = [];
                     return;
                 }
@@ -609,7 +545,7 @@
                 displayStatistics(records);
                 displayDataTable(records);
                 document.getElementById('statsContainer').classList.add('show');
-                setExportBtns('');
+                document.getElementById('exportBtn').style.display = '';
                 showMessage(`Displaying ${records.length} records`, 'success');
             } catch (err) { showMessage('Error fetching data: ' + err.message, 'error'); }
         });
