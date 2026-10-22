@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engineer Postcode List</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single working column — paste box on top, results table below */
+:root{
+  --bg:#f5f7f6; --surface:#ffffff; --fg:#17201d; --muted:#5d6b66; --line:#d9e0dd;
+  --accent:#0f7a5c; --accent-soft:#e1f1eb; --warn:#a4570b; --warn-soft:#fbeedd;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111715; --surface:#18201d; --fg:#e4ebe8; --muted:#94a39d; --line:#2b3632;
+  --accent:#4cc79d; --accent-soft:#16352b; --warn:#f0a85a; --warn-soft:#3a2a17; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111715; --surface:#18201d; --fg:#e4ebe8; --muted:#94a39d; --line:#2b3632;
+  --accent:#4cc79d; --accent-soft:#16352b; --warn:#f0a85a; --warn-soft:#3a2a17; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:960px;margin:0 auto;padding-block:28px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:20px}
+h1{font-size:1.5rem;font-weight:600;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;max-width:65ch}
+label{font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+textarea{width:100%;box-sizing:border-box;min-height:150px;resize:vertical;margin-top:6px;
+  font:13px/1.5 var(--mono);color:var(--fg);background:var(--surface);
+  border:1px solid var(--line);border-radius:8px;padding:12px}
+textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button{font:500 14px var(--sans);border-radius:6px;padding:8px 14px;cursor:pointer;
+  border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.count{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.toast{color:var(--accent);font-weight:500}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.num{color:var(--muted);width:1%}
+.pc{font-family:var(--mono);font-weight:500}
+.sen{display:inline-block;min-width:1.6em;text-align:center;font-weight:600;
+  background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 6px}
+tr.bad td{background:var(--warn-soft);color:var(--warn)}
+tr.bad td.raw{white-space:normal;font-family:var(--mono);font-size:12px;word-break:break-all}
+.empty{padding:24px 14px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Engineer Postcode List</h1>
+    <p class="sub">Paste the schedule rows below, one engineer per line. The name, seniority and start postcode are read from the text before the first <code>|</code>.</p>
+  </header>
+
+  <div>
+    <label for="input">Schedule text</label>
+    <textarea id="input" spellcheck="false">Alexandra EganSPL3 6BU | ENG | LIVE07:457mDual Fuel Meter ExchangeAM1h 50mPL4 0PLClick to copyJ-3AAC4ED113mDual Fuel Meter ExchangeAD1h 50mPL7 4JEClick to copyJ-02525E4ELUNCH12:00 - 13:007m
+Ali Mohamed (ENG)SRM8 1AE | ENG | LIVE07:456mDual Fuel Meter ExchangeAM1h 50mRM10 7TTClick to copyJ-495DE92819mGas Meter ExchangeAM1h 5m
+Andrew BartleSHX3 5AY | ENG | LIVE07:3012mGas Meter ExchangeAM1h 5mHX3 7JHClick to copyJ-5498522C18mDual Fuel Meter ExchangeAD1h 50m</textarea>
+  </div>
+
+  <div class="bar">
+    <button class="primary" id="copy" type="button">Copy table for Excel</button>
+    <button id="clear" type="button">Clear</button>
+    <span class="toast" id="toast" aria-live="polite"></span>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <thead><tr><th>#</th><th>Name</th><th>Seniority</th><th>Postcode</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// Name ends in a lowercase letter, ")" , "." or "'" ; then a single seniority letter; then a UK postcode.
+const RE = /^(.*?[a-z\)\.'’])\s*([A-Z])\s*([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\s*$/;
+
+function parseLine(line){
+  const head = line.split('|')[0].trim();
+  const m = head.match(RE);
+  if(!m) return {bad:true, raw:head};
+  let name = m[1].replace(/\s*\([^)]*\)\s*$/,'').trim();
+  let pc = m[3].replace(/\s+/g,'');
+  pc = pc.slice(0,-3)+' '+pc.slice(-3);
+  return {name, sen:m[2], pc};
+}
+
+const $ = id => document.getElementById(id);
+let parsed = [];
+
+function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+function render(){
+  const lines = $('input').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const all = lines.map(parseLine);
+  parsed = all.filter(r=>!r.bad);
+  const bad = all.length - parsed.length;
+  if(!all.length){
+    $('rows').innerHTML = '<tr><td colspan="4" class="empty">Paste schedule rows above and the list appears here.</td></tr>';
+  } else {
+    let n = 0;
+    $('rows').innerHTML = all.map(r => r.bad
+      ? `<tr class="bad"><td class="num">–</td><td colspan="3" class="raw">Couldn't read: ${esc(r.raw.slice(0,80))}</td></tr>`
+      : `<tr><td class="num">${++n}</td><td>${esc(r.name)}</td><td><span class="sen">${esc(r.sen)}</span></td><td class="pc">${esc(r.pc)}</td></tr>`
+    ).join('');
+  }
+  $('count').textContent = `${parsed.length} engineer${parsed.length===1?'':'s'}` + (bad?` · ${bad} not read`:'');
+}
+
+function flash(msg){ $('toast').textContent = msg; setTimeout(()=>$('toast').textContent='',2000); }
+
+$('input').addEventListener('input', render);
+$('clear').addEventListener('click', ()=>{ $('input').value=''; render(); $('input').focus(); });
+$('copy').addEventListener('click', ()=>{
+  const tsv = ['Name\tSeniority\tPostcode', ...parsed.map(r=>`${r.name}\t${r.sen}\t${r.pc}`)].join('\n');
+  const fallback = ()=>{
+    const t = document.createElement('textarea'); t.value = tsv; document.body.appendChild(t); t.select();
+    try{ document.execCommand('copy'); flash('Copied'); }catch(e){ flash('Select the text and copy it manually'); }
+    t.remove();
+  };
+  try{
+    navigator.clipboard.writeText(tsv).then(()=>flash('Copied — paste into Excel'), fallback);
+  }catch(e){ fallback(); }
+});
+render();
+</script>
+</body>
+</html>
