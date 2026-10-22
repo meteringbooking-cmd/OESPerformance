@@ -1881,7 +1881,7 @@
                 <span class="hub-card-arrow">↗</span>
             </button>
 
-            <button class="hub-card" style="--card-accent:var(--accent2);" onclick="openRotaModal()">
+            <button id="btn-oncall-rota" class="hub-card" style="--card-accent:var(--accent2);" onclick="openRotaModal()">
                 <span class="hub-card-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
@@ -2333,7 +2333,7 @@ function goToEnergiseOrdering() {
         "Daniel Nally",
         "Bilal Amin",
         "Jon Convery"
-    ].includes(currentEngineer);
+    ].some(n => n.toLowerCase() === String(currentEngineer).toLowerCase());
     
     if (isPudo) {
         window.location.href = 'energise-order-form-pudo.html?user=' + encodeURIComponent(currentEngineer);
@@ -2457,22 +2457,37 @@ function setBreadcrumb(text) {
     document.getElementById('breadcrumb').innerHTML = `<span class="bc-active">// ${text}</span>`;
 }
 
+// Calisen engineers are identified by the 'contract' field set on their record in view.html.
+function isCalisenContract(c) { return String(c || '').trim().toLowerCase() === 'calisen'; }
+function isCurrentEngineerCalisen() {
+    const rec = engineersWithPasswords.find(e => e.name === currentEngineer);
+    return !!(rec && isCalisenContract(rec.contract));
+}
+
 function applyBonusRestriction() {
     isBonusRestricted = BONUS_RESTRICTED_ENGINEERS.some(name => name.toLowerCase() === currentEngineer.toLowerCase());
     const isQBonusRestricted = Q_BONUS_RESTRICTED_ENGINEERS.some(name => name.toLowerCase() === currentEngineer.toLowerCase());
 
-    // Calisen-contract engineers don't get bonus/ordering features at all - identified
-    // via the 'contract' field set on their engineer record in view.html
+    // Calisen-contract engineers get a reduced portal: no Quarterly Bonus, Consumables Ordering or
+    // On Call Rota. View Bonus stays, but reads their data from "performance - Calisen"
+    // (uploaded on submitdata-ca.html). Identified via the 'contract' field set on their engineer
+    // record in view.html
     const engRecord = engineersWithPasswords.find(e => e.name === currentEngineer);
-    const isCalisenEngineer = !!(engRecord && engRecord.contract === 'Calisen');
+    const isCalisenEngineer = isCalisenContract(engRecord && engRecord.contract);
 
     const bonusBtn = document.getElementById('btn-view-bonus');
     const bonusPolicyBtn = document.getElementById('btn-bonus-policy');
     const quarterlyBonusBtn = document.getElementById('btn-quarterly-bonus');
 
-    // Hide View Bonus for the original restricted list, or for Calisen engineers
+    // Hide View Bonus for the original restricted list (Calisen engineers keep it)
     if (bonusBtn) {
-        bonusBtn.style.display = (isBonusRestricted || isCalisenEngineer) ? 'none' : 'block';
+        bonusBtn.style.display = isBonusRestricted ? 'none' : 'block';
+    }
+
+    // Hide On Call Rota for Calisen engineers
+    const rotaBtn = document.getElementById('btn-oncall-rota');
+    if (rotaBtn) {
+        rotaBtn.style.display = isCalisenEngineer ? 'none' : '';
     }
 
     // Hide Quarterly Bonus for the new restricted list, or for Calisen engineers
@@ -2486,9 +2501,9 @@ function applyBonusRestriction() {
         energiseBtn.style.display = (isQBonusRestricted && !isCalisenEngineer) ? 'block' : 'none';
     }
 
-    // Hide Bonus Policy if the user is in EITHER restricted list
+    // Hide Bonus Policy if the user is in EITHER restricted list, or is a Calisen engineer
     if (bonusPolicyBtn) {
-        bonusPolicyBtn.style.display = (isBonusRestricted || isQBonusRestricted) ? 'none' : 'block';
+        bonusPolicyBtn.style.display = (isBonusRestricted || isQBonusRestricted || isCalisenEngineer) ? 'none' : 'block';
     }
 }
 window.handleLogin = async function() {
@@ -2742,10 +2757,11 @@ window.openEnergiseModal = function() {
     const isPudo = [
         "James McLean",
         "Chris Timm",
+        "Daniel Leahy",
         "Daniel Nally",
         "Bilal Amin",
         "Jon Convery"
-    ].includes(currentEngineer);
+    ].some(n => n.toLowerCase() === String(currentEngineer).toLowerCase());
     const targetUrl = isPudo ? './energise-order-form-pudo.html' : './energise-order-form.html';
     
     if (!iframe.getAttribute('data-loaded') || iframe.getAttribute('data-target') !== targetUrl) {
@@ -3201,7 +3217,7 @@ window.loadDailyBreakdown = async function() {
         const byEng = (coll, field) => withTimeout(db.collection(coll).where(field,"==",currentEngineer).get(), 25000, 'Loading your data');
         const Q = {
             pm:   byEng("additionalPayments","engineerName"),
-            perf: byEng("performance","engineerName"),
+            perf: byEng(isCurrentEngineerCalisen() ? "performance - Calisen" : "performance","engineerName"),
             en:   byEng("performance - Energise","engineerName"),
             att:  byEng("attendance","engineerName"),
             bon:  byEng("bonuses","engineerName"),
