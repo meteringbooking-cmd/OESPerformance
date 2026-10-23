@@ -504,9 +504,18 @@
       <div class="table-card">
         <div class="table-header-row">
           <div class="table-title" id="tableTitle">All Official Invoice Lines</div>
-          <button class="btn" onclick="exportFilteredCSV()" style="padding: 6px 12px; font-size: 13px;">
-            Export Filtered CSV
-          </button>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+            <label for="exportFrom" style="font-size:12px; color:var(--text-muted); font-weight:600;">From</label>
+            <input type="date" id="exportFrom" style="padding:5px 8px; font-size:13px; border:1px solid var(--border2); border-radius:6px; background:#fff; color:inherit;">
+            <label for="exportTo" style="font-size:12px; color:var(--text-muted); font-weight:600;">To</label>
+            <input type="date" id="exportTo" style="padding:5px 8px; font-size:13px; border:1px solid var(--border2); border-radius:6px; background:#fff; color:inherit;">
+            <button class="btn" onclick="exportDateRangeCSV()" style="padding: 6px 12px; font-size: 13px;" title="Exports lines whose date falls in the range, respecting the filters above">
+              Export Date Range
+            </button>
+            <button class="btn" onclick="exportFilteredCSV()" style="padding: 6px 12px; font-size: 13px;">
+              Export Filtered CSV
+            </button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -1318,6 +1327,67 @@
       link.click();
       document.body.removeChild(link);
       showToast('✓ CSV Downloaded');
+    };
+
+
+    // ── Export Date Range (CSV) ────────────────────────────────────────────────
+    function parseLineDate(dStr) {
+      if (!dStr) return null;
+      let m = String(dStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+      m = String(dStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+      const d = new Date(dStr);
+      return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function csvCell(v) {
+      const t = (v === undefined || v === null) ? '' : String(v);
+      return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    }
+
+    window.exportDateRangeCSV = function() {
+      const fromVal = document.getElementById('exportFrom').value;
+      const toVal = document.getElementById('exportTo').value;
+      if (!fromVal && !toVal) {
+        showToast('Choose a From and/or To date first.', true);
+        return;
+      }
+      const from = fromVal ? parseLineDate(fromVal) : null;
+      const to = toVal ? parseLineDate(toVal) : null;
+      if (from && to && from > to) {
+        showToast('The From date must be on or before the To date.', true);
+        return;
+      }
+
+      const lines = filteredLines.filter(line => {
+        const d = parseLineDate(line.createDate || line.dateShipped);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+
+      if (lines.length === 0) {
+        showToast('No invoice lines found in that date range.', true);
+        return;
+      }
+
+      const rows = [];
+      rows.push(['Create Date', 'Date Shipped', 'Engineer ID', 'Engineer Name', 'CHH Order ID', 'LN', 'Packlist', 'Part ID', 'Description', 'Unit Price (£)', 'Qty Shipped', 'Line Value (£)', 'Project Name', 'Company', 'Ship To', 'Chargeable', 'Labour Status', 'Status']);
+      lines.forEach(line => rows.push([line.createDate, line.dateShipped, line.engineerId, line.name, line.chhOrderId, line.ln, line.packlist, line.partId, line.description, (line.unitPrice || 0).toFixed(2), line.qtyShipped || 0, (line.lineValue || 0).toFixed(2), line.projectName, line.company, line.shipTo, line.chargeable || 'No', line.labourStatus, line.status]));
+
+      const csvContent = '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `invoice_lines_${fromVal || 'start'}_to_${toVal || 'latest'}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast(`✓ Exported ${lines.length} lines`);
     };
 
     // Initial Load
