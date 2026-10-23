@@ -554,6 +554,20 @@ async function handleFile(file){
             const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
             const ws=wb.Sheets[wb.SheetNames[0]];
             rawData=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'dd/mm/yyyy'});
+            // Long numeric codes (e.g. Dual Link IDs like 23918719020261100) come back from Excel as
+            // "2.39187E+16", which would make different codes look identical. Restore the full digits.
+            try{
+                const rawNums=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+                rawData.forEach((row,r)=>{
+                    if(!row) return;
+                    for(let c=0;c<row.length;c++){
+                        const w=row[c], v=rawNums[r]&&rawNums[r][c];
+                        if(typeof w==='string' && /^-?\d(\.\d+)?E\+\d+$/i.test(w.trim()) && typeof v==='number' && isFinite(v) && Number.isInteger(v)){
+                            row[c]=BigInt(v).toString();
+                        }
+                    }
+                });
+            }catch(_){}
             if(rawData.length<2){ showToast('File empty — needs header row + data.','error'); return; }
 
             headerMap={}; displayHeaders=[];
