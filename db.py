@@ -114,6 +114,9 @@ purchase_orders = Table(
     # order per supplier (the "children", each pointing back with parent_po_id).
     Column("parent_po_id", Integer, nullable=True),
     Column("is_split", Integer, nullable=False, server_default=text("0")),
+    # Set when the request was raised from another system, e.g. "pingu:J-4B31C51C"
+    # for a solar job in Pingu - stops the same job's POs being raised twice.
+    Column("external_ref", String, nullable=True),
 )
 
 # The suppliers inside a multi-supplier request. child_po_id fills in as each
@@ -298,6 +301,7 @@ _COLUMN_MIGRATIONS = [
     ("purchase_orders", "department", "VARCHAR"),
     ("purchase_orders", "parent_po_id", "INTEGER"),
     ("purchase_orders", "is_split", "INTEGER NOT NULL DEFAULT 0"),
+    ("purchase_orders", "external_ref", "VARCHAR"),
 ]
 
 
