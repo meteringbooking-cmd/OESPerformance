@@ -1370,7 +1370,32 @@ function toInputDateStr(d){if(!d)return '';return `${d.getFullYear()}-${String(d
 function today0(){const d=new Date();d.setHours(0,0,0,0);return d;}
 
 /* ─── Date helpers ──────────────────────────────────────────── */
+/* ─── Dual-link de-duplication ────────────────────────────────────
+   Jobs that share a Dual Link ID (dualLinkId, or a numeric serviceType) are one
+   visit, so only one of them is shown/scheduled. The rest are hidden. */
+let dualHidden = new Set();
+function dualLinkKey(j){
+  const d = (j.dualLinkId === undefined || j.dualLinkId === null) ? '' : String(j.dualLinkId).trim();
+  if (d) return d;
+  const st = (j.serviceType === undefined || j.serviceType === null) ? '' : String(j.serviceType).trim();
+  return /^\d+$/.test(st) ? st : '';
+}
+function refreshDualHidden(){
+  const groups = new Map();
+  allJobs.forEach(j => { const k = dualLinkKey(j); if (!k) return; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(j); });
+  const hidden = new Set();
+  groups.forEach(list => {
+    if (list.length < 2) return;
+    const rank = j => (j.engineerName ? 2 : 0) + (getStartHour(j) !== null ? 1 : 0);
+    const keep = list.slice().sort((a, b) => rank(b) - rank(a) || String(a._id).localeCompare(String(b._id)))[0];
+    list.forEach(j => { if (j !== keep) hidden.add(j._id); });
+  });
+  dualHidden = hidden;
+}
+function isDualHidden(j){ return dualHidden.has(j._id); }
+
 function isJobOnDay(job, targetDate) {
+  if (dualHidden.has(job._id)) return false;
   const startD = parseDate(job.dateOfJob);
   if (!startD) return false;
   
@@ -1549,7 +1574,8 @@ async function persistUpdate(jobId,updates,job){
  * across all available engineers, abiding by their schedule and isochrone rules.
  */
 async function autoAssignJobs(silent = false) {
-  const unassigned = allJobs.filter(j => !j.engineerName && j.dateOfJob);
+  refreshDualHidden();
+  const unassigned = allJobs.filter(j => !j.engineerName && j.dateOfJob && !isDualHidden(j));
   if (!unassigned.length) {
     if (!silent) toast('No unassigned jobs to allocate', 'info');
     return;
@@ -1616,8 +1642,9 @@ async function autoAssignJobs(silent = false) {
  * @param {boolean} silent - if true, suppresses the "nothing to route" toast (for auto-triggers)
  */
 async function autoRouteUnscheduledJobs(silent = false) {
+  refreshDualHidden();
   const toRoute = allJobs.filter(j =>
-    j.engineerName && j.dateOfJob && getStartHour(j) === null && !parseSlotWindow(j.timeSlot) // jobs with an appointment window stay spread across it
+    !isDualHidden(j) && j.engineerName && j.dateOfJob && getStartHour(j) === null && !parseSlotWindow(j.timeSlot) // jobs with an appointment window stay spread across it
   );
   if (!toRoute.length) {
     if (!silent) toast('No unscheduled jobs to route', 'info');
@@ -1778,6 +1805,7 @@ function calcHourWidth(dayEnd){
 }
 
 function render(){
+  refreshDualHidden();
   closeStackPopup();syncPicker();
   const cols=getCols();
   const colJobs=allJobs.filter(j=>cols.some(c=>isJobOnDay(j,c)));
