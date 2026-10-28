@@ -3486,6 +3486,19 @@ const fbConfig = {
 };
 const caiApp = getApps().find(a => a.name === 'catalistics-ai') || initializeApp(fbConfig, 'catalistics-ai');
 const cdb = getFirestore(caiApp);
+// Second project: the Solar (Pingu) pages use their own Firebase project.
+const solarConfig = {
+  apiKey: "AIzaSyAc_yJQ_rkzuOBh-Yxg0Q4eooXtB-tQjm0",
+  authDomain: "pingu-solar.firebaseapp.com",
+  projectId: "pingu-solar",
+  storageBucket: "pingu-solar.appspot.com",
+  messagingSenderId: "232764952866",
+  appId: "1:232764952866:web:5923b7f419de6355d6157b"
+};
+const solarApp = getApps().find(a => a.name === 'catalistics-ai-solar') || initializeApp(solarConfig, 'catalistics-ai-solar');
+const sdb = getFirestore(solarApp);
+const dbOf = cfg => cfg && cfg.project === 'solar' ? sdb : cdb;
+const colRef = coll => { const cfg = CATALOG[coll]; return collection(dbOf(cfg), (cfg && cfg.coll) || coll); };
 
 /* ------------------------------------------------- what the assistant may read */
 // Only these collections can be read. Anything not listed here is invisible to the assistant.
@@ -3570,6 +3583,190 @@ defColl('Finance', 'forecast data', 'Typed month-end forecast values per contrac
 defColl('Finance', 'Engineer Daily Profit', 'Daily profit per engineer, main contract.', { restricted: true });
 defColl('Finance', 'Engineer Daily Profit energise', 'Daily profit per engineer, Energise.', { restricted: true });
 defColl('Finance', 'Engineer Daily Profit calisen', 'Daily profit per engineer, Calisen.', { restricted: true });
+
+/* ---- Solar (Pingu), Recruitment and Establishment Report ----
+   Extra settings used below:
+     project   : 'solar' = the pingu-solar Firebase project (default is the OES project)
+     coll      : real collection name when the key shown to the assistant differs
+     where     : fixed equality filters, [[field, '==', value]]
+     dateOptions: {fieldName: type} - several date fields can be used; the caller picks one with dateField
+     timeText  : true = the date field is ISO text with a time part (end of range handled)
+     looseDmy  : true = dd/mm/yyyy text may also be stored as yyyy-mm-dd or without zero padding
+     transform : (rawDoc, id, ctx) => flat object of the only fields shown (null = skip the doc)
+     prepare   : async () => ctx passed to transform */
+const tsIso = v => { if (v && typeof v.toDate === 'function') { try { return v.toDate().toISOString(); } catch (e) { return ''; } } return v === undefined || v === null ? '' : String(v); };
+const pick = (d, keys) => { const o = {}; keys.forEach(k => { if (d[k] !== undefined && d[k] !== null && d[k] !== '') o[k] = d[k]; }); return o; };
+const firstOf = (d, keys) => { for (const k of keys) if (d[k] !== undefined && d[k] !== null && d[k] !== '') return d[k]; return undefined; };
+const strOf = v => (v && typeof v === 'object') ? String(v.decision || v.status || v.outcome || '') : (v === undefined || v === null ? '' : String(v));
+const nnum = v => { const n = typeof v === 'number' ? v : parseFloat(String(v === undefined || v === null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : undefined; };
+
+const canonOfficeStatus = s => {
+  const v = String(s || '').trim().toLowerCase();
+  if (!v || v === 'pending' || v === 'scheduled') return 'Scheduled';
+  if (/^complete/.test(v)) return 'Complete';
+  if (/in.?progress/.test(v)) return 'In-Progress';
+  if (/short.?notice|^snc$/.test(v)) return 'Short Notice Cancellation';
+  if (/abort/.test(v)) return 'Aborted';
+  if (/cancel/.test(v)) return 'Cancelled';
+  if (/hold/.test(v)) return 'On Hold';
+  return String(s).trim();
+};
+const jobClassOf = t => { const v = String(t || ''); if (/survey/i.test(v)) return 'Survey'; if (/aftercare/i.test(v)) return 'Aftercare'; if (/battery/i.test(v)) return 'Battery'; if (/install/i.test(v) && /solar|pv/i.test(v)) return 'Solar install'; return v ? 'Other' : '(blank)'; };
+
+const T_SOLAR_JOB = d => {
+  const o = pick(d, ['Job Number', 'Job Type', 'Install Date', 'Booked Date', 'Projected Completion Date', 'Panel No.', 'Status Update', 'status', 'lastStatusUpdate', 'uploadDate', 'completedDays', 'completedTimestamp', 'slateRoof', 'isChargeable', 'statusReason', 'abortReason', 'cancellationReason', 'delays', 'poNumbers', 'batteryType', 'auditStatus', 'auditStatusElec', 'auditStatusRoof', 'auditDate', 'auditChecklistOutcome', 'clientOutcome', 'clientOutcomeElec', 'clientOutcomeRoof', 'clientResolved', 'clientResolvedDate', 'auditResolved', 'auditResolvedDate', 'auditReviewStatus', 'auditReviewedAt']);
+  o.officeStatus = canonOfficeStatus(d['Status Update']);
+  o.jobClass = jobClassOf(d['Job Type']);
+  const lead = firstOf(d, ['Lead Engineer', 'Lead', 'Engineer']); if (lead !== undefined) o.leadEngineer = String(lead).trim();
+  const team = firstOf(d, ['Team', 'Team Number']); if (team !== undefined) o.team = team;
+  const days = nnum(firstOf(d, ['Job Length', 'Days', 'Job Length (days)'])); if (days !== undefined) o.jobDays = days;
+  o.auditNoticeSent = !!d.auditEmailSentAt;
+  if (d.auditEmailSentAt) o.auditNoticeDate = tsIso(d.auditEmailSentAt);
+  if (financeOn) {
+    ['materialsCost', 'invoiceOctopus', 'invoiceLead', 'additionalCosts', 'invoiceSubmittedAt'].forEach(k => { if (d[k] !== undefined && d[k] !== null && d[k] !== '') o[k] = d[k]; });
+    o.pendingInvoice = (o.officeStatus === 'Complete' || o.officeStatus === 'Short Notice Cancellation') && !(d.invoiceOctopus && d.invoiceLead);
+  }
+  return o;
+};
+const SOLAR_JOB_ALLOW = ['Job Number', 'Job Type', 'Install Date', 'Booked Date', 'Projected Completion Date', 'Panel No.', 'Status Update', 'status', 'lastStatusUpdate', 'uploadDate', 'completedDays', 'completedTimestamp', 'slateRoof', 'isChargeable', 'statusReason', 'abortReason', 'cancellationReason', 'delays', 'poNumbers', 'batteryType', 'auditStatus', 'auditStatusElec', 'auditStatusRoof', 'auditDate', 'auditChecklistOutcome', 'clientOutcome', 'clientOutcomeElec', 'clientOutcomeRoof', 'clientResolved', 'clientResolvedDate', 'auditResolved', 'auditResolvedDate', 'auditReviewStatus', 'auditReviewedAt', 'officeStatus', 'jobClass', 'leadEngineer', 'team', 'jobDays', 'auditNoticeSent', 'auditNoticeDate', 'materialsCost', 'invoiceOctopus', 'invoiceLead', 'additionalCosts', 'invoiceSubmittedAt', 'pendingInvoice'];
+
+const T_SURVEY = d => {
+  const s = d.sections || {}, sd = s.surveyDetails || {}, el = s.electricalSystem || {};
+  const mats = Array.isArray(s.additionalMaterials) ? s.additionalMaterials : [];
+  const mw = String(el.meterWorkNeeded === undefined || el.meterWorkNeeded === null ? '' : el.meterWorkNeeded).trim();
+  const yes = mw.toLowerCase() === 'yes';
+  const o = { jobNumber: d.jobNumber, surveyType: d.surveyType, status: d.status, surveyor: String(sd.surveyor || '').trim() || '(not given)', conductedOn: sd.conductedOn, submittedAt: d.submittedAt, meterWorkNeeded: mw || '(blank)', meterWorkNeededYes: yes, additionalMaterialLines: mats.length, hasAdditionalMaterials: mats.length > 0, materialLines: mats.slice(0, 30).map(x => String(x).slice(0, 160)) };
+  ['cableRunLength', 'cableRunLengthAC', 'cableRunLengthDC'].forEach(k => { const n = nnum(el[k]); if (n !== undefined) o[k] = n; });
+  if (yes) { o.meterStatus = d.meterCompleted ? 'completed' : (d.meterDate || d.meterEngineer) ? 'scheduled' : 'pending'; if (d.meterDate) o.meterDate = d.meterDate; if (d.meterEngineer) o.meterEngineer = d.meterEngineer; if (d.meterJobNumber) o.meterJobNumber = d.meterJobNumber; if (d.meterCompletedAt) o.meterCompletedAt = d.meterCompletedAt; }
+  return o;
+};
+const T_APPROVED_MATERIALS = d => Object.assign(pick(d, ['jobNumber', 'installDate', 'surveyType', 'surveyor', 'approvedAt', 'approvedMaterials', 'deniedMaterials']), { approvedCount: Array.isArray(d.approvedMaterials) ? d.approvedMaterials.length : 0, deniedCount: Array.isArray(d.deniedMaterials) ? d.deniedMaterials.length : 0 });
+const T_CABLE_REQ = d => Object.assign(pick(d, ['jobNumber', 'isSingleJob', 'cables', 'miscItems', 'status', 'submittedAt', 'approvedAt', 'deniedAt']), { extraJobCount: Array.isArray(d.extraJobs) ? d.extraJobs.length : 0 });
+const T_COMPLAINT_SOLAR = d => {
+  const o = pick(d, ['dateReceived', 'type', 'contract', 'engineer', 'ftl', 'jobRef', 'targetDate', 'status', 'engineerInformed', 'resolvedAt']);
+  if (o.resolvedAt) o.resolvedAt = tsIso(o.resolvedAt);
+  const t = parseYmd(d.targetDate); const resolved = /resolv/i.test(String(d.status || ''));
+  if (t && !resolved) { const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); const n = Math.round((t - today) / 86400000); o.daysToTarget = n; o.urgency = n <= 10 ? 'red' : n <= 21 ? 'amber' : 'green'; }
+  return o;
+};
+const T_EMPLOYEE = d => Object.assign(pick(d, ['Full Name', 'Team Leader', 'teamLeader', 'Location', 'startDate', 'leaveDate']), { isCurrent: !d.leaveDate });
+const T_TEAM = d => { const eng = Array.isArray(d.engineers) ? d.engineers.map(e => e && (e.name || e)).filter(Boolean).map(String) : []; return { leadName: d.lead && d.lead.name ? String(d.lead.name) : '', engineers: eng, engineerCount: eng.length, createdAt: d.createdAt, updatedAt: d.updatedAt }; };
+const T_PROJECT = d => {
+  const sc = d.scaffolding || {}, cb = d.cable || {}, jb = d.job || {};
+  const o = { jobNumber: d.jobNumber, createdAt: d.createdAt, updatedAt: d.updatedAt, scaffoldRequested: sc.requested, scaffoldSides: sc.sides, scaffoldErectionDate: sc.erectionDate, scaffoldDismantleDate: sc.dismantleDate, cableOrdered: cb.ordered, system: jb.system, inverter: jb.inverter, panelQuantity: jb.panelQuantity, aftercareHours: jb.aftercareHours };
+  if (financeOn) { if (d.costs) o.costs = d.costs; if (d.financials) o.financials = d.financials; }
+  Object.keys(o).forEach(k => { if (o[k] === undefined || o[k] === null || o[k] === '') delete o[k]; });
+  return o;
+};
+const T_MEETING = d => pick(d, ['date', 'teamLeader', 'purpose', 'additionalPurposes', 'timeSlot', 'status', 'createdAt', 'statusUpdatedAt']);
+
+// Recruitment
+const T_APPLICANT = d => {
+  const reviews = Array.isArray(d.reviews) ? d.reviews : [];
+  const first = reviews[0] ? String(reviews[0].decision || '') : '';
+  const finalDec = strOf(d.finalRecruitmentDecision);
+  const archive = d.onboardingArchive && typeof d.onboardingArchive === 'object' ? d.onboardingArchive : null;
+  const status = String(d.status || '');
+  const phone = String((d.personalDetails && d.personalDetails.phone) || '').replace(/\s+/g, '');
+  const o = pick(d, ['submittedAt', 'position', 'headerStatus', 'contract', 'energySupplier', 'potentialStartDate', 'startDate', 'interviewDecision', 'nameChecks', 'offerAccepted', 'contractAccepted', 'contractApproved', 'onboardingCompleted', 'onboardingVerificationStatus', 'onboardingProcessed', 'autoRejected']);
+  o.status = status || '(none)';
+  o.manualEntry = !!d.manualEntry; if (d.source) o.source = d.source;
+  if (d.recruitmentAgency) { o.isAgency = !!d.recruitmentAgency.isAgency; if (d.recruitmentAgency.agencyName) o.agencyName = d.recruitmentAgency.agencyName; }
+  o.firstReview = first || '(none)';
+  o.nameChecksRequested = !!d.nameChecksRequested; o.nameChecksCompleted = !!d.nameChecksCompleted; o.nameChecksDeclined = !!d.nameChecksDeclined;
+  if (d.assignedFTLForInterview || d.assignedFTL) o.assignedFTL = d.assignedFTLForInterview || d.assignedFTL;
+  o.interviewCompleted = !!d.interviewCompleted;
+  o.finalDecision = finalDec || '(none)';
+  if (d.holdReason) o.holdReason = d.holdReason;
+  if (archive) { o.archiveStatus = archive.status; if (archive.date) o.archiveDate = archive.date; }
+  if (d.certificatesDeclared) { o.certsAllHeld = !!d.certificatesDeclared.allHeld; o.certsMissing = Array.isArray(d.certificatesDeclared.missing) ? d.certificatesDeclared.missing : []; }
+  o.dbsRecorded = !!d.dbsInfo;
+  o.dashboardHidden = !d.manualEntry && !!phone && !/^(\+44|07|7|01|02)/.test(phone);
+  o.stage = /^approved/i.test(finalDec) ? 'Accepted (offer sent)' : (/^reject/i.test(finalDec) || /^archived/i.test(status) || /rejected/i.test(strOf(d.interviewDecision)) || /do not proceed/i.test(first)) ? 'Rejected / archived' : (/hold/i.test(finalDec) || /hold/i.test(first)) ? 'On hold' : (d.nameChecksRequested && !d.nameChecksCompleted) ? 'Name checks' : /ready for interview/i.test(status) ? 'Ready for interview' : d.interviewCompleted ? 'Interview completed' : 'Pending / in review';
+  return o;
+};
+const T_VACANCY = d => {
+  const ri = d.requestInformation || {}, rr = d.recruitmentRequirements || {}, ap = d.approvalSignOff || {}, ad = d.advertStatus || {};
+  const dec = k => String((ap[k] && ap[k].decision) || '');
+  const decs = [dec('departmentHead'), dec('finance'), dec('finalApprover')];
+  const approval = decs.some(x => /^reject/i.test(x)) ? 'Rejected' : decs.every(x => /^approve/i.test(x)) ? 'Approved' : 'Waiting';
+  const o = { submittedAt: d.submittedAt || d.createdAt, jobTitle: ri.jobTitle, department: ri.department, location: ri.location, contract: ri.contract, hiringManager: ri.hiringManager, requestedBy: ri.requestedBy, vacancyType: d.vacancyType, urgency: rr.urgency, desiredStartDate: rr.desiredStartDate, latestStartDate: rr.latestStartDate, internalAdvertRequired: rr.internalAdvertRequired, externalAdvertRequired: rr.externalAdvertRequired, departmentHeadDecision: decs[0] || undefined, financeDecision: decs[1] || undefined, finalApproverDecision: decs[2] || undefined, approvalStatus: approval, workflowClosed: !!d.workflowClosed, isLive: approval === 'Approved' && !d.workflowClosed, vacancyClosedAt: d.vacancyClosedAt || tsIso(d.workflowClosedAt) || undefined, linkedinLive: ad.linkedinLive, indeedLive: ad.indeedLive, internalAdvertSent: ad.internalEmailSent, quickAdded: !!(d.quickAdded || d.quickAdd) };
+  Object.keys(o).forEach(k => { if (o[k] === undefined || o[k] === null || o[k] === '') delete o[k]; });
+  return o;
+};
+const T_INTERVIEW = d => {
+  const id = d.interviewData || {}; const ts = String(id.totalScore || '');
+  const m = /(\d+(?:\.\d+)?)\s*\/\s*(\d+)/.exec(ts);
+  const o = pick(d, ['date', 'time', 'status', 'interviewer', 'submittedBy', 'applicantPosition', 'contract', 'energySupplier', 'potentialStartDate', 'interviewCompleted', 'unclaimedReminderLevel', 'applicantReminderSent', 'bookedAt', 'addedAt']);
+  if (o.bookedAt) o.bookedAt = tsIso(o.bookedAt); if (o.addedAt) o.addedAt = tsIso(o.addedAt);
+  if (d.interviewCompleted) { o.scorecardType = id.type; o.recommendation = id.recommendation; if (m) { o.score = +m[1]; o.scoreMax = +m[2]; o.scorePct = Math.round(+m[1] / +m[2] * 1000) / 10; } }
+  Object.keys(o).forEach(k => { if (o[k] === undefined || o[k] === null || o[k] === '') delete o[k]; });
+  return o;
+};
+const T_REFERRAL = d => {
+  const o = pick(d, ['submittedAt', 'role', 'hasLiveVacancyMatch', 'status', 'payment1Paid', 'payment2Paid', 'paymentRemoved', 'declarationDate']);
+  o.status = o.status || 'Pending';
+  if (financeOn && d.referrerName) o.referrerName = d.referrerName;
+  return o;
+};
+const T_NEWSTART = d => ({ type: d.type, startDate: d.startDate, createdAt: tsIso(d.createdAt), completedCount: Array.isArray(d.completedItems) ? d.completedItems.length : (d.completedItems && typeof d.completedItems === 'object') ? Object.values(d.completedItems).filter(Boolean).length : 0 });
+
+// Establishment Report (finance PIN)
+const ESTAB_RATE = 19.95192307692308;
+const ESTAB_RATE_OVERRIDES = { 'george chapman': 21.94711538461538, 'lukasz holysz': 21.94711538461538 };
+const ESTAB_DEDUCTING = ['sick', 'aaup', 'awol'];
+async function estabPrepare() {
+  const snap = await getDocs(query(collection(cdb, 'Establishment Report'), where('_type', '==', 'staff'), limit(1000)));
+  const byId = new Map(), byName = new Map();
+  snap.forEach(x => { const v = x.data(); const rec = { id: x.id, name: String(v.name || ''), contract: v.contract || '', nonEngineer: v.nonEngineer === true }; byId.set(x.id, rec); byName.set(rec.name.toLowerCase(), rec); });
+  return { byId, byName };
+}
+const T_ESTAB_ENTRY = (d, id, ctx) => {
+  if (d._type && d._type !== 'entry') return null;
+  const st = String((d.entryData && d.entryData.status) || d.status || 'In');
+  const hours = nnum(d.entryData && d.entryData.hours !== undefined ? d.entryData.hours : d.hours) || 0;
+  const rec = (ctx && ((d.staffId && ctx.byId.get(d.staffId)) || ctx.byName.get(String(d.staffName || '').toLowerCase()))) || null;
+  const name = (rec && rec.name) || String(d.staffName || '');
+  const nonEng = rec ? rec.nonEngineer : false;
+  const deducts = ESTAB_DEDUCTING.includes(st.toLowerCase()) && hours > 0 && !nonEng;
+  const rate = ESTAB_RATE_OVERRIDES[name.trim().toLowerCase()] || ESTAB_RATE;
+  return { staffName: name, date: d.date, month: d.month, status: st, hours, nonEngineer: nonEng, hourlyRate: Math.round(rate * 100) / 100, deduction: deducts ? Math.round(hours * rate * 100) / 100 : 0, staffKnown: !!rec };
+};
+const T_ESTAB_STAFF = d => ({ name: d.name, contract: d.contract, nonEngineer: d.nonEngineer === true });
+const T_ESTAB_CLAWBACK = (d, id, ctx) => { const rec = ctx && d.staffId && ctx.byId.get(d.staffId); return { staffName: (rec && rec.name) || String(d.staffName || ''), month: d.month, amount: nnum(d.amount) || 0 }; };
+
+// ---- Solar (project pingu-solar)
+const SOLAR = { project: 'solar' };
+defColl('Solar (Pingu)', 'Solar-jobs', 'One doc per solar / battery / aftercare / survey job (job number, type, install/booked dates, lead engineer, team, office status, engineer status, audit results). Customer details hidden. Derived fields: officeStatus (clean version of Status Update), jobClass, leadEngineer, team, jobDays. Default date = Install Date; pass dateField "Booked Date", "Projected Completion Date" or "uploadDate" for the others.', Object.assign({}, SOLAR, { dateField: 'Install Date', dateType: 'dmy', dateOptions: { 'Install Date': 'dmy', 'Booked Date': 'dmy', 'Projected Completion Date': 'dmy', 'uploadDate': 'iso' }, looseDmy: true, timeText: true, transform: T_SOLAR_JOB, allow: SOLAR_JOB_ALLOW }));
+defColl('Solar (Pingu)', 'site-surveys', 'Completed site surveys (job, survey type, surveyor, meter work needed and its status, cable run lengths, additional material lines). Customer details and photos hidden.', Object.assign({}, SOLAR, { dateField: 'submittedAt', timeText: true, transform: T_SURVEY }));
+defColl('Solar (Pingu)', 'approved-additional-materials', 'Additional materials approved / denied per survey (jobNumber, surveyor, approvedAt, approvedMaterials, deniedMaterials, counts).', Object.assign({}, SOLAR, { dateField: 'approvedAt', timeText: true, transform: T_APPROVED_MATERIALS }));
+defColl('Solar (Pingu)', 'Cable Requirements', 'Cable orders by engineers (jobNumber, cables, miscItems, status pending/approved/denied, submittedAt). Names and addresses hidden.', Object.assign({}, SOLAR, { dateField: 'submittedAt', timeText: true, transform: T_CABLE_REQ }));
+defColl('Solar (Pingu)', 'stocktake', 'Van stocktakes (date, countedBy, items counted).', Object.assign({}, SOLAR, { dateField: 'date', allow: ['date', 'countedBy', 'submittedAt', 'items'] }));
+defColl('Solar (Pingu)', 'Van Replenishment', 'Van replenishment orders (jobNumber, deliveryDate, leadEngineer, items, totalItems, status pending/fulfilled/cancelled, submittedAt). Customer details hidden.', Object.assign({}, SOLAR, { dateField: 'submittedAt', timeText: true, allow: ['jobNumber', 'deliveryDate', 'leadEngineer', 'items', 'totalItems', 'status', 'statusUpdatedAt', 'submittedAt'] }));
+defColl('Solar (Pingu)', 'Solar Complaints', 'Solar complaints (dateReceived, targetDate, contract, engineer, ftl, jobRef, status in-progress/resolved, plus derived daysToTarget and urgency red/amber/green for open ones). This is separate from the OES "Complaints" collection.', Object.assign({}, SOLAR, { coll: 'Complaints', dateField: 'dateReceived', transform: T_COMPLAINT_SOLAR }));
+defColl('Solar (Pingu)', 'pingu-projects', 'Per-job scaffold (PVF) request, cable order and system details (scaffold sides and erection / dismantle dates, cableOrdered, system, inverter, panelQuantity). Cost fields appear only after the finance PIN.', Object.assign({}, SOLAR, { small: true, dateField: 'updatedAt', timeText: true, transform: T_PROJECT }));
+defColl('Solar (Pingu)', 'Scafolding', 'Scaffold list pasted from Google Sheets (collection spelled with one f): jobNumber, team, install / projected completion / erect dates, panels, sides, scaffoldRequested, cableOrdered, checked, addedToKraken. Dated by erectDateISO.', Object.assign({}, SOLAR, { small: true, dateField: 'erectDateISO', allow: ['jobNumber', 'team', 'installDate', 'projectedCompletionDate', 'panels', 'sides', 'scaffoldRequested', 'cableOrdered', 'checked', 'addedToKraken', 'erectDate', 'erectDateISO'] }));
+defColl('Solar (Pingu)', 'Databricks', 'System data per job pasted from Databricks: jobNumber, installDate, panels, system, inverter, arrays. Dated by installDateISO.', Object.assign({}, SOLAR, { small: true, dateField: 'installDateISO', allow: ['jobNumber', 'installDate', 'installDateISO', 'panels', 'system', 'inverter', 'arrays'] }));
+defColl('Solar (Pingu)', 'team-database', 'Solar teams: leadName, engineers (list of names), engineerCount.', Object.assign({}, SOLAR, { small: true, transform: T_TEAM }));
+defColl('Solar (Pingu)', 'Solar staff (employees)', 'Solar staff list: Full Name, Team Leader, Location, startDate, leaveDate, isCurrent. Holidays and absences hidden.', Object.assign({}, SOLAR, { coll: 'employees', small: true, transform: T_EMPLOYEE }));
+defColl('Solar (Pingu)', 'meetings', 'Team leader meeting diary (date, teamLeader, purpose, additionalPurposes, timeSlot, status). Which engineer is hidden.', Object.assign({}, SOLAR, { dateField: 'date', transform: T_MEETING }));
+defColl('Solar (Pingu)', 'workscreeninput', 'Manual per-day job board entries for teams NGU01-NGU16 (Date, Team, Job Type, Job Length, DayIndex, Status). Postcodes hidden.', Object.assign({}, SOLAR, { dateField: 'Date', allow: ['Date', 'Team', 'Job Type', 'Job Length', 'DayIndex', 'Status', 'createdAt', 'updatedAt'] }));
+defColl('Solar (Pingu)', 'additional-requests', 'Engineer requests for an additional day or materials (jobNumber, requestType, status, updatedAt).', Object.assign({}, SOLAR, { dateField: 'updatedAt', timeText: true, allow: ['engineerName', 'status', 'requestType', 'jobNumber', 'updatedAt'] }));
+defColl('Finance', 'Solar Engineer Invoices', 'Solar subcontractor / engineer invoices (name, jobNumber, installDate, jobType, days, invoiceValue, surveyComplete, krakenComplete, krakenStatus, approvalStatus, approvedAt, submittedAt).', Object.assign({}, SOLAR, { restricted: true, coll: 'Engineer Invoices', dateField: 'submittedAt', timeText: true, allow: ['name', 'jobNumber', 'installDate', 'jobType', 'days', 'invoiceValue', 'surveyComplete', 'krakenComplete', 'krakenStatus', 'approvalStatus', 'approvedAt', 'submittedAt'] }));
+
+// ---- Recruitment (OES project)
+defColl('Recruitment', 'NGUO New Applicants', 'One doc per job application, growing through the recruitment journey (submittedAt, position, first review, name checks, interview, final decision, offer accepted, onboarding, archive). Candidate names and contact details are hidden. Derived field "stage" gives the dashboard bucket; "dashboardHidden" = hidden from the recruitment dashboard by its phone rule.', { dateField: 'submittedAt', dateType: 'timestamp', transform: T_APPLICANT });
+defColl('Recruitment', 'NGU Recuitment Approval Form', 'Vacancy requisitions (collection spelled Recuitment): jobTitle, department, location, contract, three approver decisions, approvalStatus, isLive, workflowClosed. Salary and replacement details hidden. Read without dates.', { small: true, dateField: 'submittedAt', dateType: 'timestamp', transform: T_VACANCY });
+defColl('Recruitment', 'NGU Interview Times', 'Interview slots (date, time, status Available/Booked/Completed, interviewer FTL, applicantPosition, contract) and, once done, scorecardType, recommendation, score, scoreMax, scorePct. Candidate names, notes and scores per criterion are hidden.', { dateField: 'date', transform: T_INTERVIEW });
+defColl('Recruitment', 'NGU Referral submissions', 'Employee referral bonus submissions (role, status Pending/Accepted/Denied, payment1Paid, payment2Paid, paymentRemoved, submittedAt). The referrer name shows only after the finance PIN; the referred person is hidden.', { small: true, dateField: 'submittedAt', dateType: 'timestamp', transform: T_REFERRAL });
+defColl('Recruitment', 'DBS Check', 'New-starter DBS form submissions: only submittedAt and nguProcessChoice are visible.', { small: true, dateField: 'submittedAt', dateType: 'timestamp', allow: ['submittedAt', 'nguProcessChoice'] });
+defColl('Recruitment', 'New Start Checklist', 'IT / operations new-starter checklists: type (new starter / transfer), startDate, completedCount. Names hidden.', { small: true, dateField: 'startDate', transform: T_NEWSTART });
+
+// ---- Establishment Report (finance PIN; project OES)
+defColl('Finance', 'Establishment Report', 'Daily attendance / absence entries from the Establishment Report page (root attendance.html): staffName, date, month, status (In, Holiday, Sch Day Off, Half day Holiday, Sick, AAUP, AAP, Training, AWOL, Left, M/P), hours, nonEngineer, hourlyRate and the pay deduction in pounds. Days with no entry mean the person was In.', { restricted: true, dateField: 'date', sampleWhere: [['_type', '==', 'entry']], prepare: estabPrepare, transform: T_ESTAB_ENTRY });
+defColl('Finance', 'Establishment Report - staff', 'Establishment Report staff list: name, contract, nonEngineer (true = never deducted).', { restricted: true, small: true, coll: 'Establishment Report', where: [['_type', '==', 'staff']], transform: T_ESTAB_STAFF });
+defColl('Finance', 'Establishment Report - clawbacks', 'Establishment Report clawbacks (month YYYY-MM corrections added to a month total): staffName, month, amount.', { restricted: true, small: true, dateField: 'month', dateType: 'month', coll: 'Establishment Report', where: [['_type', '==', 'clawback']], prepare: estabPrepare, transform: T_ESTAB_CLAWBACK });
+
 // Finance collections are held back until the finance PIN is entered (see the Finance button).
 const FINANCE_CATALOG = {};
 Object.keys(CATALOG).forEach(k => { if (CATALOG[k].restricted) { FINANCE_CATALOG[k] = CATALOG[k]; delete CATALOG[k]; } });
@@ -3608,7 +3805,11 @@ FLEET
 - startendvantimes.html: van first start / last end and after-hours journeys. working-hours.html: engineer working-day length matrix. speeding.html (paste weekly data) and speeding-display.html (dashboard).
 CALISEN SCHEDULING
 - scheduling.html (job timeline/week board, auto-route), dataupload-calisen.html (job upload), mapping.html (field mapping), jobtypeparameter.html (durations by level), userdatabase.html (Calisen users), Calisen-Dashboard.html (daily figures and stats upload).
-Pages NOT in this folder (so not covered): Smart Tester entry form, absencesubmission.html, SP jobscompleted, workscreenworkforce.html, the Sureserve completions graph and daily stats pop-ups.`,
+Pages NOT in this folder (so not covered): Smart Tester entry form, absencesubmission.html, SP jobscompleted, workscreenworkforce.html, the Sureserve completions graph and daily stats pop-ups.
+OTHER FOLDERS (separate systems; the assistant can read their data - see the topics named):
+- SOLAR (Pingu) folder, 63 pages, own database: index.html hub; admin.html / adminviewjobs / adminupload / uploaddata / adminexport / adminemail (job admin); workscreen.html (office board), datasheet.html (weekly datasheet), viewtimeline.html and named copies johnweight-timeline, martinjones-timeline, dean (timelines), map.html, calendar.html, jobsearch.html, teamview.html, myjobs.html (engineer view), staff / teamdatabase / addeditteam; audits adminaudit / adminaudit2 / adminauditreview / auditfailtracker / solar-ppt / export-presentation; surveys conductsurvey, surveymaster, surveyview, viewsurvey, viewmysurveys, inventorycheck, materialsapproval, meterworkrequired; materials cable-requirements, cable-requirement-orders, stocktakesubmission, stocktakereview, vanreplenishmentorders, additionaldaymaterials, picklistgenerator, rippdf, chh; scaffold/project Pingu-Project.html; money submitfigures, invoice-submission, invoice-engineers-submissions, invoice-engineers-export; complaints meteringcomplaints.html; manual board workscreeninput.html. Topics: solar_jobs, solar_audit, solar_materials, solar_admin.
+- RECRUITMENT folder ("Recuitment"), 30 pages, same database as the OES pages: apply, manual-add, quickadd, vacancy-quick-add, recruit-approval-form(-display), live-vacancies, archived-vacancies, view-applications, dashboard, homepage, interview-availability, FTL-interview-availability, admin-review, view-onboarding, complete-onboarding, complete-profile, docupload / docupload2, engineer-portal (applicant portal), contract, DBS-check, view-dbs, candidate-referral-bonus, referral-submissions, referral-payments, new-starter-checklist, user-database, vehicle-check, login. Topic: recruitment.
+- ESTABLISHMENT REPORT: attendance.html in the main (scratch) folder - NOT the Engineers attendance page. Monthly staff grid with pay deductions. Topic: establishment (needs the finance PIN).`,
 
 contracts_targets: `CONTRACTS, TARGETS AND TEAMS
 - Contracts: main contract ("performance", shown as Sureserve / "OES"), Energise ("performance - Energise", EDF), Calisen ("performance - Calisen") and Scottish Power (job-level "SP Submitted Data" + "SP Daily Figures"). Engineers can appear in more than one. The engineers collection has a contract field (values like Sureserve, SP - Sureserve, EDF - Sureserve, Energise, Calisen; may be blank).
@@ -3692,20 +3893,82 @@ calisen: `CALISEN SCHEDULING SUITE
 finance: `FINANCE (restricted collections; only available when switched on)
 - all contract financial: revenue entries per contract (OES = main, SP, Energise) with value; date is a timestamp. allcontractfinances.html month-end forecast = (revenue in range / elapsed weekdays) x total weekdays in range (bank holidays not removed). Predicted outgoings per contract per month are in "outgoings data" (month YYYY-MM); typed forecasts in "forecast data" (not used by the page). The page does not compute profit. SP manual entries use 405 pounds per day.
 - Engineer Daily Profit (main), "... energise", "... calisen": profit per engineer per day (shown on the executive dashboard, can be negative).
-- Duplicates inflate revenue when a spreadsheet is uploaded twice for a date.`,
+- Duplicates inflate revenue when a spreadsheet is uploaded twice for a date.
+- Also behind the PIN: Establishment Report (staff attendance and pay deductions - get_knowledge establishment), Solar Engineer Invoices, the invoice and cost fields on Solar-jobs (materialsCost, invoiceOctopus, invoiceLead, additionalCosts, pendingInvoice), cost fields on pingu-projects, and referrer names on NGU Referral submissions.`,
 
 quirks: `DATA QUIRKS TO REMEMBER
 - Most saves are append-only, so the same engineer and date can appear twice; sums can double count (check with count / count_distinct before reporting totals that look high).
 - Date fields: mostly text YYYY-MM-DD in "date"; exceptions: accidents (accidentDate), speeding (weekCommencing), Bonus Deductions (weekStart), Bonus Deductions Final (month YYYY-MM), working hours (queryDate), Van Start and End (journeyDate), Complaints (dateReceived), All Absences (fromDate), compliance (dateSubmitted, free format), SP Submitted Data (submissionDate), Calisen Forecast Data (dateOfJob dd/mm/yyyy, converted), Calisen Daily Figures/Stats (document id).
 - Engineer names vary by collection and spelling, e.g. Samim Miah / Sammim Miah, Calum / Callum Ballingal, Muhammad / Muhammed Shahroze appear with different spellings in some lists.
 - Hand-typed percentages (garethstats) and totals (Job Changes) are not recomputed from engineer rows.
-- The assistant can only see the allowed collections; passwords, e-mail, phone, address, postcode, bank, salary, NI and date-of-birth fields are hidden everywhere.`
+- Solar and recruitment data are in separate collections and (for Solar) a separate database; names, job numbers and dates follow their own rules (see get_knowledge solar_jobs, solar_materials, recruitment).
+- Collection names are spelled as in the system: Scafolding (one f), NGU Recuitment Approval Form (missing t), NGUO New Applicants.
+- The assistant can only see the allowed collections; passwords, e-mail, phone, address, postcode, bank, salary, NI and date-of-birth fields are hidden everywhere.`,
+solar_jobs: `SOLAR (PINGU) - JOBS, BOARDS AND STATUSES. These pages live in the Solar folder, use a SEPARATE Firebase project (pingu-solar) and work on solar PV, battery, aftercare and survey jobs for Octopus Energy (customer/client; Kraken is Octopus's work system). Collection "Solar-jobs" = one doc per job.
+- Derived fields added by this assistant: officeStatus (clean version of Status Update: Scheduled, In-Progress, Complete, Aborted, Cancelled, Short Notice Cancellation, On Hold), jobClass (Solar install, Battery, Aftercare, Survey, Other), leadEngineer, team, jobDays, auditNoticeSent. Use officeStatus for office status questions.
+- Job fields: Job Number, Job Type, Install Date, Booked Date, Projected Completion Date (text dd/mm/yyyy, sometimes ISO or unpadded), Job Length / Days, Lead Engineer (also Lead), Team / Team Number, Status Update, status, uploadDate (ISO). Customer name, phone, email, address and postcode are hidden from this assistant.
+- Which date: pass dateField to choose "Install Date" (default; used by the Office Board and myjobs), "Booked Date" (used by the timelines and datasheet - first of Booked, Install, Projected Completion) or "uploadDate" (when the job was loaded, not when it happens). The same job can fall in different weeks on different pages. Ranges for the dd/mm/yyyy fields are limited to about 3 months; jobs with a blank date are not reachable. Only exact padded or unpadded dd/mm/yyyy strings are matched.
+- TWO status fields: "Status Update" is the office status: Complete, In-Progress, Aborted, Cancelled, Short Notice Cancellation (SNC), On Hold, or blank/pending = Scheduled (admin.html saves lower case, adminviewjobs saves capitalised - compare ignoring case). Lower-case "status" is the engineer's progress set on myjobs: upcoming, survey-complete, install-started, install-complete (and completed). Never mix them; say which you used. The hub (index.html) counts installs started/complete from "status", not Status Update.
+- Job types are classified by text: contains SURVEY = survey; AFTERCARE = aftercare; BATTERY = battery; INSTALL with SOLAR or PV = solar install (raw examples: SOLAR_PV_INSTALL_V2, PARTNER_SOLAR_PV_INSTALL, SOLAR_PV_BATTERY_INSTALL, Solar PV Install (Aftercare), Battery Install).
+- Office Board (workscreen.html): counts only installs (solar and battery). Completion % = Complete / all jobs in the week (cancelled included). Open % = (scheduled + in-progress + on hold) / all. "Not updated" = job ended before today but still Scheduled (or In-Progress this week). Next two weeks show "Ready to install x/y": solar needs panel count, scaffold erect date and a cable (Edmundson) figure; battery only the cable figure. PVF scaffold request is due 28 days before install; flagged within 7 days or overdue.
+- Weekly datasheet (datasheet.html): last-week completion = Complete / booked (cancellations stay in); this week progress = complete / (booked - cancelled - SNC - aborted), compared with expected pace = days passed / 7 (Ahead of pace if 10+ points above, On track within 10, else Behind); next week "Light week" if 5 or fewer booked. On Hold is counted as scheduled there.
+- Map (map.html): current week only; overdue = date today or earlier and not complete/aborted/cancelled/SNC.
+- Timelines (viewtimeline.html and near-duplicates for named leads): rows are team leads (sub-engineers roll up to their lead for jobs from 6 April 2026), cards span the job length; survey rule: installs from 30 March 2026 need a site survey - urgent if install is within 10 days or past and no survey; scaffold rule (from 1 Nov 2026): solar installs with no erect date flash "NO ERECT" (not yet active before that date).
+- Calendar (calendar.html): team-leader meeting diary (purposes such as 1-2-1, Disciplinary, Van audit, Vehicle Check, WIP; status Completed / Not Completed / Pending). Individual names are hidden in this assistant; use it for counts by purpose, team leader and status.
+- workscreeninput: manual per-day board for 16 fixed teams (NGU01-NGU16), days 1-3, lower-case statuses. Job volumes come from workscreen/timeline pages instead for management reporting.
+- Teams: team-database (a lead plus engineers) rolls engineers up to leads; employees (staff list: Full Name, Team Leader, Location, startDate, leaveDate; leaveDate blank = current); hard-coded team leader lists on the calendar (Ali Cavan, Craig Barnes, Paul Simpson, Richard Wiecko, Scott Carson, Stuart Whyte, Subbies).
+- Invoices/figures: Engineer Invoices (subcontractor invoices, approval pending/approved/disapproved/hold) and "owed to lead" / "invoice to Octopus" figures on Complete or Short Notice jobs are finance data (need the finance PIN). "Pending invoice" = Complete or SNC job missing either figure.`,
+
+solar_audit: `SOLAR JOB AUDITS (adminaudit.html and friends; fields on Solar-jobs)
+- A 79-question install-quality checklist (7 sections: Pre Installation Information, Pre Install, Installation, Site Investigation, EIC, PV Array Test, Additional Notes). Any "No" opens fail codes, each with a CAT severity: CAT 1 = serious safety (E1, E4-E20, e.g. reverse polarity, exposed conductors, loose terminations, overheating); CAT 2 = E21-E32 (e.g. DC stickers, undersized cable, bonding, MCS forms); CAT 3 = E33-E49 (e.g. DNO code, missing safety-critical photos, blank job card, labelling); CAT 4 = E50-E56 (non-safety, e.g. missing non-safety photos, no customer signature).
+- Outcome = the highest severity ticked: CAT 1 = Safety Fail, CAT 2 = Policy Fail, CAT 3 or 4 = PNC (pass with non-conformances), none = Pass. Electrical and roofing are scored separately (auditStatusElec / auditStatusRoof); overall = the worse. Fields on the job: auditStatus, auditStatusElec, auditStatusRoof, auditDate, auditChecklistOutcome, clientOutcome (+Elec/Roof), clientResolved, auditResolved. Individual ticked fail codes and photos are not available to this assistant.
+- Follow-up (adminauditreview.html): only jobs with an audit e-mail sent and a non-pass outcome. NFA = reviewed with no new photos; Received = new photos since the e-mail; Awaiting otherwise; awaiting jobs colour amber after 7 days and red after 14.
+- Weekly presentation (solar-ppt.html): population = completed solar/battery installs in the date range; audit ratio = audits completed / installs completed; its legacy fallback has a bug (old jobs without split statuses always show Pass) and its audit-type slide is hard-coded (fake). auditfailtracker.html works from an uploaded CSV only (no database) and numbers some codes differently (E52 = customer signature there, E54 in the checklist).`,
+
+solar_materials: `SOLAR SURVEYS, MATERIALS, STOCK AND VANS
+- site-surveys: one doc per completed site survey (jobNumber, surveyType, surveyor, submittedAt, meter work needed, cable run lengths). This assistant sees a flattened summary (no photos, customer details or sign-off). Cable totals count only cableRunLength; battery-and-solar surveys use cableRunLengthAC / cableRunLengthDC, so they can look like zero cable. surveyor and meterWorkNeeded are typed free text (spelling variants; "Y" vs "yes" differ).
+- Meter work required: the meter* fields on site-surveys are the truth: completed if meterCompleted, scheduled if meterDate or meterEngineer is set, else pending. The meterworkrequired collection is a stale copy and is not used.
+- Materials approval (approved-additional-materials): surveys from 9 March 2026 with additional materials are approved/denied line by line (approvedMaterials, deniedMaterials). A survey with every item denied still shows Approved on the page.
+- Cable Requirements: orders (status pending/approved/denied, cables lengths, misc items) - submitter names and addresses hidden.
+- Stocktake: 25 fixed van items counted by an engineer (items with quantities, countedBy, date). There are no reorder thresholds or targets in the system.
+- Van Replenishment: orders by engineers (items, totalItems, status pending/fulfilled/cancelled, deliveryDate, leadEngineer); item counts are lines, not units; cancelled orders stay in totals.
+- Solar Complaints (collection Complaints in the Solar system - separate from the OES complaints): status in-progress / resolved; urgency red 10 days or fewer to targetDate (including overdue), amber 11-21, green over 21; contract = the client.
+- additional-requests: engineer requests for an additional day or materials (status pending/approved/denied).
+- pingu-projects: per-job scaffold (PVF) request, cable order and system details; costs and margins need the finance PIN. Scafolding (sic) and Databricks hold scaffold dates and panel/system data pasted from Google Sheets.`,
+
+solar_admin: `SOLAR ADMIN PAGES AND SECURITY (Solar folder)
+- Hub and admin: index.html (project hub with installs submitted/started/complete this week/month), admin.html (dashboard: outstanding = no status or in-progress with date before today; completed; this month), adminviewjobs.html, adminupload.html / uploaddata.html (CSV job upload; uploaddata sends real customer welcome e-mails and reads only the first 100 rows; neither checks duplicates), adminexport.html, adminemail.html (10:00 and 16:00 summary e-mails sent only while a browser tab stays open; its stats compare capitalised status strings so lower-case "complete" jobs are missed), picklistgenerator.html, rippdf.html (extracts address/layout from the Octopus design PDF), map.html, calendar.html, jobsearch.html, teamview.html and myjobs.html (engineer logins), staff.html, teamdatabase.html, addeditteam.html.
+- Surveys: conductsurvey.html (v2 is identical), surveymaster, surveyview, viewsurvey, viewmysurveys, inventorycheck, materialsapproval, meterworkrequired, cable-requirements and orders, stocktake and review, vanreplenishment and orders, meteringcomplaints.
+- Money: submitfigures, invoice-submission, invoice-engineers-submissions and invoice-engineers-export (all on the Engineer Invoices collection; its "name" holds a company name on the submission page but an engineer name on the review page).
+- Security observations (do not repeat secrets): admin and engineer passwords are stored in plain text and checked in the browser; most admin pages have no login gate; some pages contain hard-coded admin passwords, PINs or API keys.
+- Not data pages: emailjs-test, gareth (launcher), krakenscrape and solarjobstracker (CSV tools), migrate-jobs-to-solarjobs (one-off), test-page and placeholder2 (timeline copies; test-page writes to live data).`,
+
+recruitment: `NGU RECRUITMENT PORTAL (Recuitment folder; spelling as in the system; Firebase project is the same as the OES pages). Candidate personal data (names, contact details, address, DOB, NI, right to work, DBS, bank, passwords, salary) is NOT available to this assistant - only counts and stages.
+WORKFLOW (collection "NGUO New Applicants", one doc per application that grows through the process):
+1. Vacancy requisition (recruit-approval-form -> collection "NGU Recuitment Approval Form"): three approvers (department head, finance, final approver) each Pending / Approve / Reject / More Info Needed. Rejected if any rejects; Approved (live vacancy) when all three approve and workflowClosed is false; otherwise Waiting. Contracts: Energise, SureServe, Callisen, ImServe. Close vacancy sets workflowClosed true. live-vacancies.html shows live ones; archived-vacancies the closed.
+2. Application (apply.html): no status until a recruiter acts. Missing certificates (MOCOPA, Level 3 Gas, MET1, driving licence) are recorded in certificatesDeclared, not auto-rejected.
+3. First review (view-applications.html): reviews entry Proceed / Hold / Do not proceed (archives). One review is enough.
+4. Name checks: Proceed -> nameChecksRequested; completing sets nameChecks Passed and status "Ready for Interview" (or Declined = archived).
+5. Interview: FTLs (field team leaders) create slots in "NGU Interview Times" (Available -> Booked -> Completed; at least 24 hours notice). Scorecard: Smart Meter Engineer pack 24 criteria scored 1-5 (max 120) or office pack 6 criteria (max 30); recommendation Strong Hire / Hire (or Proceed to Offer) / Hold / Do Not Proceed.
+6. Final decision (finalRecruitmentDecision): Approved (offer sent, start date, salary, portal login created), Hold (with holdReason) or Rejected.
+7. Applicant portal: accepts offer and signs contract (offerAccepted, contractAccepted).
+8. Onboarding (5 steps: documents, details, compliance/DBS, uniform/setup, review) -> onboardingCompleted, verification Pending/Verified/Rejected; HR checks documents (under_review/verified/rejected), approves contract, marks file HR processed; Reissue Contract if start date changes; onboardingArchive Leaver or Did not start.
+9. Start: implied by startDate and not archived (no "started" flag).
+Dashboard buckets (dashboard.html): Pending/In Review, On Hold, Name Checks, Ready for Interview, Interview Booked, Interview Completed, Accepted (finalRecruitmentDecision Approved), Rejected/Archived; conversion = accepted / total.
+REFERRALS ("NGU Referral submissions", pages candidate-referral-bonus, referral-submissions, referral-payments): employees refer a fully qualified Smart Meter Engineer (or upskill/head office/training role); 1,000 pounds per referred hire paid as 500 after 3 months and 500 after 6 months of service from the applicant's start date; status Pending (default) / Accepted / Denied; payment1Paid / payment2Paid; paymentRemoved = forfeited because they left. A payment is Overdue once its date has passed and it is unpaid. Eligibility exclusions (applied before, referred in last 6 months, worked for NGU in last 6 months) are page text only, not enforced by code.
+OTHER: DBS Check (new-starter DBS forms; only submission date and whether NGU processes it are visible here), New Start Checklist (11 IT/operations tasks for new starters, 5 for transfers), vehicle-check.html (report on the "vehicle check" collection), user-database (recruiter access flags), contract.html (contract templates and bonus policies). Several review pages have no login check and passwords are stored in plain text.`,
+
+establishment: `ESTABLISHMENT REPORT (attendance.html in the scratch root; NOT the Engineers attendance page). Collection "Establishment Report": monthly attendance/absence grid per employee with pay deductions - available only after the finance PIN is entered.
+- Docs: _type staff (name, contract, nonEngineer), _type entry (staffName, date, month, status, hours absent), _type clawback (staffId, month, amount). A missing entry means In.
+- Statuses: In, Holiday (H), Sch Day Off (SD), Half day Holiday, Sick (S), AAUP (unpaid authorised absence), AAP (paid), Training, AWOL (AW), Left (L), M/P (maternity/paternity). Only Sick, AAUP and AWOL with hours above zero are deducted.
+- Deduction = hours absent x hourly rate: default 19.95 pounds per hour (19.95192...), two named overrides at 21.95 (21.947...). The rates are hard-coded in the page, not in the database. Non-engineers (nonEngineer true) are logged but never deducted. Excel import spreads days x 7.5 hours across working days. Weekends and bank holidays are non-working. Clawbacks are previous-month corrections added to the footer total.
+- Use the entries collection for daily statuses and the monthly collection (it also returns clawbacks, filter _type = clawback) for monthly amounts.`
 };
 const KNOWLEDGE_TOPICS = Object.keys(KNOWLEDGE);
 
 /* ------------------------------------------------------------- knowledge guide */
 const collectionList = () => { const groups = {}; Object.keys(CATALOG).forEach(k => { (groups[CATALOG[k].area] = groups[CATALOG[k].area] || []).push(k + ' - ' + CATALOG[k].about); }); return Object.keys(groups).map(g => g.toUpperCase() + '\n' + groups[g].map(x => '- ' + x).join('\n')).join('\n'); };
-const TOPIC_LIST = 'pages (what every page does and which to open), contracts_targets (contracts, targets, team leaders, exclusions), workscreen (how each Work Screen tile is worked out), performance_entry (daily performance, stats, Kraken, SP data), attendance_absence (attendance codes, absence triggers), bonus (bonus deductions, quarterly bonus, complaints, job refusals, additional payments), fleet (van times, working hours, speeding, smart tester, skills), people (engineers, portal, documents), calisen (scheduling suite and Calisen data), finance (revenue and profit), quirks (data gotchas)';
+const TOPIC_LIST = 'pages (what every page does and which to open), contracts_targets (contracts, targets, team leaders, exclusions), workscreen (how each Work Screen tile is worked out), performance_entry (daily performance, stats, Kraken, SP data), attendance_absence (attendance codes, absence triggers), bonus (bonus deductions, quarterly bonus, complaints, job refusals, additional payments), fleet (van times, working hours, speeding, smart tester, skills), people (engineers, portal, documents), calisen (scheduling suite and Calisen data), finance (revenue and profit), solar_jobs (Solar jobs, boards, statuses, dates), solar_audit (solar job audits and CAT fail rules), solar_materials (site surveys, materials, cable, stock, vans, complaints), solar_admin (Solar admin pages and security notes), recruitment (recruitment workflow, vacancies, referrals), establishment (Establishment Report attendance deductions, finance PIN), quirks (data gotchas)';
 const buildPrompt = () => `You are Catalistics AI, an assistant for the management of Next Generation Utilities. You answer questions about smart metering work and the engineers who carry it out, using the company's live database and its knowledge of how every page of the OES Performance system works.
 
 HOW TO WORK
@@ -3725,12 +3988,15 @@ THE BUSINESS
 - Dates are stored as text YYYY-MM-DD (a few collections differ - describe_collection tells you the date field). Show dates to the user as dd/mm/yyyy.
 - Working days are Monday to Friday excluding UK bank holidays. "Yesterday" means the previous working day (the day the Work Screen shows), at any time of day: on a Tuesday it is Monday, on a Monday it is Friday. get_date_info returns it as "yesterday". If there is no data yet for that day, say so and offer the latest day that does have data.
 - Each team leader looks after a team of engineers. Use teamLeader to answer team questions. Show "FTL 4" as Tom Green.
+- Smart metering (above) is one part of the business. There is also a SOLAR (Pingu) side (solar PV, battery, aftercare and survey jobs, in its own database - collections under SOLAR (PINGU)), a RECRUITMENT portal (applicants, vacancies, interviews, referrals) and an Establishment Report (staff attendance with pay deductions, finance PIN only). Do not mix them up: metering questions use performance data; solar questions use Solar-jobs and the other solar collections; hiring questions use the recruitment collections. Say which part you are answering about.
+- Solar-jobs has two status fields (office status = officeStatus, engineer progress = status) and several date fields; call get_knowledge solar_jobs before answering solar job questions and say which status and which date you used.
+- Customer names, addresses and contact details (solar customers) and candidate names, contact, right-to-work and pay details (recruitment) are never available to you. If asked about a named candidate or customer, say that personal details are not available here and point to the relevant page.
 
 COLLECTIONS YOU CAN READ (use the exact names)
 ${collectionList()}
 
 FINANCE
-${financeOn ? '- Finance is UNLOCKED for this session: revenue, outgoings, forecasts and engineer profit collections are available (see get_knowledge finance). Present finance figures only to answer what was asked.' : '- Finance is LOCKED. If asked about revenue, profit, outgoings, forecasts or costs, say a finance PIN is needed and tell the manager to press the Finance button at the top of this panel. Do not guess finance figures.'}
+${financeOn ? '- Finance is UNLOCKED for this session: revenue, outgoings, forecasts, engineer profit, solar costs and invoices, referral payee names and the Establishment Report are available (see get_knowledge finance and establishment). Present finance figures only to answer what was asked.' : '- Finance is LOCKED. If asked about revenue, profit, outgoings, forecasts or costs, say a finance PIN is needed and tell the manager to press the Finance button at the top of this panel. The same PIN is needed for the Establishment Report (staff attendance deductions), solar invoices and costs, and referral payee names. Do not guess finance figures.'}
 
 STYLE
 - Audience is busy managers. Lead with the answer in one or two sentences, then a short table or bullets if useful. Plain British English, no waffle.
@@ -3795,48 +4061,75 @@ function needCollection(name) {
   return key;
 }
 const ENERGISE_TARGETS = { 'Bryan McCabe': 6, "Craig O'Sullivan": 4, 'Dan Leahy': 6, 'James Stott': 4, 'Mehdi Khamseh': 5, 'Owain Sigsworth': 5, 'Andrew Wallace': 5, 'Bilal Amin': 6, 'Chris Timm': 5, 'Daniel Nally': 5, 'Ian Dobson': 5, 'James McLean': 6, 'Jon Convery': 5, 'Richard Lang': 6, 'Scott Coyle': 5, 'Tomas Anderson': 5, 'Calum Ballingall': 6, 'Chris Stein': 6, 'Craig Steel': 5, 'Jonathan Chyla': 5, 'Mark Lavelle': 5, 'Duncan Cairncross': 4 };
-const dmyToIso = v => { const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/.exec(String(v || '')); return m ? `${m[3]}-${pad(+m[2])}-${pad(+m[1])}` : ''; };
+const dmyToIso = v => { const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || '')); if (iso) return iso[0]; const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/.exec(String(v || '')); return m ? `${m[3]}-${pad(+m[2])}-${pad(+m[1])}` : ''; };
 const isoToDmy = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+// Which field a collection is dated by, and how it is stored (some collections allow a choice).
+function dateSpec(cfg, override) {
+  let field = cfg.dateField || override || 'date', type = cfg.dateType || 'iso';
+  if (cfg.dateOptions) {
+    const hit = override && Object.keys(cfg.dateOptions).find(k => k.toLowerCase() === String(override).toLowerCase());
+    if (hit) field = hit;
+    type = cfg.dateOptions[field] || type;
+  }
+  return { field, type };
+}
 // Field the rows are dated by once loaded (dmy, docId and month collections get a converted "date" field).
 function rowDateField(coll, override) {
-  const cfg = CATALOG[coll], t = cfg.dateType || 'iso';
-  if (t === 'dmy' || t === 'docId' || t === 'month') return 'date';
-  return cfg.dateField || override || 'date';
+  const cfg = CATALOG[coll], sp = dateSpec(cfg, override);
+  if (sp.type === 'dmy' || sp.type === 'docId' || sp.type === 'month') return 'date';
+  return sp.field;
 }
-function finishRow(cfg, r, id) {
-  const t = cfg.dateType || 'iso';
-  if (t === 'dmy') r.date = dmyToIso(r[cfg.dateField]) || r.date || '';
-  else if (t === 'docId') r.date = id;
-  else if (t === 'month') r.date = r[cfg.dateField] ? String(r[cfg.dateField]).slice(0, 7) + '-01' : '';
+function finishRow(cfg, r, id, sp) {
+  sp = sp || dateSpec(cfg);
+  if (sp.type === 'dmy') r.date = dmyToIso(r[sp.field]) || r.date || '';
+  else if (sp.type === 'docId') r.date = id;
+  else if (sp.type === 'month') r.date = r[sp.field] ? String(r[sp.field]).slice(0, 7) + '-01' : '';
   return r;
 }
+// One stored document -> the safe, flattened row the assistant sees (null = skip).
+function shapeDoc(coll, data, id, sp, ctx) {
+  const cfg = CATALOG[coll];
+  const src = cfg.transform ? cfg.transform(data, id, ctx) : data;
+  if (!src) return null;
+  return finishRow(cfg, cleanDoc(coll, src), id, sp);
+}
 async function fetchDocs(coll, from, to, override) {
-  const cfg = CATALOG[coll], type = cfg.dateType || 'iso';
-  const qField = cfg.dateField || override || 'date';
+  const cfg = CATALOG[coll], sp = dateSpec(cfg, override), type = sp.type, qField = sp.field;
   const key = JSON.stringify([coll, qField, from || '', to || '']);
   if (fetchCache.has(key)) return fetchCache.get(key);
   const hasRange = !!(from || to);
   if (!hasRange && !cfg.small) throw new Error(`"${coll}" is large. Give dateFrom and dateTo (YYYY-MM-DD) so only the dates you need are read.`);
   if (docsReadThisQuestion >= CAI.maxDocsPerQuestion) throw new Error('Reached the read limit for one question. Narrow the date range or ask a more specific question.');
   const lim = limit(CAI.maxDocsPerFetch + 1);
+  const wh = (cfg.where || []).map(w => where(w[0], w[1], w[2]));
+  const ctx = cfg.prepare ? await cfg.prepare() : null;
   const snaps = [];
-  if (hasRange && type === 'dmy') {
+  if (hasRange && type === 'dmy' && !wh.length) {
     // dates are text dd/mm/yyyy, which cannot be range-queried, so ask for each day in the range
     const f = parseYmd(from), t = parseYmd(to);
     if (!f || !t) throw new Error(`"${coll}" needs both dateFrom and dateTo (YYYY-MM-DD).`);
-    const days = []; for (let d = new Date(f); d <= t && days.length < 95; d = addDays(d, 1)) days.push(isoToDmy(d));
+    const variants = d => { const dd = pad(d.getDate()), mm = pad(d.getMonth() + 1), y = d.getFullYear(); const v = [`${dd}/${mm}/${y}`]; if (cfg.looseDmy) { v.push(`${y}-${mm}-${dd}`); const u = `${d.getDate()}/${d.getMonth() + 1}/${y}`; if (u !== v[0]) v.push(u); } return v; };
+    const vals = []; let n = 0; for (let d = new Date(f); d <= t && n < 95; d = addDays(d, 1), n++) variants(d).forEach(x => vals.push(x));
     if (ymd(addDays(f, 94)) < to) throw new Error(`"${coll}" can be read for at most about 3 months at a time. Narrow the dates.`);
-    for (let i = 0; i < days.length; i += 30) snaps.push(await getDocs(query(collection(cdb, coll), where(qField, 'in', days.slice(i, i + 30)), lim)));
+    const jobs = []; for (let i = 0; i < vals.length; i += 30) jobs.push(getDocs(query(colRef(coll), where(qField, 'in', vals.slice(i, i + 30)), lim)));
+    (await Promise.all(jobs)).forEach(x => snaps.push(x));
+  } else if (wh.length) {
+    // fixed filters: read them and apply any date range here (avoids needing a combined index)
+    snaps.push(await getDocs(query(colRef(coll), ...wh, lim)));
   } else {
     const clauses = [];
     const fld = type === 'docId' ? documentId() : qField;
-    const conv = (v, end) => type === 'month' ? String(v).slice(0, 7) : type === 'timestamp' ? new Date(String(v).slice(0, 10) + (end ? 'T23:59:59.999Z' : 'T00:00:00Z')) : v;
+    const conv = (v, end) => type === 'month' ? String(v).slice(0, 7) : type === 'timestamp' ? new Date(String(v).slice(0, 10) + (end ? 'T23:59:59.999Z' : 'T00:00:00Z')) : (type === 'iso' && cfg.timeText && end) ? String(v).slice(0, 10) + 'T23:59:59.999Z' : v;
     if (from) clauses.push(where(fld, '>=', conv(from, false)));
     if (to) clauses.push(where(fld, '<=', conv(to, true)));
-    snaps.push(await getDocs(query(collection(cdb, coll), ...clauses, lim)));
+    snaps.push(await getDocs(query(colRef(coll), ...clauses, lim)));
   }
-  const rows = []; let truncated = false, seen = 0;
-  snaps.forEach(snap => snap.forEach(d => { seen++; if (rows.length < CAI.maxDocsPerFetch) rows.push(finishRow(cfg, cleanDoc(coll, d.data()), d.id)); else truncated = true; }));
+  let rows = []; let truncated = false;
+  snaps.forEach(snap => snap.forEach(d => { const r = shapeDoc(coll, d.data(), d.id, sp, ctx); if (!r) return; if (rows.length < CAI.maxDocsPerFetch) rows.push(r); else truncated = true; }));
+  if (wh.length && hasRange) {
+    const w = type === 'month' ? 7 : 10, fm = from ? from.slice(0, w) : '', tm = to ? to.slice(0, w) : '';
+    rows = rows.filter(r => { const dv = String(r.date || r[qField] || '').slice(0, w); if (!dv) return true; return (!fm || dv >= fm) && (!tm || dv <= tm); });
+  }
   docsReadThisQuestion += rows.length;
   const res = { rows, truncated };
   fetchCache.set(key, res);
@@ -3869,20 +4162,23 @@ const TOOLS = {
   async get_date_info() { return getDateInfo(); },
 
   async describe_collection({ collection: name }) {
-    const coll = needCollection(name); const cfg = CATALOG[coll], type = cfg.dateType || 'iso';
-    const snap = await getDocs(query(collection(cdb, coll), limit(5)));
+    const coll = needCollection(name); const cfg = CATALOG[coll], sp = dateSpec(cfg), type = sp.type;
+    const sw = (cfg.sampleWhere || cfg.where || []).map(w => where(w[0], w[1], w[2]));
+    const ctx = cfg.prepare ? await cfg.prepare() : null;
+    const snap = await getDocs(query(colRef(coll), ...sw, limit(5)));
     const fields = {};
-    snap.forEach(d => { const c = finishRow(cfg, cleanDoc(coll, d.data()), d.id); Object.keys(c).forEach(k => { if (!(k in fields)) fields[k] = { type: Array.isArray(c[k]) ? 'array' : typeof c[k], example: c[k] }; }); });
+    snap.forEach(d => { const c = shapeDoc(coll, d.data(), d.id, sp, ctx); if (!c) return; Object.keys(c).forEach(k => { if (!(k in fields)) fields[k] = { type: Array.isArray(c[k]) ? 'array' : typeof c[k], example: c[k] }; }); });
     const out = { collection: coll, about: cfg.about, dateField: rowDateField(coll), sampleDocs: snap.size, fields };
+    if (cfg.project === 'solar') out.database = 'Solar (Pingu) system';
     if (cfg.small) out.note = 'Small collection: can be read without a date range.';
-    if (type === 'dmy') out.dateNote = `Stored as dd/mm/yyyy text in ${cfg.dateField}; this tool converts it into a YYYY-MM-DD "date" field. Always give dateFrom and dateTo (max about 3 months).`;
+    if (cfg.dateOptions) out.dateNote = `Several date fields can be used (pass dateField): ${Object.keys(cfg.dateOptions).join(', ')}. Default ${cfg.dateField}. Text dd/mm/yyyy fields are converted into a YYYY-MM-DD "date" field and need dateFrom and dateTo (max about 3 months); uploadDate is ISO and has no such limit.`;
+    else if (type === 'dmy') out.dateNote = `Stored as dd/mm/yyyy text in ${sp.field}; this tool converts it into a YYYY-MM-DD "date" field. Always give dateFrom and dateTo (max about 3 months).`;
     else if (type === 'docId') out.dateNote = 'The document id is the date; it is shown as "date".';
-    else if (type === 'month') out.dateNote = `Dated by month (YYYY-MM) in ${cfg.dateField}; dateFrom/dateTo are matched to the month.`;
+    else if (type === 'month') out.dateNote = `Dated by month (YYYY-MM) in ${sp.field}; dateFrom/dateTo are matched to the month.`;
     else if (cfg.dateField && cfg.dateField !== 'date') out.dateNote = `Dated by ${cfg.dateField}.`;
-    if (type === 'iso' || type === 'timestamp' || type === 'month') {
-      const qf = cfg.dateField || 'date';
+    if ((type === 'iso' || type === 'timestamp' || type === 'month') && !cfg.where && cfg.dateField) {
       for (const dir of ['asc', 'desc']) {
-        try { const s2 = await getDocs(query(collection(cdb, coll), orderBy(qf, dir), limit(1))); s2.forEach(d => { out[dir === 'asc' ? 'earliestDate' : 'latestDate'] = jsonSafe(d.data()[qf]); }); } catch (e) { /* no date field */ }
+        try { const s2 = await getDocs(query(colRef(coll), orderBy(sp.field, dir), limit(1))); s2.forEach(d => { out[dir === 'asc' ? 'earliestDate' : 'latestDate'] = jsonSafe(d.data()[sp.field]); }); } catch (e) { /* no date field */ }
       }
     }
     if (!snap.size) out.note = 'No documents found.';
@@ -4022,10 +4318,10 @@ const TOOL_DECLS = [{ functionDeclarations: [
   { name: 'get_knowledge', description: 'Returns the rules, thresholds, definitions and page guide for one topic. Call before answering how-it-works questions, or to say which page to open.', parameters: { type: 'object', properties: { topic: S('string', 'One of: ' + KNOWLEDGE_TOPICS.join(', '), { enum: KNOWLEDGE_TOPICS }) }, required: ['topic'] } },
   { name: 'describe_collection', description: 'Shows the real field names, example values, and the earliest and latest dates held for one collection. Use before querying a collection for the first time.', parameters: { type: 'object', properties: { collection: S('string', 'Collection name exactly as listed') }, required: ['collection'] } },
   { name: 'query_documents', description: 'Returns individual records from a collection (max 200). Use for listing specific records. For totals or rankings use aggregate instead.', parameters: { type: 'object', properties: {
-      collection: S('string', 'Collection name'), dateFrom: S('string', 'Start date YYYY-MM-DD inclusive'), dateTo: S('string', 'End date YYYY-MM-DD inclusive'), dateField: S('string', 'Only if the collection description says another date field is needed; normally leave out'),
+      collection: S('string', 'Collection name'), dateFrom: S('string', 'Start date YYYY-MM-DD inclusive'), dateTo: S('string', 'End date YYYY-MM-DD inclusive'), dateField: S('string', 'Only when the collection description offers a choice of date field (for example Solar-jobs: Install Date, Booked Date, Projected Completion Date, uploadDate); normally leave out'),
       filters: filterSchema, fields: S('array', 'Only return these fields', { items: { type: 'string' } }), sortBy: S('string', 'Field to sort by'), sortDir: S('string', 'asc or desc (default desc)'), limit: S('integer', 'Max rows, default 50') }, required: ['collection'] } },
   { name: 'aggregate', description: 'Groups records and calculates totals, averages, counts, min or max, plus optional ratios. The right tool for rankings, trends and comparisons. groupBy accepts any field name plus date:week, date:month and date:weekday.', parameters: { type: 'object', properties: {
-      collection: S('string', 'Collection name'), dateFrom: S('string', 'Start date YYYY-MM-DD inclusive'), dateTo: S('string', 'End date YYYY-MM-DD inclusive'), dateField: S('string', 'Only if the collection description says another date field is needed; normally leave out'),
+      collection: S('string', 'Collection name'), dateFrom: S('string', 'Start date YYYY-MM-DD inclusive'), dateTo: S('string', 'End date YYYY-MM-DD inclusive'), dateField: S('string', 'Only when the collection description offers a choice of date field (for example Solar-jobs: Install Date, Booked Date, Projected Completion Date, uploadDate); normally leave out'),
       filters: filterSchema, groupBy: S('array', 'Up to 3 fields to group by, e.g. ["engineerName"] or ["date:week","teamLeader"]', { items: { type: 'string' } }),
       metrics: S('array', 'What to calculate. op is sum, avg, count, count_distinct, min or max. "as" names the result column.', { items: { type: 'object', properties: { op: S('string', 'sum, avg, count, count_distinct, min or max'), field: S('string', 'Field to calculate on (omit for count of records)'), as: S('string', 'Result column name') }, required: ['op'] } }),
       ratios: S('array', 'Percentages calculated from metric results, e.g. completion rate = completed / jobs. numerator and denominator are metric "as" names.', { items: { type: 'object', properties: { name: S('string', 'Name; result column is name_pct'), numerator: S('string', 'metric as-name'), denominator: S('string', 'metric as-name') }, required: ['name', 'numerator', 'denominator'] } }),
@@ -4216,11 +4512,11 @@ let financeTimer = null;
 const FINANCE_IDLE_MS = 15 * 60 * 1000;
 function refreshFinanceButton() { els.fin.textContent = financeOn ? 'Finance on' : 'Finance'; els.fin.classList.toggle('cai-fin-on', financeOn); els.fin.title = financeOn ? 'Finance is unlocked. Click to lock.' : 'Unlock finance questions with a PIN'; }
 function touchFinanceTimer() { clearTimeout(financeTimer); if (financeOn) financeTimer = setTimeout(() => lockFinance(true), FINANCE_IDLE_MS); }
-function unlockFinance() { Object.assign(CATALOG, FINANCE_CATALOG); financeOn = true; refreshFinanceButton(); touchFinanceTimer(); }
+function unlockFinance() { Object.assign(CATALOG, FINANCE_CATALOG); fetchCache.clear(); financeOn = true; refreshFinanceButton(); touchFinanceTimer(); }
 function lockFinance(auto) {
   if (!financeOn) return;
   Object.keys(FINANCE_CATALOG).forEach(k => { delete CATALOG[k]; });
-  for (const key of [...fetchCache.keys()]) { if (Object.keys(FINANCE_CATALOG).some(k => key.startsWith(JSON.stringify([k]).slice(0, -1)))) fetchCache.delete(key); }
+  fetchCache.clear();
   financeOn = false; clearTimeout(financeTimer); refreshFinanceButton();
   history = []; // forget earlier answers so finance figures do not linger in the conversation
   if (els.msgs && els.msgs.children.length) { welcome(); addMsg('cai-bot', auto ? 'Finance was locked after 15 minutes without a question, and this chat was cleared.' : 'Finance is locked and this chat was cleared.'); }
