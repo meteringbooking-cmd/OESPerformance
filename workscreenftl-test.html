@@ -3474,7 +3474,7 @@ import { getFirestore, collection, getDocs, query, where, orderBy, limit, docume
 // Paste the address of your Cloudflare Worker here after you deploy it (see SETUP.md), e.g.
 // "https://catalistics-ai.yourname.workers.dev"
 const CAI_ENDPOINT = "https://catalistics-ai.gemmatdog.workers.dev";
-const CAI = Object.assign({ endpoint: CAI_ENDPOINT, maxRounds: 8, maxDocsPerFetch: 5000, maxDocsPerQuestion: 30000, allowFinance: false }, window.CATALISTICS_AI_CONFIG || {});
+const CAI = Object.assign({ endpoint: CAI_ENDPOINT, maxRounds: 8, maxDocsPerFetch: 5000, maxDocsPerQuestion: 30000, allowFinance: false, busyRetries: 4, busyWaitMs: 6000 }, window.CATALISTICS_AI_CONFIG || {});
 
 const fbConfig = {
   apiKey: "AIzaSyCMmUOdW2uEIGVd6XQfWXKF8eaFmwEog1g",
@@ -4354,8 +4354,9 @@ function askForCode(message) {
   });
 }
 
-async function callModel() {
+async function callModel(setStatus) {
   if (!CAI.endpoint) throw new Error('not_configured');
+  let busyTries = 0;
   for (let attempt = 0; attempt < 3; attempt++) {
     if (!accessCode) { accessCode = await askForCode(); try { localStorage.setItem('catalisticsAiCode', accessCode); } catch (e) {} }
     let res;
@@ -4365,6 +4366,13 @@ async function callModel() {
     } catch (e) { throw new Error('Could not reach the assistant service. Check your connection and try again.'); }
     if (res.status === 401) { accessCode = ''; try { localStorage.removeItem('catalisticsAiCode'); } catch (e) {} accessCode = await askForCode('That code was not recognised. Try again.'); try { localStorage.setItem('catalisticsAiCode', accessCode); } catch (e) {} continue; }
     let data = null; try { data = await res.json(); } catch (e) {}
+    // Google overloaded (temporary): wait and try again a few times before giving up
+    if (!res.ok && (res.status === 503 || (data && data.error === 'busy')) && busyTries < CAI.busyRetries) {
+      busyTries++; attempt--;
+      const wait = CAI.busyWaitMs * busyTries;
+      for (let left = Math.ceil(wait / 1000); left > 0; left--) { if (setStatus) setStatus(`The AI service is busy - trying again in ${left}s (attempt ${busyTries + 1} of ${CAI.busyRetries + 1})`); await new Promise(r => setTimeout(r, 1000)); }
+      continue;
+    }
     if (!res.ok) throw new Error(((data && (data.message || data.error)) || `The assistant service returned an error (${res.status}).`) + (data && data.detail ? ' Details: ' + data.detail : ''));
     return data;
   }
@@ -4416,7 +4424,7 @@ async function askQuestion(question, setStatus) {
   const trace = [];
   history.push({ role: 'user', parts: [{ text: question }] });
   for (let round = 0; round < CAI.maxRounds; round++) {
-    const data = await callModel();
+    const data = await callModel(setStatus);
     const cand = data.candidates && data.candidates[0];
     if (!cand || !cand.content || !cand.content.parts) {
       const why = (data.promptFeedback && data.promptFeedback.blockReason) || (cand && cand.finishReason) || 'no answer';
