@@ -1384,6 +1384,7 @@
             }
             return results;
         }
+        // Each abort upload row = ONE abort. Column D (saved as timeLength, or 'total' on older uploads) is the time length in minutes, not a quantity.
         function parseAbortReasons(rawReason, totalQty) {
             if(!rawReason||typeof rawReason!=='string') return [{reason:'Unknown',qty:totalQty||1}];
             const trimmed=rawReason.trim();
@@ -1604,7 +1605,7 @@
                         const tl = data.teamLeader || 'Unknown Team', eng = data.engineer || '';
                         if (!eng) return;
                         if (window.currentAbortsContext === 'energise' && isExcludedEnergise(tl, eng)) return;
-                        const parsed = parseAbortReasons(data.reason || '', data.total || 1);
+                        const parsed = parseAbortReasons(data.reason || '', 1);
                         const docTotal = parsed.reduce((s,r)=>s+r.qty,0);
                         total += docTotal;
                         if (!teamData[tl]) teamData[tl] = { total:0, engineers:[] };
@@ -1612,7 +1613,7 @@
                         const rc = {};
                         parsed.forEach(({reason,qty})=>{ rc[reason]=(rc[reason]||0)+qty; reasons[reason]=(reasons[reason]||0)+qty; });
                         const combinedReason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
-                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed, timeLength:(data.timeLength!=null&&data.timeLength!=='')?(parseInt(data.timeLength)||0):null, reason1:data.reason1||'', dayLabel:formatDate(d) });
+                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed, timeLength:(data.timeLength!=null&&data.timeLength!=='')?(parseInt(data.timeLength)||0):((data.total!=null&&data.total!=='')?(parseInt(data.total)||0):null), reason1:data.reason1||'', dayLabel:formatDate(d) });
                     });
                     Object.values(teamData).forEach(t=>t.engineers.sort((a,b)=>a.name.localeCompare(b.name)));
                     return { date:d, label:formatDate(d), total, teamData, reasons };
@@ -2403,7 +2404,7 @@
                 abortSnap.forEach(doc=>{
                     const d=doc.data();
                     if(!d.engineer || d.engineer==='') return;
-                    parseAbortReasons(d.reason||'', d.total||1).forEach(r => {
+                    parseAbortReasons(d.reason||'', 1).forEach(r => {
                         abortTotal += r.qty;
                         result.abortReasons[r.reason] = (result.abortReasons[r.reason] || 0) + r.qty;
                     });
@@ -2817,7 +2818,7 @@
                     const d=doc.data();
                     if(!d.engineer || d.engineer==='') return;
                     if (isExcludedEnergise(d.teamLeader || dataKey, d.engineer)) return;
-                    parseAbortReasons(d.reason||'', d.total||1).forEach(r => {
+                    parseAbortReasons(d.reason||'', 1).forEach(r => {
                         abortTotal += r.qty;
                         result.abortReasons[r.reason] = (result.abortReasons[r.reason] || 0) + r.qty;
                     });
@@ -3099,7 +3100,7 @@
                 else if(tl === dataKey) match = true;
 
                 if(match) {
-                    parseAbortReasons(data.reason || '', data.total || 1).forEach(r => {
+                    parseAbortReasons(data.reason || '', 1).forEach(r => {
                         for(let [k, b] of buckets) {
                             if(b.dateStrList.includes(data.date)) { 
                                 b.aborts += r.qty; 
