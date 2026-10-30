@@ -1404,6 +1404,8 @@
             return output;
         }
 
+        function formatAbortMins(m) { m = parseInt(m)||0; if (m < 60) return `${m} min${m!==1?'s':''}`; const h=Math.floor(m/60), r=m%60; return r ? `${h}h ${r}m` : `${h}h`; }
+        function escAbort(v) { return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         let abortAllDaysData = [], abortSelectedDays = new Set([0]), abortChartMode = false, abortChartInstance = null;
 
         window.toggleAbortView = function() {
@@ -1439,23 +1441,11 @@
                     if (!merged.teamData[tl]) merged.teamData[tl] = { total:0, engineers:[] };
                     merged.teamData[tl].total += tdata.total;
                     for (const eng of tdata.engineers) {
-                        const existing = merged.teamData[tl].engineers.find(e => e.name === eng.name);
-                        if (existing) {
-                            existing.aborts += eng.aborts;
-                            for (const pr of eng.parsedReasons) { 
-                                const ep = existing.parsedReasons.find(r=>r.reason===pr.reason); 
-                                if (ep) ep.qty += pr.qty; 
-                                else existing.parsedReasons.push({...pr}); 
-                            }
-                            const rc = {};
-                            existing.parsedReasons.forEach(({reason,qty})=>{rc[reason]=(rc[reason]||0)+qty;});
-                            existing.reason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
-                        } else { 
-                            merged.teamData[tl].engineers.push({...eng, parsedReasons: eng.parsedReasons.map(r => ({...r}))}); 
-                        }
+                        merged.teamData[tl].engineers.push({...eng, parsedReasons: eng.parsedReasons.map(r => ({...r}))});
                     }
                 }
             }
+            merged.multiDay = true;
             for (const tdata of Object.values(merged.teamData)) { tdata.engineers.sort((a,b)=>a.name.localeCompare(b.name)); }
             return merged;
         }
@@ -1479,18 +1469,20 @@
                     html += `<div style="margin-bottom:24px;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;border:2px solid rgba(239,68,68,0.3);">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid rgba(239,68,68,0.2);">
                             <div style="font-size:1.2em;font-weight:700;color:#00d2ff;">${displayName}</div>
-                            <div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total>1?'s':''}</div>
+                            <div style="text-align:right;"><div style="font-size:1.5em;font-weight:800;color:#ef4444;">${data.total} Abort${data.total>1?'s':''}</div>${(()=>{const mins=data.engineers.reduce((s,e)=>s+(e.timeLength||0),0);return mins>0?`<div style="font-size:0.85em;color:#f59e0b;font-weight:700;margin-top:2px;">${formatAbortMins(mins)} total</div>`:'';})()}</div>
                         </div>
                         <table style="width:100%;border-collapse:collapse;">
                             <thead><tr style="background:rgba(0,210,255,0.15);">
                                 <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Engineer</th>
-                                <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Qty</th>
+                                <th style="text-align:center;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Time Length</th>
+                                <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Abort Type</th>
                                 <th style="text-align:left;padding:10px;color:#00d2ff;font-size:0.85em;text-transform:uppercase;">Reason</th>
                             </tr></thead>
                             <tbody>${data.engineers.map(eng=>`<tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                <td style="padding:12px;color:#e1e8ed;font-weight:600;">${eng.name}</td>
-                                <td style="padding:12px;text-align:center;color:#ef4444;font-weight:700;font-size:1.1em;">${eng.aborts}</td>
-                                <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason}</td>
+                                <td style="padding:12px;color:#e1e8ed;font-weight:600;">${escAbort(eng.name)}${dayData.multiDay&&eng.dayLabel?`<div style="font-size:0.75em;color:#a8dadc;font-weight:400;margin-top:2px;">${eng.dayLabel}</div>`:''}</td>
+                                <td style="padding:12px;text-align:center;color:#f59e0b;font-weight:700;font-size:1.05em;white-space:nowrap;">${eng.timeLength!=null?formatAbortMins(eng.timeLength):'–'}</td>
+                                <td style="padding:12px;color:#ef4444;font-weight:600;font-size:0.9em;">${escAbort(eng.reason)}</td>
+                                <td style="padding:12px;color:#a8dadc;font-size:0.9em;">${eng.reason1?escAbort(eng.reason1):'<span style="opacity:0.4;">–</span>'}</td>
                             </tr>`).join('')}</tbody>
                         </table></div>`;
                 });
@@ -1620,7 +1612,7 @@
                         const rc = {};
                         parsed.forEach(({reason,qty})=>{ rc[reason]=(rc[reason]||0)+qty; reasons[reason]=(reasons[reason]||0)+qty; });
                         const combinedReason = Object.entries(rc).map(([r,q])=>q>1?`${r} (x${q})`:r).join(' - ');
-                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed });
+                        teamData[tl].engineers.push({ name:eng, aborts:docTotal, reason:combinedReason, parsedReasons:parsed, timeLength:(data.timeLength!=null&&data.timeLength!=='')?(parseInt(data.timeLength)||0):null, reason1:data.reason1||'', dayLabel:formatDate(d) });
                     });
                     Object.values(teamData).forEach(t=>t.engineers.sort((a,b)=>a.name.localeCompare(b.name)));
                     return { date:d, label:formatDate(d), total, teamData, reasons };
