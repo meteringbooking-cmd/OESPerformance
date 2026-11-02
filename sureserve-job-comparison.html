@@ -241,8 +241,8 @@
         <button class="btn btn-ghost" id="btnFindRemove">Find in Firebase</button>
         <button class="btn btn-red" id="btnDeleteRemove" disabled>Delete from Firebase</button>
         <button class="btn btn-ghost hidden" id="btnCancelRemove">Cancel</button>
-        <span id="removeStatus" class="status"></span>
       </div>
+      <div id="removeStatus" class="status"></div>
 
       <div class="stat-row hidden" id="removeStats">
         <div class="stat"><div class="n" id="statRemoveEntered">0</div><div class="l">Entered</div></div>
@@ -648,6 +648,142 @@
       setStatus(exportAllStatus, `Error exporting: ${err.message}`, 'err');
     } finally {
       btnExportAll.disabled = false;
+    }
+  });
+
+  // ---------- remove tab ----------
+  const removeText = document.getElementById('removeText');
+  const removeStatus = document.getElementById('removeStatus');
+  const removeChips = document.getElementById('removeChips');
+  const removeStats = document.getElementById('removeStats');
+  const btnFindRemove = document.getElementById('btnFindRemove');
+  const btnDeleteRemove = document.getElementById('btnDeleteRemove');
+  const btnCancelRemove = document.getElementById('btnCancelRemove');
+
+  let removeDocs = [];      // Firestore doc snapshots queued for deletion
+  let removeArmed = false;  // two-step confirm on the delete button
+
+  function resetRemoveConfirm(){
+    removeArmed = false;
+    btnDeleteRemove.textContent = 'Delete from Firebase';
+    btnCancelRemove.classList.add('hidden');
+  }
+
+  function clearRemoveResults(){
+    removeDocs = [];
+    btnDeleteRemove.disabled = true;
+    resetRemoveConfirm();
+  }
+
+  // editing the list invalidates any previous lookup
+  removeText.addEventListener('input', clearRemoveResults);
+
+  btnFindRemove.addEventListener('click', async () => {
+    clearRemoveResults();
+    const entered = extractJobNumbers(removeText.value);
+    removeChips.innerHTML = '';
+    removeStats.classList.add('hidden');
+
+    if (entered.length === 0){
+      setStatus(removeStatus, 'No job numbers found. They should look like J- followed by 8 characters.', 'err');
+      return;
+    }
+
+    btnFindRemove.disabled = true;
+    btnFindRemove.textContent = 'Searching…';
+    setStatus(removeStatus, `Read ${entered.length} job number(s). Looking them up in Firebase…`, 'info');
+
+    try {
+      // One simple lookup per job number, run in parallel, with progress and a timeout
+      const found = [];
+      let done = 0;
+      const lookups = entered.map(j =>
+        getDocs(query(collection(db, COLLECTION_NAME), where('jobNumber', '==', j))).then(snap => {
+          snap.forEach(d => found.push(d));
+          done++;
+          setStatus(removeStatus, `Looking up job numbers in Firebase… ${done} of ${entered.length}`, 'info');
+        })
+      );
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error(`no reply from Firebase after 30 seconds (${done} of ${entered.length} checked). Check your internet connection and try again`)), 30000));
+      await Promise.race([Promise.all(lookups), timeout]);
+
+      removeDocs = found;
+      const foundJobs = new Set(found.map(d => d.data().jobNumber));
+      const notFound = entered.filter(j => !foundJobs.has(j));
+
+      document.getElementById('statRemoveEntered').textContent = entered.length;
+      document.getElementById('statRemoveFound').textContent = foundJobs.size;
+      document.getElementById('statRemoveEntries').textContent = found.length;
+      document.getElementById('statRemoveNotFound').textContent = notFound.length;
+      removeStats.classList.remove('hidden');
+
+      const sorted = [...found].sort((a, b) => {
+        const x = a.data(), y = b.data();
+        return x.jobNumber === y.jobNumber ? x.date.localeCompare(y.date) : x.jobNumber.localeCompare(y.jobNumber);
+      });
+      removeChips.innerHTML =
+        sorted.map(d => {
+          const x = d.data();
+          return `<span class="chip missing">${x.jobNumber} <span style="color:var(--muted);">— ${humanizeType(x.jobType)} · ${x.date}</span></span>`;
+        }).join('') +
+        notFound.map(j => `<span class="chip" style="color:var(--muted);">${j} <span>— not in database</span></span>`).join('');
+
+      if (found.length === 0){
+        setStatus(removeStatus, 'None of those job numbers are stored in Firebase. Nothing to delete.', 'err');
+      } else {
+        btnDeleteRemove.disabled = false;
+        setStatus(removeStatus, `Found ${found.length} entr${found.length===1?'y':'ies'} for ${foundJobs.size} job number(s), shown in red. Review, then delete.`, 'info');
+      }
+    } catch (err){
+      console.error(err);
+      setStatus(removeStatus, `Error looking up jobs: ${err.message}`, 'err');
+    } finally {
+      btnFindRemove.disabled = false;
+      btnFindRemove.textContent = 'Find in Firebase';
+    }
+  });
+
+  btnCancelRemove.addEventListener('click', () => {
+    resetRemoveConfirm();
+    setStatus(removeStatus, 'Delete cancelled. Nothing was removed.', 'info');
+  });
+
+  btnDeleteRemove.addEventListener('click', async () => {
+    if (removeDocs.length === 0) return;
+
+    if (!removeArmed){
+      removeArmed = true;
+      btnDeleteRemove.textContent = `Confirm: delete ${removeDocs.length} entr${removeDocs.length===1?'y':'ies'}`;
+      btnCancelRemove.classList.remove('hidden');
+      setStatus(removeStatus, 'Click again to confirm. This permanently removes these entries from Firebase.', 'err');
+      return;
+    }
+
+    btnDeleteRemove.disabled = true;
+    btnFindRemove.disabled = true;
+    btnCancelRemove.classList.add('hidden');
+    setStatus(removeStatus, `Deleting ${removeDocs.length} entr${removeDocs.length===1?'y':'ies'}…`, 'info');
+
+    try {
+      // batches are limited to 500 operations
+      for (let i = 0; i < removeDocs.length; i += 450){
+        const batch = writeBatch(db);
+        removeDocs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
+      const count = removeDocs.length;
+      const jobs = new Set(removeDocs.map(d => d.data().jobNumber)).size;
+      removeChips.querySelectorAll('.chip.missing').forEach(c => { c.classList.remove('missing'); c.style.textDecoration = 'line-through'; c.style.color = 'var(--muted)'; });
+      removeDocs = [];
+      setStatus(removeStatus, `Removed ${count} entr${count===1?'y':'ies'} (${jobs} job number${jobs===1?'':'s'}) from Firebase.`, 'ok');
+    } catch (err){
+      console.error(err);
+      setStatus(removeStatus, `Error deleting: ${err.message}. Click Find again to see what's left.`, 'err');
+      removeDocs = [];
+    } finally {
+      resetRemoveConfirm();
+      btnDeleteRemove.disabled = true;
+      btnFindRemove.disabled = false;
     }
   });
 </script>
