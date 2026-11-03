@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>D-1 Call Outcomes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root {
     --bg: #f3f5f8;
@@ -236,6 +238,10 @@
         <div class="sub" id="tableSub"></div>
       </div>
       <div style="display:flex; gap:8px">
+        <button class="btn" type="button" id="pdfBtn">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v10M6 9l4 4 4-4M3 15v1a1 1 0 001 1h12a1 1 0 001-1v-1"/></svg>
+          Export PDF
+        </button>
         <button class="btn" type="button" id="expandAll">Expand all</button>
         <button class="btn" type="button" id="collapseAll">Collapse all</button>
       </div>
@@ -252,7 +258,7 @@
   </section>
 
   <p class="footnote">
-    <b>How it's counted.</b> Every row in the upload is one job, matched on <span class="mono">Ref</span>, so re-uploading a file updates existing jobs rather than duplicating them.
+    <b>How it's counted.</b> Every row in the upload is one job, matched on <span class="mono">Ref</span>. When you upload, any Ref already stored is skipped, so only new jobs are added and existing ones are never changed.
     A job counts as <b>D Minus Made</b> when its <span class="mono">CallOutcome</span> reads "D Minus Made" (case and spacing ignored).
     Weeks use the sheet's <span class="mono">Week Beg</span> column, or the Monday of the job date if that's blank. Months go by job date, so a week that spans two months is split between them.
   </p>
@@ -499,6 +505,7 @@
       : isMonth ? uniqSorted(rows.map(r => r.weekBeg)) : [];
     const inCol = isMonth ? (j, d) => j.weekBeg === d : (j, d) => j.date === d;
     const cols = 1 + days.length + 4;
+    state.table = { days, engs, isWeek, isMonth, inCol, title: $("tableTitle").textContent };
 
     $("tableTitle").textContent = isWeek ? "Engineers this week" : isMonth ? "Engineers this month" : "Engineers on this day";
     $("tableSub").textContent = (isWeek ? "Day columns show D Minus Made / jobs. " : isMonth ? "Week columns show D Minus Made / jobs. " : "") + "Select an engineer to see their jobs.";
@@ -658,16 +665,25 @@
       setNotice("info", `Reading <b>${esc(file.name)}</b>…`);
       const { records, skipped } = parseWorkbook(await file.arrayBuffer());
       if (!records.length) { setNotice("err", `No job rows found in <b>${esc(file.name)}</b>. Check that column A is Ref and column B is Date.`); return; }
-      const before = new Set(state.rows.map(r => r.ref));
-      const added = records.filter(r => !before.has(r.ref)).length;
-      await uploadRecords(records);
+      setNotice("info", `Checking <b>${num(records.length)}</b> jobs against what's already stored…`);
+      await loadFromFirestore(); // fresh check, in case someone else uploaded since the page opened
+      const existing = new Set(state.rows.map(r => r.ref));
+      const fresh = records.filter(r => !existing.has(r.ref));
+      const dupes = records.length - fresh.length;
+      const extra = (skipped ? ` ${skipped} row${skipped === 1 ? "" : "s"} skipped (no Ref or Date).` : "");
+      if (!fresh.length) {
+        afterDataChange();
+        setNotice("info", `<b>${esc(file.name)}</b>: all ${num(records.length)} jobs are already stored, so nothing was added.` + extra);
+        return;
+      }
+      await uploadRecords(fresh);
       await loadFromFirestore();
-      // jump to the latest day/week in the uploaded file
-      const latest = records.map(r => r.date).sort().pop();
-      state.day = latest; state.week = records.find(r => r.date === latest).weekBeg; state.month = latest.slice(0, 7);
+      // jump to the latest day/week/month among the newly added jobs
+      const latest = fresh.map(r => r.date).sort().pop();
+      state.day = latest; state.week = fresh.find(r => r.date === latest).weekBeg; state.month = latest.slice(0, 7);
       afterDataChange();
-      setNotice("ok", `<b>${esc(file.name)}</b> uploaded: ${num(records.length)} jobs read, ${num(added)} new and ${num(records.length - added)} updated.` +
-        (skipped ? ` ${skipped} row${skipped === 1 ? "" : "s"} skipped (no Ref or Date).` : ""));
+      setNotice("ok", `<b>${esc(file.name)}</b> uploaded: ${num(fresh.length)} new job${fresh.length === 1 ? "" : "s"} added` +
+        (dupes ? `, ${num(dupes)} skipped because the job number already exists` : "") + "." + extra);
     } catch (err) {
       console.error(err);
       setNotice("err", `Upload failed: ${esc(err.message || err)}.` + (/permission|insufficient/i.test(String(err.message)) ? ` Check your Firestore rules allow read and write on "${COLLECTION}".` : ""));
@@ -684,6 +700,55 @@
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
     a.download = state.view === "day" ? `D-1_${state.day}.csv` : state.view === "week" ? `D-1_week_${state.week}.csv` : `D-1_month_${state.month}.csv`;
     a.click(); URL.revokeObjectURL(a.href);
+  };
+
+  $("pdfBtn").onclick = () => {
+    const t = state.table;
+    if (!t || !t.engs.length) { setNotice("err", "There's nothing in the engineers table to export."); return; }
+    if (!window.jspdf) { setNotice("err", "The PDF library didn't load. Check your internet connection and refresh the page."); return; }
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const period = state.view === "day" ? fmtDate(state.day) : state.view === "week" ? "Week beginning " + fmtDate(state.week) : fmtMonth(state.month);
+    const shown = t.engs.flatMap(e => e.jobs);
+    const made = shown.filter(j => j.made).length;
+    const cell = (jobs, d) => { const js = jobs.filter(j => t.inCol(j, d)); return js.length ? `${js.filter(j => j.made).length} / ${js.length}` : "-"; };
+    const subHead = d => (t.isMonth ? "w/c " : fmtDay(d) + " ") + fmtDM(d);
+
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(16); pdf.setTextColor(11, 31, 58);
+    pdf.text(`D-1 Call Outcomes: ${t.title}`, 14, 16);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(11); pdf.setTextColor(71, 85, 105);
+    pdf.text(period + (state.search.trim() ? `   (filtered: "${state.search.trim()}")` : ""), 14, 23);
+    pdf.text(`Total jobs ${num(shown.length)}   |   D Minus Made ${num(made)}   |   ${fmtPct(pct(made, shown.length))} made   |   ${t.engs.length} engineer${t.engs.length === 1 ? "" : "s"}`, 14, 29);
+
+    const head = [["Engineer", ...t.days.map(subHead), t.isWeek ? "Week jobs" : t.isMonth ? "Month jobs" : "Jobs", "D Minus Made", "% Made"]];
+    const body = t.engs.map(e => [e.name, ...t.days.map(d => cell(e.jobs, d)), e.total, e.made, fmtPct(e.pct)]);
+    const foot = [["Total", ...t.days.map(d => cell(shown, d)), shown.length, made, fmtPct(pct(made, shown.length))]];
+    const numCols = {};
+    for (let i = 1; i <= t.days.length; i++) numCols[i] = { halign: "center" };
+    for (let i = t.days.length + 1; i <= t.days.length + 3; i++) numCols[i] = { halign: "right" };
+
+    pdf.autoTable({
+      head, body, foot, startY: 34, theme: "grid", showFoot: "lastPage",
+      styles: { fontSize: 9, cellPadding: 2.2, lineColor: [226, 232, 240], lineWidth: 0.2, textColor: [15, 23, 42] },
+      headStyles: { fillColor: [11, 31, 58], textColor: 255, fontStyle: "bold", halign: "center" },
+      footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { fontStyle: "bold", halign: "left" }, ...numCols },
+      didParseCell: d => {
+        if (d.section === "body") return;
+        const i = d.column.index;
+        d.cell.styles.halign = i === 0 ? "left" : i > t.days.length ? "right" : "center";
+      },
+      didDrawPage: () => {
+        const h = pdf.internal.pageSize.getHeight(), w = pdf.internal.pageSize.getWidth();
+        pdf.setFontSize(8.5); pdf.setTextColor(100, 116, 139);
+        pdf.text(`Generated ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 14, h - 8);
+        pdf.text(`Page ${pdf.internal.getNumberOfPages()}`, w - 14, h - 8, { align: "right" });
+      }
+    });
+
+    const key = state.view === "day" ? state.day : state.view === "week" ? "week_" + state.week : "month_" + state.month;
+    pdf.save(`D-1_engineers_${key}.pdf`);
   };
 
   /* ---------- Boot ---------- */
