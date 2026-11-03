@@ -451,6 +451,14 @@
             return `<div class="rc-evidence"><div><span class="ev-tag">📞 D-1 calls made</span> <b>${fmtPct(Number(v))}%</b></div></div>`;
         }
 
+        // Monthly Customer Service: one D-1 % shows on its own; several (one per flagged week) are listed by week.
+        function d1PctMonthEvidence(list) {
+            list = Array.isArray(list) ? list : [];
+            if (!list.length) return '';
+            if (list.length === 1) return d1PctEvidence(list[0].pct);
+            return `<div class="rc-evidence"><div><span class="ev-tag">📞 D-1 calls made</span> ${list.map(x => `<b>${fmtPct(x.pct)}%</b> (w/c ${shortDate(x.weekStart)})`).join(' · ')}</div></div>`;
+        }
+
         // Job refusals recorded under Housekeeping (date, job number, reason).
         const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         function refusalEvidence(refusals) {
@@ -526,6 +534,21 @@
                         jobRefusals: refusalsInMonth });
                 });
             });
+            // Customer Service is a monthly flag: every week's Customer Service item becomes ONE item for
+            // the month (accepted if the FTM accepted it in any week), with each week's D-1 call % listed.
+            const cs = items.filter(it => it.cat === 'customerService');
+            if (cs.length) {
+                const merged = {
+                    key: `customerService_${month}`, cat: 'customerService', monthly: true, weekStart: null, dates: [],
+                    weeks: cs.map(it => it.weekStart).sort(),
+                    ftmAccepted: cs.some(it => it.ftmAccepted),
+                    ftmBy: [...new Set(cs.map(it => it.ftmBy).filter(Boolean))].join(', '),
+                    d1Pcts: cs.filter(it => it.d1Pct !== null && it.d1Pct !== undefined && it.d1Pct !== '')
+                        .sort((a, b) => a.weekStart.localeCompare(b.weekStart)).map(it => ({ weekStart: it.weekStart, pct: Number(it.d1Pct) })),
+                };
+                const at = items.indexOf(cs[0]);
+                return [...items.slice(0, at).filter(it => it.cat !== 'customerService'), merged, ...items.slice(at).filter(it => it.cat !== 'customerService')];
+            }
             return items;
         }
 
@@ -655,6 +678,11 @@
                 const prevItems = (r.final && Array.isArray(r.final.items)) ? r.final.items : [];
                 r.items.forEach(it => {
                     const prev = prevItems.find(p => p.key === it.key);
+                    if (!prev && it.monthly && it.cat === 'customerService') {
+                        // finalized before Customer Service became a single monthly item
+                        const old = prevItems.filter(p => p.cat === 'customerService');
+                        if (old.length) { r._accepted[it.key] = old.some(p => p.accepted); return; }
+                    }
                     r._accepted[it.key] = prev ? !!prev.accepted : it.ftmAccepted;
                 });
 
@@ -704,7 +732,7 @@
                     group.className = 'rc-group';
                     group.innerHTML = `<div class="rc-group-head"><span class="rc-group-title">${cat.label}</span>
                         <span class="rc-row-pct" id="gpct_${r.engineer.id}_${cat.key}"></span>
-                        <span class="rc-group-rule">${cat.perInstance ? '−5% per accepted instance' : cat.compliance ? `−${cat.pct}% if any week is accepted · Compliance capped at −20%` : '−5% once for the month if any week is accepted'}</span></div>`;
+                        <span class="rc-group-rule">${cat.perInstance ? '−5% per accepted instance' : cat.key === 'customerService' ? '−5% once for the month' : cat.compliance ? `−${cat.pct}% if any week is accepted · Compliance capped at −20%` : '−5% once for the month if any week is accepted'}</span></div>`;
                     its.forEach(it => group.appendChild(buildItemRow(r, it)));
                     rowsEl.appendChild(group);
                 });
@@ -756,13 +784,13 @@
                 detail = Object.keys(byCode).map(code => `${byCode[code].length}× ${code} (${fmtDateList(byCode[code])})`).join(', ') + ` <span class="rc-item-pct">−${it.instances.length * 5}%</span>`;
             } else {
                 detail = catByKey[it.cat].desc + (it.dates.length ? ' — ' + fmtDateList(it.dates) : '');
-                if (it.cat === 'customerService') detail += d1PctEvidence(it.d1Pct);
+                if (it.cat === 'customerService') detail += it.monthly ? d1PctMonthEvidence(it.d1Pcts) : d1PctEvidence(it.d1Pct);
                 if (it.cat === 'fleet') detail += fleetEvidence(it.dates, it.vehicleCheckMissedDates);
                 if (it.cat === 'housekeeping') detail += housekeepingEvidence(it.dates, it.vanTimesFlagged) + refusalEvidence(it.jobRefusals);
             }
             row.innerHTML = `
                 <div class="rc-row-info">
-                    <div class="rc-row-label">w/c ${shortDate(it.weekStart)}
+                    <div class="rc-row-label">${it.monthly ? `${formatMonth(document.getElementById('dataMonth').value)} — whole month` : `w/c ${shortDate(it.weekStart)}`}
                         <span class="ftm-badge ${it.ftmAccepted ? 'accepted' : 'removed'}">FTM: ${it.ftmAccepted ? 'Accepted' : 'Removed'}</span></div>
                     <div class="rc-row-detail">${detail}</div>
                 </div>
@@ -877,7 +905,7 @@
                     // Categories — once for the month if any week's item is accepted.
                     customerServiceFlagged: itemsOf('customerService').length > 0,
                     customerServiceAccepted: m.catOn('customerService'),
-                    customerServiceD1Pcts: itemsOf('customerService').filter(it => it.d1Pct !== null && it.d1Pct !== undefined).map(it => ({ weekStart: it.weekStart, pct: Number(it.d1Pct) })),
+                    customerServiceD1Pcts: itemsOf('customerService').flatMap(it => it.d1Pcts || []),
                     fleetFlagged: itemsOf('fleet').length > 0,
                     fleetDates: acceptedDates('fleet'),
                     fleetAccepted: m.catOn('fleet'),
