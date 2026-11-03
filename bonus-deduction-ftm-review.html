@@ -530,6 +530,12 @@
 
         // ── Row definitions: what CAN be reviewed for one engineer, given their computed context + submission.
         // `bonusInfo` reflects the FTM's current abort confirm/overturn choices for this engineer. ──
+        // D-1 call % entered on bonus-deduction.html when Customer Service is ticked.
+        function d1PctEvidence(v) {
+            if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '';
+            return `<div class="rc-evidence"><div><span class="ev-tag">📞 D-1 calls made</span> <b>${fmtPct(Number(v))}%</b></div></div>`;
+        }
+
         function buildRowDefs(ctx, submission, bonusInfo) {
             const rows = [];
             const bi = bonusInfo || computeBonusCompletion(ctx, {});
@@ -553,7 +559,7 @@
             });
             if (submission) {
                 if (submission.customerService) rows.push({ key: 'customerService', label: 'Customer Service', pct: 5,
-                    detail: 'Persistent failure to make D-1 calls, and/or an upheld customer complaint.' });
+                    detail: 'Persistent failure to make D-1 calls, and/or an upheld customer complaint.' + d1PctEvidence(submission.customerServiceD1Pct) });
                 if (submission.fleet) rows.push({ key: 'fleet', label: 'Fleet', pct: 5,
                     detail: `Failed vehicle check and/or speeding incident${submission.fleetDates?.length ? ' — ' + fmtDateList(submission.fleetDates) : ''}` + fleetEvidence(submission) });
                 if (submission.housekeeping) rows.push({ key: 'housekeeping', label: 'Housekeeping', pct: 5,
@@ -773,6 +779,8 @@
             for (const [subKey, revKey] of flagPairs) {
                 if (!!s[subKey] !== !!reviewed[revKey]) return true;
             }
+            const d1 = v => (v === null || v === undefined || v === '') ? null : Number(v);
+            if (s.customerService && reviewed.customerServiceFlagged && d1(s.customerServiceD1Pct) !== d1(reviewed.customerServiceD1Pct)) return true;
             if (!datesEqual(s.fleet ? s.fleetDates : [], reviewed.fleetFlagged ? reviewed.fleetDates : [])) return true;
             if (!datesEqual(s.housekeeping ? s.housekeepingDates : [], reviewed.housekeepingFlagged ? reviewed.housekeepingDates : [])) return true;
             // Job refusals (date | job | reason) — a new, removed or edited refusal reopens the week.
@@ -1219,6 +1227,7 @@
                     attendanceAccepted: r.ctx.attendanceInstances.some(a => r._accepted[`attendance_${a.date}`] !== false),
                     customerServiceFlagged: !!r.submission?.customerService,
                     customerServiceAccepted: !!(r.submission?.customerService && r._accepted.customerService),
+                    customerServiceD1Pct: r.submission?.customerService ? (r.submission.customerServiceD1Pct ?? null) : null,
                     fleetFlagged: !!r.submission?.fleet,
                     fleetDates: r.submission?.fleet ? (r.submission.fleetDates || []) : [],
                     vehicleCheckMissedDates: r.submission?.vehicleCheckMissedDates || [],

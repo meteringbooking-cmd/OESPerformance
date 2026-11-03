@@ -369,7 +369,7 @@
         <div class="codes-panel">
             <div class="codes-title">Deduction Categories</div>
             <div class="codes-grid">
-                <div class="code-item"><span class="code-badge">Customer Service</span> Persistent failure to make D-1 calls, and/or any upheld customer complaint. <span class="pct">−5%</span></div>
+                <div class="code-item"><span class="code-badge">Customer Service</span> Persistent failure to make D-1 calls, and/or any upheld customer complaint. Ticking it asks for the engineer's <strong style="color:var(--text);">D-1 call %</strong>, which is shown to the FTM and in the final review. <span class="pct">−5%</span></div>
                 <div class="code-item"><span class="code-badge">Fleet</span> Failure to complete Daily Vehicle Checks before starting work, and/or any unreasonable recorded speeding incident. <span class="pct">−5%</span></div>
                 <div class="code-item"><span class="code-badge">Housekeeping</span> Starting work after 8am on a working day, and/or refusing work in day (record each job refusal with its date, job number and reason). <span class="pct">−5%</span></div>
                 <div class="code-item"><span class="code-badge">Compliance — Cat 1</span> Any Cat 1 failure in the month. <span class="pct">−20%</span></div>
@@ -531,12 +531,27 @@
             return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1));
         }
 
+        // D-1 call % typed under Customer Service: a number 0–100, or null if blank/invalid.
+        function readCsPct(i) {
+            const raw = String(document.getElementById(`csPct_${i}`)?.value ?? '').replace('%', '').trim();
+            if (raw === '') return null;
+            const n = Number(raw);
+            return isNaN(n) || n < 0 || n > 100 ? null : Math.round(n * 10) / 10;
+        }
+        function toggleCsPct(i, checked, focus = true) {
+            const wrap = document.getElementById(`csPctWrap_${i}`);
+            if (wrap) wrap.hidden = !checked;
+            if (checked && focus) document.getElementById(`csPct_${i}`)?.focus();
+        }
+
         function rowState(i) {
+            const customerService = document.getElementById(`cs_${i}`)?.checked || false;
             const fleet = document.getElementById(`fl_${i}`)?.checked || false;
             const housekeeping = document.getElementById(`hk_${i}`)?.checked || false;
             const wk = document.getElementById('weekStart').value;
             return {
-                customerService: document.getElementById(`cs_${i}`)?.checked || false,
+                customerService,
+                customerServiceD1Pct: customerService ? readCsPct(i) : null,
                 fleet,
                 fleetDates: fleet ? parseDatesInput(document.getElementById(`flDates_${i}`)?.value, wk) : [],
                 housekeeping,
@@ -693,7 +708,15 @@
                         <div class="eng-name">${engineer.engineerName}</div>
                         <div class="eng-leader">${engineer.teamLeader}</div>
                     </td>
-                    <td><input type="checkbox" class="chk" id="cs_${index}" data-row-index="${index}"></td>
+                    <td>
+                        <div class="flag-cell">
+                            <input type="checkbox" class="chk" id="cs_${index}" data-row-index="${index}">
+                            <div class="dates-field" id="csPctWrap_${index}" hidden>
+                                <label for="csPct_${index}">D-1 call %</label>
+                                <input type="number" class="dates-input" id="csPct_${index}" min="0" max="100" step="0.1" placeholder="e.g. 62" data-row-index="${index}">
+                            </div>
+                        </div>
+                    </td>
                     <td>
                         <div class="flag-cell">
                             <input type="checkbox" class="chk" id="fl_${index}" data-row-index="${index}">
@@ -733,6 +756,7 @@
                 chk.addEventListener('change', function () { updateRowDeduction(this.getAttribute('data-row-index')); updateFooterNote(); });
             });
             engineers.forEach((_, i) => {
+                document.getElementById(`cs_${i}`).addEventListener('change', function () { toggleCsPct(i, this.checked); });
                 document.getElementById(`fl_${i}`).addEventListener('change', function () { toggleDatesField('fl', i, this.checked); });
                 document.getElementById(`hk_${i}`).addEventListener('change', function () { toggleDatesField('hk', i, this.checked); });
                 document.getElementById(`hkRefAdd_${i}`).addEventListener('click', function () {
@@ -785,6 +809,9 @@
                         if (idx === -1) return;
                         const set = (prefix, val) => { const el = document.getElementById(`${prefix}_${idx}`); if (el) el.checked = !!val; };
                         set('cs', data.customerService);
+                        toggleCsPct(idx, !!data.customerService, false);
+                        const csPctInput = document.getElementById(`csPct_${idx}`);
+                        if (csPctInput) csPctInput.value = (data.customerServiceD1Pct ?? '') === '' ? '' : data.customerServiceD1Pct;
                         set('fl', data.fleet);
                         set('hk', data.housekeeping);
                         set('c1', data.complianceCat1);
@@ -1061,6 +1088,8 @@
                 ['cs','fl','hk','c1','c2','c3'].forEach(p => { const el = document.getElementById(`${p}_${i}`); if (el) el.checked = false; });
                 const flInput = document.getElementById(`flDates_${i}`); if (flInput) flInput.value = '';
                 const hkInput = document.getElementById(`hkDates_${i}`); if (hkInput) hkInput.value = '';
+                const csPctInput = document.getElementById(`csPct_${i}`); if (csPctInput) csPctInput.value = '';
+                toggleCsPct(i, false, false);
                 clearRefusals(i);
                 toggleDatesField('fl', i, false);
                 toggleDatesField('hk', i, false);
@@ -1077,6 +1106,12 @@
             if (!wk) return showMessage('Please select a week', 'error');
             const refusalError = validateRefusals(wk);
             if (refusalError) return showMessage(refusalError, 'error');
+            for (let i = 0; i < engineers.length; i++) {
+                if (document.getElementById(`cs_${i}`)?.checked && readCsPct(i) === null) {
+                    toggleCsPct(i, true);
+                    return showMessage(`${engineers[i].engineerName}: enter the D-1 call % (0–100) for Customer Service.`, 'error');
+                }
+            }
 
             const clickedBtn = event.target;
             clickedBtn.disabled = true;
