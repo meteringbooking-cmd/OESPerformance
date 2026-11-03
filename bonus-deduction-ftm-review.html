@@ -338,9 +338,8 @@
             <div class="ctrl-group">
                 <span class="ctrl-label">Show</span>
                 <select id="showFilter" class="ctrl-select">
-                    <option value="all">All weeks in the month</option>
+                    <option value="all">Everything still to review</option>
                     <option value="due">Last week only</option>
-                    <option value="todo">Anything not yet reviewed</option>
                 </select>
             </div>
             <div class="ctrl-group">
@@ -910,12 +909,17 @@
             container.innerHTML = '';
 
             const showFilter = document.getElementById('showFilter').value;
-            const visible = engineerRows.filter(r => (!teamFilter || r.engineer.teamLeader === teamFilter) &&
-                (showFilter === 'all' || (showFilter === 'due' ? r.due : r.status === 'todo')));
+            // Weeks the FTM has already submitted (and that haven't changed since) are left out entirely.
+            const visible = engineerRows.filter(r => r.status === 'todo' && (!teamFilter || r.engineer.teamLeader === teamFilter) &&
+                (showFilter !== 'due' || r.due));
             renderSummary(document.getElementById('dataMonth').value);
             const groups = {};
 
             if (!visible.length) {
+                const anyDone = engineerRows.some(r => r.status === 'done' && (!teamFilter || r.engineer.teamLeader === teamFilter));
+                document.getElementById('emptyStateDetail').textContent = anyDone
+                    ? (showFilter === 'due' ? 'Everything for last week has been reviewed.' : 'Every engineer week in this month has been reviewed.')
+                    : 'No engineer has anything to review for this month.';
                 document.getElementById('emptyState').style.display = 'block';
                 document.getElementById('cardsContainer').style.display = 'none';
                 return;
@@ -1007,7 +1011,7 @@
                     const g = document.createElement('div');
                     g.className = 'eng-group' + (mine.some(x => x.due && x.status === 'todo') ? ' has-due' : '');
                     g.innerHTML = `<div class="eng-head"><div><div class="rc-name">${r.engineer.engineerName}</div><div class="rc-leader">${r.engineer.teamLeader || ''}</div></div>
-                        <div class="eng-chips">${mine.map(x => `<span class="wk-chip ${x.due && x.status === 'todo' ? 'due' : x.status}">${x.status === 'done' ? '✓ ' : x.due ? '● ' : ''}w/c ${shortDate(x.wk)}</span>`).join('')}</div></div>
+                        <div class="eng-chips">${mine.map(x => `<span class="wk-chip ${x.due && x.status === 'todo' ? 'due' : x.status}" data-chip="${x.key}">${x.status === 'done' ? '✓ ' : x.due ? '● ' : ''}w/c ${shortDate(x.wk)}</span>`).join('')}</div></div>
                         <div class="eng-body"></div>`;
                     container.appendChild(g);
                     groups[r.engineer.id] = g.querySelector('.eng-body');
@@ -1283,12 +1287,33 @@
                 }
                 renderSummary(document.getElementById('dataMonth').value);
                 if (statusEl) { statusEl.textContent = `✓ Submitted${reviewer ? ' by ' + reviewer : ''}`; statusEl.className = 'rc-status success'; }
+                if (cardEl) removeSubmittedCard(r, cardEl);
             } catch (err) {
                 console.error(err);
                 if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.className = 'rc-status error'; }
             } finally {
                 btn.disabled = false; btn.innerHTML = orig;
             }
+        }
+
+        // A submitted week leaves the FTM's view: show "Submitted" briefly, fade the card out, drop its
+        // week chip, and remove the engineer's group once nothing is left in it. Other cards are left
+        // alone, so decisions in progress elsewhere aren't lost.
+        function removeSubmittedCard(r, cardEl) {
+            setTimeout(() => {
+                cardEl.style.transition = 'opacity .35s ease, transform .35s ease';
+                cardEl.style.opacity = '0'; cardEl.style.transform = 'translateY(-6px)';
+                setTimeout(() => {
+                    const group = cardEl.closest('.eng-group');
+                    cardEl.remove();
+                    if (group) {
+                        group.querySelector(`[data-chip="${CSS.escape(r.key)}"]`)?.remove();
+                        if (!group.querySelector('.review-card')) group.remove();
+                        else group.classList.toggle('has-due', engineerRows.some(x => x.engineer.id === r.engineer.id && x.due && x.status === 'todo'));
+                    }
+                    if (!document.querySelector('#cardsContainer .review-card')) renderCards();
+                }, 360);
+            }, 1200);
         }
 
         function showMessage(text, type) {
