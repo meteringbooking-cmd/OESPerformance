@@ -171,7 +171,7 @@
   <div class="topbar-inner">
     <div class="brand">
       <h1>D-1 Call Outcomes</h1>
-      <p>Jobs and D Minus Made calls per engineer, by day and by week</p>
+      <p>Jobs and D Minus Made calls per engineer, by day, week and month</p>
     </div>
     <div class="top-actions">
       <div class="sync" id="syncInfo">Loading data…</div>
@@ -194,6 +194,7 @@
       <div class="seg" id="viewSeg">
         <button type="button" data-v="day" class="on">Daily</button>
         <button type="button" data-v="week">Weekly</button>
+        <button type="button" data-v="month">Monthly</button>
       </div>
     </div>
     <div class="field" id="dayField">
@@ -210,6 +211,14 @@
         <button class="btn icon" type="button" id="weekPrev" title="Previous week" aria-label="Previous week">&#8249;</button>
         <select id="weekSelect"></select>
         <button class="btn icon" type="button" id="weekNext" title="Next week" aria-label="Next week">&#8250;</button>
+      </div>
+    </div>
+    <div class="field" id="monthField" style="display:none">
+      <label class="lbl" for="monthSelect">Month</label>
+      <div class="nav">
+        <button class="btn icon" type="button" id="monthPrev" title="Previous month" aria-label="Previous month">&#8249;</button>
+        <select id="monthSelect"></select>
+        <button class="btn icon" type="button" id="monthNext" title="Next month" aria-label="Next month">&#8250;</button>
       </div>
     </div>
     <div class="field grow">
@@ -245,7 +254,7 @@
   <p class="footnote">
     <b>How it's counted.</b> Every row in the upload is one job, matched on <span class="mono">Ref</span>, so re-uploading a file updates existing jobs rather than duplicating them.
     A job counts as <b>D Minus Made</b> when its <span class="mono">CallOutcome</span> reads "D Minus Made" (case and spacing ignored).
-    Weeks use the sheet's <span class="mono">Week Beg</span> column, or the Monday of the job date if that's blank.
+    Weeks use the sheet's <span class="mono">Week Beg</span> column, or the Monday of the job date if that's blank. Months go by job date, so a week that spans two months is split between them.
   </p>
 </main>
 
@@ -269,10 +278,10 @@
 
   /* ---------- State ---------- */
   const state = {
-    rows: [], view: "day", day: "", week: "", search: "",
+    rows: [], view: "day", day: "", week: "", month: "", search: "",
     sortKey: "name", sortDir: "asc", open: new Set(), lastSync: null
   };
-  try { const v = localStorage.getItem("d1co_view"); if (v === "day" || v === "week") state.view = v; } catch (e) {}
+  try { const v = localStorage.getItem("d1co_view"); if (v === "day" || v === "week" || v === "month") state.view = v; } catch (e) {}
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -285,6 +294,7 @@
   const mondayOf = s => { const d = fromIso(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return iso(d); };
   const fmtDate = s => s ? fromIso(s).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }) : "";
   const fmtDay = s => fromIso(s).toLocaleDateString("en-GB", { weekday: "short" });
+  const fmtMonth = m => fromIso(m + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   const fmtDM = s => fromIso(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 
   function parseDate(v) {
@@ -407,13 +417,19 @@
   const uniqSorted = arr => [...new Set(arr)].sort();
   const allDays = () => uniqSorted(state.rows.map(r => r.date));
   const allWeeks = () => uniqSorted(state.rows.map(r => r.weekBeg));
+  const allMonths = () => uniqSorted(state.rows.map(r => r.date.slice(0, 7)));
+  const VIEW = {
+    day:   { key: () => state.day,   list: allDays,   match: (r, k) => r.date === k,             noun: "day",   prevLabel: k => fmtDM(k) },
+    week:  { key: () => state.week,  list: allWeeks,  match: (r, k) => r.weekBeg === k,          noun: "week",  prevLabel: k => "w/c " + fmtDM(k) },
+    month: { key: () => state.month, list: allMonths, match: (r, k) => r.date.slice(0, 7) === k, noun: "month", prevLabel: k => fmtMonth(k) }
+  };
 
-  function periodRows(view = state.view, key = view === "day" ? state.day : state.week) {
-    return state.rows.filter(r => view === "day" ? r.date === key : r.weekBeg === key);
+  function periodRows(view = state.view, key = VIEW[view].key()) {
+    return state.rows.filter(r => VIEW[view].match(r, key));
   }
   function previousKey() {
-    const list = state.view === "day" ? allDays() : allWeeks();
-    const cur = state.view === "day" ? state.day : state.week;
+    const list = VIEW[state.view].list();
+    const cur = VIEW[state.view].key();
     const i = list.indexOf(cur);
     return i > 0 ? list[i - 1] : null;
   }
@@ -431,6 +447,7 @@
   function render() {
     $("dayField").style.display = state.view === "day" ? "" : "none";
     $("weekField").style.display = state.view === "week" ? "" : "none";
+    $("monthField").style.display = state.view === "month" ? "" : "none";
     document.querySelectorAll("#viewSeg button").forEach(b => b.classList.toggle("on", b.dataset.v === state.view));
     updateNavButtons();
 
@@ -454,18 +471,18 @@
       const prev = periodRows(state.view, pk);
       const pm = prev.filter(r => r.made).length;
       const d = Math.round((pct(made, total) - pct(pm, prev.length)) * 10) / 10;
-      const label = state.view === "day" ? fmtDM(pk) : "w/c " + fmtDM(pk);
+      const label = VIEW[state.view].prevLabel(pk);
       cmp = `<br><span class="${d > 0 ? "up" : d < 0 ? "down" : ""}">${d > 0 ? "▲" : d < 0 ? "▼" : "–"} ${Math.abs(d).toFixed(1)} pts</span> vs ${label}`;
     }
     $("kpis").innerHTML = `
       <div class="panel kpi navy"><div class="k-label">Total jobs</div><div class="k-value">${num(total)}</div>
-        <div class="k-sub">${state.view === "day" ? esc(fmtDate(state.day)) : "Week beginning " + esc(fmtDate(state.week))}</div></div>
+        <div class="k-sub">${state.view === "day" ? esc(fmtDate(state.day)) : state.view === "week" ? "Week beginning " + esc(fmtDate(state.week)) : esc(fmtMonth(state.month))}</div></div>
       <div class="panel kpi good"><div class="k-label">D Minus Made</div><div class="k-value">${num(made)}</div>
         <div class="k-sub">${num(total - made)} jobs without</div></div>
       <div class="panel kpi good"><div class="k-label">% D Minus Made</div><div class="k-value">${total ? fmtPct(pct(made, total)) : "–"}</div>
         <div class="k-sub">${num(made)} of ${num(total)}${cmp}</div></div>
       <div class="panel kpi"><div class="k-label">Engineers</div><div class="k-value">${engCount}</div>
-        <div class="k-sub">with jobs in this ${state.view === "day" ? "day" : "week"}</div></div>`;
+        <div class="k-sub">with jobs in this ${VIEW[state.view].noun}</div></div>`;
   }
 
   const CARET = `<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>`;
@@ -474,18 +491,21 @@
 
   function renderTable(engs, rows) {
     const head = $("engHead"), body = $("engBody"), foot = $("engFoot"), empty = $("emptyState");
-    const isWeek = state.view === "week";
-    const weekDays = isWeek ? [...Array(7)].map((_, i) => addDays(state.week, i)) : [];
-    // hide weekend columns when nobody worked them
-    const days = weekDays.filter((d, i) => i < 5 || rows.some(r => r.date === d));
-    const cols = 1 + (isWeek ? days.length : 0) + 4;
+    const isWeek = state.view === "week", isMonth = state.view === "month";
+    const noun = VIEW[state.view].noun;
+    // sub-columns: days of the week (weekends only if worked), or weeks within the month
+    const days = isWeek
+      ? [...Array(7)].map((_, i) => addDays(state.week, i)).filter((d, i) => i < 5 || rows.some(r => r.date === d))
+      : isMonth ? uniqSorted(rows.map(r => r.weekBeg)) : [];
+    const inCol = isMonth ? (j, d) => j.weekBeg === d : (j, d) => j.date === d;
+    const cols = 1 + days.length + 4;
 
-    $("tableTitle").textContent = isWeek ? "Engineers this week" : "Engineers on this day";
-    $("tableSub").textContent = (isWeek ? "Day columns show D Minus Made / jobs. " : "") + "Select an engineer to see their jobs.";
+    $("tableTitle").textContent = isWeek ? "Engineers this week" : isMonth ? "Engineers this month" : "Engineers on this day";
+    $("tableSub").textContent = (isWeek ? "Day columns show D Minus Made / jobs. " : isMonth ? "Week columns show D Minus Made / jobs. " : "") + "Select an engineer to see their jobs.";
 
     head.innerHTML = `<tr>${sortTh("name", "Engineer", "")}
-      ${days.map((d, i) => `<th class="day${i === 0 ? " sep" : ""}">${fmtDay(d)}<small>${fmtDM(d)}</small></th>`).join("")}
-      ${sortTh("total", isWeek ? "Week jobs" : "Jobs", "num sep")}${sortTh("made", "D Minus Made")}${sortTh("pct", "% Made")}
+      ${days.map((d, i) => `<th class="day${i === 0 ? " sep" : ""}">${isMonth ? "w/c" : fmtDay(d)}<small>${fmtDM(d)}</small></th>`).join("")}
+      ${sortTh("total", isWeek ? "Week jobs" : isMonth ? "Month jobs" : "Jobs", "num sep")}${sortTh("made", "D Minus Made")}${sortTh("pct", "% Made")}
       <th class="bar-h"></th></tr>`;
 
     if (!state.rows.length) {
@@ -496,12 +516,12 @@
     }
     if (!engs.length) {
       body.innerHTML = ""; foot.innerHTML = ""; empty.style.display = "block";
-      empty.innerHTML = rows.length ? `<h3>No matching engineers</h3>Clear the engineer search to see everyone.` : `<h3>No jobs for this ${isWeek ? "week" : "date"}</h3>Pick another ${isWeek ? "week" : "date"}, or use the arrows to jump to one with data.`;
+      empty.innerHTML = rows.length ? `<h3>No matching engineers</h3>Clear the engineer search to see everyone.` : `<h3>No jobs for this ${noun}</h3>Pick another ${noun}, or use the arrows to jump to one with data.`;
       return;
     }
     empty.style.display = "none";
 
-    const dayTally = (jobs, d) => { const js = jobs.filter(j => j.date === d); return [js.filter(j => j.made).length, js.length]; };
+    const dayTally = (jobs, d) => { const js = jobs.filter(j => inCol(j, d)); return [js.filter(j => j.made).length, js.length]; };
 
     body.innerHTML = engs.map(e => {
       const open = state.open.has(e.name);
@@ -539,7 +559,7 @@
     const m = new Map();
     rows.forEach(r => { const k = r.outcome || "Blank"; m.set(k, (m.get(k) || 0) + 1); });
     $("outcomes").style.display = "";
-    $("outcomes").innerHTML = `<span>Call outcomes in this ${state.view === "day" ? "day" : "week"}:</span>` +
+    $("outcomes").innerHTML = `<span>Call outcomes in this ${VIEW[state.view].noun}:</span>` +
       [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="badge ${isMade(k) ? "good" : ""}">${esc(k)} · ${n}</span>`).join("");
   }
 
@@ -551,6 +571,9 @@
       return `<option value="${w}">w/c ${esc(fmtDate(w))} (${n} jobs)</option>`;
     }).join("");
     $("weekSelect").value = state.week;
+    $("monthSelect").innerHTML = allMonths().reverse().map(m =>
+      `<option value="${m}">${esc(fmtMonth(m))} (${state.rows.filter(r => r.date.slice(0, 7) === m).length} jobs)</option>`).join("");
+    $("monthSelect").value = state.month;
   }
   function updateNavButtons() {
     const days = allDays(), weeks = allWeeks();
@@ -559,14 +582,20 @@
     const wi = weeks.indexOf(state.week);
     $("weekPrev").disabled = wi <= 0;
     $("weekNext").disabled = wi < 0 || wi >= weeks.length - 1;
+    const months = allMonths(), mi = months.indexOf(state.month);
+    $("monthPrev").disabled = mi <= 0;
+    $("monthNext").disabled = mi < 0 || mi >= months.length - 1;
   }
   function setDay(d) { state.day = d; $("dayInput").value = d; state.open.clear(); render(); }
+  function setMonth(m) { state.month = m; $("monthSelect").value = m; state.open.clear(); render(); }
   function setWeek(w) { state.week = w; $("weekSelect").value = w; state.open.clear(); render(); }
 
   function afterDataChange() {
     const days = allDays(), weeks = allWeeks();
     if (!days.includes(state.day)) state.day = days[days.length - 1] || iso(new Date());
     if (!weeks.includes(state.week)) state.week = weeks[weeks.length - 1] || mondayOf(iso(new Date()));
+    const months = allMonths();
+    if (!months.includes(state.month)) state.month = months[months.length - 1] || iso(new Date()).slice(0, 7);
     $("dayInput").value = state.day;
     if (days.length) { $("dayInput").min = days[0]; $("dayInput").max = days[days.length - 1]; }
     fillWeekSelect();
@@ -591,6 +620,9 @@
   $("weekSelect").addEventListener("change", e => setWeek(e.target.value));
   $("weekPrev").onclick = () => { const w = allWeeks(), i = w.indexOf(state.week); if (i > 0) setWeek(w[i - 1]); };
   $("weekNext").onclick = () => { const w = allWeeks(), i = w.indexOf(state.week); if (i >= 0 && i < w.length - 1) setWeek(w[i + 1]); };
+  $("monthSelect").addEventListener("change", e => setMonth(e.target.value));
+  $("monthPrev").onclick = () => { const m = allMonths(), i = m.indexOf(state.month); if (i > 0) setMonth(m[i - 1]); };
+  $("monthNext").onclick = () => { const m = allMonths(), i = m.indexOf(state.month); if (i >= 0 && i < m.length - 1) setMonth(m[i + 1]); };
   $("search").addEventListener("input", e => { state.search = e.target.value; render(); });
 
   $("engHead").addEventListener("click", e => { const th = e.target.closest("th.sort"); if (th) sortBy(th.dataset.k); });
@@ -632,7 +664,7 @@
       await loadFromFirestore();
       // jump to the latest day/week in the uploaded file
       const latest = records.map(r => r.date).sort().pop();
-      state.day = latest; state.week = records.find(r => r.date === latest).weekBeg;
+      state.day = latest; state.week = records.find(r => r.date === latest).weekBeg; state.month = latest.slice(0, 7);
       afterDataChange();
       setNotice("ok", `<b>${esc(file.name)}</b> uploaded: ${num(records.length)} jobs read, ${num(added)} new and ${num(records.length - added)} updated.` +
         (skipped ? ` ${skipped} row${skipped === 1 ? "" : "s"} skipped (no Ref or Date).` : ""));
@@ -650,7 +682,7 @@
       .forEach(r => lines.push([q(r.engineer), q(r.ref), r.date, r.weekBeg, q(r.outcome), r.made ? "Yes" : "No"].join(",")));
     const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-    a.download = state.view === "day" ? `D-1_${state.day}.csv` : `D-1_week_${state.week}.csv`;
+    a.download = state.view === "day" ? `D-1_${state.day}.csv` : state.view === "week" ? `D-1_week_${state.week}.csv` : `D-1_month_${state.month}.csv`;
     a.click(); URL.revokeObjectURL(a.href);
   };
 
