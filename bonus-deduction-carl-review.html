@@ -461,6 +461,27 @@
             return `<div class="rc-evidence">${lines.join('')}</div>`;
         }
 
+        // ── Abort job counts ──
+        // The aborts upload's column D is headed "Total" but holds the time length, so the stored
+        // `total` field is ignored. Jobs per abort record come from its Reason instead: "No Access x2" = 2,
+        // "No access, DNO issue" = 2, anything else = 1 (the same way the FTL work screen counts them).
+        function abortCatCount(reason) {
+            let n = 0;
+            String(reason || '').split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach(part => {
+                const m = /^(.*?)\s*[x×]\s*(\d+)\s*$/i.exec(part) || /^(\d+)\s*[x×]\s*(.+)$/i.exec(part);
+                const k = m ? Number(/^\d+$/.test(m[2]) ? m[2] : m[1]) || 1 : 1;
+                n += Math.min(k, 50);
+            });
+            return Math.max(n, 1);
+        }
+        // Job count for an abort saved in an earlier review. Older reviews could split one abort into
+        // extra parts using the stored "Total"; parts beyond what the Reason supports are dropped.
+        function storedAbortJobs(a) {
+            if (!a) return 0;
+            if (a.part) return a.part <= abortCatCount(a.reason) ? 1 : 0;
+            return Math.min(Number(a.total) || 1, abortCatCount(a.reason));
+        }
+
         // ── Categories ──
         const CATEGORIES = [
             { key: 'attendance',      label: 'Attendance',              pct: 5,  perInstance: true, desc: 'Sick / AAUP / AWOL — −5% per accepted instance' },
@@ -522,7 +543,9 @@
             reviews.forEach(rv => (rv.abortsDetail || []).forEach(a => {
                 if (!a || !a.overturned || !(a.date || '').startsWith(month) || seen.has(a.key)) return;
                 seen.add(a.key);
-                overturned.push({ ...a, weekStart: rv.weekStart, reviewedBy: rv.reviewedBy || '' });
+                const jobs = storedAbortJobs(a);
+                if (!jobs) return; // an extra part an older review created from the stored "Total"
+                overturned.push({ ...a, total: jobs, weekStart: rv.weekStart, reviewedBy: rv.reviewedBy || '' });
             }));
             overturned.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
             const overturnedTotal = overturned.reduce((s, a) => s + (Number(a.total) || 0), 0);

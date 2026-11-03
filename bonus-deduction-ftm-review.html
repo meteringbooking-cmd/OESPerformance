@@ -600,10 +600,9 @@
             return out;
         }
         function splitAbort(a) {
-            const total = Number(a.total) || 0;
             let units = parseAbortCategories(a.reason);
             if (!units.length) units = [{ label: a.reason || 'Abort', catIdx: 0 }];
-            const n = Math.max(total, units.length);
+            const n = units.length, total = n; // one row per job named in the Reason — the stored "total" is ignored
             const explanations = [a.reason1, a.reason2];
             const multiCategory = new Set(units.map(u => u.catIdx)).size > 1;
             const explain = (u, i) => (multiCategory ? explanations[u.catIdx] : explanations[i]) || '';
@@ -647,6 +646,27 @@
             const from = r.wk > mStart ? r.wk : mStart, to = wEnd < mEnd ? wEnd : mEnd;
             const otherFrom = from === r.wk ? addDays(to, 1) : r.wk, otherTo = from === r.wk ? wEnd : addDays(from, -1);
             return `<div class="rc-split-note">Only ${shortDate(from)} – ${shortDate(to)} counted here — ${shortDate(otherFrom)} – ${shortDate(otherTo)} is reviewed under ${formatMonth(otherFrom.slice(0, 7))}.</div>`;
+        }
+
+        // ── Abort job counts ──
+        // The aborts upload's column D is headed "Total" but holds the time length, so the stored
+        // `total` field is ignored. Jobs per abort record come from its Reason instead: "No Access x2" = 2,
+        // "No access, DNO issue" = 2, anything else = 1 (the same way the FTL work screen counts them).
+        function abortCatCount(reason) {
+            let n = 0;
+            String(reason || '').split(/[,;]/).map(t => t.trim()).filter(Boolean).forEach(part => {
+                const m = /^(.*?)\s*[x×]\s*(\d+)\s*$/i.exec(part) || /^(\d+)\s*[x×]\s*(.+)$/i.exec(part);
+                const k = m ? Number(/^\d+$/.test(m[2]) ? m[2] : m[1]) || 1 : 1;
+                n += Math.min(k, 50);
+            });
+            return Math.max(n, 1);
+        }
+        // Job count for an abort saved in an earlier review. Older reviews could split one abort into
+        // extra parts using the stored "Total"; parts beyond what the Reason supports are dropped.
+        function storedAbortJobs(a) {
+            if (!a) return 0;
+            if (a.part) return a.part <= abortCatCount(a.reason) ? 1 : 0;
+            return Math.min(Number(a.total) || 1, abortCatCount(a.reason));
         }
 
         async function fetchEngineerSnaps(engineer) {
@@ -698,7 +718,7 @@
                     if (!a || !a.overturned || !a.date || inWeek(a.date, wk) || seenAborts.has(a.key)) return;
                     seenAborts.add(a.key);
                     const mo = months.find(x => a.date.startsWith(x.month) && a.date <= x.throughDate);
-                    if (mo) mo.priorOverturned += Number(a.total) || 0;
+                    if (mo) mo.priorOverturned += storedAbortJobs(a);
                 });
             });
             months.forEach(mo => {
@@ -716,7 +736,7 @@
                         aborts.push({
                             key: `${source}_${d.id}`, source,
                             date: data.date, reason: data.reason || '', reason1: data.reason1 || '',
-                            reason2: data.reason2 || '', total: Number(data.total) || 0,
+                            reason2: data.reason2 || '', total: abortCatCount(data.reason), // stored "total" ignored — see abortCatCount
                             teamLeader: data.teamLeader || '',
                         });
                     }
@@ -791,7 +811,7 @@
         // True if any CURRENT abort (this month, for this engineer) isn't one the FTM's last
         // review already accounted for — i.e. a genuinely new abort has appeared since then.
         function hasNewAbort(currentAborts, reviewedAbortsDetail) {
-            const known = new Set((reviewedAbortsDetail || []).map(a => a.key));
+            const known = new Set((reviewedAbortsDetail || []).flatMap(a => [a.key, a.parentKey]).filter(Boolean));
             return (currentAborts || []).some(a => !known.has(a.key) && !known.has(a.parentKey));
         }
         // An engineer only needs to reappear in the FTM's queue if they've never been reviewed,
@@ -906,7 +926,8 @@
                 r._abortAccepted = {};
                 const prevAborts = (r.reviewed && Array.isArray(r.reviewed.abortsDetail)) ? r.reviewed.abortsDetail : [];
                 r.ctx.aborts.forEach(a => {
-                    const prev = prevAborts.find(p => p.key === a.key) || prevAborts.find(p => p.key === a.parentKey);
+                    const prev = prevAborts.find(p => p.key === a.key) || prevAborts.find(p => p.key === a.parentKey)
+                        || prevAborts.find(p => p.parentKey && p.parentKey === (a.parentKey || a.key)); // older review split this abort differently
                     r._abortAccepted[a.key] = prev ? !prev.overturned : true;
                 });
 
