@@ -207,11 +207,11 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 .w-hero-mark .w-glow{position:absolute;left:12%;top:38%;width:76%;height:30%;border-radius:50%;background:radial-gradient(closest-side,rgba(120,220,255,.75),rgba(0,166,200,0));opacity:0;pointer-events:none}
 .w-hero-mark .w-dust{position:absolute;left:52%;top:52%;width:0;height:0}
 .w-hero-mark .w-dust i{position:absolute;width:4px;height:4px;border-radius:50%;background:#BFEFFA;opacity:0}
-.w-hero-mark.play .w-kitty{animation:cai-leap 2s linear .35s both}
-.w-hero-mark.play .w-ktail{animation:cai-tail 2s ease-in-out .35s both,cai-tail-idle 5s ease-in-out 3.4s infinite}
-.w-hero-mark.play .w-shadow{animation:cai-shadow 2s ease-out .35s both}
-.w-hero-mark.play .w-glow{animation:cai-glow 2s ease-out .35s both}
-.w-hero-mark.play .w-dust i{animation:cai-dust 2s ease-out .35s both}
+.w-hero-mark.play .w-kitty{animation:cai-leap 2.8s linear .35s both}
+.w-hero-mark.play .w-ktail{animation:cai-tail 2.8s ease-in-out .35s both,cai-tail-idle 5s ease-in-out 4.2s infinite}
+.w-hero-mark.play .w-shadow{animation:cai-shadow 2.8s ease-out .35s both}
+.w-hero-mark.play .w-glow{animation:cai-glow 2.8s ease-out .35s both}
+.w-hero-mark.play .w-dust i{animation:cai-dust 2.8s ease-out .35s both}
 .w-hero-mark .w-dust i:nth-child(1){--dx:-22px;--dy:-9px}.w-hero-mark .w-dust i:nth-child(2){--dx:-12px;--dy:-15px}
 .w-hero-mark .w-dust i:nth-child(3){--dx:14px;--dy:-13px}.w-hero-mark .w-dust i:nth-child(4){--dx:24px;--dy:-7px}
 @keyframes cai-leap{
@@ -240,7 +240,7 @@ body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased
 @keyframes cai-shadow{0%,35%{opacity:0;transform:scale(.3)}68%{opacity:.6;transform:scale(1)}74%{opacity:.75;transform:scale(1.15,1)}100%{opacity:.35;transform:scale(1)}}
 @keyframes cai-glow{0%,69%{opacity:0;transform:scale(.5)}74%{opacity:.85;transform:scale(.8)}100%{opacity:0;transform:scale(1.35)}}
 @keyframes cai-dust{0%,70%{opacity:0;transform:translate(0,0) scale(1)}73%{opacity:.9}96%,100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.4)}}
-@media (prefers-reduced-motion:reduce){.w-hero-mark.play .w-kitty,.w-hero-mark.play .w-ktail,.w-hero-mark.play .w-shadow,.w-hero-mark.play .w-glow,.w-hero-mark.play .w-dust i{animation:none}}
+@media (prefers-reduced-motion:reduce){.w-hero-mark.play:not(.clicked) .w-kitty,.w-hero-mark.play:not(.clicked) .w-ktail,.w-hero-mark.play:not(.clicked) .w-shadow,.w-hero-mark.play:not(.clicked) .w-glow,.w-hero-mark.play:not(.clicked) .w-dust i{animation:none}}
 .w-h2{margin:30px 0 12px;font-size:15px;font-weight:600;color:var(--ink)}
 .w-cats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .w-cat{--c:var(--teal);--c-soft:var(--teal-soft);background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--c);border-radius:14px;padding:14px 12px 10px;display:flex;flex-direction:column;gap:6px}
@@ -2024,8 +2024,8 @@ const CAT_POSES = {
   reach:   { bo: [-42, -62], bi: [-32, -52], fi: [36, 16], fo: [46, 26] },
   absorb:  { bo: [8, -32], bi: [18, -26], fi: [2, -32], fo: [12, -24] }
 };
-const CAT_TIMELINE = [[0, 'stand'], [140, 'stand'], [300, 'crouch'], [350, 'crouch'], [500, 'takeoff'], [640, 'takeoff'], [880, 'tuck'], [1060, 'tuck'], [1240, 'reach'], [1370, 'reach'], [1425, 'absorb'], [1560, 'absorb'], [1720, 'stand']];
-const CAT_DELAY = 350, CAT_LANDED = 1730;
+const CAT_TIMELINE = [[0, 'stand'], [196, 'stand'], [420, 'crouch'], [490, 'crouch'], [700, 'takeoff'], [896, 'takeoff'], [1232, 'tuck'], [1484, 'tuck'], [1736, 'reach'], [1918, 'reach'], [1995, 'absorb'], [2184, 'absorb'], [2408, 'stand']];
+const CAT_DELAY = 350, CAT_LANDED = 2425, CAT_TOTAL = 2800;
 let catRaf = 0;
 function catPose(name, leg) { return name === 'stand' ? CAT_LEGS[leg].stand : CAT_POSES[name][leg]; }
 function catAngles(t, leg) {
@@ -2055,19 +2055,24 @@ function catDraw(svg, t) {
   }
   svg.innerHTML = html;
 }
-function catRig(mark) {
+function catRig(mark, byUser) {
   cancelAnimationFrame(catRaf);
   const svg = mark.querySelector('.w-klegs'), kitty = mark.querySelector('.w-kitty');
   if (!svg || !kitty) return;
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { mark.classList.add('landed'); return; }
+  const reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced && !byUser) { mark.classList.add('landed'); return; } // with reduced motion it only plays when the logo is clicked
+  mark.classList.remove('landed');
+  const start = performance.now();
   const tick = () => {
-    const anim = kitty.getAnimations().find(a => a.animationName === 'cai-leap');
-    const t = anim ? (anim.currentTime || 0) - CAT_DELAY : 99999;
+    // follow the CSS leap exactly when it can be found; otherwise keep time ourselves
+    const anim = mark.isConnected ? kitty.getAnimations().find(a => a.animationName === 'cai-leap') : null;
+    const t = (anim && anim.currentTime != null ? anim.currentTime : performance.now() - start) - CAT_DELAY;
     catDraw(svg, Math.max(0, t));
     mark.classList.toggle('landed', t >= CAT_LANDED);
-    if (anim && anim.playState !== 'finished') catRaf = requestAnimationFrame(tick);
+    const done = t > CAT_TOTAL + 100 && (!anim || anim.playState === 'finished');
+    if (!done) catRaf = requestAnimationFrame(tick);
   };
-  tick();
+  catRaf = requestAnimationFrame(tick);
 }
 
 function welcome() {
@@ -2118,7 +2123,7 @@ function welcome() {
   w.querySelectorAll('[data-q]').forEach(c => c.addEventListener('click', () => send(c.dataset.q)));
   // click the logo to watch the cat jump again
   const mark = w.querySelector('.w-hero-mark');
-  if (mark) { catRig(mark); mark.addEventListener('click', () => { mark.classList.remove('play', 'landed'); void mark.offsetWidth; mark.classList.add('play'); catRig(mark); }); }
+  if (mark) { catRig(mark); mark.addEventListener('click', () => { mark.classList.remove('play', 'landed'); void mark.offsetWidth; mark.classList.add('play', 'clicked'); catRig(mark, true); }); }
   els.msgs.appendChild(w);
 }
 
