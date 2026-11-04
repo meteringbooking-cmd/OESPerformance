@@ -3431,6 +3431,7 @@
     <div><div class="cai-title">Catalistics AI</div><div class="cai-sub">Metering &amp; engineers</div></div>
     <div class="cai-spacer"></div>
     <button class="cai-iconbtn" id="cai-fin" type="button" title="Unlock finance questions with a PIN">Finance</button>
+    <a class="cai-iconbtn" href="catalistics-ai.html" title="Open the full-page assistant - it can make Excel and PowerPoint files" style="text-decoration:none;font-size:15px;line-height:1" aria-label="Open the full-page assistant">&#10530;</a>
     <button class="cai-iconbtn" id="cai-new" type="button" title="Start a new chat">New chat</button>
     <button class="cai-iconbtn" id="cai-close" type="button" aria-label="Close" title="Close">&#10005;</button>
   </div>
@@ -3490,7 +3491,18 @@ const solarConfig = {
 };
 const solarApp = getApps().find(a => a.name === 'catalistics-ai-solar') || initializeApp(solarConfig, 'catalistics-ai-solar');
 const sdb = getFirestore(solarApp);
-const dbOf = cfg => cfg && cfg.project === 'solar' ? sdb : cdb;
+// Third project: the NGU asset tracking system (NGU-Assets site).
+const assetsConfig = {
+  apiKey: "AIzaSyBb9x_7RJcsg0Iw2whRylbybuQNuLr6Yco",
+  authDomain: "meter-install-check.firebaseapp.com",
+  projectId: "meter-install-check",
+  storageBucket: "meter-install-check.firebasestorage.app",
+  messagingSenderId: "238786946643",
+  appId: "1:238786946643:web:f1965fca6d3b79ef5e08a6"
+};
+const assetsApp = getApps().find(a => a.name === 'catalistics-ai-assets') || initializeApp(assetsConfig, 'catalistics-ai-assets');
+const adb = getFirestore(assetsApp);
+const dbOf = cfg => cfg && cfg.project === 'solar' ? sdb : cfg && cfg.project === 'assets' ? adb : cdb;
 const colRef = coll => { const cfg = CATALOG[coll]; return collection(dbOf(cfg), (cfg && cfg.coll) || coll); };
 
 /* ------------------------------------------------- what the assistant may read */
@@ -3764,6 +3776,98 @@ defColl('Attendance', 'Establishment Report - clawbacks', 'Establishment Report 
 
 // Finance collections are held back until the finance PIN is entered (see the Finance button).
 const FINANCE_CATALOG = {};
+// ---- Added from the full site (GitHub OESPerformance): collections used by other pages ----
+// Prices are stripped from the stock collections; the priced versions are finance-only.
+const T_NO_PRICE = d => { const o = Object.assign({}, d); ['price', 'unitPrice', 'lineValue', 'cost'].forEach(k => delete o[k]); if (Array.isArray(o.items)) o.items = o.items.map(i => { if (!i || typeof i !== 'object') return i; const x = Object.assign({}, i); ['price', 'unitPrice', 'cost'].forEach(k => delete x[k]); return x; }); return o; };
+const T_ORDER_COST = d => { const items = Array.isArray(d.items) ? d.items : []; const live = items.filter(i => i && !i.notDelivered); return Object.assign({}, d, { orderCost: Math.round(live.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.qty) || 1), 0) * 100) / 100 }); };
+const T_NO_ATTACHMENT = d => { const o = Object.assign({}, d); Object.keys(o).forEach(k => { if (/^attachment/i.test(k)) delete o[k]; }); return o; };
+async function capacityPrepare() { const m = new Map(); try { (await getDocs(collection(cdb, 'capacity/data/engineers'))).forEach(d => m.set(d.id, d.data())); } catch (e) {} return m; }
+const T_CAP_HOLIDAY = (d, id, ctx) => { const e = ctx && ctx.get(d.engineerId); return { engineer: e ? e.name : String(d.engineerId || ''), team: e ? e.team : '', contract: e ? e.contract : '', startDate: d.startDate, endDate: d.endDate, type: d.type }; };
+
+defColl('Performance', 'D-1 Call Outcomes', 'D-1 page (D-1.html): one doc per job (ref, date, weekBeg, status, abortReason, engineer, teamLeader, manager, employer, callReason, daysNotice, callOutcome). A D-1 call was made when callOutcome is "D Minus Made" (ignore case/spaces). D-1 % = D Minus Made jobs / all jobs.');
+defColl('Performance', 'Sureserve Job Numbers', 'Sureserve job numbers logged from the daily schedule (sureserve-job-comparison.html): jobNumber (J- + 8 characters), jobType, date. One doc per job per day.');
+defColl('Performance', 'Kraken AM - All Sureserve', 'Kraken AM rows for ALL Sureserve (krakenam-sureserve.html): date, team, engineer, totalJobs, dual, single, comms, removal, totalMeters.');
+defColl('Performance', 'Kraken AM - Sureserve Headcount', 'Engineers available per day for the all-Sureserve Kraken page: date, headcount.');
+defColl('Performance', 'GSOS', 'GSOS (Guaranteed Standards of Service) submissions: engineerName, date, jobNumber, jobType, price (the GSOS payment value).');
+defColl('Performance', 'SESM Tickets', 'Tickets sent to SESM (sesmtickettracker.html): dateSent, raisedBy, issue, comments, closed (true/false), closedAt. Attachments are not visible.', { dateField: 'dateSent', transform: T_NO_ATTACHMENT });
+defColl('Performance', 'SESM Issue Types', 'List of SESM issue types (name).', { small: true });
+defColl('Performance', 'Compliance Tracker', 'Compliance issues logged against engineers (compliancetracker.html): engineer, contract, jobNumber, date, reason, dealt (true = dealt with), notes.');
+defColl('Performance', 'Stock Take', 'Stock take time-loss log (stocktaketimelosstracker.html): engineer, date, duration (time lost), byboxPudo (ByBox or Pudo), issue.');
+defColl('Performance', 'Region Comparison', 'Saved snapshots of jobs per engineer by region (regioncomparison.html): label, savedAt, operationalDate, engineerCount. Job-level detail is not visible.', { small: true, allow: ['label', 'savedAt', 'operationalDate', 'engineerCount'] });
+defColl('Performance', 'WipExclusions', 'Engineers hidden from the compliance dashboard WIP figures (name, excludedAt).', { small: true });
+defColl('Performance', 'workEntries', 'Additional work log (ashleigh.html): jobNumber, jobType, workDate, weekCommencing, bookingStatus. Customer names and addresses are not visible.', { dateField: 'workDate', allow: ['jobNumber', 'jobType', 'workDate', 'weekCommencing', 'bookingStatus', 'type', 'submittedAt'] });
+defColl('Performance', 'drip tracker', 'The Drip Tracker (ashleighdrip.html): one doc per due date (month, dueDate, status early/late/pending, days).', { small: true });
+defColl('Performance', 'jobsData', 'Weekly job lists per engineer uploaded on dataupload.html: engineerName, weekCommencing (Monday, YYYY-MM-DD), dailyJobs (map of date -> jobs that day).', { dateField: 'weekCommencing' });
+
+defColl('People', 'Absence Trends', 'Absence records uploaded on absencetrends.html for long-term sickness and trend analysis: fromDate, toDate, category, workingDays and the employee details in the upload.', { dateField: 'fromDate' });
+defColl('People', 'capacity - engineers', 'Team capacity page (capacity.html) engineer list: name, team, contract.', { small: true, coll: 'capacity/data/engineers' });
+defColl('People', 'capacity - holidays', 'Team capacity page booked holidays / leave: engineer, team, contract, startDate, endDate, type.', { small: true, coll: 'capacity/data/holidays', prepare: capacityPrepare, transform: T_CAP_HOLIDAY });
+defColl('People', 'capacity - headcounts', 'Team capacity page headcount per team (team, count).', { small: true, coll: 'capacity/data/headcounts' });
+defColl('People', 'Sureserve Engineers', 'Sureserve engineer list (sureserve-engineer.html): Resource (name), Current status, employer, Level. Postcodes are not visible.', { small: true, allow: ['Resource', 'Current status', 'employer', 'Level', 'lastUpdated'] });
+defColl('People', 'Engineer Certs', 'Certificates uploaded per engineer (engineerName, fileName, uploadedAt). The files themselves are not readable.', { small: true, allow: ['engineerName', 'fileName', 'uploadedAt'] });
+
+defColl('Energise stock', 'Energise Inventory', 'Energise stock catalogue (sku, name, category, uom, limit). Prices are finance-only.', { small: true, transform: T_NO_PRICE });
+defColl('Energise stock', 'Energise Inventory Pudo', 'Pudo stock catalogue (sku, name, category, uom, limit). Prices are finance-only.', { small: true, transform: T_NO_PRICE });
+defColl('Energise stock', 'Energise Selection', 'Engineers set up to order Energise stock (name and their allowed selection).', { small: true });
+defColl('Energise stock', 'Energise Selection Pudo', 'Engineers set up to order Pudo stock.', { small: true });
+defColl('Energise stock', 'Energise Orders', 'Energise stock orders (energise-order-form.html): submittedBy, submittedAt, itemCount, items (name, sku, qty, uom, category), processedAt when processed. Prices are finance-only.', { dateField: 'submittedAt', dateType: 'timestamp', transform: T_NO_PRICE });
+defColl('Energise stock', 'Energise Orders Pudo', 'Pudo stock orders, same layout as Energise Orders.', { dateField: 'submittedAt', dateType: 'timestamp', transform: T_NO_PRICE });
+defColl('Energise stock', 'Energise Stock Take', 'Energise stock take submissions: staffName, submittedAt, items counted.', { dateField: 'submittedAt', dateType: 'timestamp' });
+
+defColl('Finance', 'Energise Orders - costs', 'Energise stock orders WITH prices; orderCost = sum of price x qty for delivered items (as on energise-order-cost.html).', { restricted: true, coll: 'Energise Orders', dateField: 'submittedAt', dateType: 'timestamp', transform: T_ORDER_COST });
+defColl('Finance', 'Energise Orders Pudo - costs', 'Pudo stock orders WITH prices and orderCost.', { restricted: true, coll: 'Energise Orders Pudo', dateField: 'submittedAt', dateType: 'timestamp', transform: T_ORDER_COST });
+defColl('Finance', 'Energise Inventory - prices', 'Energise stock catalogue WITH prices (sku, name, price, uom).', { restricted: true, small: true, coll: 'Energise Inventory' });
+defColl('Finance', 'Energise Invoices', 'Official Energise invoice lines (energise-invoice.html): chhOrderId, createDate and dateShipped (as text - do NOT pass dateFrom/dateTo; filter on these fields instead), partId, description, unitPrice, lineValue, qtyShipped, name (engineer), chargeable, status.', { restricted: true, small: true, allow: ['engineerId', 'chhOrderId', 'createDate', 'dateShipped', 'ln', 'partId', 'description', 'unitPrice', 'lineValue', 'qtyShipped', 'projectName', 'name', 'company', 'chargeable', 'labourStatus', 'status'] });
+defColl('Finance', 'Energise Invoices Pudo', 'Official Pudo invoice lines, same layout as Energise Invoices (do NOT pass dateFrom/dateTo).', { restricted: true, small: true, allow: ['engineerId', 'chhOrderId', 'createDate', 'dateShipped', 'ln', 'partId', 'description', 'unitPrice', 'lineValue', 'qtyShipped', 'projectName', 'name', 'company', 'chargeable', 'labourStatus', 'status'] });
+defColl('Finance', 'Energise Price Logs', 'Supplier price changes detected for Energise stock: sku, oldPrice, newPrice, dateString (YYYY-MM-DD).', { restricted: true, dateField: 'dateString' });
+defColl('Finance', 'Energise Job Estimates', 'Saved job material estimates (energise-job-price-checker.html): jobName, items with prices, updatedAt.', { restricted: true, small: true });
+defColl('Finance', 'rubix payments', 'Rubix induction payment tracking (rubix.html): name, teamLeader, inductionDate, which payment emails were sent, createdAt.', { restricted: true, small: true });
+defColl('Finance', 'subbies examples', 'Saved scenarios from the subcontractor income calculator (subbies.html).', { restricted: true, small: true });
+defColl('Finance', 'calisen examples', 'Saved scenarios from the Calisen subcontractor income calculator (calisen.html).', { restricted: true, small: true });
+// Deliberately NOT readable: users (logins), portal_documents, document_signatures, portalNotifications, portal_settings, energise order images.
+// ---- Added from the other sites: SP-Performance, NGU, NGU-Recruitment, NGU-Assets, Pingu ----
+// Keeps the document id (asset and employee records refer to each other by id) and drops signatures / photos / file links.
+const T_NO_SIGNATURE = (d, id) => { const o = Object.assign({}, d); Object.keys(o).forEach(k => { if (/signature|photo|image|fileurl|base64/i.test(k)) delete o[k]; }); if (id && o.id === undefined) o.id = id; return o; };
+const ASSETS = { project: 'assets', transform: T_NO_SIGNATURE };
+
+// Scottish Power (SP-Performance site, same database as the OES pages)
+defColl('Scottish Power', 'SP-SureserveData', 'Sureserve job data uploaded for Scottish Power (sureservedataupload.html), one doc per job, dated by dateOfAppointment (text from the sheet, converted to "date").', { dateField: 'dateOfAppointment', dateType: 'dmy', looseDmy: true });
+defColl('Scottish Power', 'SP Additional Payment', 'Scottish Power additional pay claims (engineer, type, amount, status Pending/Approved/Denied, approvedDate, deniedDate, denialReason).', { small: true });
+defColl('Scottish Power', 'SP Engineers', 'Scottish Power engineer list from view-engineers.html (name, team leader and details).', { small: true });
+defColl('Scottish Power', 'SP Referrals', 'Referrals submitted by Scottish Power engineers on their portal.', { small: true });
+defColl('Scottish Power', 'EDFMP', 'EDF Field Management Portal jobs (edfmp.html): date, engineer, status, completed (true/false), value.');
+defColl('Finance', 'SP Financial', 'Scottish Power performance tracker money entries (scottishpowerfinancials.html): one doc per date with an entries list.', { restricted: true });
+
+// NGU HR site (ngu-green.vercel.app)
+defColl('NGU HR', 'Attendance Log', 'Attendance & Payroll Tracker (NGU attendancetracker.html): one doc per staff member per day - staffId, staffName, date, status (In, Holiday, Sick...), hours, deduction.');
+defColl('NGU HR', 'Holiday Requests', 'Holiday / absence requests from the Employee Portal and their approval (absenceapproval.html): staff, dates, workingDays, status, submittedAt.', { small: true });
+defColl('NGU HR', 'Absence Submissions', 'Absences submitted by managers on absencesubmission.html (staff, dates, type, submittedAt).', { small: true });
+defColl('NGU HR', 'communication-submissions', 'Communication Hub: communications sent to engineers and team leader review (subject/type, engineer, status, createdAt).', { small: true });
+defColl('NGU HR', 'Asset Tracker', 'Simple asset tracker on the NGU site (assettracking.html) - the older list; the full asset system is the ASSETS area.', { small: true });
+defColl('NGU HR', 'Offboarding Forms', 'Leaver / offboarding forms (NGU index.html, view.html): name, jobTitle, manager, lastWorkingDay, leaveReason, initiatedAt, exitInterviewAccepted.', { small: true, transform: T_NO_SIGNATURE });
+defColl('NGU HR', 'offboarding checklist', 'Leaver checklist progress per leaver (checklist.html).', { small: true });
+defColl('Recruitment', 'NGU Leavers', 'Leavers recorded on the onboarding pages: fullName, leavingDate, leaverDetails.', { small: true });
+defColl('Recruitment', 'NGU Contacts & Policies', 'Contract templates, policies and campaign documents used in onboarding (type, jobTitle, campaignName, updatedAt). File links are not visible.', { small: true, transform: T_NO_SIGNATURE });
+
+// Solar
+defColl('Solar (Pingu)', 'picklists', 'Solar material pick lists saved per job from survey view (Job Number / jobNumber, items, savedAt).', Object.assign({ small: true }, SOLAR));
+
+// Asset tracking system (NGU-Assets, its own database "meter-install-check")
+defColl('Assets', 'AT_AssetRegister', 'Asset register: one doc per asset (AssetName, category/type, serial, Status e.g. In Stock/Allocated/In Repair/Retired, CurrentEmployee, CurrentLocation, ReplacementCost, calibration dates, CreatedDate).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_AssetCategories', 'Asset categories and types.', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_EmployeeRegister', 'Employees who can hold assets (FullName, team/role, status).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_SupplierRegister', 'Asset suppliers.', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_LocationRegister', 'Asset locations (stores, vans, offices) with CurrentAssetCount.', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_CalibrationRegister', 'Calibration records per asset (dates, due dates, results).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_RepairRegister', 'Repairs per asset (AssetID, IncidentID, RepairStatus, ManagerDecision, EstimatedRepairCost, RepairCost, RepairDate, CompletionDate, BeyondRepair, CreatedDate).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_RetirementRegister', 'Retired assets (RetirementReason, OriginatingProcess, dates).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_MovementRegister', 'Asset movements (AssetID, Action, FromLocation, ToLocation, MovementDateTime, CompletedBy, Notes).', Object.assign({ small: true }, ASSETS));
+defColl('Assets', 'AT_AssignmentHistory', 'Who held each asset and when (AssetID, EmployeeID, AssignmentType, AssignmentStartDate, AssignmentEndDate, PreviousEmployeeID, CompletedBy, Notes). Signatures are not visible.', Object.assign({ small: true, transform: T_NO_SIGNATURE }, ASSETS));
+defColl('Assets', 'AT_AssetInspection', 'Asset inspections.', Object.assign({ small: true, transform: T_NO_SIGNATURE }, ASSETS));
+defColl('Assets', 'AT_AssetIncident', 'Damage / loss reports per asset (incident.html).', Object.assign({ small: true, transform: T_NO_SIGNATURE }, ASSETS));
+defColl('Assets', 'AT_AssetRecovery', 'Asset recovery from leavers / returns (recovery.html).', Object.assign({ small: true, transform: T_NO_SIGNATURE }, ASSETS));
+defColl('Finance', 'AT_RechargeRegister', 'Asset recharges to employees (costs charged for damaged or lost equipment).', Object.assign({ restricted: true, small: true }, ASSETS));
+// Deliberately NOT readable: HR Admin (passwords), Portal Users and AT_Users (logins), AT_AuditLog, AT_Counters, document_signatures, portal_documents.
 Object.keys(CATALOG).forEach(k => { if (CATALOG[k].restricted) { FINANCE_CATALOG[k] = CATALOG[k]; delete CATALOG[k]; } });
 let financeOn = false;
 
@@ -3774,6 +3878,7 @@ const SENSITIVE = /pass(word)?|pwd|^pin$|secret|token|api.?key|e-?mail|phone|mob
 const KNOWLEDGE = {
 pages: `PAGE DIRECTORY - the OES Performance / NGU web pages (all at https://oes-performance.vercel.app/<file>). Tell managers which page to open when it helps.
 WORK / OFFICE SCREENS (read-only dashboards of the previous working day)
+- catalistics-ai.html: full-page Catalistics AI (this assistant) that can also make Excel and PowerPoint files from the data.
 - workscreenftl.html: main Work Screen. Sureserve and Energise side by side: meters vs target, completion %, miles per meter, attendance, plus Scottish Power, Calisen, job changes, missing vehicle checks, workforce. Tiles expand to 10 working days. Buttons open graphs, daily stats, aborts, PowerPoint exports.
 - workscreen-en.html: Energise-only Work Screen with a rolling current-week row. Excludes Richard Wiecko's team and Chris Timm, Ian Dobson, Jon Convery.
 - workscreendailystats-en.html / workscreenweeklystats-en.html: Energise one-day and 5-week tables by team leader and engineer.
@@ -3804,7 +3909,38 @@ Pages NOT in this folder (so not covered): Smart Tester entry form, absencesubmi
 OTHER FOLDERS (separate systems; the assistant can read their data - see the topics named):
 - SOLAR (Pingu) folder, 63 pages, own database: index.html hub; admin.html / adminviewjobs / adminupload / uploaddata / adminexport / adminemail (job admin); workscreen.html (office board), datasheet.html (weekly datasheet), viewtimeline.html and named copies johnweight-timeline, martinjones-timeline, dean (timelines), map.html, calendar.html, jobsearch.html, teamview.html, myjobs.html (engineer view), staff / teamdatabase / addeditteam; audits adminaudit / adminaudit2 / adminauditreview / auditfailtracker / solar-ppt / export-presentation; surveys conductsurvey, surveymaster, surveyview, viewsurvey, viewmysurveys, inventorycheck, materialsapproval, meterworkrequired; materials cable-requirements, cable-requirement-orders, stocktakesubmission, stocktakereview, vanreplenishmentorders, additionaldaymaterials, picklistgenerator, rippdf, chh; scaffold/project Pingu-Project.html; money submitfigures, invoice-submission, invoice-engineers-submissions, invoice-engineers-export; complaints meteringcomplaints.html; manual board workscreeninput.html. Topics: solar_jobs, solar_audit, solar_materials, solar_admin.
 - RECRUITMENT folder ("Recuitment"), 30 pages, same database as the OES pages: apply, manual-add, quickadd, vacancy-quick-add, recruit-approval-form(-display), live-vacancies, archived-vacancies, view-applications, dashboard, homepage, interview-availability, FTL-interview-availability, admin-review, view-onboarding, complete-onboarding, complete-profile, docupload / docupload2, engineer-portal (applicant portal), contract, DBS-check, view-dbs, candidate-referral-bonus, referral-submissions, referral-payments, new-starter-checklist, user-database, vehicle-check, login. Topic: recruitment.
-- ESTABLISHMENT REPORT: attendance.html in the main (scratch) folder - NOT the Engineers attendance page. Monthly staff grid with pay deductions. Topic: establishment. Preferred source for attendance and absence questions.`,
+- ESTABLISHMENT REPORT: attendance.html in the main (scratch) folder - NOT the Engineers attendance page. Monthly staff grid with pay deductions. Topic: establishment. Preferred source for attendance and absence questions.
+
+MORE PAGES (from the full site):
+- D-1.html: D-1 Call Outcomes - upload the D-1 sheet; daily, weekly and monthly jobs and "D Minus Made" calls per engineer, with PDF export (collection D-1 Call Outcomes).
+- sureserve-job-comparison.html: log daily Sureserve job numbers from the schedule, compare a date range against a pasted list, export all, and remove job numbers (Sureserve Job Numbers).
+- krakenam-sureserve.html / Krakenam-sureserve.html: Kraken AM dashboard (all Sureserve, or main KrakenAM) with headcount per day. krakenam-display.html: the Energise version.
+- leaguetable.html (OES/Sureserve) and leaguetable-en.html (Energise): engineer league tables from performance, aborts, compliance and attendance.
+- gsossubmission.html: record GSOS (Guaranteed Standards of Service) payments per job (GSOS).
+- sesmtickettracker.html: log and close tickets sent to SESM, with issue types and days open (SESM Tickets).
+- compliancetracker.html: compliance issues raised against engineers and whether they were dealt with (Compliance Tracker). compliance-dash.html: compliance dashboard (Compliance Dashboard, WipExclusions). workscreencompliance.html: compliance pop-up for the Work Screen. checklist.html / compliancecomparison.html: compliance checklist and audit comparison tools.
+- stocktaketimelosstracker.html: time lost to stock takes per engineer (Stock Take).
+- capacity.html, capacityftl.html, capacity2.html: team capacity planner - engineers per team, booked holidays and headcounts (capacity - engineers / holidays / headcounts).
+- absencetrends.html: absence trends and long-term sickness from an HR upload (Absence Trends). attendancebreakdown.html: attendance calendar view.
+- Energise stock: energise-order-form.html (engineers order stock), energise-order-review.html (office processes orders), energise-order-cost.html (order cost per engineer), energise-selection.html (who can order), energise-inventory-upload.html (stock catalogue), energise-stocktake.html and energise-stocktake-review.html (stock takes), energise-invoice.html (official invoice spend), energise-job-price-checker.html (material cost per job), energise-order-form-images.html (product images and supplier price changes). Each has a -pudo version for Pudo stock.
+- sureserve-engineer.html: Sureserve engineer list with status, employer and level (Sureserve Engineers).
+- regioncomparison.html: snapshots of jobs per engineer by region and movement between snapshots (Region Comparison).
+- dataupload.html: upload weekly job lists per engineer (jobsData). submitdataexport.html: export performance data. exportadditionalpayments.html: payment summary export (bonuses, additional payments, jobs).
+- quarterlybonusview.html: quarterly bonus view (Quarterly Figures). bonus.html: bonus calculator. amendment.html: amend attendance, bonus or performance entries.
+- engineer.html: the NGU Engineer Portal (engineers see their own bonus, attendance, documents and certificates). engineers-cert-upload.html: upload engineer certificates (Engineer Certs). admin-upload.html: portal file manager. oncall.html: on-call rota.
+- office-screen.html: office TV screen. placeholder.html: executive dashboard. hub.html: NGU hub menu. staff.html: staff management. addname.html: add an engineer.
+- workscreencompletionsgraph.html, workscreenmetersgraph-en.html, workscreendailystats.html, workscreendailystatsvalue.html: Work Screen graph and daily-stats pop-ups. workscreenftl-test.html: test copy of the Work Screen with this assistant. catalistics-ai.html: this assistant as a full page with Excel and PowerPoint exports.
+- vehicle-check.html: vehicle check upload (vehicle check). startendvan.html: van start and end dashboard. smart-tester.html: smart tester declaration form. jobschecker.html / jobschecker-en.html: jobs checker tools. noaccess.html: no-access jobs.
+- rubix.html: Rubix induction payments (finance). kaye.html: monthly finance data export. subbies.html / calisen.html: subcontractor income calculators.
+- ashleigh.html: additional work log (workEntries). ashleighdrip.html: the Drip Tracker.
+- Not business pages: login.html (sign in), undermaintence.html, test.html, test-page.html, scott.html, wiecko.html, morris.dow.html, userdatabase&_v1.html (user accounts - not readable by this assistant), allkraken-en.html (engineer postcode list).
+
+OTHER SITES (each its own web address):
+- SCOTTISH POWER site (https://sp-performance.vercel.app, same database): index.html data management menu; submitdata.html (daily SP figures), attendance.html (SP attendance), teamdatabase.html / view-engineers.html (SP engineers), jobscompleted.html (jobs completed), sureservedataupload.html (Sureserve data for SP - SP-SureserveData), additionalpayments.html and exportadditionalpayments.html (SP additional pay - SP Additional Payment), sp-engineer.html / placeholder.html (SP engineer portal, referrals), edfmp.html (EDF Field Management Portal - EDFMP), scottishpowerfinancials.html (SP performance tracker money - finance).
+- NGU HR site (https://ngu-green.vercel.app): attendance.html = the Establishment Report; attendancetracker.html (Attendance & Payroll Tracker - Attendance Log); employeepage.html (Employee Portal: staff request holiday), absenceapproval.html (approve holiday requests - Holiday Requests), absencesubmission.html (managers submit absences - Absence Submissions); index.html (employee offboarding form), view.html (leaver submissions), checklist.html (leaver checklist), book-exit-interview.html / exit-interview-form.html (exit interviews) - Offboarding Forms; communication-submission.html, communication-review.html, communication-engineer.html, communication-historic.html (Communication Hub - communication-submissions); employeedatabase.html (employee database), DBS-check.html / view-dbs.html (DBS renewals), assettracking.html (simple asset tracker), postcodecheck.html (postcode checker and heatmap), multi-send.html (PDF batch mailer), hub.html (menu), admin.html and userdatabase.html (logins - not readable). office.html and removal.html are joke pages.
+- RECRUITMENT site (https://ngu-recruitment-portal.vercel.app): see the recruitment topic. contract.html holds contract templates and policies (NGU Contacts & Policies); view-onboarding.html also records leavers (NGU Leavers).
+- ASSET TRACKING site (NGU-Assets, https://meter-install-check.vercel.app, its own database): dashboard.html; asset-register.html, asset-record.html, create-asset.html (assets - AT_AssetRegister); allocate-asset.html / allocate-asset-mobile.html, transfer-asset.html, return-asset.html (who holds what - AT_AssignmentHistory, AT_MovementRegister); calibration.html (AT_CalibrationRegister); incident.html (report damage or loss - AT_AssetIncident), repair.html (AT_RepairRegister), recovery.html (AT_AssetRecovery), retirement.html (AT_RetirementRegister), recharge.html (charging staff for damage - finance); employees.html, suppliers.html, locations.html, asset-categories.html (registers); audit-report.html; users.html (logins - not readable).
+- SOLAR (Pingu, https://pingu-blue.vercel.app) newer pages: solarjobstracker.html (Solar Intel), summary-page.html (weekly summary), placeholder2.html (job timeline), krakenscrape.html (Kraken scrape), invoice-submission.html / invoice-engineers-submissions.html / invoice-engineers-export.html (engineer invoices - finance), engineer-photo-upload.html, submitfigures.html, submittedadditionaldaymaterials.html, admin-log-review.html (login audit trail), gareth.html. Folders "backup-before-solarjobs" and "Claude outputs" are old copies.`,
 
 contracts_targets: `CONTRACTS, TARGETS AND TEAMS
 - Contracts: main contract ("performance", shown as Sureserve / "OES"), Energise ("performance - Energise", EDF), Calisen ("performance - Calisen") and Scottish Power (job-level "SP Submitted Data" + "SP Daily Figures"). Engineers can appear in more than one. The engineers collection has a contract field (values like Sureserve, SP - Sureserve, EDF - Sureserve, Energise, Calisen; may be blank).
@@ -3987,6 +4123,7 @@ THE BUSINESS
 - Working days are Monday to Friday excluding UK bank holidays. "Yesterday" means the previous working day (the day the Work Screen shows), at any time of day: on a Tuesday it is Monday, on a Monday it is Friday. get_date_info returns it as "yesterday". If there is no data yet for that day, say so and offer the latest day that does have data.
 - Each team leader looks after a team of engineers. Use teamLeader to answer team questions. Show "FTL 4" as Tom Green.
 - Smart metering (above) is one part of the business. There is also a SOLAR (Pingu) side (solar PV, battery, aftercare and survey jobs, in its own database - collections under SOLAR (PINGU)), a RECRUITMENT portal (applicants, vacancies, interviews, referrals) and an Establishment Report (staff attendance and absence with pay deductions). Do not mix them up: metering questions use performance data; solar questions use Solar-jobs and the other solar collections; hiring questions use the recruitment collections. Say which part you are answering about.
+- Also: ASSETS (the NGU asset tracking system, its own database: AT_AssetRegister for what each asset is, its status and who or where holds it; AT_AssignmentHistory and AT_MovementRegister for history; calibration, repairs, incidents, recovery and retirement registers). NGU HR (Attendance Log = attendance & payroll tracker, Holiday Requests, Absence Submissions, Offboarding Forms / leavers, communication-submissions). Scottish Power also has SP-SureserveData, SP Additional Payment, SP Engineers and EDFMP. Join asset records to people with AT_EmployeeRegister (asset EmployeeID / CurrentEmployee = employee document id).
 - Solar-jobs has two status fields (office status = officeStatus, engineer progress = status) and several date fields; call get_knowledge solar_jobs before answering solar job questions and say which status and which date you used.
 - Solar customer names, addresses and contact details are never available to you. Candidate names are available, but candidate contact details, right-to-work and pay details are not. If asked for something you cannot see, say so and point to the relevant page.
 - ATTENDANCE: for any question about attendance, sickness, holiday or absence, use the Establishment Report collections first (get_knowledge establishment): a day with no entry means the person was In. Use the Engineers attendance collections (attendance, garethstats, All Absences, Calisen Absences, SP Attendance) only when the question is specifically about the contract-by-contract daily percentages or sickness triggers, or when the Establishment Report has no data for the period. Say which source you used.
@@ -4168,7 +4305,7 @@ const TOOLS = {
     const fields = {};
     snap.forEach(d => { const c = shapeDoc(coll, d.data(), d.id, sp, ctx); if (!c) return; Object.keys(c).forEach(k => { if (!(k in fields)) fields[k] = { type: Array.isArray(c[k]) ? 'array' : typeof c[k], example: c[k] }; }); });
     const out = { collection: coll, about: cfg.about, dateField: rowDateField(coll), sampleDocs: snap.size, fields };
-    if (cfg.project === 'solar') out.database = 'Solar (Pingu) system';
+    if (cfg.project === 'solar') out.database = 'Solar (Pingu) system'; if (cfg.project === 'assets') out.database = 'Asset tracking system (NGU-Assets)';
     if (cfg.small) out.note = 'Small collection: can be read without a date range.';
     if (cfg.dateOptions) out.dateNote = `Several date fields can be used (pass dateField): ${Object.keys(cfg.dateOptions).join(', ')}. Default ${cfg.dateField}. Text dd/mm/yyyy fields are converted into a YYYY-MM-DD "date" field and need dateFrom and dateTo (max about 3 months); uploadDate is ISO and has no such limit.`;
     else if (type === 'dmy') out.dateNote = `Stored as dd/mm/yyyy text in ${sp.field}; this tool converts it into a YYYY-MM-DD "date" field. Always give dateFrom and dateTo (max about 3 months).`;
